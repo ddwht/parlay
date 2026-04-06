@@ -53,9 +53,14 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Reference fixtures from the buildfile
    - Follow the testcases schema exactly
 
-8. **Validate** — Run both:
-   - `parlay validate --type buildfile spec/intents/{feature}/devspec/buildfile.yaml`
+8. **Validate** — Run all:
+   - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml spec/intents/{feature}/devspec/buildfile.yaml`
    - `parlay validate --type yaml spec/intents/{feature}/devspec/testcases.yaml`
+   - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
    - If validation fails, fix the issues and retry
 
-9. **Report** — Print the created file paths and confirm success.
+9. **Save baseline** — Run: `parlay save-baseline @{feature}`
+   - This stores content hashes of all intents for drift detection
+   - Future runs of `parlay check-coverage` or `parlay check-drift` will compare against this baseline
+
+10. **Report** — Print the created file paths and confirm success.

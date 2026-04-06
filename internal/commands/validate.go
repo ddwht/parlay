@@ -16,10 +16,14 @@ var validateCmd = &cobra.Command{
 }
 
 var validateType string
+var validateDeep bool
+var validateAdapter string
 
 func init() {
 	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, yaml")
 	validateCmd.MarkFlagRequired("type")
+	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
+	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -45,6 +49,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if err := validator(path, content); err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Deep validation for buildfiles
+	if validateDeep && validateType == "buildfile" {
+		errors := agent.ValidateBuildfileDeep(path, validateAdapter)
+		if len(errors) > 0 {
+			fmt.Fprintf(os.Stderr, "Deep validation found %d issue(s):\n", len(errors))
+			for _, e := range errors {
+				fmt.Fprintf(os.Stderr, "  - %s\n", e)
+			}
+			os.Exit(1)
+		}
 	}
 
 	fmt.Println("OK")

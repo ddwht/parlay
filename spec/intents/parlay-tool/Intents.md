@@ -290,12 +290,16 @@
 - Code generation reads the buildfile only — not the intents, dialogs, or surface directly
 - The designer must never need to modify generated prototype code
 - The prototype must be testable — the system generates both implementation and property-based tests
+- After generation, a baseline snapshot of intent content must be stored for drift detection
+- Generated artifacts must pass deep validation — all cross-references (models, components, routes, adapter vocabulary) must resolve
 
 **Verify**:
 - `buildfile.yaml` is generated at `spec/intents/{feature}/devspec/buildfile.yaml`
 - `testcases.yaml` is generated at `spec/intents/{feature}/devspec/testcases.yaml`
+- `.baseline.yaml` is generated at `spec/intents/{feature}/devspec/.baseline.yaml`
 - The buildfile uses only vocabulary from the loaded framework adapter
 - The same inputs + same adapter produce the same buildfile on repeated runs
+- Deep validation passes: all model references, component references, fixture data, and adapter types resolve
 - Generated tests pass against the generated prototype
 
 **Questions**:
@@ -359,22 +363,26 @@
 
 ## Sync Intents and Dialogs
 
-**Goal**: Identify gaps between intents and dialogs — intents that have no corresponding dialog, and dialogs that don't trace back to any intent — and generate templates for the missing pieces.
+**Goal**: Identify gaps and drift across the full artifact chain — intents without dialogs, stale downstream artifacts, broken references — and help the designer bring everything back in sync.
 **Persona**: UX Designer
 **Priority**: P1
-**Context**: The designer has been authoring intents and dialogs independently and wants to check that everything is covered before generating a surface or prototype.
-**Action**: AI agent scans all intents and dialogs in a feature, matches them by content and references, and produces a coverage report with ready-to-fill dialog templates for uncovered intents.
-**Objects**: intent, dialog, coverage-report, dialog-template
+**Context**: The designer has been authoring or editing intents and dialogs and wants to check that everything is covered and consistent before generating a surface or prototype.
+**Action**: AI agent scans all intents and dialogs in a feature, checks coverage and full-chain traceability, detects content drift in intents that changed since the last build, and produces a report with actionable next steps.
+**Objects**: intent, dialog, coverage-report, dialog-template, baseline
 
 **Constraints**:
 - Generated dialog templates must follow the dialog schema and be immediately editable by the designer
 - The sync must not modify existing human-authored files without permission
 - The coverage report must clearly distinguish between missing dialogs and dialogs that exist but may not fully cover an intent
+- Content drift detection must compare current intents against a stored baseline from the last build
+- The agent must review drifted intents against downstream artifacts and flag meaningful mismatches
 
 **Verify**:
 - Covered intents are correctly identified (structural + semantic matching)
 - Uncovered intents are listed with an option to generate dialog templates
 - Orphan dialogs (no matching intent) are identified and reported
+- Intents modified since the last build are flagged with the specific fields that changed
+- The agent reviews drifted intents against surface/buildfile/testcases and suggests updates
 - Existing human-authored dialogs are never modified without permission
 
 **Questions**:

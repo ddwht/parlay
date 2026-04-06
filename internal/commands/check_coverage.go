@@ -36,6 +36,7 @@ type coverageOutput struct {
 	Uncovered []string        `json:"uncovered"`
 	Orphans   []string        `json:"orphans"`
 	Chain     *chainCoverage  `json:"chain,omitempty"`
+	Drift     *driftOutput    `json:"drift,omitempty"`
 }
 
 type chainCoverage struct {
@@ -90,6 +91,12 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	chain := checkChain(featurePath, slug, intents)
 	if chain != nil {
 		output.Chain = chain
+	}
+
+	// Drift detection: check if intents changed since last build
+	drift, _ := detectDrift(slug, featurePath)
+	if drift != nil && drift.HasDrift {
+		output.Drift = drift
 	}
 
 	data, err := json.MarshalIndent(output, "", "  ")

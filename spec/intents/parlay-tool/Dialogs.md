@@ -172,10 +172,12 @@ System: Building with framework adapter: go-cli
 System (background): Reads intents.md, dialogs.md, surface.md, domain-model.md for @upgrade-plan-creation.
 System (background): Generates buildfile.yaml — maps surface fragments to adapter component types, actions to adapter interaction patterns.
 System (background): Generates testcases.yaml from buildfile.yaml.
-System (background): Runs `parlay validate --type buildfile` and `parlay validate --type yaml` to verify.
+System (background): Runs `parlay validate --type buildfile --deep` to verify cross-references.
+System (background): Saves intent content baseline to .baseline.yaml for drift detection.
 System: Created /spec/intents/upgrade-plan-creation/devspec/buildfile.yaml
 System: Created /spec/intents/upgrade-plan-creation/devspec/testcases.yaml
-System: [OK] Feature built. Ready for review.
+System: Created /spec/intents/upgrade-plan-creation/devspec/.baseline.yaml
+System: [OK] Feature built. All cross-references validated. Ready for review.
 
 ---
 
@@ -230,17 +232,29 @@ System: Domain model integrated and saved.
 **Trigger**: /parlay-sync @feature-name
 
 User: /parlay-sync @upgrade-plan-creation
-System (background): Scans intents.md and dialogs.md for @upgrade-plan-creation.
-System: Here's the coverage report:
-System: **Covered intents:**
+System (background): Runs `parlay check-coverage @upgrade-plan-creation` to get coverage and drift data.
+System (background): Runs `parlay collect-questions @upgrade-plan-creation` to check for open questions.
+System: Here's the sync report for @upgrade-plan-creation:
+System: **Coverage:**
 System: - ==intent A== — matched by dialog ==dialog title==
 System: - ==intent B== — matched by dialog ==dialog title==
-System: **Intents without dialogs:**
+System (condition: uncovered intents exist): **Intents without dialogs:**
 System: - ==intent C== — no matching dialog found
-System: - ==intent D== — no matching dialog found
-System: **Orphan dialogs** (no matching intent):
+System (condition: orphan dialogs exist): **Orphan dialogs** (no matching intent):
 System: - ==dialog title== — doesn't trace to any intent
-System: Want me to generate dialog templates for the uncovered intents?
+System (condition: open questions exist): **Open questions:** ==number== unresolved across ==number== intents
+System (condition: drift detected): **Drift detected:** ==number== intents changed since last build:
+System: - ==intent title== — ==fields that changed==
+System (condition: drift detected): Let me review the drifted intents against your downstream artifacts.
+System (background): Reads surface.md, buildfile.yaml, testcases.yaml for drifted intents.
+System (condition: meaningful drift found): I found ==number== downstream artifacts that may need updating:
+System: - Surface fragment ==name==: Shows field no longer matches intent Goal
+System: - Testcases for ==component==: Verify bullets changed, tests may be stale
+System: Want me to help update them?
+  A: Yes, walk me through each one
+  B: Just flag them, I'll update manually
+  C: No, the current artifacts are fine
+System (condition: uncovered intents exist): Want me to generate dialog templates for the uncovered intents?
   A: Yes, generate templates for all
   B: Let me pick which ones
   C: No, just the report is enough
