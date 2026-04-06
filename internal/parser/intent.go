@@ -11,11 +11,13 @@ type Intent struct {
 	Slug        string
 	Goal        string
 	Persona     string
+	Priority    string
 	Context     string
 	Action      string
 	Objects     []string
 	Constraints []string
-	Hints       []string
+	Verify      []string
+	Questions   []string
 }
 
 func ParseIntentsFile(path string) ([]Intent, error) {
@@ -56,6 +58,9 @@ func ParseIntentsFile(path string) ([]Intent, error) {
 		} else if strings.HasPrefix(line, "**Persona**:") {
 			current.Persona = extractField(line, "**Persona**:")
 			currentList = nil
+		} else if strings.HasPrefix(line, "**Priority**:") {
+			current.Priority = extractField(line, "**Priority**:")
+			currentList = nil
 		} else if strings.HasPrefix(line, "**Context**:") {
 			current.Context = extractField(line, "**Context**:")
 			currentList = nil
@@ -73,8 +78,10 @@ func ParseIntentsFile(path string) ([]Intent, error) {
 			currentList = nil
 		} else if strings.HasPrefix(line, "**Constraints**:") {
 			currentList = &current.Constraints
-		} else if strings.HasPrefix(line, "**Hints**:") {
-			currentList = &current.Hints
+		} else if strings.HasPrefix(line, "**Verify**:") {
+			currentList = &current.Verify
+		} else if strings.HasPrefix(line, "**Questions**:") {
+			currentList = &current.Questions
 		} else if strings.HasPrefix(line, "- ") && currentList != nil {
 			item := strings.TrimPrefix(line, "- ")
 			*currentList = append(*currentList, item)

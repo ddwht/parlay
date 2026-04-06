@@ -15,6 +15,7 @@ suites:
   - name: <suite name>
     component: <component-name from buildfile>
     fixture: <fixture-name from buildfile>
+    intent: <@feature/intent-slug — the intent this suite validates>
 
     cases:
       - name: <test case name>
@@ -65,12 +66,17 @@ suites:
 | state | EntityName.field | value | Model state has this value |
 | route | — | path | Current route matches this path |
 | class | element-name | class-name | Element has this CSS class (for design system variants) |
+| file-exists | file-path | — | File or directory exists at the specified path |
+| file-content | file-path | value or object | File contains the expected content (string match or structured comparison) |
+| directory-exists | directory-path | — | Directory exists at the specified path |
+| error | action-name | error message | Action produces the expected error |
 
 ## Suite organization
 
 - One suite per component + fixture combination
 - Component name must match a component in buildfile.yaml
 - Fixture name must match a fixture in buildfile.yaml
+- Intent must reference the source intent via `@feature/intent-slug` for traceability
 - Each case tests one behavior or state
 
 ## Test categories
@@ -83,7 +89,7 @@ Tests should cover these categories (derived from buildfile):
 4. **Actions** — each action triggers its defined effect
 5. **State transitions** — entity state machines transition correctly
 6. **Navigation** — route changes work as defined
-7. **Edge cases** — derived from intent Hints (empty states, error conditions, boundary values)
+7. **Edge cases** — derived from intent Verify and Questions (empty states, error conditions, boundary values)
 
 ## Determinism contract
 

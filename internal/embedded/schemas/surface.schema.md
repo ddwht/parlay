@@ -35,7 +35,7 @@ Generation sources:
 | Fragment Name | Yes | `## ` heading. Must be unique within feature. |
 | Shows | Yes | `**Shows**:` line content |
 | Actions | No | `**Actions**:` line content |
-| Source | No | `**Source**:` comma-separated `@feature/slug` references |
+| Source | Yes | `**Source**:` comma-separated `@feature/slug` references. Every fragment must trace back to its source intent(s). |
 | Page | No | `**Page**:` plain text page name |
 | Region | No | `**Region**:` plain text region name |
 | Order | No | `**Order**:` integer |

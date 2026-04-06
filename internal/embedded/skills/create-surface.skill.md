@@ -35,8 +35,9 @@ Generate a surface.md file for a feature by analyzing its intents and dialogs.
    - Create a fragment with a descriptive `## Name` heading
    - `**Shows**:` what the user sees (derived from intent Goal and dialog system turns)
    - `**Actions**:` what the user can do (derived from dialog options and user turns)
-   - `**Source**:` `@{feature}/{intent-slug}` reference
+   - `**Source**:` `@{feature}/{intent-slug}` reference (required — every fragment must trace to its source intent)
    - If a surface.md already exists, preserve existing fragments and only add new ones
+   - Use intent Priority to guide fragment importance — P0 intents should produce primary fragments
 
 6. **Validate** — Run: `parlay validate --type surface spec/intents/{feature}/surface.md`
    - If validation fails, fix the issues and try again

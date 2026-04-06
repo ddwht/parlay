@@ -26,7 +26,12 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - `spec/intents/{feature}/surface.md`
    - `spec/intents/{feature}/domain-model.md` (if exists)
 
-5. **Generate buildfile.yaml** at `spec/intents/{feature}/devspec/buildfile.yaml`:
+5. **Check preconditions** — Before generating, verify:
+   - Each intent has at least Goal and Persona fields
+   - Surface has at least one fragment with Page and Region targets
+   - If open Questions exist in intents, warn the user and ask whether to proceed or resolve them first
+
+6. **Generate buildfile.yaml** at `spec/intents/{feature}/devspec/buildfile.yaml`:
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
    - Create `fixtures:` with representative sample data
@@ -38,16 +43,19 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
      - Define `actions:` with adapter action-types
      - Define `operations:` (file reads, writes, directory creation)
    - Define `routes:` mapping commands to components
+   - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 
-6. **Generate testcases.yaml** at `spec/intents/{feature}/devspec/testcases.yaml`:
+7. **Generate testcases.yaml** at `spec/intents/{feature}/devspec/testcases.yaml`:
    - One test suite per component
+   - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
+   - Use the intent's **Verify** bullets as the basis for test assertions
    - Cover: rendering, element presence, visibility conditions, actions, state transitions
    - Reference fixtures from the buildfile
    - Follow the testcases schema exactly
 
-7. **Validate** — Run both:
+8. **Validate** — Run both:
    - `parlay validate --type buildfile spec/intents/{feature}/devspec/buildfile.yaml`
    - `parlay validate --type yaml spec/intents/{feature}/devspec/testcases.yaml`
    - If validation fails, fix the issues and retry
 
-8. **Report** — Print the created file paths and confirm success.
+9. **Report** — Print the created file paths and confirm success.

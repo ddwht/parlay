@@ -20,6 +20,7 @@ func TestParseIntentsFile(t *testing.T) {
 
 **Goal**: See if the cluster is ready.
 **Persona**: Admin
+**Priority**: P0
 **Context**: Before upgrading.
 **Action**: Open detail page.
 **Objects**: cluster, upgrade
@@ -28,7 +29,11 @@ func TestParseIntentsFile(t *testing.T) {
 - Must show status
 - Must not require manual checks
 
-**Hints**:
+**Verify**:
+- Readiness status is displayed for each cluster
+- Partial readiness shows a warning indicator
+
+**Questions**:
 - What about partial readiness?
 
 ---
@@ -63,6 +68,9 @@ func TestParseIntentsFile(t *testing.T) {
 	if i.Persona != "Admin" {
 		t.Errorf("Persona = %q", i.Persona)
 	}
+	if i.Priority != "P0" {
+		t.Errorf("Priority = %q, want %q", i.Priority, "P0")
+	}
 	if i.Context != "Before upgrading." {
 		t.Errorf("Context = %q", i.Context)
 	}
@@ -75,14 +83,20 @@ func TestParseIntentsFile(t *testing.T) {
 	if len(i.Constraints) != 2 {
 		t.Errorf("Constraints count = %d, want 2", len(i.Constraints))
 	}
-	if len(i.Hints) != 1 {
-		t.Errorf("Hints count = %d, want 1", len(i.Hints))
+	if len(i.Verify) != 2 {
+		t.Errorf("Verify count = %d, want 2", len(i.Verify))
+	}
+	if len(i.Questions) != 1 {
+		t.Errorf("Questions count = %d, want 1", len(i.Questions))
 	}
 
-	// Minimal intent
+	// Minimal intent — only required fields
 	i2 := intents[1]
 	if i2.Title != "Start Upgrade" {
 		t.Errorf("Title = %q", i2.Title)
+	}
+	if i2.Priority != "" {
+		t.Errorf("Priority should be empty, got %q", i2.Priority)
 	}
 	if i2.Context != "" {
 		t.Errorf("Context should be empty, got %q", i2.Context)

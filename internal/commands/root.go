@@ -32,4 +32,5 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(checkCoverageCmd)
+	rootCmd.AddCommand(collectQuestionsCmd)
 }
