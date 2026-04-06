@@ -1,0 +1,1066 @@
+feature: parlay-tool
+adapter: go-cli
+
+models:
+  ProjectConfig:
+    properties:
+      ai-agent:
+        type: string
+        required: true
+      sdd-framework:
+        type: string
+        required: true
+      prototype-framework:
+        type: string
+        required: true
+
+  Feature:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Display name (e.g., "upgrade plan creation")
+      slug:
+        type: string
+        required: true
+        description: Folder name derived from name (e.g., "upgrade-plan-creation")
+      path:
+        type: string
+        required: true
+        description: "spec/intents/<slug>/"
+    states:
+      values: [created, intents-authored, dialogs-scaffolded, dialogs-authored, surface-generated, prototype-built, enggspec-generated]
+      transitions:
+        created: [intents-authored]
+        intents-authored: [dialogs-scaffolded]
+        dialogs-scaffolded: [dialogs-authored]
+        dialogs-authored: [surface-generated]
+        surface-generated: [prototype-built]
+        prototype-built: [enggspec-generated]
+
+  Intent:
+    properties:
+      title:
+        type: string
+        required: true
+      slug:
+        type: string
+        required: true
+      goal:
+        type: string
+        required: true
+      persona:
+        type: string
+        required: true
+      context:
+        type: string
+        required: false
+      action:
+        type: string
+        required: false
+      objects:
+        type: string[]
+        required: false
+      constraints:
+        type: string[]
+        required: false
+      hints:
+        type: string[]
+        required: false
+
+  Dialog:
+    properties:
+      title:
+        type: string
+        required: false
+      slug:
+        type: string
+        required: true
+      trigger:
+        type: string
+        required: false
+      turns:
+        type: Turn[]
+        required: true
+
+  Turn:
+    properties:
+      speaker:
+        type: enum
+        enum: [user, system]
+        required: true
+      type:
+        type: enum
+        enum: [regular, background, conditional]
+        required: true
+      condition:
+        type: string
+        required: false
+      content:
+        type: string
+        required: true
+      options:
+        type: Option[]
+        required: false
+
+  Option:
+    properties:
+      letter:
+        type: string
+        required: true
+      description:
+        type: string
+        required: true
+      is-freeform:
+        type: boolean
+        required: true
+
+  Fragment:
+    properties:
+      name:
+        type: string
+        required: true
+      shows:
+        type: string
+        required: true
+      actions:
+        type: string
+        required: false
+      source:
+        type: string[]
+        required: false
+      page:
+        type: string
+        required: false
+      region:
+        type: string
+        required: false
+      order:
+        type: number
+        required: false
+      notes:
+        type: string[]
+        required: false
+
+  PageManifest:
+    properties:
+      name:
+        type: string
+        required: true
+      owner:
+        type: string
+        required: false
+      status:
+        type: enum
+        enum: [draft, reviewed, locked]
+        required: true
+      regions:
+        type: Region[]
+        required: true
+    states:
+      values: [draft, reviewed, locked]
+      transitions:
+        draft: [reviewed]
+        reviewed: [locked]
+        locked: [draft]
+
+  Region:
+    properties:
+      name:
+        type: string
+        required: true
+      fragments:
+        type: string[]
+        required: true
+
+  CoverageReport:
+    properties:
+      covered-intents:
+        type: CoverageMatch[]
+        required: true
+      uncovered-intents:
+        type: string[]
+        required: true
+      orphan-dialogs:
+        type: string[]
+        required: true
+
+  CoverageMatch:
+    properties:
+      intent:
+        type: string
+        required: true
+      dialog:
+        type: string
+        required: true
+
+  FrameworkAdapter:
+    properties:
+      name:
+        type: string
+        required: true
+      framework:
+        type: string
+        required: true
+      component-types:
+        type: object
+        required: true
+      layout-patterns:
+        type: object
+        required: true
+
+fixtures:
+  empty-project:
+    description: Fresh project with no features
+    data:
+      ProjectConfig:
+        - ai-agent: "Claude Code"
+          sdd-framework: "GitHub SpecKit"
+          prototype-framework: "Go CLI"
+
+  feature-with-intents:
+    description: Feature with 3 intents, no dialogs
+    data:
+      Feature:
+        - name: "upgrade plan creation"
+          slug: "upgrade-plan-creation"
+          path: "spec/intents/upgrade-plan-creation/"
+      Intent:
+        - title: "Check Upgrade Readiness"
+          slug: "check-upgrade-readiness"
+          goal: "See whether a cluster is eligible for upgrade and what blockers exist."
+          persona: "Platform Admin"
+          action: "Open the cluster detail page and review the readiness card."
+          objects: [cluster, upgrade, blocker]
+        - title: "Resolve Upgrade Blockers"
+          slug: "resolve-upgrade-blockers"
+          goal: "Fix or dismiss issues preventing an upgrade from proceeding."
+          persona: "Platform Admin"
+        - title: "Start Cluster Upgrade"
+          slug: "start-cluster-upgrade"
+          goal: "Initiate the upgrade process for an eligible cluster."
+          persona: "Platform Admin"
+          action: "Click start upgrade from the readiness card."
+
+  feature-with-surface:
+    description: Feature with intents, dialogs, and surface with page targets
+    data:
+      Feature:
+        - name: "upgrade plan creation"
+          slug: "upgrade-plan-creation"
+          path: "spec/intents/upgrade-plan-creation/"
+      Fragment:
+        - name: "Readiness Card"
+          shows: "Cluster upgrade eligibility status with a summary of blocking issues."
+          actions: "Start upgrade, view blocker details"
+          page: "dashboard"
+          region: "sidebar"
+          order: 1
+        - name: "Blocker List"
+          shows: "Detailed list of issues preventing upgrade."
+          actions: "Dismiss resolved blockers, export list"
+          page: "cluster-detail"
+          region: "main"
+          order: 2
+
+  multi-feature-page:
+    description: Two features targeting the same page
+    data:
+      Fragment:
+        - name: "Readiness Card"
+          shows: "Cluster upgrade eligibility status."
+          page: "dashboard"
+          region: "sidebar"
+          order: 1
+          feature: "upgrade-plan"
+        - name: "Cluster Table"
+          shows: "Fleet-wide cluster list with health status."
+          page: "dashboard"
+          region: "main"
+          order: 1
+          feature: "fleet-overview"
+        - name: "Health Summary"
+          shows: "Aggregate fleet health indicators."
+          page: "dashboard"
+          region: "header"
+          order: 1
+          feature: "fleet-overview"
+
+routes:
+  - path: parlay init
+    component: project-setup-wizard
+  - path: parlay add-feature
+    component: feature-scaffold-confirmation
+  - path: parlay create-dialogs
+    component: dialog-template-report
+  - path: parlay create-surface
+    component: surface-generation
+  - path: parlay view-page
+    component: page-assembly-view
+  - path: parlay lock-page
+    component: page-lock-confirmation
+  - path: parlay register-adapter
+    component: adapter-registration
+  - path: parlay build-feature
+    component: build-progress-report
+  - path: parlay generate-enggspec
+    component: engineering-spec-output
+  - path: parlay extract-domain-model
+    component: domain-model-export
+  - path: parlay load-domain-model
+    component: domain-model-integration
+  - path: parlay sync
+    component: coverage-report
+
+components:
+  project-setup-wizard:
+    source: "@parlay-tool/project-setup-wizard"
+    type: interactive-wizard
+    widget: sequential-prompts                    # from adapter
+    layout-pattern: sequential-prompts            # from adapter
+    description: Interactive setup wizard for project configuration
+
+    data:
+      inputs:
+        - name: ai-agent
+          type: string
+          from: user-prompt
+        - name: sdd-framework
+          type: string
+          from: user-prompt
+        - name: prototype-framework
+          type: string
+          from: user-prompt
+
+    elements:
+      - name: agent-prompt
+        type: text-output
+        widget: fmt.Println                       # from adapter
+        format: "What AI agent would you like to use?"
+      - name: agent-input
+        type: text-input                          # abstract type
+        widget: text-prompt                       # from adapter: bufio readline
+      - name: sdd-prompt
+        type: text-output
+        widget: fmt.Println
+        format: "What SDD framework do you want to use?"
+      - name: sdd-input
+        type: text-input
+        widget: text-prompt
+      - name: framework-prompt
+        type: text-output
+        widget: fmt.Println
+        format: "What prototype framework do you want to use?"
+      - name: framework-input
+        type: text-input
+        widget: text-prompt
+      - name: summary
+        type: text-output
+        widget: fmt.Println
+        format: |
+          Project bootstrapped:
+            .parlay/config.yaml        — {ai-agent} + {sdd-framework} + {prototype-framework}
+            .parlay/schemas/            — {schema-count} schemas
+            .parlay/adapters/           — {adapter-name} adapter
+            spec/intents/               — feature folder
+            {agent-config-file}         — agent rules with schema loading
+      - name: next-step
+        type: text-output
+        widget: fmt.Println
+        format: "Ready. Run: parlay add-feature <name>"
+
+    actions:
+      - name: read-agent
+        type: text-input
+        widget: text-prompt
+        effect: "mutate:ProjectConfig.ai-agent=<input>"
+      - name: read-sdd
+        type: text-input
+        widget: text-prompt
+        effect: "mutate:ProjectConfig.sdd-framework=<input>"
+      - name: read-framework
+        type: text-input
+        widget: text-prompt
+        effect: "mutate:ProjectConfig.prototype-framework=<input>"
+
+    operations:
+      - create-directory: ".parlay/"
+      - create-file: ".parlay/config.yaml"
+        from: ProjectConfig
+      - copy-embedded: schemas → ".parlay/schemas/"
+      - copy-bundled-adapter: "{prototype-framework}" → ".parlay/adapters/"
+      - create-directory: "spec/intents/"
+      - generate-agent-config:
+          agent: "{ai-agent}"
+          output: agent-specific file (e.g., CLAUDE.md)
+
+  feature-scaffold-confirmation:
+    source: "@parlay-tool/feature-scaffold-confirmation"
+    type: command-output
+    widget: cobra-command                         # from adapter
+    layout-pattern: file-generator                # from adapter
+    description: Creates feature folder and displays confirmation
+
+    data:
+      inputs:
+        - name: feature-name
+          model: Feature
+          field: name
+          from: command-argument
+      computed:
+        - name: slug
+          from: "Slugify(feature-name)"
+          type: string
+        - name: path
+          from: "spec/intents/{slug}/"
+          type: string
+
+    elements:
+      - name: created-path
+        type: path-reference
+        widget: path-line                         # from adapter
+        format: "Created feature at {path}"
+      - name: files-list
+        type: data-list
+        widget: bulleted-list                     # from adapter
+        bind: ["intents.md", "dialogs.md"]
+      - name: next-step
+        type: text-output
+        widget: fmt.Println
+        format: "Start with intents.md. When ready, run: parlay create-dialogs @{slug}"
+
+    operations:
+      - derive: slug from feature-name using Slugify
+      - create-directory: "spec/intents/{slug}/"
+      - create-file: "spec/intents/{slug}/intents.md"
+        template: "# {TitleCase(feature-name)}\n\n> \n\n---\n\n"
+      - create-file: "spec/intents/{slug}/dialogs.md"
+        template: "# {TitleCase(feature-name)} — Dialogs\n\n---\n\n"
+
+  dialog-template-report:
+    source: "@parlay-tool/dialog-template-report"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Reads intents, generates dialog templates, reports results
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: Feature
+          field: slug
+          from: command-argument (strip @ prefix)
+        - name: intents
+          model: Intent
+          from: read-and-parse "spec/intents/{slug}/intents.md" using intent-schema
+      computed:
+        - name: existing-dialogs
+          from: read "spec/intents/{slug}/dialogs.md"
+          type: string (raw content for duplicate detection)
+        - name: new-intents
+          from: "intents where title not in existing-dialogs"
+          type: Intent[]
+
+    elements:
+      - name: intent-count
+        type: text-output
+        widget: fmt.Println
+        format: "Found {intents.length} intents."
+      - name: template-count
+        type: text-output
+        widget: fmt.Println
+        format: "Added {new-intents.length} dialog templates to dialogs.md."
+        visible-when: "new-intents.length > 0"
+      - name: skip-count
+        type: text-output
+        widget: fmt.Println
+        format: "Skipped {skipped} intents that already have dialogs."
+        visible-when: "skipped > 0"
+      - name: all-covered
+        type: text-output
+        widget: fmt.Println
+        format: "All intents already have dialog templates. Nothing to generate."
+        visible-when: "new-intents.length == 0"
+      - name: next-step
+        type: text-output
+        widget: fmt.Println
+        format: "Review and rewrite them to capture the real conversation."
+        visible-when: "new-intents.length > 0"
+
+    operations:
+      - read-file: "spec/intents/{slug}/intents.md"
+        parse: intent-schema
+        into: intents
+      - read-file: "spec/intents/{slug}/dialogs.md"
+        into: existing-content
+      - filter: intents where title not already in existing-content
+        into: new-intents
+      - for-each: new-intents
+        generate-template:
+          title: intent.title
+          trigger: intent.action (if present)
+          turns:
+            - "User: ==describe what the user does=="
+            - "System: ==respond to help user: {intent.goal}=="
+      - append-file: "spec/intents/{slug}/dialogs.md"
+        content: generated templates
+
+  disambiguation-prompt:
+    source: "@parlay-tool/disambiguation-prompt"
+    type: interactive-prompt
+    widget: bufio-prompt
+    layout-pattern: interactive-flow
+    description: Reusable — resolves ambiguities during surface generation and model loading
+
+    data:
+      inputs:
+        - name: context-excerpt
+          type: string
+        - name: ambiguity-description
+          type: string
+        - name: options
+          model: Option
+        - name: affected-file
+          type: string
+
+    elements:
+      - name: excerpt
+        type: code-block
+        widget: indented-block
+        bind: context-excerpt
+      - name: question
+        type: text-output
+        widget: fmt.Println
+        bind: ambiguity-description
+      - name: option-list
+        type: data-list
+        widget: bulleted-list
+        bind: options
+        format: "{letter}: {description}"
+      - name: update-prompt
+        type: text-output
+        widget: fmt.Println
+        format: "Update {affected-file} to reflect this choice?"
+        visible-when: "affected-file != null"
+
+    actions:
+      - name: select-option
+        type: selection
+        widget: lettered-prompt
+        effect: "emit:disambiguation-resolved"
+      - name: provide-custom
+        type: text-input
+        widget: text-prompt
+        visible-when: "options has freeform"
+        effect: "emit:disambiguation-resolved"
+      - name: approve-update
+        type: confirmation
+        widget: yn-prompt
+        effect: "call:updateSourceFile"
+      - name: reject-update
+        type: confirmation
+        widget: yn-prompt
+        effect: "emit:update-skipped"
+
+  surface-generation:
+    source: "@parlay-tool/surface-fragment-list"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Generates surface fragments from intents and dialogs
+    uses: [disambiguation-prompt]
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: Feature
+          field: slug
+          from: command-argument (strip @ prefix)
+        - name: intents
+          model: Intent
+          from: read-and-parse "spec/intents/{slug}/intents.md"
+        - name: dialogs
+          model: Dialog
+          from: read-and-parse "spec/intents/{slug}/dialogs.md"
+      computed:
+        - name: existing-fragments
+          from: read "spec/intents/{slug}/surface.md" (if exists)
+          type: string[] (fragment names)
+        - name: new-fragments
+          from: "analyze intents + dialogs → one Fragment per intent, skip existing"
+          type: Fragment[]
+
+    elements:
+      - name: fragment-count
+        type: text-output
+        widget: fmt.Println
+        format: "Generated {new-fragments.length} fragments in surface.md:"
+        visible-when: "new-fragments.length > 0"
+      - name: fragment-list
+        type: data-list
+        widget: bulleted-list
+        bind: new-fragments
+        format: "  {name} — {shows}"
+        visible-when: "new-fragments.length > 0"
+      - name: skip-message
+        type: text-output
+        widget: fmt.Println
+        format: "Skipped {skipped} intents that already have fragments."
+        visible-when: "skipped > 0"
+      - name: all-covered
+        type: text-output
+        widget: fmt.Println
+        format: "All intents already have surface fragments. Nothing to generate."
+        visible-when: "new-fragments.length == 0"
+      - name: next-step
+        type: text-output
+        widget: fmt.Println
+        format: "Review the fragments. Add Page and Region targets to place them on screens."
+        visible-when: "new-fragments.length > 0"
+
+    operations:
+      - read-file: "spec/intents/{slug}/intents.md"
+        parse: intent-schema
+      - read-file: "spec/intents/{slug}/dialogs.md"
+        parse: dialog-schema
+      - on-ambiguity: invoke disambiguation-prompt
+      - for-each: intent (where not already in surface)
+        generate-fragment:
+          name: intent.title
+          shows: intent.goal
+          actions: derive from matching dialog (user turns with action verbs, system options)
+          source: "@{slug}/{intent.slug}"
+      - write-file: "spec/intents/{slug}/surface.md"
+        mode: create-or-append (preserve existing fragments)
+
+  page-assembly-view:
+    source: "@parlay-tool/page-assembly-view"
+    type: report
+    widget: sectioned-output
+    layout-pattern: report-output
+    description: Assembles and displays all fragments targeting a page
+
+    data:
+      inputs:
+        - name: page-name
+          type: string
+          from: command-argument
+        - name: all-fragments
+          model: Fragment
+          from: scan-and-parse "spec/intents/*/surface.md"
+      computed:
+        - name: targeted
+          from: "fragments where page == {page-name}"
+          type: Fragment[]
+        - name: regions
+          from: "group targeted by region, sort by order"
+          type: Region[]
+        - name: conflicts
+          from: "fragments with same region + same order"
+          type: Fragment[][]
+        - name: unplaced
+          from: "fragments where page is empty"
+          type: Fragment[]
+
+    elements:
+      - name: page-header
+        type: text-output
+        widget: fmt.Println
+        format: "Assembled view: {page-name}"
+      - name: region-blocks
+        type: grouped-output
+        widget: headed-section
+        bind: regions
+        format: "**{region.name}**:\n  {i}. @{fragment.feature}/{fragment.slug}"
+      - name: conflict-warnings
+        type: data-list
+        widget: bulleted-list
+        bind: conflicts
+        format: "  {a} and {b} both target {region} with order {order}"
+        visible-when: "conflicts.length > 0"
+      - name: unplaced-header
+        type: text-output
+        widget: fmt.Println
+        format: "Unplaced fragments ({unplaced.length}):"
+        visible-when: "unplaced.length > 0"
+      - name: unplaced-list
+        type: data-list
+        widget: bulleted-list
+        bind: unplaced
+        format: "  {name} from @{feature} — {shows}"
+        visible-when: "unplaced.length > 0"
+
+    operations:
+      - scan-files: "spec/intents/*/surface.md"
+        parse: surface-schema
+      - filter: fragments where page == {page-name}
+      - group: by region
+      - sort: by order within each region
+      - detect: conflicts (same region + same order)
+      - collect: unplaced (page is empty)
+
+  page-lock-confirmation:
+    source: "@parlay-tool/page-lock-confirmation"
+    type: interactive-prompt
+    widget: bufio-prompt
+    layout-pattern: command-with-confirmation
+    description: Creates a page manifest from the assembled view
+
+    data:
+      inputs:
+        - name: page-name
+          type: string
+          from: command-argument
+        - name: assembled-regions
+          type: Region[]
+          from: reuse page-assembly-view logic
+
+    elements:
+      - name: layout-preview
+        type: grouped-output
+        widget: headed-section
+        bind: assembled-regions
+        format: same as page-assembly-view region-blocks
+      - name: manifest-path
+        type: path-reference
+        widget: path-line
+        format: "Will create spec/pages/{page-name}.page.md"
+      - name: owner-prompt
+        type: text-output
+        widget: fmt.Println
+        format: "Who should own this page?"
+
+    actions:
+      - name: read-owner
+        type: text-input
+        widget: text-prompt
+        effect: "mutate:PageManifest.owner=<input>"
+
+    operations:
+      - assemble: page view (same logic as page-assembly-view)
+      - prompt: owner
+      - create-directory: "spec/pages/"
+      - create-file: "spec/pages/{page-name}.page.md"
+        template: |
+          # {TitleCase(page-name)}
+
+          **Owner**: {owner}
+          **Status**: draft
+
+          ## {for each region}
+
+          {i}. @{feature}/{fragment-slug}
+
+  adapter-registration:
+    source: "@parlay-tool/adapter-registration-confirmation"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Registers a framework adapter
+
+    data:
+      inputs:
+        - name: adapter-path
+          type: string
+          from: command-argument
+        - name: adapter
+          model: FrameworkAdapter
+          from: read-and-parse "{adapter-path}"
+
+    elements:
+      - name: adapter-name
+        type: text-output
+        widget: fmt.Println
+        format: "Registered framework adapter \"{adapter.name}\":"
+      - name: component-count
+        type: text-output
+        widget: fmt.Println
+        format: "  Component types: {adapter.component-types.length}"
+      - name: pattern-count
+        type: text-output
+        widget: fmt.Println
+        format: "  Layout patterns: {adapter.layout-patterns.length}"
+      - name: conventions
+        type: text-output
+        widget: fmt.Println
+        format: "  File conventions: {adapter.file-conventions.source-root}"
+
+    operations:
+      - read-file: "{adapter-path}"
+        parse: adapter-schema
+        validate: all abstract types have mappings
+      - create-directory: ".parlay/adapters/"
+      - copy-file: "{adapter-path}" → ".parlay/adapters/{adapter.name}.adapter.yaml"
+
+  build-progress-report:
+    source: "@parlay-tool/build-progress-report"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Generates buildfile using framework adapter, then generates code
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: Feature
+          field: slug
+          from: command-argument (strip @ prefix)
+        - name: config
+          model: ProjectConfig
+          from: read ".parlay/config.yaml"
+        - name: adapter
+          model: FrameworkAdapter
+          from: read ".parlay/adapters/{config.prototype-framework-slug}.adapter.yaml"
+        - name: intents
+          from: read-and-parse "spec/intents/{slug}/intents.md"
+        - name: dialogs
+          from: read-and-parse "spec/intents/{slug}/dialogs.md"
+        - name: surface
+          from: read-and-parse "spec/intents/{slug}/surface.md"
+        - name: domain-model
+          from: read "spec/intents/{slug}/domain-model.md" (optional)
+
+    elements:
+      - name: adapter-info
+        type: text-output
+        widget: fmt.Println
+        format: "Building with framework adapter: {adapter.name}"
+      - name: buildfile-path
+        type: path-reference
+        widget: path-line
+        format: "Created spec/intents/{slug}/devspec/buildfile.yaml"
+      - name: testcases-path
+        type: path-reference
+        widget: path-line
+        format: "Created spec/intents/{slug}/devspec/testcases.yaml"
+      - name: result
+        type: status-indicator
+        widget: prefixed-message
+        format: "[OK] Feature implemented and tested. Ready for review."
+
+    operations:
+      - read: config, adapter, intents, dialogs, surface, domain-model
+      - generate: buildfile.yaml
+        using: buildfile-schema + adapter vocabulary
+        from: intents + dialogs + surface + domain-model
+        mapping: surface fragments → adapter component-types, actions → adapter action-types, elements → adapter element-types
+      - generate: testcases.yaml
+        using: testcases-schema
+        from: buildfile.yaml
+      - create-directory: "spec/intents/{slug}/devspec/"
+      - write-file: "spec/intents/{slug}/devspec/buildfile.yaml"
+      - write-file: "spec/intents/{slug}/devspec/testcases.yaml"
+      - generate: prototype code
+        using: buildfile.yaml + adapter file-conventions
+      - run: tests using testcases.yaml
+
+  engineering-spec-output:
+    source: "@parlay-tool/engineering-spec-output"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Generates engineering specification in configured SDD format
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: Feature
+          field: slug
+          from: command-argument (strip @ prefix)
+        - name: sdd-format
+          model: ProjectConfig
+          field: sdd-framework
+
+    elements:
+      - name: spec-path
+        type: path-reference
+        widget: path-line
+        format: "Created spec/intents/{slug}/enggspec/specification.md"
+      - name: format-info
+        type: text-output
+        widget: fmt.Println
+        format: "Generated in {sdd-format} format."
+      - name: next-step
+        type: text-output
+        widget: fmt.Println
+        format: "Review and hand off to engineering."
+
+    operations:
+      - read: all feature artifacts
+      - generate: engineering specification using sdd-framework adapter
+      - create-directory: "spec/intents/{slug}/enggspec/"
+      - write-file: "spec/intents/{slug}/enggspec/specification.md"
+
+  domain-model-export:
+    source: "@parlay-tool/domain-model-export"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: file-generator
+    description: Extracts domain model from all project features
+
+    data:
+      inputs:
+        - name: all-features
+          from: scan "spec/intents/*/intents.md + dialogs.md + surface.md"
+      computed:
+        - name: entities
+          from: extract from all Objects fields
+          type: string[]
+        - name: relationships
+          from: extract from entity references
+          type: string[]
+        - name: state-machines
+          from: extract from dialog conditions and intent constraints
+          type: string[]
+
+    elements:
+      - name: model-path
+        type: path-reference
+        widget: path-line
+        format: "Domain model saved at {path}"
+      - name: summary
+        type: text-output
+        widget: fmt.Println
+        format: "Extracted {entities.length} entities, {relationships.length} relationships, {state-machines.length} state machines."
+
+    operations:
+      - scan-files: "spec/intents/*/intents.md" parse: intent-schema
+      - scan-files: "spec/intents/*/dialogs.md" parse: dialog-schema
+      - scan-files: "spec/intents/*/surface.md" parse: surface-schema
+      - extract: entities, relationships, state-machines
+      - write-file: domain-model.md
+
+  domain-model-integration:
+    source: "@parlay-tool/domain-model-integration"
+    type: command-output
+    widget: cobra-command
+    layout-pattern: interactive-flow
+    description: Loads and integrates an external domain model
+    uses: [disambiguation-prompt]
+
+    data:
+      inputs:
+        - name: model-path
+          type: string
+          from: command-argument
+        - name: external-model
+          from: read "{model-path}"
+        - name: current-model
+          from: read current project domain model
+      computed:
+        - name: conflicts
+          from: compare entities between models
+          type: string[]
+
+    elements:
+      - name: clean-result
+        type: status-indicator
+        widget: prefixed-message
+        format: "[OK] Integrated model. Everything mapped cleanly."
+        visible-when: "conflicts.length == 0"
+      - name: conflict-list
+        type: data-list
+        widget: bulleted-list
+        bind: conflicts
+        format: "  Conflict: {entity} exists in both models with different definitions."
+        visible-when: "conflicts.length > 0"
+
+    operations:
+      - read: external model and current model
+      - compare: entity definitions
+      - on-conflict: invoke disambiguation-prompt for each
+      - merge: resolved entities
+      - write: updated domain model
+
+  coverage-report:
+    source: "@parlay-tool/coverage-report"
+    type: report
+    widget: sectioned-output
+    layout-pattern: report-output
+    description: Checks intent-dialog coverage and offers template generation
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: Feature
+          field: slug
+          from: command-argument (strip @ prefix)
+        - name: intents
+          from: read-and-parse "spec/intents/{slug}/intents.md"
+        - name: dialogs
+          from: read-and-parse "spec/intents/{slug}/dialogs.md"
+      computed:
+        - name: report
+          from: match intents to dialogs by title, slug, and word overlap
+          type: CoverageReport
+
+    elements:
+      - name: covered-header
+        type: text-output
+        widget: fmt.Println
+        format: "Covered intents:"
+        visible-when: "report.covered-intents.length > 0"
+      - name: covered-list
+        type: data-list
+        widget: bulleted-list
+        bind: report.covered-intents
+        format: "  {intent} — matched by {dialog}"
+      - name: uncovered-header
+        type: text-output
+        widget: fmt.Println
+        format: "Intents without dialogs:"
+        visible-when: "report.uncovered-intents.length > 0"
+      - name: uncovered-list
+        type: data-list
+        widget: bulleted-list
+        bind: report.uncovered-intents
+        format: "  {intent} — no matching dialog found"
+      - name: orphan-header
+        type: text-output
+        widget: fmt.Println
+        format: "Orphan dialogs (no matching intent):"
+        visible-when: "report.orphan-dialogs.length > 0"
+      - name: orphan-list
+        type: data-list
+        widget: bulleted-list
+        bind: report.orphan-dialogs
+        format: "  {dialog} — doesn't trace to any intent"
+      - name: all-clear
+        type: text-output
+        widget: fmt.Println
+        format: "All intents are covered. No orphan dialogs."
+        visible-when: "report.uncovered-intents.length == 0 && report.orphan-dialogs.length == 0"
+
+    actions:
+      - name: template-prompt
+        type: selection
+        widget: lettered-prompt
+        visible-when: "report.uncovered-intents.length > 0"
+        options:
+          A: "Yes, generate templates for all"
+          B: "Let me pick which ones"
+          C: "No, just the report"
+      - name: generate-all
+        type: file-operation
+        widget: os-file-ops
+        enabled-when: "selected == A"
+        effect: "call:generateDialogTemplates(report.uncovered-intents)"
+      - name: pick-specific
+        type: selection
+        widget: lettered-prompt
+        enabled-when: "selected == B"
+        effect: "call:generateDialogTemplates(selected-intents)"
+      - name: dismiss
+        type: selection
+        widget: lettered-prompt
+        enabled-when: "selected == C"
+        effect: "emit:report-dismissed"
+
+    operations:
+      - read-file: "spec/intents/{slug}/intents.md" parse: intent-schema
+      - read-file: "spec/intents/{slug}/dialogs.md" parse: dialog-schema
+      - match: intents to dialogs by title, slug, word overlap
+      - generate: CoverageReport
+      - on-action A: generate templates for all uncovered, append to dialogs.md
+      - on-action B: prompt for selection, generate templates for selected, append
+      - on-action C: no-op

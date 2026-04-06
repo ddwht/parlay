@@ -1,0 +1,110 @@
+name: go-cli
+framework: "Go CLI"
+version: "1.0"
+
+component-types:
+  interactive-wizard:
+    widget: sequential-prompts
+    description: Series of bufio prompts in sequence, building up configuration state
+    import: bufio
+  command-output:
+    widget: cobra-command
+    description: Cobra command handler that performs operations and prints results
+    import: github.com/spf13/cobra
+  interactive-prompt:
+    widget: bufio-prompt
+    description: Single prompt with bufio.NewReader for user input
+    import: bufio
+  data-display:
+    widget: fmt-output
+    description: Formatted terminal output using fmt.Printf
+    import: fmt
+  report:
+    widget: sectioned-output
+    description: Multiple headed sections printed to stdout in sequence
+    import: fmt
+
+element-types:
+  text-output:
+    widget: fmt.Println
+    description: Single line to stdout
+  data-list:
+    widget: bulleted-list
+    description: Lines prefixed with "  - " or "  N. " for ordered
+  data-table:
+    widget: tabwriter
+    description: Aligned columns using text/tabwriter
+  status-indicator:
+    widget: prefixed-message
+    description: Status prefix in brackets — "[OK]", "[WARN]", "[ERR]"
+  path-reference:
+    widget: path-line
+    description: File path printed with context — "Created spec/intents/..."
+  grouped-output:
+    widget: headed-section
+    description: Bold heading followed by indented items — "**name**:\n  1. item"
+  code-block:
+    widget: indented-block
+    description: Content indented with 4 spaces
+
+action-types:
+  selection:
+    widget: lettered-prompt
+    description: Print lettered options (A/B/C), read single letter with bufio
+  confirmation:
+    widget: yn-prompt
+    description: Print question, read Y/N with bufio
+  text-input:
+    widget: text-prompt
+    description: Print label, read line with bufio
+  navigation:
+    widget: not-applicable
+    description: CLI commands are entry points — no in-app navigation
+  file-operation:
+    widget: os-file-ops
+    description: os.MkdirAll, os.WriteFile, os.ReadFile, os.ReadDir
+  state-mutation:
+    widget: struct-update
+    description: Update Go struct fields in memory
+
+layout-patterns:
+  sequential-prompts:
+    description: One prompt after another, accumulating answers into a config struct
+    regions: [prompts, output]
+    implementation: |
+      reader := bufio.NewReader(os.Stdin)
+      for each prompt: print question, read answer, store in struct
+      after all prompts: perform operations, print summary
+  report-output:
+    description: Headed sections with lists, counts, and status indicators
+    regions: [header, sections, actions]
+    implementation: |
+      Print heading
+      for each section: print section header, print items
+      if actions available: print prompt, read selection
+  command-with-confirmation:
+    description: Show preview, ask for confirmation, then execute
+    regions: [preview, confirmation, result]
+    implementation: |
+      Gather and display preview data
+      Prompt for confirmation or additional input
+      Execute operation, print result
+  file-generator:
+    description: Read inputs, generate files, report what was created
+    regions: [status, files-created, next-steps]
+    implementation: |
+      Read source files, process
+      Create output files
+      Print paths of created files and next-step hint
+
+file-conventions:
+  source-root: "cmd/parlay/"
+  internal-root: "internal/"
+  component-pattern: one-file-per-command
+  naming: snake_case
+  entry-point: "cmd/parlay/main.go"
+  packages:
+    commands: "internal/commands/"
+    parsers: "internal/parser/"
+    config: "internal/config/"
+    embedded: "internal/embedded/"

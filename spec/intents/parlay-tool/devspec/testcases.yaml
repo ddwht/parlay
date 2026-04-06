@@ -1,0 +1,426 @@
+feature: parlay-tool
+framework: vitest
+
+suites:
+  # ── Bootstrap ──────────────────────────────────────────
+
+  - name: "parlay init — project bootstrap"
+    component: project-setup-wizard
+    fixture: null
+
+    cases:
+      - name: "prompts for AI agent selection"
+        steps:
+          - action: render
+            target: project-setup-wizard
+          - verify: element
+            target: agent-prompt
+          - action: select
+            target: agent-prompt
+            value: "Claude Code"
+          - verify: element
+            target: sdd-prompt
+
+      - name: "prompts for SDD framework after agent selection"
+        steps:
+          - action: select
+            target: agent-prompt
+            value: "Claude Code"
+          - action: select
+            target: sdd-prompt
+            value: "GitHub SpecKit"
+          - verify: element
+            target: framework-prompt
+
+      - name: "creates project structure after all selections"
+        steps:
+          - action: select
+            target: agent-prompt
+            value: "Claude Code"
+          - action: select
+            target: sdd-prompt
+            value: "GitHub SpecKit"
+          - action: select
+            target: framework-prompt
+            value: "Angular + Clarity"
+          - verify: file-exists
+            target: ".parlay/config.yaml"
+          - verify: file-exists
+            target: ".parlay/schemas/"
+          - verify: file-exists
+            target: "spec/intents/"
+          - verify: element
+            target: setup-confirmation
+
+      - name: "config.yaml contains selected tools"
+        steps:
+          - action: select
+            target: agent-prompt
+            value: "Claude Code"
+          - action: select
+            target: sdd-prompt
+            value: "GitHub SpecKit"
+          - action: select
+            target: framework-prompt
+            value: "Angular + Clarity"
+          - verify: file-content
+            target: ".parlay/config.yaml"
+            expected:
+              ai-agent: "Claude Code"
+              sdd-framework: "GitHub SpecKit"
+              prototype-framework: "Angular + Clarity"
+
+  # ── Add Feature ────────────────────────────────────────
+
+  - name: "parlay add-feature — feature creation"
+    component: feature-scaffold-confirmation
+    fixture: empty-project
+
+    cases:
+      - name: "creates feature folder with correct slug"
+        steps:
+          - action: run-command
+            target: "parlay add-feature upgrade plan creation"
+          - verify: directory-exists
+            target: "spec/intents/upgrade-plan-creation/"
+
+      - name: "creates intents.md with feature header"
+        steps:
+          - action: run-command
+            target: "parlay add-feature upgrade plan creation"
+          - verify: file-exists
+            target: "spec/intents/upgrade-plan-creation/intents.md"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/intents.md"
+            expected:
+              contains: "# Upgrade Plan Creation"
+
+      - name: "creates empty dialogs.md"
+        steps:
+          - action: run-command
+            target: "parlay add-feature upgrade plan creation"
+          - verify: file-exists
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+
+      - name: "displays confirmation with next step command"
+        steps:
+          - action: run-command
+            target: "parlay add-feature upgrade plan creation"
+          - verify: text
+            target: created-path
+            expected: "spec/intents/upgrade-plan-creation/"
+          - verify: text
+            target: next-step
+            expected: "/parlay create-dialogs @upgrade-plan-creation"
+
+      - name: "converts multi-word name to hyphenated slug"
+        steps:
+          - action: run-command
+            target: "parlay add-feature fleet health overview"
+          - verify: directory-exists
+            target: "spec/intents/fleet-health-overview/"
+
+  # ── Create Dialogs ────────────────────────────────────
+
+  - name: "parlay create-dialogs — dialog scaffolding"
+    component: dialog-template-report
+    fixture: feature-with-intents
+
+    cases:
+      - name: "reads intents and reports count"
+        steps:
+          - action: run-command
+            target: "parlay create-dialogs @upgrade-plan-creation"
+          - verify: text
+            target: intent-count-message
+            expected: "3"
+
+      - name: "generates one dialog template per intent"
+        steps:
+          - action: run-command
+            target: "parlay create-dialogs @upgrade-plan-creation"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+            expected:
+              contains-all:
+                - "### Check Upgrade Readiness"
+                - "### Resolve Upgrade Blockers"
+                - "### Start Cluster Upgrade"
+
+      - name: "templates include trigger from intent action"
+        steps:
+          - action: run-command
+            target: "parlay create-dialogs @upgrade-plan-creation"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+            expected:
+              contains: "**Trigger**:"
+
+      - name: "preserves existing dialog content"
+        steps:
+          - action: write-file
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+            value: "### Existing Dialog\n\nUser: Hello\nSystem: Hi"
+          - action: run-command
+            target: "parlay create-dialogs @upgrade-plan-creation"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+            expected:
+              contains-all:
+                - "### Existing Dialog"
+                - "### Check Upgrade Readiness"
+
+  # ── Create Surface ────────────────────────────────────
+
+  - name: "parlay create-surface — surface generation"
+    component: surface-generation
+    fixture: project-with-feature
+
+    cases:
+      - name: "reads intents and dialogs for the feature"
+        steps:
+          - action: run-command
+            target: "parlay create-surface @upgrade-plan-creation"
+          - verify: file-exists
+            target: "spec/intents/upgrade-plan-creation/surface.md"
+
+      - name: "generates fragments with Shows field"
+        steps:
+          - action: run-command
+            target: "parlay create-surface @upgrade-plan-creation"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/surface.md"
+            expected:
+              matches-pattern: "\\*\\*Shows\\*\\*:"
+
+      - name: "reports fragment count and list"
+        steps:
+          - action: run-command
+            target: "parlay create-surface @upgrade-plan-creation"
+          - verify: element
+            target: fragment-count
+          - verify: element
+            target: fragment-list
+
+      - name: "preserves existing surface fragments"
+        steps:
+          - action: write-file
+            target: "spec/intents/upgrade-plan-creation/surface.md"
+            value: "## Existing Fragment\n\n**Shows**: Something"
+          - action: run-command
+            target: "parlay create-surface @upgrade-plan-creation"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/surface.md"
+            expected:
+              contains: "## Existing Fragment"
+
+  # ── View Page ──────────────────────────────────────────
+
+  - name: "parlay view-page — page assembly"
+    component: page-assembly-view
+    fixture: multi-feature-page
+
+    cases:
+      - name: "assembles fragments by region"
+        steps:
+          - action: run-command
+            target: "parlay view-page dashboard"
+          - verify: text
+            target: region-blocks
+            expected:
+              contains-all:
+                - "header"
+                - "main"
+                - "sidebar"
+
+      - name: "orders fragments within regions"
+        steps:
+          - action: run-command
+            target: "parlay view-page dashboard"
+          - verify: text
+            target: region-blocks
+            expected:
+              contains: "1. @"
+
+      - name: "flags conflicts when fragments share region and order"
+        steps:
+          - action: run-command
+            target: "parlay view-page dashboard"
+          - verify: visible
+            target: conflict-warnings
+            expected: false  # fixture has no conflicts by default
+
+      - name: "shows unplaced fragments separately"
+        steps:
+          - action: run-command
+            target: "parlay view-page dashboard"
+          - verify: element
+            target: unplaced-list  # only visible when unplaced exist
+
+  # ── Lock Page ──────────────────────────────────────────
+
+  - name: "parlay lock-page — page manifest creation"
+    component: page-lock-confirmation
+    fixture: multi-feature-page
+
+    cases:
+      - name: "shows assembled view before locking"
+        steps:
+          - action: run-command
+            target: "parlay lock-page dashboard"
+          - verify: element
+            target: layout-preview
+
+      - name: "prompts for page owner"
+        steps:
+          - action: run-command
+            target: "parlay lock-page dashboard"
+          - verify: element
+            target: owner-prompt
+
+      - name: "creates page manifest file"
+        steps:
+          - action: run-command
+            target: "parlay lock-page dashboard"
+          - action: input
+            target: owner-prompt
+            value: "Platform UX Team"
+          - verify: file-exists
+            target: "spec/pages/dashboard.page.md"
+
+      - name: "manifest contains owner and draft status"
+        steps:
+          - action: run-command
+            target: "parlay lock-page dashboard"
+          - action: input
+            target: owner-prompt
+            value: "Platform UX Team"
+          - verify: file-content
+            target: "spec/pages/dashboard.page.md"
+            expected:
+              contains-all:
+                - "**Owner**: Platform UX Team"
+                - "**Status**: draft"
+
+  # ── Sync ───────────────────────────────────────────────
+
+  - name: "parlay sync — coverage analysis"
+    component: coverage-report
+    fixture: feature-with-intents
+
+    cases:
+      - name: "identifies uncovered intents"
+        steps:
+          - action: run-command
+            target: "parlay sync @upgrade-plan-creation"
+          - verify: visible
+            target: uncovered-list
+            expected: true
+
+      - name: "identifies covered intents when dialogs exist"
+        steps:
+          - action: run-command
+            target: "parlay sync @upgrade-plan-creation"
+          - verify: element
+            target: covered-list
+
+      - name: "offers template generation for uncovered intents"
+        steps:
+          - action: run-command
+            target: "parlay sync @upgrade-plan-creation"
+          - verify: visible
+            target: template-prompt
+            expected: true
+
+      - name: "generates templates when user selects A"
+        steps:
+          - action: run-command
+            target: "parlay sync @upgrade-plan-creation"
+          - action: select
+            target: template-prompt
+            value: "A"
+          - verify: file-content
+            target: "spec/intents/upgrade-plan-creation/dialogs.md"
+            expected:
+              contains: "###"
+
+      - name: "does not modify files when user selects C"
+        steps:
+          - action: run-command
+            target: "parlay sync @upgrade-plan-creation"
+          - action: select
+            target: template-prompt
+            value: "C"
+
+  # ── Domain Model ───────────────────────────────────────
+
+  - name: "parlay extract-domain-model — model extraction"
+    component: domain-model-export
+    fixture: feature-with-surface
+
+    cases:
+      - name: "extracts entities from intents and surface"
+        steps:
+          - action: run-command
+            target: "parlay extract-domain-model"
+          - verify: element
+            target: entity-summary
+          - verify: element
+            target: model-path
+
+      - name: "creates domain model file"
+        steps:
+          - action: run-command
+            target: "parlay extract-domain-model"
+          - verify: file-exists
+            target: domain-model.md
+
+  - name: "parlay load-domain-model — model integration"
+    component: domain-model-integration
+    fixture: feature-with-surface
+
+    cases:
+      - name: "shows clean result when no conflicts"
+        steps:
+          - action: run-command
+            target: "parlay load-domain-model ./external-model.md"
+          - verify: visible
+            target: clean-result
+            expected: true
+
+      - name: "shows disambiguation when conflicts exist"
+        steps:
+          - action: run-command
+            target: "parlay load-domain-model ./conflicting-model.md"
+          - verify: visible
+            target: conflict-list
+            expected: true
+
+  # ── Engineering Spec ───────────────────────────────────
+
+  - name: "parlay generate-enggspec — spec generation"
+    component: engineering-spec-output
+    fixture: feature-with-surface
+
+    cases:
+      - name: "generates specification file"
+        steps:
+          - action: run-command
+            target: "parlay generate-enggspec @upgrade-plan-creation"
+          - verify: file-exists
+            target: "spec/intents/upgrade-plan-creation/enggspec/specification.md"
+
+      - name: "reports SDD format used"
+        steps:
+          - action: run-command
+            target: "parlay generate-enggspec @upgrade-plan-creation"
+          - verify: text
+            target: format-info
+            expected: "GitHub SpecKit"
+
+      - name: "shows next step hint"
+        steps:
+          - action: run-command
+            target: "parlay generate-enggspec @upgrade-plan-creation"
+          - verify: element
+            target: next-step
