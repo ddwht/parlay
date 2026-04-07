@@ -35,4 +35,5 @@ func init() {
 	rootCmd.AddCommand(collectQuestionsCmd)
 	rootCmd.AddCommand(saveBaselineCmd)
 	rootCmd.AddCommand(checkDriftCmd)
+	rootCmd.AddCommand(checkReadinessCmd)
 }

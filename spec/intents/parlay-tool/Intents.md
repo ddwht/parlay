@@ -88,23 +88,26 @@
 
 ## Register Framework Adapter
 
-**Goal**: Provide the tool with knowledge about a specific prototype framework — what components it offers, what patterns it uses, and how abstract design concepts map to concrete framework constructs.
+**Goal**: Provide the tool with knowledge about a specific prototype framework — what components it offers, what patterns it uses, what design choices are preferred, and how abstract design concepts map to concrete framework constructs.
 **Persona**: Tool creator
 **Priority**: P1
-**Context**: A new prototype framework (e.g., Angular + Clarity, React + MUI, Go CLI) needs to be supported. The adapter teaches the tool how to translate surface fragments into framework-specific buildfile entries.
-**Action**: Define a framework adapter that maps abstract component types to framework-specific widgets, layout patterns, interaction styles, and file conventions.
-**Objects**: framework-adapter, component-mapping, widget-vocabulary, layout-pattern
+**Context**: A new prototype framework (e.g., Angular + Clarity, React + MUI, Go CLI) needs to be supported. The adapter teaches the tool how to translate surface fragments into framework-specific buildfile entries and how to make design decisions that fit the framework.
+**Action**: Define a framework adapter that maps abstract component types to framework-specific widgets, layout patterns, interaction styles, file conventions, and preferred design patterns.
+**Objects**: framework-adapter, component-mapping, widget-vocabulary, layout-pattern, design-pattern
 
 **Constraints**:
 - The adapter must be loadable at build-feature time without modifying the core tool
 - The buildfile schema defines the abstract structure — the adapter fills in the framework-specific vocabulary
 - Each adapter must declare its supported component types and interaction patterns
+- Each adapter must declare its preferred design patterns (interaction style, information density, error placement, confirmation style) so the agent makes consistent decisions across features
 - Adapters must be versionable — different versions of a framework may have different component sets
 
 **Verify**:
 - Adapter file is saved to `.parlay/adapters/{name}.adapter.yaml`
 - All abstract component types from the buildfile schema have a mapping in the adapter
+- Adapter declares preferred patterns for interaction, information density, error placement, and confirmation
 - Adapter is selectable during project configuration
+- Build-feature reads the patterns section and applies them when generating components
 
 **Questions**:
 - Should adapters be bundled with the tool or installed separately?
@@ -292,6 +295,9 @@
 - The prototype must be testable — the system generates both implementation and property-based tests
 - After generation, a baseline snapshot of intent content must be stored for drift detection
 - Generated artifacts must pass deep validation — all cross-references (models, components, routes, adapter vocabulary) must resolve
+- Buildfile operations must use the formal operations grammar — a closed set of typed operations, not free-form pseudo-code
+- Before generation, readiness checks must pass — all preconditions for the build-feature stage are satisfied
+- Component design choices must follow the patterns declared in the framework adapter
 
 **Verify**:
 - `buildfile.yaml` is generated at `spec/intents/{feature}/devspec/buildfile.yaml`
@@ -300,6 +306,8 @@
 - The buildfile uses only vocabulary from the loaded framework adapter
 - The same inputs + same adapter produce the same buildfile on repeated runs
 - Deep validation passes: all model references, component references, fixture data, and adapter types resolve
+- All buildfile operations conform to the formal grammar (read-file, write-file, create-directory, copy, filter, for-each, transform)
+- Readiness check passes before generation begins
 - Generated tests pass against the generated prototype
 
 **Questions**:

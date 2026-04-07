@@ -76,7 +76,8 @@ components:
         target: <route, model.field, event-name, or operation-name>
 
     operations:
-      - <file or state operation — create-file, read-file, write-file, create-directory, etc.>
+      - type: <operation type — see Operation types below>
+        <type-specific parameters>
 
     children:
       - <nested component-name references>
@@ -127,6 +128,58 @@ These are framework-agnostic. The adapter maps each to a framework-specific widg
 | Mutate | `mutate:<Model>.<field>=<value>` | Change model state |
 | Emit | `emit:<event-name>` | Signal to other components |
 | Call | `call:<operation-name>` | Invoke a domain operation |
+
+## Operation types
+
+The `operations:` section uses a closed set of typed operations. Free-form pseudo-code is not allowed — every operation must declare a `type:` and the parameters required by that type. This guarantees the determinism contract: two agents reading the same buildfile produce structurally identical code.
+
+| Type | Required parameters | Optional parameters | Description |
+|---|---|---|---|
+| `read-file` | `path` | `parse`, `bind` | Read a file from disk. `parse` selects a schema (intent-schema, surface-schema, etc.) for structured parsing. `bind` names the variable holding the result. |
+| `write-file` | `path`, `content` | `template`, `for-each` | Write content to a file. `template` references a content template. `for-each` iterates over a bound variable. |
+| `create-directory` | `path` | — | Create a directory (recursive, like mkdir -p). |
+| `copy` | `from`, `to` | `recursive` | Copy a file or directory. `recursive` enables directory copy. |
+| `filter` | `source`, `where`, `bind` | — | Filter a bound collection by a predicate, store result in a new variable. |
+| `for-each` | `source`, `do` | — | Iterate over a collection. `do` is a list of nested operations. |
+| `transform` | `source`, `using`, `bind` | — | Transform data using a named transformer (e.g., slugify, json-encode), store result in a variable. |
+| `call-skill` | `skill` | `args` | Invoke another skill by name with optional arguments. |
+
+### Examples
+
+```yaml
+operations:
+  - type: read-file
+    path: spec/intents/{feature}/intents.md
+    parse: intent-schema
+    bind: intents
+
+  - type: filter
+    source: intents
+    where: "title not in existing-content"
+    bind: new-intents
+
+  - type: for-each
+    source: new-intents
+    do:
+      - type: write-file
+        path: spec/intents/{feature}/dialogs.md
+        template: dialog-template
+        for-each: new-intents
+
+  - type: create-directory
+    path: .parlay/
+
+  - type: copy
+    from: embedded:schemas
+    to: .parlay/schemas/
+    recursive: true
+```
+
+### Variable bindings
+
+- Variables created by `bind:` are scoped to the component's `operations:` block.
+- Path templates support `{feature}`, `{slug}`, and any bound variable in `{var.field}` form.
+- Predicates in `filter.where` use simple boolean expressions: `field == value`, `field in collection`, `field not in collection`.
 
 ## Determinism contract
 

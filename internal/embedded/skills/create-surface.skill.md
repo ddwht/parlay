@@ -39,7 +39,25 @@ Generate a surface.md file for a feature by analyzing its intents and dialogs.
    - If a surface.md already exists, preserve existing fragments and only add new ones
    - Use intent Priority to guide fragment importance — P0 intents should produce primary fragments
 
-6. **Validate** — Run: `parlay validate --type surface spec/intents/{feature}/surface.md`
-   - If validation fails, fix the issues and try again
+6. **Check readiness** — Before generation, run: `parlay check-readiness @{feature} --stage create-surface`
+   - If errors are reported, present them to the user with fixes and stop
+   - If warnings are reported (e.g., no dialogs), inform the user and ask whether to proceed
 
-7. **Report** — Tell the user what was generated and remind them to add Page and Region targets.
+7. **Validate** — Run: `parlay validate --type surface --json spec/intents/{feature}/surface.md`
+   - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
+
+8. **Report** — Tell the user what was generated and remind them to add Page and Region targets.
+
+## Error Handling
+
+When `parlay check-readiness --stage create-surface` returns errors:
+- `intents-not-readable` — intents.md is missing or malformed. Ask user to fix it before retrying.
+- `no-intents` — intents.md is empty. Tell the user to author at least one intent.
+- `missing-goal` / `missing-persona` — required field missing on a specific intent. Show which intent and ask user to fill it in.
+
+When `parlay validate --type surface --json` returns errors:
+- `schema-validation-failed` — the generated surface.md is malformed. This is likely a generation bug; review what you wrote and regenerate.
+
+When the user provides ambiguous input during disambiguation:
+- Offer to defer the decision and proceed with a sensible default
+- Save the deferred status to disambiguation.yaml so it can be revisited later

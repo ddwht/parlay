@@ -42,3 +42,18 @@ Check coverage, traceability, and drift between intents and downstream artifacts
    - B: Let the user pick which ones
    - C: Just the report
    - If the user chooses A or B, run `parlay scaffold-dialogs @{feature}` or generate templates inline
+
+## Error Handling
+
+When `parlay check-coverage` fails:
+- `failed to read intents` — intents.md is missing or unreadable. Tell the user the feature folder may not exist.
+- `failed to read dialogs` — dialogs.md is missing. Suggest running `/parlay-scaffold-dialogs @{feature}` first.
+- Invalid YAML in baseline — the .baseline.yaml file is corrupted. Suggest deleting it and running build-feature again to regenerate.
+
+When `parlay collect-questions` fails:
+- Same intents.md errors as above — handle the same way.
+
+When drift detection finds issues that can't be auto-resolved:
+- Present the drifted fields and the affected downstream artifacts to the user
+- Offer choices: update artifacts, ignore drift, or rebuild from scratch
+- Never modify human-authored files (intents.md, dialogs.md, surface.md) without explicit permission

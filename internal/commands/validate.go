@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -18,12 +19,21 @@ var validateCmd = &cobra.Command{
 var validateType string
 var validateDeep bool
 var validateAdapter string
+var validateJSON bool
 
 func init() {
 	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, yaml")
 	validateCmd.MarkFlagRequired("type")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
+	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
+}
+
+type validateJSONResult struct {
+	Path   string                  `json:"path"`
+	Type   string                  `json:"type"`
+	OK     bool                    `json:"ok"`
+	Errors []agent.ValidationError `json:"errors,omitempty"`
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -31,7 +41,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", path, err)
+		return outputValidate(path, []agent.ValidationError{{
+			Code:    "file-not-readable",
+			Message: fmt.Sprintf("cannot read %s: %s", path, err),
+			Context: path,
+			Fix:     "verify the file path is correct",
+		}})
 	}
 
 	var validator agent.Validator
@@ -47,22 +62,53 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := validator(path, content); err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: %s\n", err)
-		os.Exit(1)
+		return outputValidate(path, []agent.ValidationError{{
+			Code:    "schema-validation-failed",
+			Message: err.Error(),
+			Context: path,
+			Fix:     "fix the structural issues reported above",
+		}})
 	}
 
 	// Deep validation for buildfiles
 	if validateDeep && validateType == "buildfile" {
-		errors := agent.ValidateBuildfileDeep(path, validateAdapter)
+		errors := agent.ValidateBuildfileDeepStructured(path, validateAdapter)
 		if len(errors) > 0 {
-			fmt.Fprintf(os.Stderr, "Deep validation found %d issue(s):\n", len(errors))
-			for _, e := range errors {
-				fmt.Fprintf(os.Stderr, "  - %s\n", e)
-			}
-			os.Exit(1)
+			return outputValidate(path, errors)
 		}
 	}
 
-	fmt.Println("OK")
+	return outputValidate(path, nil)
+}
+
+func outputValidate(path string, errors []agent.ValidationError) error {
+	if validateJSON {
+		result := validateJSONResult{
+			Path:   path,
+			Type:   validateType,
+			OK:     len(errors) == 0,
+			Errors: errors,
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(data))
+		if len(errors) > 0 {
+			os.Exit(1)
+		}
+		return nil
+	}
+
+	// Text output (default)
+	if len(errors) == 0 {
+		fmt.Println("OK")
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "FAIL: %d issue(s)\n", len(errors))
+	for _, e := range errors {
+		fmt.Fprintf(os.Stderr, "  [%s] %s\n", e.Code, e.Message)
+		if e.Fix != "" {
+			fmt.Fprintf(os.Stderr, "    fix: %s\n", e.Fix)
+		}
+	}
+	os.Exit(1)
 	return nil
 }

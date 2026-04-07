@@ -101,20 +101,52 @@ type deepAdapter struct {
 	ActionTypes    map[string]interface{} `yaml:"action-types"`
 }
 
+// ValidationError is a structured error returned by deep validation.
+// Fields are designed for agent consumption: code identifies the error class,
+// context provides specifics about where it occurred, and fix suggests recovery.
+type ValidationError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Context string `json:"context,omitempty"`
+	Fix     string `json:"fix"`
+}
+
 // ValidateBuildfileDeep performs cross-reference validation on a buildfile.
-// It checks: model references, component references in routes, fixture-model alignment,
-// component children references, and adapter vocabulary when an adapter path is provided.
+// Returns string-formatted errors for backwards compatibility.
+// For structured output suitable for agent consumption, use ValidateBuildfileDeepStructured.
 func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
+	structured := ValidateBuildfileDeepStructured(buildfilePath, adapterPath)
 	var errors []string
+	for _, e := range structured {
+		errors = append(errors, e.Message)
+	}
+	return errors
+}
+
+// ValidateBuildfileDeepStructured performs cross-reference validation and returns
+// structured errors. Each error has a code (for programmatic handling), context
+// (location), and fix (recovery hint).
+func ValidateBuildfileDeepStructured(buildfilePath, adapterPath string) []ValidationError {
+	var errors []ValidationError
 
 	content, err := os.ReadFile(buildfilePath)
 	if err != nil {
-		return []string{fmt.Sprintf("cannot read buildfile: %s", err)}
+		return []ValidationError{{
+			Code:    "buildfile-not-readable",
+			Message: fmt.Sprintf("cannot read buildfile: %s", err),
+			Context: buildfilePath,
+			Fix:     "ensure the buildfile path is correct and the file exists",
+		}}
 	}
 
 	var bf deepBuildfile
 	if err := yaml.Unmarshal(content, &bf); err != nil {
-		return []string{fmt.Sprintf("invalid buildfile YAML: %s", err)}
+		return []ValidationError{{
+			Code:    "invalid-yaml",
+			Message: fmt.Sprintf("invalid buildfile YAML: %s", err),
+			Context: buildfilePath,
+			Fix:     "fix the YAML syntax errors and re-run validation",
+		}}
 	}
 
 	// 1. Component references in routes must exist in components
@@ -122,9 +154,12 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 		for regionName, region := range route.Regions {
 			for _, compRef := range region.Components {
 				if _, ok := bf.Components[compRef]; !ok {
-					errors = append(errors, fmt.Sprintf(
-						"route %q region %q references component %q which is not defined",
-						route.Path, regionName, compRef))
+					errors = append(errors, ValidationError{
+						Code:    "missing-component-reference",
+						Message: fmt.Sprintf("route %q region %q references component %q which is not defined", route.Path, regionName, compRef),
+						Context: fmt.Sprintf("routes[%s].regions.%s", route.Path, regionName),
+						Fix:     fmt.Sprintf("either add %q to the components: section or remove it from the route", compRef),
+					})
 				}
 			}
 		}
@@ -136,9 +171,12 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 			for _, input := range comp.Data.Inputs {
 				if input.Model != "" {
 					if _, ok := bf.Models[input.Model]; !ok {
-						errors = append(errors, fmt.Sprintf(
-							"component %q references model %q which is not defined",
-							compName, input.Model))
+						errors = append(errors, ValidationError{
+							Code:    "missing-model-reference",
+							Message: fmt.Sprintf("component %q references model %q which is not defined", compName, input.Model),
+							Context: fmt.Sprintf("components.%s.data.inputs", compName),
+							Fix:     fmt.Sprintf("either add %q to the models: section or change the input to reference an existing model", input.Model),
+						})
 					}
 				}
 			}
@@ -147,9 +185,12 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 		// 3. Children references must exist in components
 		for _, child := range comp.Children {
 			if _, ok := bf.Components[child]; !ok {
-				errors = append(errors, fmt.Sprintf(
-					"component %q references child %q which is not defined",
-					compName, child))
+				errors = append(errors, ValidationError{
+					Code:    "missing-child-reference",
+					Message: fmt.Sprintf("component %q references child %q which is not defined", compName, child),
+					Context: fmt.Sprintf("components.%s.children", compName),
+					Fix:     fmt.Sprintf("either add %q to the components: section or remove it from children", child),
+				})
 			}
 		}
 	}
@@ -158,9 +199,12 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 	for fixtureName, fixture := range bf.Fixtures {
 		for modelName := range fixture.Data {
 			if _, ok := bf.Models[modelName]; !ok {
-				errors = append(errors, fmt.Sprintf(
-					"fixture %q references model %q which is not defined",
-					fixtureName, modelName))
+				errors = append(errors, ValidationError{
+					Code:    "missing-fixture-model",
+					Message: fmt.Sprintf("fixture %q references model %q which is not defined", fixtureName, modelName),
+					Context: fmt.Sprintf("fixtures.%s.data", fixtureName),
+					Fix:     fmt.Sprintf("either add %q to the models: section or remove the fixture data block", modelName),
+				})
 			}
 		}
 	}
@@ -174,8 +218,8 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 	return errors
 }
 
-func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []string {
-	var errors []string
+func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []ValidationError {
+	var errors []ValidationError
 
 	data, err := os.ReadFile(adapterPath)
 	if err != nil {
@@ -183,22 +227,35 @@ func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []string {
 		resolved := filepath.Join(".parlay", "adapters", bf.Adapter+".adapter.yaml")
 		data, err = os.ReadFile(resolved)
 		if err != nil {
-			return []string{fmt.Sprintf("cannot read adapter %q: %s", adapterPath, err)}
+			return []ValidationError{{
+				Code:    "adapter-not-found",
+				Message: fmt.Sprintf("cannot read adapter %q: %s", adapterPath, err),
+				Context: adapterPath,
+				Fix:     "verify the adapter file exists at .parlay/adapters/{name}.adapter.yaml",
+			}}
 		}
 	}
 
 	var adapter deepAdapter
 	if err := yaml.Unmarshal(data, &adapter); err != nil {
-		return []string{fmt.Sprintf("invalid adapter YAML: %s", err)}
+		return []ValidationError{{
+			Code:    "invalid-adapter-yaml",
+			Message: fmt.Sprintf("invalid adapter YAML: %s", err),
+			Context: adapterPath,
+			Fix:     "fix the YAML syntax errors in the adapter file",
+		}}
 	}
 
 	// Check component types against adapter
 	for compName, comp := range bf.Components {
 		if comp.Type != "" && adapter.ComponentTypes != nil {
 			if _, ok := adapter.ComponentTypes[comp.Type]; !ok {
-				errors = append(errors, fmt.Sprintf(
-					"component %q uses type %q which is not in adapter %q",
-					compName, comp.Type, bf.Adapter))
+				errors = append(errors, ValidationError{
+					Code:    "unknown-component-type",
+					Message: fmt.Sprintf("component %q uses type %q which is not in adapter %q", compName, comp.Type, bf.Adapter),
+					Context: fmt.Sprintf("components.%s.type", compName),
+					Fix:     fmt.Sprintf("change the component type to one defined in the adapter, or add %q to the adapter's component-types section", comp.Type),
+				})
 			}
 		}
 	}

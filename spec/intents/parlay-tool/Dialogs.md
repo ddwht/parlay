@@ -168,11 +168,15 @@ User: /parlay-build-feature @upgrade-plan-creation
 System (background): Reads skill instructions from .claude/skills/parlay-build-feature/SKILL.md.
 System (background): Loads .parlay/schemas/buildfile.schema.md, testcases.schema.md, adapter.schema.md.
 System (background): Loads framework adapter from .parlay/adapters/go-cli.adapter.yaml.
+System (background): Runs `parlay check-readiness @upgrade-plan-creation --stage build-feature` to verify preconditions.
+System (condition: readiness check fails): I can't build yet. Found ==number== issues:
+System: - ==issue description==
+System: Fix these and run /parlay-build-feature again.
 System: Building with framework adapter: go-cli
 System (background): Reads intents.md, dialogs.md, surface.md, domain-model.md for @upgrade-plan-creation.
-System (background): Generates buildfile.yaml — maps surface fragments to adapter component types, actions to adapter interaction patterns.
+System (background): Generates buildfile.yaml — maps surface fragments to adapter component types, actions to adapter interaction patterns. Applies adapter design patterns for interaction style and information density.
 System (background): Generates testcases.yaml from buildfile.yaml.
-System (background): Runs `parlay validate --type buildfile --deep` to verify cross-references.
+System (background): Runs `parlay validate --type buildfile --deep --json` to verify cross-references with structured error output.
 System (background): Saves intent content baseline to .baseline.yaml for drift detection.
 System: Created /spec/intents/upgrade-plan-creation/devspec/buildfile.yaml
 System: Created /spec/intents/upgrade-plan-creation/devspec/testcases.yaml

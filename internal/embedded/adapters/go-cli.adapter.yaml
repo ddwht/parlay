@@ -108,3 +108,32 @@ file-conventions:
     parsers: "internal/parser/"
     config: "internal/config/"
     embedded: "internal/embedded/"
+
+patterns:
+  interaction:
+    prefer:
+      - sequential-prompts
+      - lettered-options
+      - immediate-feedback
+      - one-question-at-a-time
+    avoid:
+      - modal-dialogs
+      - hover-interactions
+      - drag-and-drop
+      - multi-column-layouts
+  information-density:
+    default: high
+    rationale: CLI users expect concise, scannable output that fits in a terminal without scrolling
+  error-placement:
+    default: inline
+    rationale: Errors print immediately after the failing action with [ERR] prefix; no separate error region
+  confirmation:
+    required-for:
+      - destructive-operations
+      - irreversible-changes
+      - bulk-modifications
+    style: prompt
+  content:
+    timestamps: absolute
+    empty-states: message
+    progress-indicators: text-based

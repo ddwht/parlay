@@ -39,7 +39,26 @@ file-conventions:
   component-pattern: <how components map to files — e.g., "one-file-per-component", "feature-modules">
   naming: <file naming convention — e.g., "kebab-case", "PascalCase">
   entry-point: <main file — e.g., "main.go", "main.ts", "App.tsx">
+
+patterns:
+  interaction:
+    prefer: [<preferred interaction patterns>]
+    avoid: [<discouraged interaction patterns>]
+  information-density:
+    default: <low | medium | high>
+    rationale: <why this density fits the framework>
+  error-placement:
+    default: <inline | toast | dialog | console>
+    rationale: <why this fits the framework>
+  confirmation:
+    required-for: [<actions that need confirmation>]
+    style: <prompt | dialog | inline>
+  content:
+    timestamps: <relative | absolute | both>
+    empty-states: <message | hidden | placeholder>
 ```
+
+The `patterns` section guides the agent's design decisions when generating components. Different frameworks have different idioms — a CLI prefers sequential prompts and concise output; a web app prefers progressive disclosure and visual feedback. By declaring patterns in the adapter, the agent makes consistent decisions across all features built with the same adapter.
 
 ## Example: go-cli adapter
 
@@ -128,6 +147,23 @@ file-conventions:
   naming: snake_case
   entry-point: "cmd/parlay/main.go"
   internal-packages: "internal/"
+
+patterns:
+  interaction:
+    prefer: [sequential-prompts, lettered-options, immediate-feedback]
+    avoid: [modal-dialogs, hover-interactions, drag-and-drop]
+  information-density:
+    default: high
+    rationale: CLI users expect concise, scannable output without scrolling
+  error-placement:
+    default: inline
+    rationale: Errors print immediately after the failing action; no separate error region
+  confirmation:
+    required-for: [destructive-operations, irreversible-changes]
+    style: prompt
+  content:
+    timestamps: absolute
+    empty-states: message
 ```
 
 ## Adapter validation
@@ -137,6 +173,7 @@ When an adapter is loaded, the tool verifies:
 - All abstract element types have mappings
 - All abstract action types have mappings
 - At least one layout pattern is defined
+- The patterns section is present (warning if missing — patterns are strongly recommended for consistent design decisions)
 
 Missing mappings are warnings (the adapter may not support every type), not errors.
 
