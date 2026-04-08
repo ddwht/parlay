@@ -74,6 +74,7 @@ func skillTitle(name string) string {
 		"scaffold-dialogs":     "Scaffold dialog templates from intents",
 		"create-surface":       "Generate surface from intents and dialogs",
 		"build-feature":        "Generate buildfile and testcases",
+		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",
 		"extract-domain-model": "Extract domain model from all features",
 		"load-domain-model":    "Load and integrate external domain model",

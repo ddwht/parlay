@@ -24,6 +24,7 @@ func init() {
 	rootCmd.AddCommand(syncCmdImpl)
 	rootCmd.AddCommand(registerAdapterCmd)
 	rootCmd.AddCommand(buildFeatureCmdImpl)
+	rootCmd.AddCommand(generateCodeCmdImpl)
 	rootCmd.AddCommand(generateEnggspecCmdImpl)
 	rootCmd.AddCommand(extractDomainModelCmdImpl)
 	rootCmd.AddCommand(loadDomainModelCmdImpl)

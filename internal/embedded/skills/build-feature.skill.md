@@ -63,7 +63,9 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - This stores content hashes of all intents for drift detection
    - Future runs of `parlay check-coverage` or `parlay check-drift` will compare against this baseline
 
-10. **Report** — Print the created file paths and confirm success.
+10. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
+
+This skill stops at the build specification. Code generation is a separate skill (`/parlay-generate-code`) so that the buildfile.yaml can serve as a clean context boundary — codegen reads only buildfile + adapter and never reaches back into `spec/intents/`. Do NOT extend this skill to write code.
 
 ## Error Handling
 

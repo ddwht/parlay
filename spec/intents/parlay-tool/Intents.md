@@ -279,45 +279,75 @@
 
 ---
 
-## Generate Prototype
+## Build Feature Specification
 
-**Goal**: Translate intents, dialogs, and surfaces into a working interactive prototype without the designer writing any code.
+**Goal**: Generate a deterministic build specification (buildfile.yaml + testcases.yaml) that captures the prototype's structure, components, and observable behaviors — without yet writing any code.
 **Persona**: UX Designer
 **Priority**: P0
-**Context**: Surface is reviewed, framework is chosen — the designer wants a running prototype.
-**Action**: Tool loads the framework adapter for the configured prototype framework, generates a buildfile using abstract structure filled with framework-specific vocabulary, generates test cases, then produces code and runs tests.
-**Objects**: prototype, buildfile, test-case, framework-adapter, surface, intent, dialog
+**Context**: Surface is reviewed, framework is chosen — the designer is ready to lock down the prototype's structural spec before code generation.
+**Action**: Tool loads the framework adapter, reads intents/dialogs/surface/domain-model, generates a buildfile using abstract structure filled with framework-specific vocabulary, generates testcases.yaml from the buildfile, and saves a content baseline for drift detection. Code generation is a separate step.
+**Objects**: buildfile, testcase, framework-adapter, surface, intent, dialog, baseline
 
 **Constraints**:
 - The buildfile must be generated using the framework adapter — not hardcoded to any framework
 - The same surface + different framework adapter must produce a structurally equivalent but framework-appropriate buildfile
-- The buildfile must be deterministic — same inputs + same adapter = same buildfile
-- Code generation reads the buildfile only — not the intents, dialogs, or surface directly
-- The designer must never need to modify generated prototype code
-- The prototype must be testable — the system generates both implementation and property-based tests
-- After generation, a baseline snapshot of intent content must be stored for drift detection
+- The buildfile is the deterministic intermediate — it must contain enough detail that two AI agents reading it produce code that passes the same testcases (functional determinism, not byte equivalence)
+- The designer must never need to read or edit the generated buildfile or testcases — they live in `.parlay/build/{feature}/` as tool internals
 - Generated artifacts must pass deep validation — all cross-references (models, components, routes, adapter vocabulary) must resolve
 - Buildfile operations must use the formal operations grammar — a closed set of typed operations, not free-form pseudo-code
 - Before generation, readiness checks must pass — all preconditions for the build-feature stage are satisfied
 - Component design choices must follow the patterns declared in the framework adapter
+- After generation, a baseline snapshot of intent content must be stored for drift detection
 - Build artifacts (buildfile.yaml, testcases.yaml, .baseline.yaml) are tool internals — they live in `.parlay/build/{feature}/`, never under `spec/intents/`. The designer never sees them.
 - testcases.yaml is internal — it drives cross-validation and feeds spec generation, but is not handed off to engineering. Engineering writes their own real tests from `specification.md`.
+- This intent stops at the build specification. Code generation is handled by **Generate Prototype Code** as a separate step, with the buildfile as the context boundary.
 
 **Verify**:
 - `buildfile.yaml` is generated at `.parlay/build/{feature}/buildfile.yaml`
 - `testcases.yaml` is generated at `.parlay/build/{feature}/testcases.yaml`
 - `.baseline.yaml` is generated at `.parlay/build/{feature}/.baseline.yaml`
 - The buildfile uses only vocabulary from the loaded framework adapter
-- The same inputs + same adapter produce the same buildfile on repeated runs
 - Deep validation passes: all model references, component references, fixture data, and adapter types resolve
 - All buildfile operations conform to the formal grammar (read-file, write-file, create-directory, copy, filter, for-each, transform)
 - Readiness check passes before generation begins
-- Generated tests pass against the generated prototype
+- The final report tells the designer to run `/parlay-generate-code @{feature}` next
 
 **Questions**:
-- Should the prototype be regeneratable from scratch, or does it accumulate state between builds?
-- How does the designer trigger a rebuild after changing an intent or dialog?
-- What level of visual fidelity is expected — wireframe, design-system-accurate, or pixel-perfect?
+- What level of visual fidelity is expected — wireframe, design-system-accurate, or pixel-perfect? (Adapter concern.)
+
+---
+
+## Generate Prototype Code
+
+**Goal**: Translate the build specification into working prototype code that runs and passes the generated tests.
+**Persona**: UX Designer
+**Priority**: P0
+**Context**: Build Feature Specification has produced buildfile.yaml + testcases.yaml. The designer wants a runnable prototype to demo or validate.
+**Action**: Tool loads the buildfile and the framework adapter, generates code files following the adapter's file conventions, runs the testcases against the prototype, and reports pass/fail.
+**Objects**: prototype, buildfile, testcase, framework-adapter, code-file
+
+**Constraints**:
+- Code generation reads ONLY `.parlay/build/{feature}/buildfile.yaml`, `.parlay/adapters/{framework}.adapter.yaml`, and the existing prototype source tree (for incremental updates)
+- Code generation MUST NOT read anything under `spec/intents/{feature}/` — if it needs to, the buildfile schema is leaking detail and must be tightened
+- `.parlay/build/{feature}/testcases.yaml` is read only at the test execution phase, not during code generation itself
+- Two AI agents reading the same buildfile must produce code that passes the same testcases (functional determinism — the contract is observable behavior, not code structure)
+- Generated code lives outside `spec/` and `.parlay/` — at the location specified by the adapter's `file-conventions.source-root` (e.g., `src/`, `cmd/`, `app/`)
+- The designer must never need to modify generated prototype code
+- After generation, the agent runs the generated tests and reports pass/fail
+- Initial implementation is full regen on every invocation. A future enhancement will use component-level memoization for incremental rebuilds (stable components untouched, dirty/new components regenerated, removed components deleted).
+- Each generated file should record a marker linking back to its buildfile component (frontmatter comment, filename convention, or sidecar — adapter's choice) so the future incremental machinery can map files back to components.
+
+**Verify**:
+- Prototype code is generated at the location specified by the adapter's `file-conventions.source-root`
+- Generated tests pass against the generated prototype
+- Code generation does not access any file under `spec/intents/{feature}/` (this is the load-bearing isolation rule)
+- Re-running with no source changes produces functionally equivalent output (same testcases pass)
+- Each generated file is traceable back to a buildfile component
+
+**Questions**:
+- Should the agent generate test runners as well, or assume the framework's default?
+- What's the right error UX when tests fail — show failures, ask the user what to do?
+- When should incremental regen kick in vs. full regen? (Driven by per-component source hashes — see component-memoization design.)
 
 ---
 

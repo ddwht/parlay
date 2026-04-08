@@ -180,7 +180,44 @@ System (background): Generates testcases.yaml from buildfile.yaml.
 System (background): Runs `parlay validate --type buildfile --deep --json` to verify cross-references with structured error output.
 System (background): Saves intent content baseline to .baseline.yaml for drift detection.
 System (background): Writes all three artifacts to .parlay/build/upgrade-plan-creation/ (tool internals — designer never edits these).
-System: [OK] Feature built. Internal build artifacts saved to .parlay/build/upgrade-plan-creation/. All cross-references validated. Ready for review.
+System: [OK] Build specification ready. Internal artifacts saved to .parlay/build/upgrade-plan-creation/. All cross-references validated.
+System: Next: run /parlay-generate-code @upgrade-plan-creation to produce the prototype code and run tests against it.
+
+---
+
+### Generate Prototype Code
+
+**Trigger**: /parlay-generate-code @feature-name (agent skill)
+
+User: /parlay-generate-code @upgrade-plan-creation
+System (background): Reads skill instructions from .claude/skills/parlay-generate-code/SKILL.md.
+System (background): Loads .parlay/schemas/buildfile.schema.md, adapter.schema.md.
+System (background): Reads .parlay/build/upgrade-plan-creation/buildfile.yaml.
+System (background): Reads .parlay/adapters/go-cli.adapter.yaml.
+System (background): Does NOT read anything under spec/intents/upgrade-plan-creation/ — the buildfile is the only design source.
+System (condition: buildfile missing): I can't generate code yet — no buildfile found at .parlay/build/upgrade-plan-creation/buildfile.yaml. Run /parlay-build-feature @upgrade-plan-creation first.
+System: Generating prototype code with adapter: go-cli
+System: Source root (from adapter): cmd/upgrade-plan-creation/
+System (background): For each component in buildfile, generates a code file at the adapter's file-conventions location. Records a parlay-component marker in each file for future incremental regen.
+System: Generated ==number== code files:
+System: - cmd/upgrade-plan-creation/main.go
+System: - cmd/upgrade-plan-creation/preflight.go
+System: - cmd/upgrade-plan-creation/upgrade_prompt.go
+System (background): Reads .parlay/build/upgrade-plan-creation/testcases.yaml and generates test code.
+System (background): Runs generated tests against the prototype.
+System (condition: tests pass): [OK] All tests pass. Prototype is ready to run.
+System (condition: tests fail): ==number== test(s) failed:
+System: - ==test name== — ==failure summary==
+System: How would you like to proceed?
+  A: Show me the failures in detail
+  B: Regenerate the failing components
+  C: Stop, I'll investigate manually
+
+#### Branch: No Agent (CLI fallback)
+
+User: parlay generate-code @upgrade-plan-creation
+System (background): No agent available. The CLI cannot generate code on its own.
+System: generate-code requires an AI agent. Use the /parlay-generate-code skill in your AI agent (e.g., Claude Code).
 
 ---
 
