@@ -38,33 +38,48 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
 5. **Determine source root** — From the adapter's `file-conventions.source-root` (e.g., `cmd/{feature}/`, `src/{feature}/`, `app/{feature}/`). This is where generated code will live. It must be outside `spec/` and `.parlay/`.
 
-6. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last build.
-   - On the first generation (`has_buildfile: true` but no prior generated code), regenerate every component.
-   - On subsequent generations, the JSON output reports:
-     - `components.stable[]` — components whose buildfile entry derives from unchanged sources. **Skip code regeneration for these components.** Their existing code files (identified by the `parlay-component:` marker comment) are still valid.
-     - `components.dirty[]` — components that need code regeneration. Regenerate only these.
-     - `components.removed[]` — components whose source fragment no longer exists. Delete their code files (identified by the `parlay-component:` marker).
-   - Tell the user what's about to be regenerated before doing it (e.g., "Regenerating 2 component files: upgrade_prompt.go, preflight_check.go. Keeping 5 stable files.").
-   - If `parlay diff` reports `first_build: true`, treat the entire feature as new and regenerate everything.
+6. **Compute the source diff** — Run: `parlay diff @{feature}` to find out which buildfile components have changed source dependencies since the last build.
+   - The JSON output reports `components.stable[]`, `components.dirty[]`, `components.removed[]`. On `first_build: true`, treat every component as new.
 
-7. **Generate code per component** — For each component in the buildfile:
-   - Map the component to a file path using the adapter's `component-pattern` and `naming` conventions
-   - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
-   - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
-   - Add a marker comment at the top of each generated file linking back to the buildfile component, e.g.:
+7. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file in the source root to its owning component (via the `parlay-component:` marker). Returns JSON `{source_root, files: [{feature, component, path}]}`.
+   - Use this map to find the file path for each dirty/removed component without re-deriving filenames from the adapter naming convention.
+   - Files without a marker are user-owned; never modify or delete them.
+
+8. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated @{feature}` to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+   - For each component the diff says is `stable`, check that its file is also in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
      ```
-     // parlay-component: <component-name>
-     // Generated from .parlay/build/{feature}/buildfile.yaml — do not edit by hand
+     <file> is marked as a stable component but has been edited since the last generation.
+     A: Overwrite (lose my edits)
+     B: Skip this file (keep my edits, possibly diverging from the buildfile)
+     C: Show me the diff first
      ```
-     (For non-comment-supporting languages, use the closest equivalent: frontmatter, sidecar file, etc.)
+   - If a stable file is in `verify.missing[]`, the user deleted it — ask whether to regenerate or to drop the component.
 
-8. **Generate cross-cutting files** — From the buildfile's `models:`, `routes:`, and any framework-required entry points (per the adapter's `entry-point` field), produce the supporting files: data models, routing/main, fixtures used as runtime data sources, etc.
+9. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
 
-9. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+10. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
+    - Map the component to a file path using the adapter's `component-pattern` and `naming` conventions (or, if the file already exists with a marker, reuse its path)
+    - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
+    - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
+    - Add the marker at the top of every generated file. Two-line format:
+      ```
+      // parlay-feature: {feature}
+      // parlay-component: {component-name}
+      // Generated from .parlay/build/{feature}/buildfile.yaml — do not edit by hand
+      ```
+      Use the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell). For non-comment formats, use the closest equivalent (frontmatter, sidecar file).
 
-10. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
+11. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have the `parlay-component:` marker — never touch user-owned files.
 
-11. **Report** —
+12. **Generate cross-cutting files** — From the buildfile's `models:`, `routes:`, and any framework-required entry points (per the adapter's `entry-point` field), produce the supporting files: data models, routing/main, fixtures used as runtime data sources, etc. These are also written with the marker.
+
+13. **Save code hashes** — Run: `parlay save-code-hashes @{feature} --source-root {source-root}`. This rescans the source root, hashes every marker-tagged file, and writes `.parlay/build/{feature}/.code-hashes.yaml`. The next `verify-generated` invocation will compare against these new hashes.
+
+14. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+
+15. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
+
+16. **Report** —
     - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, and tell the user how to run the prototype.
     - On test failure: list the failing tests with summaries, and ask the user how to proceed (show details / regenerate failing components / stop).
     - On generation failure: report the underlying error and stop.
@@ -82,11 +97,17 @@ It is never a "minor difference" to be ignored.
 
 ## Incremental regeneration
 
-Incremental rebuilds work via `parlay diff @{feature}`, which compares current sources to the baseline saved at the last build. The diff output classifies each component as `stable`, `dirty`, or `removed`. The skill regenerates only dirty components, leaves stable components untouched, and deletes code files for removed components (identified by the `parlay-component:` marker).
+Three CLI helpers cooperate to make incremental rebuilds safe:
 
-For the very first generation of a feature (no prior code, or `first_build: true` from diff), full regen is the only option — there are no stable components to preserve.
+- **`parlay diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
+- **`parlay scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
+- **`parlay verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
 
-If you encounter a stable component but its file has been hand-edited or moved by the user, **do not** silently overwrite it. Surface the situation and ask the user how to proceed. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned.
+The skill calls all three before regenerating, then `parlay save-code-hashes` after writing files to record the new hashes for the next run.
+
+For the very first generation of a feature (no prior code, or `first_build: true` from diff), full regen is the only option — there are no stable components to preserve and nothing to verify.
+
+If a stable component's file is reported as `modified` by verify-generated, the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
 
 ## Error handling
 

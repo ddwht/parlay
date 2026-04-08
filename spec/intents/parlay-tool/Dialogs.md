@@ -202,18 +202,21 @@ System (background): Reads .parlay/build/upgrade-plan-creation/buildfile.yaml.
 System (background): Reads .parlay/adapters/go-cli.adapter.yaml.
 System (background): Does NOT read anything under spec/intents/upgrade-plan-creation/ — the buildfile is the only design source.
 System (condition: buildfile missing): I can't generate code yet — no buildfile found at .parlay/build/upgrade-plan-creation/buildfile.yaml. Run /parlay-build-feature @upgrade-plan-creation first.
-System (background): Runs `parlay diff @upgrade-plan-creation` to determine which components need code regeneration.
-System (condition: incremental): Diff report:
+System (background): Runs `parlay diff @upgrade-plan-creation` to classify components as stable / dirty / removed.
+System (background): Runs `parlay scan-generated cmd/upgrade-plan-creation/` to map existing files to their owning components via the `parlay-component:` marker. Files without a marker are user-owned and excluded.
+System (background): Runs `parlay verify-generated @upgrade-plan-creation` to detect any hand-edits to files the diff considers stable.
+System (condition: stable file modified): I noticed ==filename== is marked as a stable component but has been edited since the last generation. How would you like to proceed?
+  A: Overwrite (lose my edits)
+  B: Skip this file (keep my edits, possibly diverging from the buildfile)
+  C: Show me the diff first
+System (condition: incremental): Plan:
 System: - ==N== stable component files (will be preserved)
 System: - ==M== dirty component files (will be regenerated): ==list==
 System: - ==K== removed component files (will be deleted): ==list==
 System: Generating prototype code with adapter: go-cli
 System: Source root (from adapter): cmd/upgrade-plan-creation/
-System (background): For each dirty/new component in buildfile, generates a code file at the adapter's file-conventions location. Records a `parlay-component:` marker comment in each file. Stable components are skipped — their existing files (identified by the marker) stay untouched. Removed components have their marker-tagged files deleted.
-System (condition: stable file user-edited): I noticed ==filename== is marked as a stable component but has been edited since the last generation. How would you like to proceed?
-  A: Overwrite (lose my edits)
-  B: Skip this file (keep my edits, possibly diverging from the buildfile)
-  C: Show me the diff first
+System (background): For each dirty/new component in buildfile, generates a code file at the adapter's file-conventions location. Each generated file gets a two-line `parlay-feature:` / `parlay-component:` marker. Stable components are skipped (their existing files stay untouched). Removed components have their marker-tagged files deleted.
+System (background): Runs `parlay save-code-hashes @upgrade-plan-creation --source-root cmd/upgrade-plan-creation/` to record content hashes for the next run.
 System: Generated ==number== code files:
 System: - cmd/upgrade-plan-creation/main.go
 System: - cmd/upgrade-plan-creation/preflight.go

@@ -335,10 +335,11 @@
 - Generated code lives outside `spec/` and `.parlay/` — at the location specified by the adapter's `file-conventions.source-root` (e.g., `src/`, `cmd/`, `app/`)
 - The designer must never need to modify generated prototype code
 - After generation, the agent runs the generated tests and reports pass/fail
-- Incremental regeneration is driven by `parlay diff @{feature}`: stable components have their existing code files preserved, dirty components are regenerated, removed components have their files deleted (identified by the `parlay-component:` marker).
-- On the very first generation of a feature, full regen is the only option (there are no stable components to preserve).
-- Each generated file must record a `parlay-component: <name>` marker (frontmatter comment for code files, sidecar for binary formats) so the incremental machinery can map files back to components and detect user-owned files (which lack the marker).
-- If a stable component's file has been hand-edited or moved by the user, the agent must NOT silently overwrite it — surface the situation and ask how to proceed.
+- Incremental regeneration is driven by three CLI helpers: `parlay diff @{feature}` classifies components as stable/dirty/removed based on source changes; `parlay scan-generated {source-root}` maps existing files to components via the `parlay-component:` marker; `parlay verify-generated @{feature}` compares each recorded file against its stored content hash to detect hand-edits.
+- After writing generated files, the agent runs `parlay save-code-hashes @{feature} --source-root {root}` to record content hashes for the next run.
+- On the very first generation of a feature, full regen is the only option (no stable components to preserve, no hashes to verify against).
+- Each generated file must include a two-line marker (`parlay-feature: {feature}` and `parlay-component: {name}`) at the top, using the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell). Files without a marker are user-owned and the tool must never modify or delete them.
+- If `parlay verify-generated` reports a file as `modified` for a component the diff classifies as stable, the user has hand-edited generated code. The agent must NOT silently overwrite it — surface the situation and offer to overwrite, skip, or show the diff.
 
 **Verify**:
 - Prototype code is generated at the location specified by the adapter's `file-conventions.source-root`

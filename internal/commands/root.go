@@ -38,4 +38,7 @@ func init() {
 	rootCmd.AddCommand(checkDriftCmd)
 	rootCmd.AddCommand(checkReadinessCmd)
 	rootCmd.AddCommand(diffCmd)
+	rootCmd.AddCommand(scanGeneratedCmd)
+	rootCmd.AddCommand(verifyGeneratedCmd)
+	rootCmd.AddCommand(saveCodeHashesCmd)
 }
