@@ -38,15 +38,16 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
 5. **Determine source root** — From the adapter's `file-conventions.source-root` (e.g., `cmd/{feature}/`, `src/{feature}/`, `app/{feature}/`). This is where generated code will live. It must be outside `spec/` and `.parlay/`.
 
-6. **Compute the source diff** — Run: `parlay diff @{feature}` to find out which buildfile components have changed source dependencies since the last build.
-   - The JSON output reports `components.stable[]`, `components.dirty[]`, `components.removed[]`. On `first_build: true`, treat every component as new.
+6. **Compute the source diff** — Run: `parlay diff @{feature}` to find out which buildfile components have changed source dependencies since the last successful end-to-end generation.
+   - The JSON output reports `components.stable[]`, `components.dirty[]`, `components.removed[]`. On `first_build: true`, treat every component as new — there is no committed state to compare against.
 
 7. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file in the source root to its owning component (via the `parlay-component:` marker). Returns JSON `{source_root, files: [{feature, component, path}]}`.
    - Use this map to find the file path for each dirty/removed component without re-deriving filenames from the adapter naming convention.
    - Files without a marker are user-owned; never modify or delete them.
 
 8. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated @{feature}` to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
-   - For each component the diff says is `stable`, check that its file is also in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
+   - If `has_hashes` is `false`, this is the very first generation for the feature — there is no committed code state yet. Treat every component as new regardless of what `parlay diff` reported, and skip the modified-file check entirely.
+   - Otherwise, for each component the diff says is `stable`, check that its file is also in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
      ```
      <file> is marked as a stable component but has been edited since the last generation.
      A: Overwrite (lose my edits)
@@ -73,16 +74,20 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
 12. **Generate cross-cutting files** — From the buildfile's `models:`, `routes:`, and any framework-required entry points (per the adapter's `entry-point` field), produce the supporting files: data models, routing/main, fixtures used as runtime data sources, etc. These are also written with the marker.
 
-13. **Save code hashes** — Run: `parlay save-code-hashes @{feature} --source-root {source-root}`. This rescans the source root, hashes every marker-tagged file, and writes `.parlay/build/{feature}/.code-hashes.yaml`. The next `verify-generated` invocation will compare against these new hashes.
+13. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
-14. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+14. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
+    - **If any test fails, STOP.** Do not proceed to step 15. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-15. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
+15. **Commit the build state** — Only if all tests passed in step 14: run `parlay save-build-state @{feature} --source-root {source-root}`. This atomically writes both `.parlay/build/{feature}/.baseline.yaml` (source state for the next `parlay diff`) and `.parlay/build/{feature}/.code-hashes.yaml` (file hashes for the next `parlay verify-generated`).
+    - This is the **only** sanctioned write path for either file. Both represent the same point in time: the end of a successful end-to-end generation. They are written together so the consistency invariant holds: the next time the user runs anything, the diff and the verify reports describe the same state.
+    - If this command fails partway, the error message tells you to re-run it. The skill should propagate the error to the user.
+    - Do not invoke any other save-* command. There is intentionally no `parlay save-baseline` or `parlay save-code-hashes` in the CLI — both have been folded into `save-build-state` to enforce the consistency invariant at the API level.
 
 16. **Report** —
-    - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, and tell the user how to run the prototype.
-    - On test failure: list the failing tests with summaries, and ask the user how to proceed (show details / regenerate failing components / stop).
-    - On generation failure: report the underlying error and stop.
+    - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, confirm that `save-build-state` succeeded, and tell the user how to run the prototype.
+    - On test failure (stopped at step 14): list the failing tests with summaries, and ask the user how to proceed. **Do not call `save-build-state` when tests have failed** — the whole point of running tests before committing state is to avoid committing a broken state.
+    - On generation failure (stopped before step 14): report the underlying error and stop.
 
 ## Determinism contract
 
@@ -97,17 +102,26 @@ It is never a "minor difference" to be ignored.
 
 ## Incremental regeneration
 
-Three CLI helpers cooperate to make incremental rebuilds safe:
+Three read helpers and one write helper cooperate to make incremental rebuilds safe:
 
 - **`parlay diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
 - **`parlay scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
 - **`parlay verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
+- **`parlay save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
 
-The skill calls all three before regenerating, then `parlay save-code-hashes` after writing files to record the new hashes for the next run.
+The skill calls the three read helpers before regenerating, then `parlay save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
 
-For the very first generation of a feature (no prior code, or `first_build: true` from diff), full regen is the only option — there are no stable components to preserve and nothing to verify.
+**The very first generation** of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
 
 If a stable component's file is reported as `modified` by verify-generated, the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
+
+## Why save-build-state is at the end (and only at the end)
+
+The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) have a **consistency invariant**: they must always represent the same point in time — the end of a successful end-to-end generation. If either file is updated independently of the other, subsequent `parlay diff` and `parlay verify-generated` calls describe inconsistent states and the agent gets stuck (e.g., diff says "stable" but no code exists).
+
+Earlier versions of the skill saved the baseline at the end of `build-feature`, before code generation. That broke the invariant: after build-feature ran but before generate-code ran, the baseline said "this source state is committed" but no code state existed for that source state. The next run would see all components as stable and skip everything.
+
+The fix is structural: the baseline and code-hashes are written together by a single command (`parlay save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
 
 ## Error handling
 

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/anthropics/parlay/internal/config"
+	"github.com/anthropics/parlay/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,4 +80,48 @@ func hashFileContent(path string) (string, error) {
 	}
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h[:8]), nil
+}
+
+// buildCodeHashes scans a source root for parlay markers, hashes each file,
+// and returns a CodeHashes struct ready for serialization. Markers belonging
+// to a different feature are skipped (returned as the second value). Does
+// not touch disk; callers (typically saveBuildState) are responsible for
+// writing.
+func buildCodeHashes(slug, sourceRoot string) (*CodeHashes, int, error) {
+	markers, err := parser.ScanGenerated(sourceRoot)
+	if err != nil {
+		return nil, 0, fmt.Errorf("scan failed: %w", err)
+	}
+
+	hashes := &CodeHashes{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Files:       make(map[string]CodeHashEntry, len(markers)),
+	}
+
+	skipped := 0
+	for _, marker := range markers {
+		// Only record files that belong to THIS feature. A source root
+		// shared across features would otherwise pollute the sidecar.
+		// If the marker has no feature field, accept it (legacy markers).
+		if marker.Feature != "" && marker.Feature != slug {
+			skipped++
+			continue
+		}
+		hash, err := hashFileContent(marker.Path)
+		if err != nil {
+			return nil, 0, fmt.Errorf("hash failed for %s: %w", marker.Path, err)
+		}
+		hashes.Files[marker.Path] = CodeHashEntry{
+			Component: marker.Component,
+			Hash:      hash,
+		}
+	}
+
+	return hashes, skipped, nil
+}
+
+// marshalCodeHashes serializes a CodeHashes struct to YAML bytes for atomic
+// disk writes. Symmetric with marshalBaseline.
+func marshalCodeHashes(h *CodeHashes) ([]byte, error) {
+	return yaml.Marshal(h)
 }

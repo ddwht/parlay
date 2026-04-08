@@ -34,11 +34,10 @@ func init() {
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(checkCoverageCmd)
 	rootCmd.AddCommand(collectQuestionsCmd)
-	rootCmd.AddCommand(saveBaselineCmd)
 	rootCmd.AddCommand(checkDriftCmd)
 	rootCmd.AddCommand(checkReadinessCmd)
 	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(scanGeneratedCmd)
 	rootCmd.AddCommand(verifyGeneratedCmd)
-	rootCmd.AddCommand(saveCodeHashesCmd)
+	rootCmd.AddCommand(saveBuildStateCmd)
 }

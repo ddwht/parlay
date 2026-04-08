@@ -68,14 +68,11 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
    - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
 
-10. **Save baseline** — Run: `parlay save-baseline @{feature}`
-    - Stores per-field intent hashes for drift detection (`parlay check-drift`)
-    - Stores per-element source hashes (intents, dialogs, surface fragments) for incremental rebuilds (`parlay diff`)
-    - Future runs of `parlay diff` will compare current sources against this baseline to determine which components are stable / dirty / removed
+10. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
 
-11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
+This skill stops at the build specification. **Do NOT save the baseline or any other build state from this skill.** The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) are committed atomically as a unit at the end of `/parlay-generate-code`, only after a successful end-to-end generation. Saving baseline here would commit source state without corresponding code state, breaking the consistency invariant and stranding the feature in a state where `parlay diff` reports everything stable but no code exists.
 
-This skill stops at the build specification. Code generation is a separate skill (`/parlay-generate-code`) so that the buildfile.yaml can serve as a clean context boundary — codegen reads only buildfile + adapter and never reaches back into `spec/intents/`. Do NOT extend this skill to write code.
+Code generation is a separate skill (`/parlay-generate-code`) so that the buildfile.yaml can serve as a clean context boundary — codegen reads only buildfile + adapter and never reaches back into `spec/intents/`. Do NOT extend this skill to write code or to save state.
 
 ## Error Handling
 
@@ -95,8 +92,5 @@ When `parlay validate --type buildfile --deep --json` returns errors:
 - `unknown-component-type` — a component uses a type not in the adapter. Either change the type to one supported by the adapter, or extend the adapter.
 - `adapter-not-found` — the adapter file is missing. Verify `.parlay/adapters/{name}.adapter.yaml` exists.
 - `invalid-yaml` / `invalid-adapter-yaml` — YAML syntax error. Show the error to the user and ask them to fix or regenerate.
-
-When `parlay save-baseline` fails:
-- File system error — likely permissions. Report the error and ask user to check `.parlay/` directory permissions.
 
 For all errors: parse the JSON `errors` array, apply each error's `fix` automatically when possible (e.g., regenerating a section), or present the error and fix to the user when human input is required.

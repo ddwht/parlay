@@ -112,15 +112,22 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	output.Dialogs = diffStringMap(stored.Dialogs, currentDialogHashes)
 	output.Fragments = diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
-	// Component-level impact analysis (only meaningful when a buildfile exists).
+	// Component-level impact analysis is only meaningful when there's a
+	// committed baseline AND a buildfile to walk. On first_build (no
+	// baseline yet) we leave Components empty: there's nothing to compare
+	// against, so classifying components as "stable" would be misleading.
+	// The agent uses parlay verify-generated's has_hashes signal to confirm
+	// "no committed code state" and treats every component as new.
 	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
-		output.Components = computeComponentImpact(
-			buildfilePath, slug,
-			currentIntents, currentDialogs, fragmentBySlug,
-			output.Intents, output.Dialogs, output.Fragments,
-		)
+		if !output.FirstBuild {
+			output.Components = computeComponentImpact(
+				buildfilePath, slug,
+				currentIntents, currentDialogs, fragmentBySlug,
+				output.Intents, output.Dialogs, output.Fragments,
+			)
+		}
 	}
 
 	return emitDiffJSON(&output)

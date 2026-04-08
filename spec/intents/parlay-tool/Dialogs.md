@@ -173,8 +173,8 @@ System (background): Runs `parlay check-readiness @upgrade-plan-creation --stage
 System (condition: readiness check fails): I can't build yet. Found ==number== issues:
 System: - ==issue description==
 System: Fix these and run /parlay-build-feature again.
-System (background): Runs `parlay diff @upgrade-plan-creation` to determine which components have changed since the last build.
-System (condition: first build): No prior baseline — generating the full buildfile from scratch.
+System (background): Runs `parlay diff @upgrade-plan-creation` to classify components as stable / dirty / removed.
+System (condition: first build): No committed state yet — generating the full buildfile from scratch.
 System (condition: incremental build): Diff report:
 System: - ==N== stable components (will be preserved verbatim)
 System: - ==M== dirty components (will be regenerated): ==list==
@@ -184,10 +184,9 @@ System (background): Reads intents.md, dialogs.md, surface.md, domain-model.md f
 System (background): Generates buildfile.yaml — preserves stable components verbatim, regenerates dirty components from current sources, drops removed components.
 System (background): Generates testcases.yaml from buildfile.yaml.
 System (background): Runs `parlay validate --type buildfile --deep --json` to verify cross-references with structured error output.
-System (background): Saves baseline (per-field intent hashes for drift + per-element source hashes for incremental rebuilds).
-System (background): Writes all three artifacts to .parlay/build/upgrade-plan-creation/ (tool internals — designer never edits these).
+System (background): Writes buildfile.yaml and testcases.yaml to .parlay/build/upgrade-plan-creation/ (tool internals — designer never edits these). Does NOT save baseline or code-hashes — that happens at the end of /parlay-generate-code, only after tests pass.
 System: [OK] Build specification ready. Internal artifacts saved to .parlay/build/upgrade-plan-creation/. All cross-references validated.
-System: Next: run /parlay-generate-code @upgrade-plan-creation to produce the prototype code and run tests against it.
+System: Next: run /parlay-generate-code @upgrade-plan-creation to produce the prototype code, run tests, and commit the build state.
 
 ---
 
@@ -205,6 +204,7 @@ System (condition: buildfile missing): I can't generate code yet — no buildfil
 System (background): Runs `parlay diff @upgrade-plan-creation` to classify components as stable / dirty / removed.
 System (background): Runs `parlay scan-generated cmd/upgrade-plan-creation/` to map existing files to their owning components via the `parlay-component:` marker. Files without a marker are user-owned and excluded.
 System (background): Runs `parlay verify-generated @upgrade-plan-creation` to detect any hand-edits to files the diff considers stable.
+System (condition: first generation): No code state committed yet (`has_hashes: false`) — treating every component as new and regenerating the full prototype.
 System (condition: stable file modified): I noticed ==filename== is marked as a stable component but has been edited since the last generation. How would you like to proceed?
   A: Overwrite (lose my edits)
   B: Skip this file (keep my edits, possibly diverging from the buildfile)
@@ -216,7 +216,16 @@ System: - ==K== removed component files (will be deleted): ==list==
 System: Generating prototype code with adapter: go-cli
 System: Source root (from adapter): cmd/upgrade-plan-creation/
 System (background): For each dirty/new component in buildfile, generates a code file at the adapter's file-conventions location. Each generated file gets a two-line `parlay-feature:` / `parlay-component:` marker. Stable components are skipped (their existing files stay untouched). Removed components have their marker-tagged files deleted.
-System (background): Runs `parlay save-code-hashes @upgrade-plan-creation --source-root cmd/upgrade-plan-creation/` to record content hashes for the next run.
+System (background): Generates test code from .parlay/build/upgrade-plan-creation/testcases.yaml and runs the test suite.
+System (condition: tests fail): Tests failed:
+System: - ==test name== — ==failure summary==
+System: NOT committing build state. The previous committed state is preserved; you can fix the issue and re-run /parlay-generate-code.
+  A: Show me the failures in detail
+  B: Regenerate the failing components
+  C: Stop, I'll investigate manually
+System (condition: tests pass): All tests pass.
+System (background): Runs `parlay save-build-state @upgrade-plan-creation --source-root cmd/upgrade-plan-creation/` — atomically writes both .baseline.yaml and .code-hashes.yaml using write-then-rename. This is the only sanctioned write path for either file.
+System: [OK] Prototype generated and tests passing. Build state committed.
 System: Generated ==number== code files:
 System: - cmd/upgrade-plan-creation/main.go
 System: - cmd/upgrade-plan-creation/preflight.go

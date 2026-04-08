@@ -297,16 +297,17 @@
 - Buildfile operations must use the formal operations grammar — a closed set of typed operations, not free-form pseudo-code
 - Before generation, readiness checks must pass — all preconditions for the build-feature stage are satisfied
 - Component design choices must follow the patterns declared in the framework adapter
-- After generation, a baseline snapshot must be stored — both per-field intent hashes (for drift detection) and per-element source hashes (for incremental rebuilds)
-- Rebuilds are incremental at the component level: `parlay diff @{feature}` reports stable / dirty / removed components based on per-element source hashes; the agent regenerates only dirty components and preserves stable ones verbatim. Brownfield adoption is the limiting case (every component starts new).
-- Build artifacts (buildfile.yaml, testcases.yaml, .baseline.yaml) are tool internals — they live in `.parlay/build/{feature}/`, never under `spec/intents/`. The designer never sees them.
+- Build artifacts (buildfile.yaml, testcases.yaml) are tool internals — they live in `.parlay/build/{feature}/`, never under `spec/intents/`. The designer never sees them.
 - testcases.yaml is internal — it drives cross-validation and feeds spec generation, but is not handed off to engineering. Engineering writes their own real tests from `specification.md`.
+- This intent **must not commit any build state** — neither `.baseline.yaml` nor `.code-hashes.yaml` is written here. State commit happens atomically at the end of **Generate Prototype Code**, only after tests pass. Saving baseline here would commit source state without corresponding code state, breaking the consistency invariant and stranding the feature in a state where `parlay diff` reports everything stable but no code exists.
+- Rebuilds are incremental at the component level: once a build state has been committed by a previous successful end-to-end run, `parlay diff @{feature}` reports stable / dirty / removed components based on per-element source hashes; the agent regenerates only dirty components and preserves stable ones verbatim. Brownfield adoption is the limiting case (no committed state yet, everything starts new).
 - This intent stops at the build specification. Code generation is handled by **Generate Prototype Code** as a separate step, with the buildfile as the context boundary.
 
 **Verify**:
 - `buildfile.yaml` is generated at `.parlay/build/{feature}/buildfile.yaml`
 - `testcases.yaml` is generated at `.parlay/build/{feature}/testcases.yaml`
-- `.baseline.yaml` is generated at `.parlay/build/{feature}/.baseline.yaml`
+- **No `.baseline.yaml` is written by this intent** — state commit is the responsibility of Generate Prototype Code
+- **No `.code-hashes.yaml` is written by this intent** — same reason
 - The buildfile uses only vocabulary from the loaded framework adapter
 - Deep validation passes: all model references, component references, fixture data, and adapter types resolve
 - All buildfile operations conform to the formal grammar (read-file, write-file, create-directory, copy, filter, for-each, transform)
@@ -334,12 +335,13 @@
 - Two AI agents reading the same buildfile must produce code that passes the same testcases (functional determinism — the contract is observable behavior, not code structure)
 - Generated code lives outside `spec/` and `.parlay/` — at the location specified by the adapter's `file-conventions.source-root` (e.g., `src/`, `cmd/`, `app/`)
 - The designer must never need to modify generated prototype code
-- After generation, the agent runs the generated tests and reports pass/fail
-- Incremental regeneration is driven by three CLI helpers: `parlay diff @{feature}` classifies components as stable/dirty/removed based on source changes; `parlay scan-generated {source-root}` maps existing files to components via the `parlay-component:` marker; `parlay verify-generated @{feature}` compares each recorded file against its stored content hash to detect hand-edits.
-- After writing generated files, the agent runs `parlay save-code-hashes @{feature} --source-root {root}` to record content hashes for the next run.
-- On the very first generation of a feature, full regen is the only option (no stable components to preserve, no hashes to verify against).
+- Incremental regeneration is driven by three read helpers: `parlay diff @{feature}` classifies components as stable/dirty/removed based on source changes; `parlay scan-generated {source-root}` maps existing files to components via the `parlay-component:` marker; `parlay verify-generated @{feature}` compares each recorded file against its stored content hash to detect hand-edits.
+- The very first generation of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case, every component is treated as new and full regen is the only option.
 - Each generated file must include a two-line marker (`parlay-feature: {feature}` and `parlay-component: {name}`) at the top, using the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell). Files without a marker are user-owned and the tool must never modify or delete them.
 - If `parlay verify-generated` reports a file as `modified` for a component the diff classifies as stable, the user has hand-edited generated code. The agent must NOT silently overwrite it — surface the situation and offer to overwrite, skip, or show the diff.
+- After writing generated files, the agent runs the generated tests. **Tests must pass** before any state is committed.
+- Only on test success, the agent runs `parlay save-build-state @{feature} --source-root {root}` as the final step. This atomically commits both `.baseline.yaml` and `.code-hashes.yaml` using the write-then-rename pattern. **This is the only place either file is written** — there are no separate `save-baseline` or `save-code-hashes` CLI commands. The atomicity and the single-write-point are intentional: they enforce the consistency invariant that the two files always describe the same point in time (the last successful end-to-end generation).
+- If tests fail, `save-build-state` MUST NOT be called. The previous committed state remains in place; the next attempt starts from the same diff as before. Failure recovery is just "fix the issue and re-run."
 
 **Verify**:
 - Prototype code is generated at the location specified by the adapter's `file-conventions.source-root`

@@ -107,11 +107,13 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
-		output.Components = computeComponentImpact(
-			buildfilePath, slug,
-			currentIntents, currentDialogs, fragmentBySlug,
-			output.Intents, output.Dialogs, output.Fragments,
-		)
+		if !output.FirstBuild {
+			output.Components = computeComponentImpact(
+				buildfilePath, slug,
+				currentIntents, currentDialogs, fragmentBySlug,
+				output.Intents, output.Dialogs, output.Fragments,
+			)
+		}
 	}
 	return output
 }

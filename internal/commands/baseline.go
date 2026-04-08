@@ -15,13 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var saveBaselineCmd = &cobra.Command{
-	Use:   "save-baseline <@feature>",
-	Short: "Save a content baseline for drift detection (called after build-feature)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSaveBaseline,
-}
-
 var checkDriftCmd = &cobra.Command{
 	Use:   "check-drift <@feature>",
 	Short: "Check if intents have changed since the last build (JSON output for agent consumption)",
@@ -80,16 +73,19 @@ func baselinePath(slug string) string {
 	return filepath.Join(config.BuildPath(slug), ".baseline.yaml")
 }
 
-func runSaveBaseline(cmd *cobra.Command, args []string) error {
-	slug := strings.TrimPrefix(args[0], "@")
+// buildBaseline computes a Baseline struct from the current source files of
+// a feature. Best-effort on dialogs and surface fragments — missing files are
+// skipped silently. Does not touch disk; callers (typically saveBuildState)
+// are responsible for serialization and writing.
+func buildBaseline(slug string) (*Baseline, error) {
 	featurePath := config.FeaturePath(slug)
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
-		return fmt.Errorf("failed to read intents: %w", err)
+		return nil, fmt.Errorf("read intents: %w", err)
 	}
 
-	baseline := Baseline{
+	baseline := &Baseline{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Intents:     make(map[string]IntentHash),
 		Sources:     &HashedSources{Intents: make(map[string]string)},
@@ -100,8 +96,6 @@ func runSaveBaseline(cmd *cobra.Command, args []string) error {
 		baseline.Sources.Intents[intent.Slug] = hashIntentContent(intent)
 	}
 
-	// Dialogs and surface fragments are best-effort: they may not exist yet
-	// at save time (early in the workflow). Skip silently if absent.
 	if dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md")); err == nil {
 		baseline.Sources.Dialogs = make(map[string]string)
 		for _, dialog := range dialogs {
@@ -116,25 +110,12 @@ func runSaveBaseline(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	data, err := yaml.Marshal(baseline)
-	if err != nil {
-		return err
-	}
+	return baseline, nil
+}
 
-	path := baselinePath(slug)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return err
-	}
-
-	fmt.Printf("Baseline saved: %s (%d intents, %d dialogs, %d fragments)\n",
-		path,
-		len(baseline.Intents),
-		len(baseline.Sources.Dialogs),
-		len(baseline.Sources.SurfaceFragments))
-	return nil
+// marshalBaseline serializes a Baseline to YAML bytes for atomic disk writes.
+func marshalBaseline(b *Baseline) ([]byte, error) {
+	return yaml.Marshal(b)
 }
 
 func runCheckDrift(cmd *cobra.Command, args []string) error {
