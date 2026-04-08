@@ -1,7 +1,7 @@
 # Testcases Schema
 
-File: `spec/intents/<feature-name>/devspec/testcases.yaml`
-Generated alongside buildfile.yaml by `/parlay build-feature`. Defines property-based tests that verify the prototype matches the buildfile contract.
+File: `.parlay/build/<feature-name>/testcases.yaml`
+Generated alongside buildfile.yaml by `/parlay build-feature`. Tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering. Defines property-based tests that verify the prototype matches the buildfile contract.
 
 Tests are specification-level — they verify what the user sees and can do, not implementation details. Any AI agent generating test code from this file must produce tests that pass against a correctly built prototype.
 

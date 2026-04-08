@@ -328,10 +328,10 @@ Transitions:
 
 ### Buildfile
 
-Prototype build specification.
+Prototype build specification — tool internal, never user-facing.
 
 **Properties**:
-- path: string (spec/intents/<feature>/devspec/buildfile.yaml)
+- path: string (.parlay/build/<feature>/buildfile.yaml)
 
 **Relationships**:
 - belongs to Feature
@@ -342,10 +342,10 @@ Prototype build specification.
 
 ### TestCase
 
-Property-based test specification.
+Property-based test specification — tool internal, drives cross-validation and feeds spec generation, never handed off to engineering.
 
 **Properties**:
-- path: string (spec/intents/<feature>/devspec/testcases.yaml)
+- path: string (.parlay/build/<feature>/testcases.yaml)
 
 **Relationships**:
 - belongs to Feature
@@ -371,10 +371,10 @@ Generated interactive prototype.
 
 ### EngineeringSpec
 
-Formal engineering specification for handoff.
+Formal engineering specification for handoff — currently the only handoff artifact in spec/handoff/.
 
 **Properties**:
-- path: string (spec/intents/<feature>/enggspec/specification.md)
+- path: string (spec/handoff/<feature>/specification.md)
 - format: string (from ProjectConfig sdd-framework)
 
 **Relationships**:
@@ -427,28 +427,6 @@ Agent-specific adapter that packages skills into the format a particular AI agen
 - writes agent-specific files (e.g., .claude/skills/, .cursor/skills/, AGENT_INSTRUCTIONS.md)
 - writes agent config (CLAUDE.md, .cursorrules)
 - invoked by `parlay init`
-
----
-
-### DisambiguationRecord
-
-A captured design decision from user disambiguation.
-
-**Properties**:
-- timestamp: date
-- task: string
-- finding-id: string
-- question: string
-- options: FindingOption[]
-- selected: string (letter chosen)
-- custom-text: string (if freeform selected)
-- affected-files: string[]
-- file-updated: boolean
-
-**Relationships**:
-- created by CLI after user resolves a Finding
-- stored in disambiguation.yaml within the feature folder
-- read by agent in future analysis phases to avoid re-asking
 
 ---
 

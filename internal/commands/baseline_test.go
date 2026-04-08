@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/anthropics/parlay/internal/config"
 	"github.com/anthropics/parlay/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -13,8 +14,8 @@ func TestSaveAndDetectDrift_NoDrift(t *testing.T) {
 	dir := setupTestDir(t)
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
-	devspecDir := filepath.Join(featureDir, "devspec")
-	os.MkdirAll(devspecDir, 0755)
+	os.MkdirAll(featureDir, 0755)
+	os.MkdirAll(config.BuildPath("my-feature"), 0755)
 
 	intents := `## Check Readiness
 
@@ -40,7 +41,7 @@ func TestSaveAndDetectDrift_NoDrift(t *testing.T) {
 		baseline.Intents[intent.Slug] = hashIntent(intent)
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath(featureDir), data, 0644)
+	os.WriteFile(baselinePath("my-feature"), data, 0644)
 
 	// Check drift — should be none
 	output, err := detectDrift("my-feature", featureDir)
@@ -56,8 +57,8 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 	dir := setupTestDir(t)
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
-	devspecDir := filepath.Join(featureDir, "devspec")
-	os.MkdirAll(devspecDir, 0755)
+	os.MkdirAll(featureDir, 0755)
+	os.MkdirAll(config.BuildPath("my-feature"), 0755)
 
 	// Original intent
 	original := `## Check Readiness
@@ -77,7 +78,7 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 		baseline.Intents[intent.Slug] = hashIntent(intent)
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath(featureDir), data, 0644)
+	os.WriteFile(baselinePath("my-feature"), data, 0644)
 
 	// Modify the goal
 	modified := `## Check Readiness
@@ -117,8 +118,8 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 	dir := setupTestDir(t)
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
-	devspecDir := filepath.Join(featureDir, "devspec")
-	os.MkdirAll(devspecDir, 0755)
+	os.MkdirAll(featureDir, 0755)
+	os.MkdirAll(config.BuildPath("my-feature"), 0755)
 
 	// Baseline had two intents
 	baseline := Baseline{
@@ -129,7 +130,7 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 		},
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath(featureDir), data, 0644)
+	os.WriteFile(baselinePath("my-feature"), data, 0644)
 
 	// Current intents: A (unchanged) + C (new), B removed
 	current := `## Intent A

@@ -109,8 +109,9 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 
 func checkChain(featurePath, slug string, intents []parser.Intent) *chainCoverage {
 	surfacePath := filepath.Join(featurePath, "surface.md")
-	buildfilePath := filepath.Join(featurePath, "devspec", "buildfile.yaml")
-	testcasesPath := filepath.Join(featurePath, "devspec", "testcases.yaml")
+	buildPath := config.BuildPath(slug)
+	buildfilePath := filepath.Join(buildPath, "buildfile.yaml")
+	testcasesPath := filepath.Join(buildPath, "testcases.yaml")
 
 	// Check if any downstream artifact exists
 	hasSurface := fileExists(surfacePath)

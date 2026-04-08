@@ -84,7 +84,7 @@
 
 ## Build Progress Report
 
-**Shows**: Active framework adapter name, created devspec files (buildfile.yaml, testcases.yaml) with paths, prototype generation status, test execution results.
+**Shows**: Active framework adapter name, internal build artifacts written to .parlay/build/<feature>/ (buildfile.yaml, testcases.yaml), prototype generation status, test execution results.
 **Actions**: Review generated prototype, review buildfile, re-run build
 **Source**: @parlay-tool/generate-prototype
 

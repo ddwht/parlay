@@ -109,7 +109,7 @@ func runCreateSurface(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Skipped %d intents that already have fragments.\n", skipped)
 	}
 	fmt.Println()
-	fmt.Println("For AI-enhanced generation with disambiguation, use the /parlay-create-surface skill.")
+	fmt.Println("For AI-enhanced generation, use the /parlay-create-surface skill.")
 
 	return nil
 }

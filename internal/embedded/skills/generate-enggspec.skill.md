@@ -14,11 +14,11 @@ Translate feature design artifacts into a formal engineering specification for h
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
    - `spec/intents/{feature}/surface.md`
-   - `spec/intents/{feature}/devspec/buildfile.yaml` (if exists)
-   - `spec/intents/{feature}/devspec/testcases.yaml` (if exists)
    - `spec/intents/{feature}/domain-model.md` (if exists)
+   - `.parlay/build/{feature}/buildfile.yaml` (if exists — tool-internal)
+   - `.parlay/build/{feature}/testcases.yaml` (if exists — tool-internal; project the observable-behavior assertions into the spec's Acceptance Criteria section)
 
-3. **Generate specification** at `spec/intents/{feature}/enggspec/specification.md`:
+3. **Generate specification** at `spec/handoff/{feature}/specification.md` (this is the only handoff artifact — engineering reads it and writes their own tests):
    - Feature overview and user stories (from intents — Goal becomes acceptance criteria)
    - Detailed interaction requirements (from dialog flows)
    - UI component specifications (from surface fragments)

@@ -71,11 +71,14 @@
 - The tool must set up internal configuration (schemas, agent rules) that the designer never needs to see or manage
 - Internal schemas must be loaded by the AI agent on-demand per command, not kept in agent context permanently
 - The agent-specific config file (e.g., CLAUDE.md for Claude Code) must be lightweight — commands and pointers, not full schema content
+- The project layout uses three zones with strict ownership: `spec/intents/` (designer-authored input — only intents.md, dialogs.md, surface.md are user-facing), `spec/handoff/` (engineering-consumed output), and `.parlay/` (tool internals — never user-facing)
 
 **Verify**:
 - `.parlay/config.yaml` is created with the selected agent, SDD framework, and prototype framework
 - `.parlay/schemas/` directory is populated with schema files
-- `spec/intents/` directory is created
+- `.parlay/build/` directory is created for internal build artifacts
+- `spec/intents/` directory is created for designer-authored inputs
+- `spec/handoff/` directory is created for engineering output artifacts
 - The wizard presents only installed/available options
 
 **Questions**:
@@ -256,23 +259,22 @@
 **Priority**: P1
 **Context**: The designer has written intents and dialogs, but some details are ambiguous, incomplete, or contradictory — the AI agent needs to clarify before generating output.
 **Action**: The agent analyzes documents, identifies ambiguities, presents each one to the designer as a conversational question with lettered options, waits for the response, then proceeds with generation.
-**Objects**: intent, dialog, surface, disambiguation-record
+**Objects**: intent, dialog, surface
 
 **Constraints**:
-- The agent talks directly to the designer — no CLI mediator, no YAML round-trip
+- The agent talks directly to the designer — no CLI mediator, no YAML round-trip, no side-channel cache
 - Each ambiguity is presented with lettered options (A/B/C) and an optional freeform choice
 - The agent must ask permission before updating any human-owned file (intents, dialogs, surface)
-- Answers must be incorporated back into the source documents, not just used silently
-- Prior disambiguation decisions are stored in disambiguation.yaml and referenced to avoid re-asking
+- Resolved decisions are incorporated back into the source documents (intents.md, dialogs.md, surface.md) — once the source is updated, the ambiguity is gone, so there is nothing to "remember"
+- Deferred decisions are added to the affected intent's `**Questions**:` field, never stored separately. The intent's own schema already has a home for open questions.
 
 **Verify**:
 - Ambiguities are presented one at a time with lettered options
 - The designer's choice is incorporated into the source document
-- Previously resolved ambiguities are not re-asked (disambiguation.yaml is checked)
+- Deferred decisions land in the relevant intent's `**Questions**:` field
 - No human-owned file is modified without explicit permission
 
 **Questions**:
-- What if the designer doesn't know the answer — can they defer a decision?
 - Should the agent present all ambiguities at once or one at a time?
 
 ---
@@ -298,11 +300,13 @@
 - Buildfile operations must use the formal operations grammar — a closed set of typed operations, not free-form pseudo-code
 - Before generation, readiness checks must pass — all preconditions for the build-feature stage are satisfied
 - Component design choices must follow the patterns declared in the framework adapter
+- Build artifacts (buildfile.yaml, testcases.yaml, .baseline.yaml) are tool internals — they live in `.parlay/build/{feature}/`, never under `spec/intents/`. The designer never sees them.
+- testcases.yaml is internal — it drives cross-validation and feeds spec generation, but is not handed off to engineering. Engineering writes their own real tests from `specification.md`.
 
 **Verify**:
-- `buildfile.yaml` is generated at `spec/intents/{feature}/devspec/buildfile.yaml`
-- `testcases.yaml` is generated at `spec/intents/{feature}/devspec/testcases.yaml`
-- `.baseline.yaml` is generated at `spec/intents/{feature}/devspec/.baseline.yaml`
+- `buildfile.yaml` is generated at `.parlay/build/{feature}/buildfile.yaml`
+- `testcases.yaml` is generated at `.parlay/build/{feature}/testcases.yaml`
+- `.baseline.yaml` is generated at `.parlay/build/{feature}/.baseline.yaml`
 - The buildfile uses only vocabulary from the loaded framework adapter
 - The same inputs + same adapter produce the same buildfile on repeated runs
 - Deep validation passes: all model references, component references, fixture data, and adapter types resolve
@@ -329,10 +333,12 @@
 - Must support all popular SDD frameworks (GitHub SpecKit, Kiro, Tessl, etc.)
 - Must provide extensibility points for new SDD formats in the future
 - The generated specification must be reviewable by the designer before handoff
+- The engineering spec lives in `spec/handoff/{feature}/`, separate from designer-facing inputs in `spec/intents/{feature}/`. This is the only handoff zone.
+- `specification.md` is currently the only handoff artifact — internal artifacts (buildfile.yaml, testcases.yaml) stay in `.parlay/build/` and are not handed off
 
 **Verify**:
 - Engineering spec is generated in the format matching the configured SDD framework
-- The generated spec is written to `spec/intents/{feature}/enggspec/`
+- The generated spec is written to `spec/handoff/{feature}/specification.md`
 - The designer can review the spec before it is shared with engineering
 
 **Questions**:

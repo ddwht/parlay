@@ -18,8 +18,10 @@ const (
 	ConfigFile  = "config.yaml"
 	SchemasDir  = "schemas"
 	AdaptersDir = "adapters"
+	BuildDir    = "build"
 	SpecDir     = "spec"
 	IntentsDir  = "intents"
+	HandoffDir  = "handoff"
 	PagesDir    = "pages"
 )
 
@@ -41,6 +43,28 @@ func AdaptersPath() string {
 
 func PagesPath() string {
 	return filepath.Join(SpecDir, PagesDir)
+}
+
+// BuildRoot is the root directory for tool-internal build artifacts.
+func BuildRoot() string {
+	return filepath.Join(ParlayDir, BuildDir)
+}
+
+// BuildPath is the per-feature directory for tool-internal build artifacts
+// (buildfile.yaml, testcases.yaml, .baseline.yaml).
+func BuildPath(slug string) string {
+	return filepath.Join(ParlayDir, BuildDir, slug)
+}
+
+// HandoffRoot is the root directory for engineering handoff artifacts.
+func HandoffRoot() string {
+	return filepath.Join(SpecDir, HandoffDir)
+}
+
+// HandoffPath is the per-feature directory for engineering handoff artifacts
+// (specification.md and any future handoff content).
+func HandoffPath(slug string) string {
+	return filepath.Join(SpecDir, HandoffDir, slug)
 }
 
 func Load() (*ProjectConfig, error) {

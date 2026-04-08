@@ -58,9 +58,11 @@ Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content 
 
 ## File Ownership
 
-- **Human-authored**: intents.md, dialogs.md — ask permission before modifying
-- **Generated, human-reviewed**: surface.md, *.page.md
-- **Generated**: devspec/, enggspec/
+Three-zone layout — strict ownership:
+- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
+- **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
+- **spec/handoff/<feature>/** (engineering output): specification.md
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
 `, commands)
 
 	return os.WriteFile(filepath.Join(projectRoot, "CLAUDE.md"), []byte(content), 0644)

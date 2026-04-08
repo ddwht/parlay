@@ -14,11 +14,13 @@ User: Yes, GitHub SpecKit
 System: Great, noted. What framework do you want to use for the prototype? ==List of installed extensions==
 User: Angular + Clarity
 System: Noted. Setting up the project now.
-System (background): Creates project structure:
-System (background): — `spec/intents/` folder for features
+System (background): Creates project structure (three zones — designer input, engineering output, tool internals):
+System (background): — `spec/intents/` folder for designer-authored feature inputs (intents, dialogs, surface)
+System (background): — `spec/handoff/` folder for engineering handoff artifacts (specification.md per feature)
 System (background): — `.parlay/config.yaml` with chosen tools (agent: Claude Code, sdd: GitHub SpecKit, prototype: Angular + Clarity)
 System (background): — `.parlay/schemas/` with internal schema definitions
 System (background): — `.parlay/adapters/angular-clarity.adapter.yaml` with framework adapter
+System (background): — `.parlay/build/` folder reserved for internal build artifacts (populated on first build-feature)
 System (background): — `.claude/skills/parlay-*/SKILL.md` — 12 skills deployed for Claude Code
 System (background): — `CLAUDE.md` with skill list and schema loading rules
 System: The project is bootstrapped and ready. All operations are available as /parlay-* skills.
@@ -57,7 +59,6 @@ User: /parlay-create-surface @upgrade-plan-creation
 System (background): Reads skill instructions from .claude/skills/parlay-create-surface/SKILL.md.
 System (background): Loads .parlay/schemas/surface.schema.md, intent.schema.md, dialog.schema.md.
 System (background): Reads intents.md and dialogs.md for @upgrade-plan-creation.
-System (background): Checks disambiguation.yaml for prior decisions.
 System (background): Analyzes intents and dialogs for ambiguities.
 System (condition: ambiguities found): I found some things that need your input before I can generate the surface:
 System: ==context excerpt==
@@ -68,7 +69,7 @@ System: ==description of ambiguity==
 User: B
 System: Got it. Should I update ==affected-file== to reflect this?
 User: Yes
-System (background): Updates source file and saves decision to disambiguation.yaml.
+System (background): Updates source file with the resolved decision.
 System (background): Generates surface.md following the surface schema.
 System (background): Runs `parlay validate --type surface` to verify the output.
 System: I've generated ==number== fragments in surface.md:
@@ -178,10 +179,8 @@ System (background): Generates buildfile.yaml — maps surface fragments to adap
 System (background): Generates testcases.yaml from buildfile.yaml.
 System (background): Runs `parlay validate --type buildfile --deep --json` to verify cross-references with structured error output.
 System (background): Saves intent content baseline to .baseline.yaml for drift detection.
-System: Created /spec/intents/upgrade-plan-creation/devspec/buildfile.yaml
-System: Created /spec/intents/upgrade-plan-creation/devspec/testcases.yaml
-System: Created /spec/intents/upgrade-plan-creation/devspec/.baseline.yaml
-System: [OK] Feature built. All cross-references validated. Ready for review.
+System (background): Writes all three artifacts to .parlay/build/upgrade-plan-creation/ (tool internals — designer never edits these).
+System: [OK] Feature built. Internal build artifacts saved to .parlay/build/upgrade-plan-creation/. All cross-references validated. Ready for review.
 
 ---
 
@@ -191,8 +190,8 @@ System: [OK] Feature built. All cross-references validated. Ready for review.
 
 User: /parlay-generate-enggspec @upgrade-plan-creation
 System: We're ready to hand over to engineering. Let me read through our specifications and generate an engineering spec in GitHub SpecKit format.
-System (background): Reads intents, dialogs, surface, and devspec. Translates to GitHub SpecKit format.
-System: The specification is ready: /spec/intents/upgrade-plan-creation/enggspec/specification.md
+System (background): Reads intents, dialogs, surface from spec/intents/upgrade-plan-creation/ and buildfile.yaml + testcases.yaml from .parlay/build/upgrade-plan-creation/. Translates to GitHub SpecKit format.
+System: The specification is ready: spec/handoff/upgrade-plan-creation/specification.md
 System: Review it and hand it over to the engineering team.
 
 ---
@@ -226,7 +225,7 @@ System: How should it be integrated?
 User: C
 System: Got it. Should I update spec/domain-model.md to reflect this?
 User: Yes
-System (background): Saves decision to disambiguation.yaml. Merges models with resolved decisions.
+System (background): Merges models with resolved decisions.
 System: Domain model integrated and saved.
 
 ---

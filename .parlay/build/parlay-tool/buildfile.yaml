@@ -828,11 +828,11 @@ components:
       - name: buildfile-path
         type: path-reference
         widget: path-line
-        format: "Created spec/intents/{slug}/devspec/buildfile.yaml"
+        format: "Created .parlay/build/{slug}/buildfile.yaml"
       - name: testcases-path
         type: path-reference
         widget: path-line
-        format: "Created spec/intents/{slug}/devspec/testcases.yaml"
+        format: "Created .parlay/build/{slug}/testcases.yaml"
       - name: result
         type: status-indicator
         widget: prefixed-message
@@ -847,9 +847,9 @@ components:
       - generate: testcases.yaml
         using: testcases-schema
         from: buildfile.yaml
-      - create-directory: "spec/intents/{slug}/devspec/"
-      - write-file: "spec/intents/{slug}/devspec/buildfile.yaml"
-      - write-file: "spec/intents/{slug}/devspec/testcases.yaml"
+      - create-directory: ".parlay/build/{slug}/"
+      - write-file: ".parlay/build/{slug}/buildfile.yaml"
+      - write-file: ".parlay/build/{slug}/testcases.yaml"
       - generate: prototype code
         using: buildfile.yaml + adapter file-conventions
       - run: tests using testcases.yaml
@@ -875,7 +875,7 @@ components:
       - name: spec-path
         type: path-reference
         widget: path-line
-        format: "Created spec/intents/{slug}/enggspec/specification.md"
+        format: "Created spec/handoff/{slug}/specification.md"
       - name: format-info
         type: text-output
         widget: fmt.Println
@@ -888,8 +888,8 @@ components:
     operations:
       - read: all feature artifacts
       - generate: engineering specification using sdd-framework adapter
-      - create-directory: "spec/intents/{slug}/enggspec/"
-      - write-file: "spec/intents/{slug}/enggspec/specification.md"
+      - create-directory: "spec/handoff/{slug}/"
+      - write-file: "spec/handoff/{slug}/specification.md"
 
   domain-model-export:
     source: "@parlay-tool/domain-model-export"

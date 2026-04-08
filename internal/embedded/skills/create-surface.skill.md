@@ -16,7 +16,6 @@ Generate a surface.md file for a feature by analyzing its intents and dialogs.
 2. **Read feature files**:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
-   - `spec/intents/{feature}/disambiguation.yaml` (if exists — contains prior decisions, skip resolved issues)
 
 3. **Analyze for ambiguities** — Read the intents and dialogs carefully. Identify any:
    - Ambiguities: where the same intent could be interpreted multiple ways
@@ -28,8 +27,8 @@ Generate a surface.md file for a feature by analyzing its intents and dialogs.
    - Explain what's ambiguous
    - Offer lettered options (A, B, C) with a recommended choice
    - Wait for the user's response
-   - Ask if they want the source file updated to reflect the decision
-   - Save the decision to `spec/intents/{feature}/disambiguation.yaml`
+   - Ask permission to update the source file (intents.md or dialogs.md) to reflect the decision
+   - On approval, edit the source file directly. Resolved decisions live in the source — never in a side-channel cache.
 
 5. **Generate surface.md** — For each distinct UI piece implied by the intents and dialogs:
    - Create a fragment with a descriptive `## Name` heading
@@ -58,6 +57,6 @@ When `parlay check-readiness --stage create-surface` returns errors:
 When `parlay validate --type surface --json` returns errors:
 - `schema-validation-failed` — the generated surface.md is malformed. This is likely a generation bug; review what you wrote and regenerate.
 
-When the user provides ambiguous input during disambiguation:
+When the user can't decide on an ambiguity:
 - Offer to defer the decision and proceed with a sensible default
-- Save the deferred status to disambiguation.yaml so it can be revisited later
+- Add the open question to the affected intent's `**Questions**:` field in intents.md so it can be revisited later

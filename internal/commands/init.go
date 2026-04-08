@@ -76,9 +76,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Operation: copy-bundled-adapter "{prototype-framework}" → ".parlay/adapters/"
 	adapterName := copyBundledAdapter(framework)
 
-	// Operation: create-directory "spec/intents/"
+	// Operation: create-directory "spec/intents/" (designer-authored input)
 	if err := os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755); err != nil {
 		return fmt.Errorf("failed to create spec/intents/: %w", err)
+	}
+
+	// Operation: create-directory "spec/handoff/" (engineering-consumed output)
+	if err := os.MkdirAll(config.HandoffRoot(), 0755); err != nil {
+		return fmt.Errorf("failed to create spec/handoff/: %w", err)
+	}
+
+	// Operation: create-directory ".parlay/build/" (tool-internal build artifacts)
+	if err := os.MkdirAll(config.BuildRoot(), 0755); err != nil {
+		return fmt.Errorf("failed to create .parlay/build/: %w", err)
 	}
 
 	// Operation: deploy skills and agent config
@@ -102,7 +112,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if adapterName != "" {
 		fmt.Printf("  .parlay/adapters/           — %s adapter\n", adapterName)
 	}
-	fmt.Printf("  spec/intents/               — feature folder\n")
+	fmt.Printf("  .parlay/build/              — internal build artifacts (per feature)\n")
+	fmt.Printf("  spec/intents/               — designer-authored feature inputs\n")
+	fmt.Printf("  spec/handoff/               — engineering handoff artifacts (per feature)\n")
 	if len(skills) > 0 {
 		fmt.Printf("  skills                      — %d skills deployed for %s\n", len(skills), dep.Name())
 	}

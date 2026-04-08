@@ -25,7 +25,6 @@ Load an external domain model and integrate it with the current project's model.
      - C: Merge properties from both
      - D: Custom mapping (user describes)
    - Wait for the user's response for each conflict
-   - Save decisions to `disambiguation.yaml`
 
 4. **Merge models** — Apply the user's decisions and write the merged result to `spec/domain-model.md`.
 

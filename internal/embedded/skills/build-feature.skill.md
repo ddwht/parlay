@@ -31,7 +31,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - If any errors are reported, present them to the user with the suggested fixes and stop — do not proceed to generation
    - If only warnings are reported (e.g., open questions), inform the user and ask whether to proceed
 
-6. **Generate buildfile.yaml** at `spec/intents/{feature}/devspec/buildfile.yaml`:
+6. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
    - Create `fixtures:` with representative sample data
@@ -45,7 +45,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Define `routes:` mapping commands to components
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 
-7. **Generate testcases.yaml** at `spec/intents/{feature}/devspec/testcases.yaml`:
+7. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
    - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
    - Use the intent's **Verify** bullets as the basis for test assertions
@@ -54,8 +54,8 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Follow the testcases schema exactly
 
 8. **Validate** — Run all (use `--json` flag for structured error parsing):
-   - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml --json spec/intents/{feature}/devspec/buildfile.yaml`
-   - `parlay validate --type yaml --json spec/intents/{feature}/devspec/testcases.yaml`
+   - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml --json .parlay/build/{feature}/buildfile.yaml`
+   - `parlay validate --type yaml --json .parlay/build/{feature}/testcases.yaml`
    - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
    - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
 

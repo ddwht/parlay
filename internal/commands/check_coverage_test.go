@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/anthropics/parlay/internal/config"
 	"github.com/anthropics/parlay/internal/parser"
 )
 
@@ -90,8 +91,9 @@ func TestCheckChain_FullChain(t *testing.T) {
 	dir := setupTestDir(t)
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
-	devspecDir := filepath.Join(featureDir, "devspec")
-	os.MkdirAll(devspecDir, 0755)
+	os.MkdirAll(featureDir, 0755)
+	buildDir := config.BuildPath("my-feature")
+	os.MkdirAll(buildDir, 0755)
 
 	// Surface with two fragments
 	surface := `## Fragment A
@@ -115,7 +117,7 @@ components:
   comp-a:
     source: "@my-feature/fragment-a"
 `
-	os.WriteFile(filepath.Join(devspecDir, "buildfile.yaml"), []byte(buildfile), 0644)
+	os.WriteFile(filepath.Join(buildDir, "buildfile.yaml"), []byte(buildfile), 0644)
 
 	// Testcases with a suite for comp-a
 	testcases := `feature: my-feature
@@ -127,7 +129,7 @@ suites:
     intent: "@my-feature/intent-a"
     cases: []
 `
-	os.WriteFile(filepath.Join(devspecDir, "testcases.yaml"), []byte(testcases), 0644)
+	os.WriteFile(filepath.Join(buildDir, "testcases.yaml"), []byte(testcases), 0644)
 
 	intents := []parser.Intent{
 		{Title: "Intent A", Slug: "intent-a"},

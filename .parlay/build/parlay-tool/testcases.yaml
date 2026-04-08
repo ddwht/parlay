@@ -408,7 +408,7 @@ suites:
           - action: run-command
             target: "parlay generate-enggspec @upgrade-plan-creation"
           - verify: file-exists
-            target: "spec/intents/upgrade-plan-creation/enggspec/specification.md"
+            target: "spec/handoff/upgrade-plan-creation/specification.md"
 
       - name: "reports SDD format used"
         steps:

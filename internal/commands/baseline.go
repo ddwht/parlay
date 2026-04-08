@@ -57,8 +57,8 @@ type driftOutput struct {
 	Removed    []string    `json:"removed_intents,omitempty"`
 }
 
-func baselinePath(featurePath string) string {
-	return filepath.Join(featurePath, "devspec", ".baseline.yaml")
+func baselinePath(slug string) string {
+	return filepath.Join(config.BuildPath(slug), ".baseline.yaml")
 }
 
 func runSaveBaseline(cmd *cobra.Command, args []string) error {
@@ -84,7 +84,7 @@ func runSaveBaseline(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	path := baselinePath(featurePath)
+	path := baselinePath(slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func detectDrift(slug, featurePath string) (*driftOutput, error) {
 	output := &driftOutput{Feature: slug}
 
 	// Load baseline
-	blPath := baselinePath(featurePath)
+	blPath := baselinePath(slug)
 	blData, err := os.ReadFile(blPath)
 	if err != nil {
 		// No baseline = no drift to detect
