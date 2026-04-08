@@ -29,10 +29,18 @@ var checkDriftCmd = &cobra.Command{
 	RunE:  runCheckDrift,
 }
 
-// Baseline is the stored snapshot of intent content at build time.
+// Baseline is the stored snapshot of feature content at build time.
+//
+// Two layers of hashes:
+//   - Intents: per-field hashes used by the existing drift detection
+//     (parlay check-drift). Granular field-level reporting.
+//   - Sources: per-element content hashes for incremental rebuilds
+//     (parlay diff). Used to determine which buildfile components
+//     are stable / dirty / removed without re-running the agent.
 type Baseline struct {
 	GeneratedAt string                `yaml:"generated-at"`
 	Intents     map[string]IntentHash `yaml:"intents"`
+	Sources     *HashedSources        `yaml:"sources,omitempty"`
 }
 
 // IntentHash stores hashes of individual intent fields for granular drift detection.
@@ -42,6 +50,17 @@ type IntentHash struct {
 	Constraints string `yaml:"constraints-hash"`
 	Verify      string `yaml:"verify-hash"`
 	Objects     string `yaml:"objects-hash"`
+}
+
+// HashedSources stores per-element content hashes used by parlay diff
+// to compute component-level dirty/stable/removed sets.
+//
+// Maps are slug → hex-encoded sha256 prefix (16 chars). Surface fragments
+// are keyed by Slugify(fragment.Name).
+type HashedSources struct {
+	Intents          map[string]string `yaml:"intents,omitempty"`
+	Dialogs          map[string]string `yaml:"dialogs,omitempty"`
+	SurfaceFragments map[string]string `yaml:"surface-fragments,omitempty"`
 }
 
 type driftItem struct {
@@ -73,10 +92,28 @@ func runSaveBaseline(cmd *cobra.Command, args []string) error {
 	baseline := Baseline{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Intents:     make(map[string]IntentHash),
+		Sources:     &HashedSources{Intents: make(map[string]string)},
 	}
 
 	for _, intent := range intents {
 		baseline.Intents[intent.Slug] = hashIntent(intent)
+		baseline.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+
+	// Dialogs and surface fragments are best-effort: they may not exist yet
+	// at save time (early in the workflow). Skip silently if absent.
+	if dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md")); err == nil {
+		baseline.Sources.Dialogs = make(map[string]string)
+		for _, dialog := range dialogs {
+			baseline.Sources.Dialogs[dialog.Slug] = hashDialogContent(dialog)
+		}
+	}
+
+	if fragments, err := parser.ParseSurfaceFile(filepath.Join(featurePath, "surface.md")); err == nil {
+		baseline.Sources.SurfaceFragments = make(map[string]string)
+		for _, frag := range fragments {
+			baseline.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+		}
 	}
 
 	data, err := yaml.Marshal(baseline)
@@ -92,7 +129,11 @@ func runSaveBaseline(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Baseline saved: %s (%d intents)\n", path, len(baseline.Intents))
+	fmt.Printf("Baseline saved: %s (%d intents, %d dialogs, %d fragments)\n",
+		path,
+		len(baseline.Intents),
+		len(baseline.Sources.Dialogs),
+		len(baseline.Sources.SurfaceFragments))
 	return nil
 }
 
@@ -196,4 +237,49 @@ func diffHashes(old, new IntentHash) []string {
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", h[:8]) // 16-char hex, enough for drift detection
+}
+
+// hashIntentContent returns a content hash for an entire intent — used by
+// parlay diff to detect intent changes at the source-element level.
+// Distinct from hashIntent (above), which produces per-field hashes for
+// granular drift detection.
+func hashIntentContent(intent parser.Intent) string {
+	return sha256Hex(fmt.Sprintf("%s|%s|%s|%s|%s|%s|%v|%v|%v|%v",
+		intent.Title, intent.Goal, intent.Persona, intent.Priority,
+		intent.Context, intent.Action,
+		intent.Objects, intent.Constraints, intent.Verify, intent.Questions))
+}
+
+// hashDialogContent returns a content hash for an entire dialog including
+// all its turns and options. Used by parlay diff.
+func hashDialogContent(dialog parser.Dialog) string {
+	var b strings.Builder
+	b.WriteString(dialog.Title)
+	b.WriteString("|")
+	b.WriteString(dialog.Trigger)
+	for _, turn := range dialog.Turns {
+		b.WriteString("|")
+		b.WriteString(turn.Speaker)
+		b.WriteString(":")
+		b.WriteString(turn.Type)
+		b.WriteString(":")
+		b.WriteString(turn.Condition)
+		b.WriteString(":")
+		b.WriteString(turn.Content)
+		for _, opt := range turn.Options {
+			b.WriteString("/")
+			b.WriteString(opt.Letter)
+			b.WriteString(":")
+			b.WriteString(opt.Desc)
+		}
+	}
+	return sha256Hex(b.String())
+}
+
+// hashFragmentContent returns a content hash for a surface fragment.
+// Used by parlay diff.
+func hashFragmentContent(frag parser.Fragment) string {
+	return sha256Hex(fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%v",
+		frag.Name, frag.Shows, frag.Actions, frag.Source,
+		frag.Page, frag.Region, frag.Order, frag.Notes))
 }

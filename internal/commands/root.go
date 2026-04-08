@@ -37,4 +37,5 @@ func init() {
 	rootCmd.AddCommand(saveBaselineCmd)
 	rootCmd.AddCommand(checkDriftCmd)
 	rootCmd.AddCommand(checkReadinessCmd)
+	rootCmd.AddCommand(diffCmd)
 }

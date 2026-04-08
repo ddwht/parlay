@@ -173,12 +173,18 @@ System (background): Runs `parlay check-readiness @upgrade-plan-creation --stage
 System (condition: readiness check fails): I can't build yet. Found ==number== issues:
 System: - ==issue description==
 System: Fix these and run /parlay-build-feature again.
+System (background): Runs `parlay diff @upgrade-plan-creation` to determine which components have changed since the last build.
+System (condition: first build): No prior baseline — generating the full buildfile from scratch.
+System (condition: incremental build): Diff report:
+System: - ==N== stable components (will be preserved verbatim)
+System: - ==M== dirty components (will be regenerated): ==list==
+System: - ==K== removed components (will be dropped): ==list==
 System: Building with framework adapter: go-cli
 System (background): Reads intents.md, dialogs.md, surface.md, domain-model.md for @upgrade-plan-creation.
-System (background): Generates buildfile.yaml — maps surface fragments to adapter component types, actions to adapter interaction patterns. Applies adapter design patterns for interaction style and information density.
+System (background): Generates buildfile.yaml — preserves stable components verbatim, regenerates dirty components from current sources, drops removed components.
 System (background): Generates testcases.yaml from buildfile.yaml.
 System (background): Runs `parlay validate --type buildfile --deep --json` to verify cross-references with structured error output.
-System (background): Saves intent content baseline to .baseline.yaml for drift detection.
+System (background): Saves baseline (per-field intent hashes for drift + per-element source hashes for incremental rebuilds).
 System (background): Writes all three artifacts to .parlay/build/upgrade-plan-creation/ (tool internals — designer never edits these).
 System: [OK] Build specification ready. Internal artifacts saved to .parlay/build/upgrade-plan-creation/. All cross-references validated.
 System: Next: run /parlay-generate-code @upgrade-plan-creation to produce the prototype code and run tests against it.
@@ -196,9 +202,18 @@ System (background): Reads .parlay/build/upgrade-plan-creation/buildfile.yaml.
 System (background): Reads .parlay/adapters/go-cli.adapter.yaml.
 System (background): Does NOT read anything under spec/intents/upgrade-plan-creation/ — the buildfile is the only design source.
 System (condition: buildfile missing): I can't generate code yet — no buildfile found at .parlay/build/upgrade-plan-creation/buildfile.yaml. Run /parlay-build-feature @upgrade-plan-creation first.
+System (background): Runs `parlay diff @upgrade-plan-creation` to determine which components need code regeneration.
+System (condition: incremental): Diff report:
+System: - ==N== stable component files (will be preserved)
+System: - ==M== dirty component files (will be regenerated): ==list==
+System: - ==K== removed component files (will be deleted): ==list==
 System: Generating prototype code with adapter: go-cli
 System: Source root (from adapter): cmd/upgrade-plan-creation/
-System (background): For each component in buildfile, generates a code file at the adapter's file-conventions location. Records a parlay-component marker in each file for future incremental regen.
+System (background): For each dirty/new component in buildfile, generates a code file at the adapter's file-conventions location. Records a `parlay-component:` marker comment in each file. Stable components are skipped — their existing files (identified by the marker) stay untouched. Removed components have their marker-tagged files deleted.
+System (condition: stable file user-edited): I noticed ==filename== is marked as a stable component but has been edited since the last generation. How would you like to proceed?
+  A: Overwrite (lose my edits)
+  B: Skip this file (keep my edits, possibly diverging from the buildfile)
+  C: Show me the diff first
 System: Generated ==number== code files:
 System: - cmd/upgrade-plan-creation/main.go
 System: - cmd/upgrade-plan-creation/preflight.go

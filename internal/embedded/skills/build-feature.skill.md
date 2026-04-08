@@ -31,7 +31,16 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - If any errors are reported, present them to the user with the suggested fixes and stop — do not proceed to generation
    - If only warnings are reported (e.g., open questions), inform the user and ask whether to proceed
 
-6. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
+6. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last build.
+   - On the first build (`first_build: true`) or when the buildfile doesn't exist yet (`has_buildfile: false`), generate the entire buildfile from scratch.
+   - On subsequent builds, the JSON output reports:
+     - `components.stable[]` — components whose source dependencies (fragment, referenced intents, matching dialogs) all have unchanged hashes. **Preserve these entries verbatim** in the new buildfile — do not regenerate them.
+     - `components.dirty[]` — components whose dependency chain has changes. Regenerate only these components, using `changed_sources` as a hint about what to focus on.
+     - `components.removed[]` — components whose source fragment no longer exists. Drop these entries from the new buildfile.
+     - `surface_fragments.new[]` — fragments in the current surface that aren't in any existing component. Decide whether to introduce new components for them.
+   - Tell the user what's about to be regenerated before doing it (e.g., "Regenerating 2 components: upgrade-prompt, preflight-check. Keeping 5 stable components.").
+
+7. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
    - Create `fixtures:` with representative sample data
@@ -45,7 +54,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Define `routes:` mapping commands to components
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 
-7. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
+8. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
    - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
    - Use the intent's **Verify** bullets as the basis for test assertions
@@ -53,17 +62,18 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Reference fixtures from the buildfile
    - Follow the testcases schema exactly
 
-8. **Validate** — Run all (use `--json` flag for structured error parsing):
+9. **Validate** — Run all (use `--json` flag for structured error parsing):
    - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml --json .parlay/build/{feature}/buildfile.yaml`
    - `parlay validate --type yaml --json .parlay/build/{feature}/testcases.yaml`
    - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
    - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
 
-9. **Save baseline** — Run: `parlay save-baseline @{feature}`
-   - This stores content hashes of all intents for drift detection
-   - Future runs of `parlay check-coverage` or `parlay check-drift` will compare against this baseline
+10. **Save baseline** — Run: `parlay save-baseline @{feature}`
+    - Stores per-field intent hashes for drift detection (`parlay check-drift`)
+    - Stores per-element source hashes (intents, dialogs, surface fragments) for incremental rebuilds (`parlay diff`)
+    - Future runs of `parlay diff` will compare current sources against this baseline to determine which components are stable / dirty / removed
 
-10. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
+11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
 
 This skill stops at the build specification. Code generation is a separate skill (`/parlay-generate-code`) so that the buildfile.yaml can serve as a clean context boundary — codegen reads only buildfile + adapter and never reaches back into `spec/intents/`. Do NOT extend this skill to write code.
 

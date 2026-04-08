@@ -297,7 +297,8 @@
 - Buildfile operations must use the formal operations grammar — a closed set of typed operations, not free-form pseudo-code
 - Before generation, readiness checks must pass — all preconditions for the build-feature stage are satisfied
 - Component design choices must follow the patterns declared in the framework adapter
-- After generation, a baseline snapshot of intent content must be stored for drift detection
+- After generation, a baseline snapshot must be stored — both per-field intent hashes (for drift detection) and per-element source hashes (for incremental rebuilds)
+- Rebuilds are incremental at the component level: `parlay diff @{feature}` reports stable / dirty / removed components based on per-element source hashes; the agent regenerates only dirty components and preserves stable ones verbatim. Brownfield adoption is the limiting case (every component starts new).
 - Build artifacts (buildfile.yaml, testcases.yaml, .baseline.yaml) are tool internals — they live in `.parlay/build/{feature}/`, never under `spec/intents/`. The designer never sees them.
 - testcases.yaml is internal — it drives cross-validation and feeds spec generation, but is not handed off to engineering. Engineering writes their own real tests from `specification.md`.
 - This intent stops at the build specification. Code generation is handled by **Generate Prototype Code** as a separate step, with the buildfile as the context boundary.
@@ -334,8 +335,10 @@
 - Generated code lives outside `spec/` and `.parlay/` — at the location specified by the adapter's `file-conventions.source-root` (e.g., `src/`, `cmd/`, `app/`)
 - The designer must never need to modify generated prototype code
 - After generation, the agent runs the generated tests and reports pass/fail
-- Initial implementation is full regen on every invocation. A future enhancement will use component-level memoization for incremental rebuilds (stable components untouched, dirty/new components regenerated, removed components deleted).
-- Each generated file should record a marker linking back to its buildfile component (frontmatter comment, filename convention, or sidecar — adapter's choice) so the future incremental machinery can map files back to components.
+- Incremental regeneration is driven by `parlay diff @{feature}`: stable components have their existing code files preserved, dirty components are regenerated, removed components have their files deleted (identified by the `parlay-component:` marker).
+- On the very first generation of a feature, full regen is the only option (there are no stable components to preserve).
+- Each generated file must record a `parlay-component: <name>` marker (frontmatter comment for code files, sidecar for binary formats) so the incremental machinery can map files back to components and detect user-owned files (which lack the marker).
+- If a stable component's file has been hand-edited or moved by the user, the agent must NOT silently overwrite it — surface the situation and ask how to proceed.
 
 **Verify**:
 - Prototype code is generated at the location specified by the adapter's `file-conventions.source-root`
