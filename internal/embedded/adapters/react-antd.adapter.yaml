@@ -1,0 +1,268 @@
+name: react-antd
+framework: "React + Ant Design"
+version: "1.0"
+
+shows:
+  data-value:
+    widget: Statistic
+    description: "Ant Design Statistic component for labeled values with optional prefix/suffix"
+    import: "antd"
+  data-list:
+    widget: List
+    description: "Ant Design List with List.Item for ordered/unordered item collections"
+    import: "antd"
+  data-table:
+    widget: Table
+    description: "Ant Design Table with built-in sorting, filtering, pagination, and row selection"
+    import: "antd"
+  data-tree:
+    widget: Tree
+    description: "Ant Design Tree for hierarchical parent-child display with expand/collapse"
+    import: "antd"
+  data-chart:
+    widget: Chart
+    description: "Ant Design Charts (Line, Bar, Pie, Area, Column) for data visualization"
+    import: "@ant-design/charts"
+  status:
+    widget: Badge+Tag
+    description: "Badge for dot/count indicators, Tag for labeled status with color coding (success, error, warning, processing)"
+    import: "antd"
+  progress:
+    widget: Progress
+    description: "Ant Design Progress — line, circle, or dashboard style with percentage"
+    import: "antd"
+  message:
+    widget: Alert
+    description: "Alert for persistent inline messages (info, success, warning, error). For transient feedback use message.info() or notification.open()"
+    import: "antd"
+  media:
+    widget: Image+Carousel
+    description: "Image for single images with preview, Carousel for galleries and slideshows"
+    import: "antd"
+  empty-state:
+    widget: Empty+Result
+    description: "Empty for simple no-data placeholders, Result for status pages (success, error, 404) with actions"
+    import: "antd"
+  summary:
+    widget: Descriptions
+    description: "Ant Design Descriptions for key-value pair display in labeled rows or columns"
+    import: "antd"
+  diff:
+    widget: DiffViewer
+    description: "No built-in diff viewer — wrap react-diff-viewer-continued in Ant Design Card"
+    import: "react-diff-viewer-continued"
+    requires: custom-implementation
+  timeline:
+    widget: Timeline
+    description: "Ant Design Timeline with Timeline.Item for chronological event display"
+    import: "antd"
+  code:
+    widget: Typography.Text+code
+    description: "Typography.Text with code prop for inline code; Typography.Paragraph with copyable for code blocks"
+    import: "antd"
+
+actions:
+  provide-text:
+    widget: Input
+    description: "Ant Design Input for single-line text, Input.TextArea for multi-line, Input.Password for masked"
+    import: "antd"
+  provide-rich-text:
+    widget: ProEditor
+    description: "Ant Design Pro Editor or Tiptap/Slate wrapped in Form.Item for rich text with formatting toolbar"
+    import: "@ant-design/pro-editor"
+    requires: custom-implementation
+  provide-value:
+    widget: InputNumber+DatePicker+TimePicker+ColorPicker
+    description: "InputNumber for numbers, DatePicker for dates, TimePicker for times, ColorPicker for colors, Slider for constrained ranges"
+    import: "antd"
+  provide-file:
+    widget: Upload
+    description: "Upload for file selection, Upload.Dragger for drag-and-drop area"
+    import: "antd"
+  provide-structured-input:
+    widget: Form
+    description: "Ant Design Form with Form.Item for labeled fields, Form.List for dynamic field arrays, built-in validation rules"
+    import: "antd"
+  select-one:
+    widget: Select+Radio.Group+Cascader
+    description: "Select for dropdown, Radio.Group for visible options, Cascader for hierarchical selection"
+    import: "antd"
+  select-many:
+    widget: Checkbox.Group+Select+Transfer
+    description: "Checkbox.Group for small sets, Select with mode=multiple for dropdowns, Transfer for large dual-list selection"
+    import: "antd"
+  select-toggle:
+    widget: Switch
+    description: "Ant Design Switch for binary on/off toggle"
+    import: "antd"
+  select-range:
+    widget: Slider+DatePicker.RangePicker
+    description: "Slider for numeric/stepped ranges, DatePicker.RangePicker for date ranges"
+    import: "antd"
+  confirm:
+    widget: Popconfirm+Modal.confirm
+    description: "Popconfirm for inline contextual confirmation, Modal.confirm for important decisions with detail"
+    import: "antd"
+  dismiss:
+    widget: Modal.onCancel+Drawer.onClose
+    description: "Modal close/cancel handler for dialog dismissal, Drawer onClose for panel dismissal"
+    import: "antd"
+  acknowledge:
+    widget: Modal+Result
+    description: "Modal with single OK button for acknowledgment, Result page with action button for completion screens"
+    import: "antd"
+  navigate:
+    widget: Menu+Breadcrumb
+    description: "Menu for primary navigation (top/side), Breadcrumb for path-based navigation context"
+    import: "antd"
+  navigate-back:
+    widget: Breadcrumb+Button
+    description: "Breadcrumb for path navigation, Button with ArrowLeftOutlined icon for explicit back action"
+    import: "antd"
+  navigate-drill:
+    widget: Table.onRow+Cascader+Menu
+    description: "Table row click for list-to-detail drill-down, Cascader for hierarchical drill, Menu with inline sub-menus"
+    import: "antd"
+  navigate-tab:
+    widget: Tabs
+    description: "Ant Design Tabs with TabPane for peer-level view switching"
+    import: "antd"
+  navigate-search:
+    widget: Input.Search+AutoComplete
+    description: "Input.Search for simple query, AutoComplete for typeahead with suggestions"
+    import: "antd"
+  reorder:
+    widget: Table+dnd-kit
+    description: "Table rows wrapped with dnd-kit drag handles for reordering"
+    import: "antd"
+    requires: custom-implementation
+  move:
+    widget: Transfer
+    description: "Ant Design Transfer for moving items between two lists/containers"
+    import: "antd"
+  edit-inline:
+    widget: Typography.Text.editable+Table.editableCell
+    description: "Typography.Text with editable prop for single values, Table with custom editable cell renderer for tabular data"
+    import: "antd"
+  invoke:
+    widget: Button
+    description: "Ant Design Button (primary, default, link, text variants) for triggering operations"
+    import: "antd"
+  invoke-destructive:
+    widget: Button.danger+Popconfirm
+    description: "Button with danger prop wrapped in Popconfirm for mandatory confirmation before destructive action"
+    import: "antd"
+    requires-confirmation: true
+  invoke-batch:
+    widget: Table.rowSelection+Button
+    description: "Table with rowSelection for multi-select, paired with action Button above the table"
+    import: "antd"
+  undo:
+    widget: Button+UndoOutlined
+    description: "Button with UndoOutlined icon — application-level state operation, no built-in undo mechanism"
+    import: "antd"
+    requires: custom-implementation
+  redo:
+    widget: Button+RedoOutlined
+    description: "Button with RedoOutlined icon — application-level state operation, no built-in redo mechanism"
+    import: "antd"
+    requires: custom-implementation
+  export:
+    widget: Button+DownloadOutlined
+    description: "Button triggering file download via Blob URL or server endpoint"
+    import: "antd"
+  hand-off:
+    widget: Button+Modal+Select
+    description: "Button opening a Modal with a Select for choosing the target actor (person, system, schedule)"
+    import: "antd"
+  expand:
+    widget: Collapse
+    description: "Ant Design Collapse with Collapse.Panel for progressive disclosure sections"
+    import: "antd"
+  collapse:
+    widget: Collapse
+    description: "Same component as expand — Collapse manages both states"
+    import: "antd"
+  filter:
+    widget: Table.columnFilters+Select+Input.Search
+    description: "Table built-in column filters for tabular data, standalone Select or Input.Search for custom filter UI"
+    import: "antd"
+  sort:
+    widget: Table.columnSorter
+    description: "Table built-in column sorter — click column header to toggle sort direction"
+    import: "antd"
+  inspect:
+    widget: Drawer+Descriptions
+    description: "Drawer sliding panel with Descriptions for property/metadata display without navigating away"
+    import: "antd"
+
+flows:
+  guided-flow:
+    pattern: Steps+Form+Button
+    description: "Steps component showing progress, Form for each step's content, prev/next Buttons for navigation. Each step validates before proceeding."
+    regions: [steps, content, actions]
+  crud-collection:
+    pattern: Table+Modal+Form+Popconfirm
+    description: "Table for list view with sort/filter/pagination, Modal+Form for create/edit, Popconfirm for delete. Add button above table."
+    regions: [toolbar, table, modal]
+  search-and-act:
+    pattern: Input.Search+Table+Dropdown
+    description: "Input.Search at top, Table showing filtered results, Dropdown or Button for actions on each row."
+    regions: [search, results, actions]
+  review-and-approve:
+    pattern: Descriptions+Timeline+Button+Modal.confirm+Result
+    description: "Descriptions showing the proposal, Timeline showing history, approve/reject Buttons, Modal.confirm for the decision, Result for outcome."
+    regions: [detail, history, actions, outcome]
+  bulk-operation:
+    pattern: Table.rowSelection+Button+Progress+Modal
+    description: "Table with checkbox rowSelection, action Button in toolbar, Progress during execution, Modal for confirmation."
+    regions: [toolbar, table, progress]
+  configure:
+    pattern: Form+Tabs+Collapse
+    description: "Form wrapping all settings, Tabs for setting categories, Collapse for advanced sections. Save button applies all changes as a unit."
+    regions: [tabs, form, actions]
+  monitor:
+    pattern: Statistic+Progress+Badge+Timeline+Chart
+    description: "Statistic cards for key metrics, Progress for ongoing operations, Badge for alert counts, Timeline for recent events, Charts for trends. Auto-refresh or WebSocket for live updates."
+    regions: [metrics, charts, activity]
+  import-export:
+    pattern: Upload.Dragger+Table+Progress+Button
+    description: "Upload.Dragger for file input, Table for data preview, Progress for processing status, Button for confirm/download."
+    regions: [upload, preview, actions]
+  onboarding:
+    pattern: Steps+Tour+Form+Result
+    description: "Steps showing overall progress, Tour for feature highlights, Form for initial config, Result for completion celebration."
+    regions: [steps, content, actions]
+  compare:
+    pattern: Table+Descriptions+Tag+Flex
+    description: "Side-by-side layout (Flex/Row/Col), Descriptions for each alternative, Tag for differences, optional Radio.Group for selection."
+    regions: [left, right, actions]
+
+file-conventions:
+  source-root: "src/"
+  component-pattern: feature-modules
+  naming: PascalCase
+  entry-point: "src/App.tsx"
+  packages:
+    components: "src/components/"
+    features: "src/features/"
+    models: "src/types/"
+    hooks: "src/hooks/"
+    utils: "src/utils/"
+
+patterns:
+  interaction:
+    prefer: [modals-for-creation, drawers-for-detail, inline-editing-for-quick-updates, toast-for-async-feedback]
+    avoid: [full-page-forms-for-simple-edits, alert-dialogs-for-non-errors, nested-modals]
+  information-density:
+    default: medium
+    rationale: "Enterprise dashboard style — dense enough for power users but with clear visual hierarchy via Ant Design spacing tokens"
+  error-placement:
+    default: inline
+    rationale: "Form validation errors appear inline below the field via Form.Item rules. Async operation errors use notification.error() toast. System errors use Result page."
+  confirmation:
+    required-for: [invoke-destructive, bulk-operation]
+    style: dialog
+  content:
+    timestamps: relative
+    empty-states: placeholder
