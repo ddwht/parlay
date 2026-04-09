@@ -1,10 +1,10 @@
 # Generate Code
 
-Translate a buildfile into working prototype source code that runs and passes the generated tests.
+Translate ALL features' buildfiles into working prototype source code at the project level. Reads every feature's buildfile, merges cross-cutting concerns (models, routes), and generates code for the entire project incrementally.
 
 ## Arguments
 
-- `feature`: The feature slug (e.g., `upgrade-plan-creation`)
+None — this skill operates at the project level, not per-feature.
 
 ## Inputs (and the strict isolation rule)
 
@@ -14,9 +14,9 @@ This skill reads ONLY from these locations:
 - `.parlay/schemas/adapter.schema.md`
 - `.parlay/config.yaml`
 - `.parlay/adapters/{framework}.adapter.yaml`
-- `.parlay/build/{feature}/buildfile.yaml`
-- The existing prototype source tree (only when doing incremental updates — for now, full regen)
-- `.parlay/build/{feature}/testcases.yaml` — read **only** at the test execution phase, not during code generation
+- `.parlay/build/*/buildfile.yaml` — ALL features' buildfiles
+- The existing prototype source tree (for incremental updates)
+- `.parlay/build/*/testcases.yaml` — read **only** at the test execution phase
 
 **You must NOT read anything under `spec/intents/{feature}/`.** This includes intents.md, dialogs.md, surface.md, and domain-model.md. The buildfile is the deterministic intermediate; if you find yourself wanting to read source-of-truth design files to make a decision, the buildfile is leaking detail and the right fix is to enrich the buildfile schema, not to cross the boundary.
 
@@ -32,24 +32,28 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary, file conventions, and patterns.
 
-4. **Load buildfile** — Read `.parlay/build/{feature}/buildfile.yaml`.
-   - If the file does not exist: stop and tell the user to run `/parlay-build-feature @{feature}` first.
-   - If the file is malformed: stop and report the YAML error.
+4. **Load ALL buildfiles** — Read `.parlay/build/*/buildfile.yaml` for every feature that has been built. If no buildfiles exist, stop and tell the user to run `/parlay-build-feature @{feature}` for at least one feature.
 
-5. **Determine source root** — From the adapter's `file-conventions.source-root` (e.g., `cmd/{feature}/`, `src/{feature}/`, `app/{feature}/`). This is where generated code will live. It must be outside `spec/` and `.parlay/`.
+5. **Compute the merged model and routes** — Across all features' buildfiles:
+   - MERGE the `models:` sections: collect all entity definitions from all features. If the same entity appears in multiple features with different properties, take the UNION of properties. This produces the complete model layer.
+   - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
+   - These merged artifacts drive the cross-cutting files (model definitions, entry point).
 
-6. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last successful end-to-end generation. The JSON output reports:
-   - `components.stable[]`, `components.dirty[]`, `components.removed[]` — per-component status based on source changes (intents/dialogs/surface). On `first_build: true`, treat every component as new.
-   - `sections` — per-section status for the buildfile's major sections (`models`, `routes`, `fixtures`). Values: `"changed"`, `"stable"`, `"new"`, `"removed"`. Used to determine which **cross-cutting files** (model definitions, entry points) need regeneration. Section changes don't affect per-component files — only files marked with `parlay-section:`.
+6. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
 
-7. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file in the source root to its owning marker. Returns JSON `{source_root, files: [{feature, component, section, artifact, path}]}`.
-   - Files with `parlay-component:` belong to that component. Files with `parlay-section:` belong to that buildfile section. Files with `parlay-artifact: test` are test files for their component.
-   - Use this map to find file paths for dirty/removed components AND for changed sections without re-deriving filenames from the adapter naming convention.
+7. **Compute the project-level diff** — Run: `parlay diff` (no @feature) to get the unified change report. The JSON output has:
+   - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
+   - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration.
+
+8. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file to its owner.
+   - Files with `parlay-feature: X + parlay-component: Y` belong to feature X's component Y.
+   - Files with `parlay-scope: project + parlay-section: Z` are project-scoped cross-cutting files.
+   - Files with `parlay-artifact: test` are test files for their parent component.
    - Files without ANY parlay marker are user-owned; never modify or delete them.
 
-8. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated @{feature}` to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
-   - If `has_hashes` is `false`, this is the very first generation for the feature — there is no committed code state yet. Treat every component as new regardless of what `parlay diff` reported, and skip the modified-file check entirely.
-   - Otherwise, for each component the diff says is `stable`, check that its file is also in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
+9. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+   - If `has_hashes` is `false`, this is the very first generation — treat everything as new and skip the modified-file check.
+   - Otherwise, for each component the diff says is `stable`, check that its file is in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
      ```
      <file> is marked as a stable component but has been edited since the last generation.
      A: Overwrite (lose my edits)
@@ -96,10 +100,11 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 14. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
     - **If any test fails, STOP.** Do not proceed to step 15. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-15. **Commit the build state** — Only if all tests passed in step 14: run `parlay save-build-state @{feature} --source-root {source-root}`. This atomically writes both `.parlay/build/{feature}/.baseline.yaml` (source state for the next `parlay diff`) and `.parlay/build/{feature}/.code-hashes.yaml` (file hashes for the next `parlay verify-generated`).
-    - This is the **only** sanctioned write path for either file. Both represent the same point in time: the end of a successful end-to-end generation. They are written together so the consistency invariant holds: the next time the user runs anything, the diff and the verify reports describe the same state.
-    - If this command fails partway, the error message tells you to re-run it. The skill should propagate the error to the user.
-    - Do not invoke any other save-* command. There is intentionally no `parlay save-baseline` or `parlay save-code-hashes` in the CLI — both have been folded into `save-build-state` to enforce the consistency invariant at the API level.
+15. **Commit the build state** — Only if all tests passed in step 14: run `parlay save-build-state --source-root {source-root}`. This atomically writes:
+    - Per-feature baselines for ALL features (source hashes for per-feature diff)
+    - Project-level baseline at `.parlay/build/_project/.baseline.yaml` (merged section hashes)
+    - Project-level code-hashes at `.parlay/build/_project/.code-hashes.yaml` (all generated files)
+    - This is the **only** sanctioned write path for these files. No @feature argument — the command operates at project level.
 
 16. **Report** —
     - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, confirm that `save-build-state` succeeded, and tell the user how to run the prototype.

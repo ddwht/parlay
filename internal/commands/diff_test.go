@@ -461,7 +461,7 @@ components:
 	writeMarkedFile(t, filepath.Join(sourceRoot, "do.go"),
 		"my-feature", "do-comp", "func Do() {}")
 
-	_, err := saveBuildState("my-feature", sourceRoot)
+	err := saveBuildStateForFeature("my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -100,10 +100,10 @@ func buildCodeHashes(slug, sourceRoot string) (*CodeHashes, int, error) {
 
 	skipped := 0
 	for _, marker := range markers {
-		// Only record files that belong to THIS feature. A source root
-		// shared across features would otherwise pollute the sidecar.
-		// If the marker has no feature field, accept it (legacy markers).
-		if marker.Feature != "" && marker.Feature != slug {
+		// When slug is non-empty (per-feature mode): only record files
+		// belonging to this feature or feature-less files. When slug is
+		// empty (project-level mode): accept all files regardless of feature.
+		if slug != "" && marker.Feature != "" && marker.Feature != slug {
 			skipped++
 			continue
 		}

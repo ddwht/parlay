@@ -239,6 +239,35 @@ package main
 	}
 }
 
+func TestParseMarker_ProjectScope(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	content := `// parlay-scope: project
+// parlay-section: routes
+// Generated — do not edit by hand
+
+package main
+`
+	os.WriteFile(path, []byte(content), 0644)
+
+	marker, err := ParseMarker(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker == nil {
+		t.Fatal("expected marker, got nil")
+	}
+	if marker.Scope != "project" {
+		t.Errorf("Scope = %q, want project", marker.Scope)
+	}
+	if marker.Section != "routes" {
+		t.Errorf("Section = %q, want routes", marker.Section)
+	}
+	if marker.Feature != "" {
+		t.Errorf("Feature = %q, want empty (project-scoped)", marker.Feature)
+	}
+}
+
 func TestScanGenerated_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	markers, err := ScanGenerated(dir)

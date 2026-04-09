@@ -4,36 +4,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 
 	"github.com/anthropics/parlay/internal/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var saveBuildStateCmd = &cobra.Command{
-	Use:   "save-build-state <@feature>",
-	Short: "Atomically commit the build state for a feature (baseline + code hashes)",
-	Long: `Commit a successful end-to-end generation by atomically writing both
-.parlay/build/<feature>/.baseline.yaml (source state for incremental rebuilds
-and drift detection) and .parlay/build/<feature>/.code-hashes.yaml (generated
-file content hashes for hand-edit detection).
+	Use:   "save-build-state",
+	Short: "Atomically commit the project-level build state (all features + project baseline + code hashes)",
+	Long: `Commit a successful end-to-end generation at the project level by
+atomically writing:
 
-Both files represent the same point in time: the source state and the code
-state at the end of a successful build → generate-code → tests-pass cycle.
-They have a consistency invariant — neither is meaningful without the other,
-and they must be updated together.
+  1. Per-feature baselines for ALL features (.parlay/build/<feature>/.baseline.yaml)
+  2. Project-level baseline (.parlay/build/_project/.baseline.yaml) with
+     merged section hashes across all features
+  3. Project-level code hashes (.parlay/build/_project/.code-hashes.yaml)
+     tracking ALL generated files
 
-This command MUST be invoked only as the final step of the
-/parlay-generate-code skill, after tests pass. It MUST NOT be invoked from
-/parlay-build-feature alone (the baseline would commit source state without
-corresponding code state, breaking the consistency invariant and stranding
-the feature in a state where parlay diff reports everything stable but no
-code exists).
-
-Both files are written using the write-then-rename pattern: each is written
-to a temp file in the same directory and then renamed atomically over the
-destination, so a partial failure leaves the previous state intact.`,
-	Args: cobra.ExactArgs(1),
+This command MUST be invoked only as the final step of /parlay-generate-code
+(project-level), after tests pass. All files are written using the
+write-then-rename pattern for atomicity.`,
+	Args: cobra.NoArgs,
 	RunE: runSaveBuildState,
 }
 
@@ -46,122 +39,166 @@ func init() {
 }
 
 func runSaveBuildState(cmd *cobra.Command, args []string) error {
-	slug := strings.TrimPrefix(args[0], "@")
-
-	result, err := saveBuildState(slug, saveBuildStateSourceRoot)
+	result, err := saveProjectBuildState(saveBuildStateSourceRoot)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Build state committed for %s:\n", slug)
-	fmt.Printf("  baseline:    %s (%d intents, %d dialogs, %d fragments)\n",
-		baselinePath(slug),
-		result.IntentCount, result.DialogCount, result.FragmentCount)
-	fmt.Printf("  code-hashes: %s (%d files",
-		codeHashesPath(slug), result.FileCount)
-	if result.SkippedFiles > 0 {
-		fmt.Printf(", %d skipped — different feature", result.SkippedFiles)
+	fmt.Printf("Build state committed (project-level):\n")
+	for _, fr := range result.Features {
+		fmt.Printf("  %s: %d intents, %d dialogs, %d fragments\n",
+			fr.Slug, fr.IntentCount, fr.DialogCount, fr.FragmentCount)
 	}
-	fmt.Println(")")
+	fmt.Printf("  project baseline: %s\n", projectBaselinePath())
+	fmt.Printf("  code-hashes:      %s (%d files)\n",
+		projectCodeHashesPath(), result.FileCount)
 	return nil
 }
 
-// saveBuildStateResult is a small summary returned by saveBuildState for the
-// CLI's user-facing report.
-type saveBuildStateResult struct {
+// projectSaveResult is the summary returned by saveProjectBuildState.
+type projectSaveResult struct {
+	Features []featureSaveResult
+	FileCount int
+}
+
+type featureSaveResult struct {
+	Slug          string
 	IntentCount   int
 	DialogCount   int
 	FragmentCount int
-	FileCount     int
-	SkippedFiles  int
 }
 
-// saveBuildState atomically commits both the source baseline and the code
-// hashes for a feature. This is the only sanctioned write path for either
-// file: nothing else in the codebase should write .baseline.yaml or
-// .code-hashes.yaml independently.
-//
-// Both files represent the state at the end of a successful end-to-end
-// generation. The two writes use writeFileAtomic (write-then-rename) so
-// either both files are updated or both are left at their previous state.
-//
-// Sequencing:
-//  1. Compute both file contents in memory (no disk writes yet)
-//  2. Ensure the destination directory exists
-//  3. Write baseline atomically
-//  4. Write code-hashes atomically
-//
-// If step 3 succeeds and step 4 fails, the baseline IS updated but the
-// code-hashes is not. This is a known partial-failure window — see the
-// comment on writeFileAtomic for why true two-file atomicity isn't
-// achievable on POSIX without a journal.
-func saveBuildState(slug, sourceRoot string) (*saveBuildStateResult, error) {
-	// --- Stage 1: compute both file contents ---
-
+// saveBuildStateForFeature is a per-feature save helper used by tests.
+// The CLI command (save-build-state) is project-level; this function
+// provides backward-compatible per-feature saves for unit tests that
+// operate on a single feature in isolation.
+func saveBuildStateForFeature(slug, sourceRoot string) error {
 	baseline, err := buildBaseline(slug)
 	if err != nil {
-		return nil, fmt.Errorf("compute baseline: %w", err)
+		return fmt.Errorf("compute baseline: %w", err)
 	}
-
-	// Hash the buildfile's major sections (models, routes, fixtures) so
-	// the diff command can report section-level changes for cross-cutting
-	// files. The buildfile may not exist on the very first run.
-	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
-	sectionHashes, err := hashBuildfileSections(buildfilePath)
-	if err != nil {
-		return nil, fmt.Errorf("hash buildfile sections: %w", err)
-	}
-	if sectionHashes != nil {
+	bfPath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
 		baseline.BuildfileSections = sectionHashes
 	}
-
 	baselineBytes, err := marshalBaseline(baseline)
 	if err != nil {
-		return nil, fmt.Errorf("marshal baseline: %w", err)
+		return err
+	}
+	blPath := baselinePath(slug)
+	if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
+		return err
+	}
+	if err := writeFileAtomic(blPath, baselineBytes); err != nil {
+		return err
 	}
 
-	hashes, skipped, err := buildCodeHashes(slug, sourceRoot)
+	hashes, _, err := buildCodeHashes(slug, sourceRoot)
 	if err != nil {
-		return nil, fmt.Errorf("compute code hashes: %w", err)
+		return err
 	}
 	hashesBytes, err := marshalCodeHashes(hashes)
 	if err != nil {
-		return nil, fmt.Errorf("marshal code hashes: %w", err)
+		return err
 	}
-
-	// --- Stage 2: ensure destination directory exists ---
-
-	blPath := baselinePath(slug)
 	chPath := codeHashesPath(slug)
-	if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
-		return nil, fmt.Errorf("create build dir: %w", err)
+	if err := os.MkdirAll(filepath.Dir(chPath), 0755); err != nil {
+		return err
+	}
+	return writeFileAtomic(chPath, hashesBytes)
+}
+
+// projectCodeHashesPath returns the project-level code-hashes sidecar path.
+func projectCodeHashesPath() string {
+	return filepath.Join(config.ProjectBuildPath(), CodeHashesFile)
+}
+
+// saveProjectBuildState atomically commits the full project build state:
+//   - Per-feature baselines for every feature (source hashes for parlay diff @feature)
+//   - Project-level baseline (merged section hashes for parlay diff)
+//   - Project-level code-hashes (all generated files for parlay verify-generated)
+//
+// This is the only sanctioned write path for these files. It MUST be
+// invoked only as the final step of /parlay-generate-code, after tests pass.
+func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
+	features, err := discoverFeatures()
+	if err != nil {
+		return nil, fmt.Errorf("discover features: %w", err)
 	}
 
-	// --- Stage 3: atomic writes ---
+	result := &projectSaveResult{}
 
-	if err := writeFileAtomic(blPath, baselineBytes); err != nil {
-		return nil, fmt.Errorf("write baseline: %w", err)
-	}
-	if err := writeFileAtomic(chPath, hashesBytes); err != nil {
-		// Best effort: surface that the build state is now inconsistent.
-		// True atomicity across two files would need a journal; we accept
-		// this narrow window in exchange for the simplicity of plain files.
-		return nil, fmt.Errorf("write code hashes (baseline updated, code hashes failed — re-run save-build-state to recover): %w", err)
+	// --- Stage 1: Per-feature baselines ---
+	for _, slug := range features {
+		baseline, err := buildBaseline(slug)
+		if err != nil {
+			// Feature may not have intents yet — skip silently.
+			continue
+		}
+
+		// Include per-feature buildfile section hashes (still useful for
+		// per-feature diff @feature in the build-feature skill).
+		bfPath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
+			baseline.BuildfileSections = sectionHashes
+		}
+
+		baselineBytes, err := marshalBaseline(baseline)
+		if err != nil {
+			return nil, fmt.Errorf("marshal baseline for %s: %w", slug, err)
+		}
+
+		blPath := baselinePath(slug)
+		if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
+			return nil, fmt.Errorf("create build dir for %s: %w", slug, err)
+		}
+		if err := writeFileAtomic(blPath, baselineBytes); err != nil {
+			return nil, fmt.Errorf("write baseline for %s: %w", slug, err)
+		}
+
+		fr := featureSaveResult{Slug: slug, IntentCount: len(baseline.Intents)}
+		if baseline.Sources != nil {
+			fr.DialogCount = len(baseline.Sources.Dialogs)
+			fr.FragmentCount = len(baseline.Sources.SurfaceFragments)
+		}
+		result.Features = append(result.Features, fr)
 	}
 
-	dialogCount := 0
-	fragmentCount := 0
-	if baseline.Sources != nil {
-		dialogCount = len(baseline.Sources.Dialogs)
-		fragmentCount = len(baseline.Sources.SurfaceFragments)
+	// --- Stage 2: Project-level baseline (merged section hashes) ---
+	mergedSections := hashMergedBuildfileSections(features)
+	projectBL := &ProjectBaseline{
+		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
+		MergedSections: mergedSections,
 	}
-	return &saveBuildStateResult{
-		IntentCount:   len(baseline.Intents),
-		DialogCount:   dialogCount,
-		FragmentCount: fragmentCount,
-		FileCount:     len(hashes.Files),
-		SkippedFiles:  skipped,
-	}, nil
+	projectBLBytes, err := yaml.Marshal(projectBL)
+	if err != nil {
+		return nil, fmt.Errorf("marshal project baseline: %w", err)
+	}
+	if err := os.MkdirAll(config.ProjectBuildPath(), 0755); err != nil {
+		return nil, fmt.Errorf("create project build dir: %w", err)
+	}
+	if err := writeFileAtomic(projectBaselinePath(), projectBLBytes); err != nil {
+		return nil, fmt.Errorf("write project baseline: %w", err)
+	}
+
+	// --- Stage 3: Project-level code-hashes (all generated files) ---
+	// Scan the source root for ALL marker-tagged files, regardless of
+	// feature. This includes feature-scoped files (parlay-component:) and
+	// project-scoped files (parlay-scope: project + parlay-section:).
+	hashes, _, err := buildCodeHashes("", sourceRoot) // empty slug = accept all features
+	if err != nil {
+		return nil, fmt.Errorf("compute project code hashes: %w", err)
+	}
+	hashesBytes, err := marshalCodeHashes(hashes)
+	if err != nil {
+		return nil, fmt.Errorf("marshal project code hashes: %w", err)
+	}
+	if err := writeFileAtomic(projectCodeHashesPath(), hashesBytes); err != nil {
+		return nil, fmt.Errorf("write project code hashes: %w", err)
+	}
+	result.FileCount = len(hashes.Files)
+
+	return result, nil
 }
 
 // writeFileAtomic writes data to path using the write-then-rename pattern:

@@ -31,17 +31,9 @@ func TestSaveBuildState_HappyPath(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "do.go"),
 		"my-feature", "do-something", "func DoSomething() {}")
 
-	result, err := saveBuildState("my-feature", sourceRoot)
+	err := saveBuildStateForFeature("my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	// Result counts
-	if result.IntentCount != 1 {
-		t.Errorf("IntentCount = %d, want 1", result.IntentCount)
-	}
-	if result.FileCount != 1 {
-		t.Errorf("FileCount = %d, want 1", result.FileCount)
 	}
 
 	// Both files should exist on disk
@@ -91,7 +83,7 @@ func TestSaveBuildState_NoTempFilesLeftBehind(t *testing.T) {
 	sourceRoot := filepath.Join(dir, "cmd", "clean-feature")
 	os.MkdirAll(sourceRoot, 0755)
 
-	if _, err := saveBuildState("clean-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature("clean-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,7 +115,7 @@ func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "first.go"),
 		"twice-feature", "first-comp", "package twice")
 
-	if _, err := saveBuildState("twice-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature("twice-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,7 +126,7 @@ func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "second.go"),
 		"twice-feature", "second-comp", "package twice")
 
-	if _, err := saveBuildState("twice-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature("twice-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -165,7 +157,7 @@ func TestSaveBuildState_MissingIntentsFails(t *testing.T) {
 	setupTestDir(t)
 	// No feature directory created at all.
 
-	_, err := saveBuildState("nonexistent", "cmd/nonexistent")
+	err := saveBuildStateForFeature("nonexistent", "cmd/nonexistent")
 	if err == nil {
 		t.Fatal("expected error when feature directory is missing, got nil")
 	}

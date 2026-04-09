@@ -36,7 +36,7 @@ shows:
     description: A friendly message explaining absence and suggesting a next action
   summary:
     widget: headed-section
-    description: Bold heading followed by key-value lines — "Total: 42\nActive: 38"
+    description: "Bold heading followed by key-value lines — Total: 42, Active: 38"
   diff:
     widget: diff-output
     description: Additions prefixed with "+", removals with "-", context lines unprefixed

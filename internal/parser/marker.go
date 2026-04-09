@@ -13,18 +13,22 @@ import (
 // and incrementally regenerate generated files. Files without a marker
 // are user-owned and must not be modified or deleted by parlay tooling.
 //
-// Three marker variants:
+// Four marker fields identify generated files:
 //
-//	Component file:   parlay-component: X
-//	Component test:   parlay-component: X + parlay-artifact: test
-//	Section-derived:  parlay-section: models (or routes, fixtures, etc.)
+//	Component file:    parlay-feature: X + parlay-component: Y
+//	Component test:    parlay-feature: X + parlay-component: Y + parlay-artifact: test
+//	Project-scoped:    parlay-scope: project + parlay-section: models
 //
 // A marker is valid if it has at least one of Component or Section.
+// Project-scoped files have Scope="project" and no Feature — they serve
+// the entire project (entry points, shared models) and are tracked at
+// the project level, not per-feature.
 type Marker struct {
-	Feature   string `json:"feature" yaml:"feature"`
+	Feature   string `json:"feature,omitempty" yaml:"feature,omitempty"`
 	Component string `json:"component,omitempty" yaml:"component,omitempty"`
 	Section   string `json:"section,omitempty" yaml:"section,omitempty"`
 	Artifact  string `json:"artifact,omitempty" yaml:"artifact,omitempty"`
+	Scope     string `json:"scope,omitempty" yaml:"scope,omitempty"`
 	Path      string `json:"path" yaml:"path"`
 }
 
@@ -83,6 +87,12 @@ func parseMarkerFromReader(r io.Reader, path string) (*Marker, error) {
 				marker = &Marker{Path: path}
 			}
 			marker.Artifact = artifact
+		}
+		if scope, ok := matchField(stripped, "parlay-scope:"); ok {
+			if marker == nil {
+				marker = &Marker{Path: path}
+			}
+			marker.Scope = scope
 		}
 	}
 	if err := scanner.Err(); err != nil {

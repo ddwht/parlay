@@ -17,11 +17,18 @@ import (
 var diffCmd = &cobra.Command{
 	Use:   "diff <@feature>",
 	Short: "Show what changed since the last build (JSON output for agent consumption)",
-	Long: `Compare current sources (intents/dialogs/surface) against the last
-saved baseline, and report which buildfile components are stable / dirty
-/ removed. Used by build-feature and generate-code skills to do
-incremental rebuilds at component granularity.`,
-	Args: cobra.ExactArgs(1),
+	Long: `Compare current sources against the last saved baseline and report
+what changed. Two modes:
+
+  parlay diff @feature   Per-feature: reports which components are
+                         stable / dirty / removed for one feature.
+                         Used by the build-feature skill.
+
+  parlay diff            Project-level: scans ALL features, reports
+                         per-feature component status AND merged
+                         section changes (models, routes, fixtures).
+                         Used by the generate-code skill.`,
+	Args: cobra.RangeArgs(0, 1),
 	RunE: runDiff,
 }
 
@@ -60,6 +67,9 @@ type diffOutput struct {
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return runProjectDiff(cmd)
+	}
 	slug := strings.TrimPrefix(args[0], "@")
 	featurePath := config.FeaturePath(slug)
 
@@ -313,4 +323,213 @@ func emitDiffJSON(output *diffOutput) error {
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+// --- Project-level diff ---
+
+// projectDiffOutput is the top-level JSON for `parlay diff` (no @feature).
+type projectDiffOutput struct {
+	Project  bool                       `json:"project"`
+	Features map[string]featureDiffView `json:"features"`
+	Sections map[string]string          `json:"sections,omitempty"`
+}
+
+// featureDiffView is the per-feature summary within a project diff.
+type featureDiffView struct {
+	FirstBuild   bool          `json:"first_build"`
+	HasBuildfile bool          `json:"has_buildfile"`
+	Components   componentDiff `json:"components"`
+}
+
+func runProjectDiff(cmd *cobra.Command) error {
+	output := projectDiffOutput{
+		Project:  true,
+		Features: make(map[string]featureDiffView),
+	}
+
+	// Discover all features by scanning spec/intents/*/
+	features, err := discoverFeatures()
+	if err != nil {
+		return fmt.Errorf("discover features: %w", err)
+	}
+
+	// Run per-feature diff for each, collecting results.
+	for _, slug := range features {
+		featurePath := config.FeaturePath(slug)
+		view := featureDiffView{}
+
+		// Load per-feature baseline
+		var storedBaseline Baseline
+		if blData, err := os.ReadFile(baselinePath(slug)); err == nil {
+			if err := yaml.Unmarshal(blData, &storedBaseline); err == nil {
+				if storedBaseline.Sources == nil {
+					view.FirstBuild = true
+				}
+			} else {
+				view.FirstBuild = true
+			}
+		} else {
+			view.FirstBuild = true
+		}
+		stored := storedBaseline.Sources
+		if stored == nil {
+			stored = &HashedSources{}
+		}
+
+		// Parse current sources
+		currentIntents, _ := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
+		currentDialogs, _ := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md"))
+		currentFragments, _ := parser.ParseSurfaceFile(filepath.Join(featurePath, "surface.md"))
+
+		currentIntentHashes := make(map[string]string)
+		for _, intent := range currentIntents {
+			currentIntentHashes[intent.Slug] = hashIntentContent(intent)
+		}
+		currentDialogHashes := make(map[string]string)
+		for _, dialog := range currentDialogs {
+			currentDialogHashes[dialog.Slug] = hashDialogContent(dialog)
+		}
+		currentFragmentHashes := make(map[string]string)
+		fragmentBySlug := make(map[string]*parser.Fragment)
+		for i := range currentFragments {
+			fragSlug := parser.Slugify(currentFragments[i].Name)
+			currentFragmentHashes[fragSlug] = hashFragmentContent(currentFragments[i])
+			fragmentBySlug[fragSlug] = &currentFragments[i]
+		}
+
+		intentsDiff := diffStringMap(stored.Intents, currentIntentHashes)
+		dialogsDiff := diffStringMap(stored.Dialogs, currentDialogHashes)
+		fragmentsDiff := diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
+
+		buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		if fileExists(buildfilePath) {
+			view.HasBuildfile = true
+			if !view.FirstBuild {
+				view.Components = computeComponentImpact(
+					buildfilePath, slug,
+					currentIntents, currentDialogs, fragmentBySlug,
+					intentsDiff, dialogsDiff, fragmentsDiff,
+				)
+			}
+		}
+
+		output.Features[slug] = view
+	}
+
+	// Compute merged section hashes across all buildfiles and compare to
+	// the project-level baseline.
+	output.Sections = computeProjectSectionDiff(features)
+
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// discoverFeatures scans spec/intents/ for feature directories.
+func discoverFeatures() ([]string, error) {
+	intentsDir := filepath.Join(config.SpecDir, config.IntentsDir)
+	entries, err := os.ReadDir(intentsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var features []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			features = append(features, entry.Name())
+		}
+	}
+	sort.Strings(features)
+	return features, nil
+}
+
+// hashMergedBuildfileSections reads ALL features' buildfiles, merges each
+// section (models, routes, fixtures) by concatenating sorted YAML
+// representations, and returns per-section hashes.
+func hashMergedBuildfileSections(features []string) map[string]string {
+	// Collect per-section content from each feature, sorted by feature
+	// name for determinism.
+	sectionContent := make(map[string]string) // section → concatenated YAML
+
+	for _, slug := range features {
+		buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		data, err := os.ReadFile(buildfilePath)
+		if err != nil {
+			continue
+		}
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			continue
+		}
+		for _, key := range []string{"models", "routes", "fixtures"} {
+			if section, ok := raw[key]; ok {
+				sectionBytes, err := yaml.Marshal(section)
+				if err != nil {
+					continue
+				}
+				// Prefix with feature slug so the same model in different
+				// features produces different hashes.
+				sectionContent[key] += slug + ":" + string(sectionBytes)
+			}
+		}
+	}
+
+	result := make(map[string]string)
+	for key, content := range sectionContent {
+		result[key] = sha256Hex(content)
+	}
+	return result
+}
+
+// projectBaselinePath returns the path to the project-level baseline.
+func projectBaselinePath() string {
+	return filepath.Join(config.ProjectBuildPath(), ".baseline.yaml")
+}
+
+// ProjectBaseline stores merged section hashes for the project level.
+type ProjectBaseline struct {
+	GeneratedAt    string            `yaml:"generated-at"`
+	MergedSections map[string]string `yaml:"merged-sections,omitempty"`
+}
+
+// computeProjectSectionDiff computes merged section hashes from all features'
+// buildfiles and compares to the stored project baseline.
+func computeProjectSectionDiff(features []string) map[string]string {
+	currentMerged := hashMergedBuildfileSections(features)
+	if len(currentMerged) == 0 {
+		return nil
+	}
+
+	// Load stored project baseline
+	var stored ProjectBaseline
+	if data, err := os.ReadFile(projectBaselinePath()); err == nil {
+		yaml.Unmarshal(data, &stored)
+	}
+	storedSections := stored.MergedSections
+	if storedSections == nil {
+		storedSections = make(map[string]string)
+	}
+
+	result := make(map[string]string)
+	for name, currentHash := range currentMerged {
+		storedHash, exists := storedSections[name]
+		if !exists {
+			result[name] = "new"
+		} else if currentHash != storedHash {
+			result[name] = "changed"
+		} else {
+			result[name] = "stable"
+		}
+	}
+	for name := range storedSections {
+		if _, exists := currentMerged[name]; !exists {
+			result[name] = "removed"
+		}
+	}
+	return result
 }

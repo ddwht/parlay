@@ -67,6 +67,13 @@ func HandoffPath(slug string) string {
 	return filepath.Join(SpecDir, HandoffDir, slug)
 }
 
+// ProjectBuildPath is the directory for project-level build state
+// (merged section baseline, project code-hashes). Cross-cutting files
+// that serve all features are tracked here, not per-feature.
+func ProjectBuildPath() string {
+	return filepath.Join(ParlayDir, BuildDir, "_project")
+}
+
 func Load() (*ProjectConfig, error) {
 	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
