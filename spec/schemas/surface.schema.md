@@ -16,8 +16,9 @@ Generation sources:
 
 ## <Fragment Name>
 
-**Shows**: <What this fragment displays — data, status, content>
-**Actions**: <What the user can do — buttons, selections, inputs>
+**Shows**: <comma-separated Show types from vocabulary>
+**Actions**: <comma-separated Action types from vocabulary>
+**Flow**: <optional — Flow pattern from vocabulary>
 **Source**: @feature/intent-slug, @feature/dialog-slug
 
 **Page**: <target page name>
@@ -33,13 +34,137 @@ Generation sources:
 | Field | Required | Parse rule |
 |---|---|---|
 | Fragment Name | Yes | `## ` heading. Must be unique within feature. |
-| Shows | Yes | `**Shows**:` line content |
-| Actions | No | `**Actions**:` line content |
+| Shows | Yes | `**Shows**:` comma-separated Show type identifiers from the Shows vocabulary. |
+| Actions | No | `**Actions**:` comma-separated Action type identifiers from the Actions vocabulary. |
+| Flow | No | `**Flow**:` single Flow pattern identifier from the Flows vocabulary. Describes the composite interaction pattern this fragment participates in. |
 | Source | Yes | `**Source**:` comma-separated `@feature/slug` references. Every fragment must trace back to its source intent(s). |
 | Page | No | `**Page**:` plain text page name |
 | Region | No | `**Region**:` plain text region name |
 | Order | No | `**Order**:` integer |
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines |
+
+---
+
+## Interaction Vocabulary
+
+The surface vocabulary is **framework-agnostic**. Every term describes a user intent or an information shape — never a widget, control, or visual treatment. The **adapter** maps each term to a framework-specific implementation.
+
+### Actions
+
+Actions describe what the user can do. Each action is an atomic interaction primitive.
+
+#### Input — user provides data
+
+| Action | Description |
+|---|---|
+| `provide-text` | Free-form text entry of arbitrary length. |
+| `provide-rich-text` | Formatted text entry with inline styling controls — bold, italic, links, lists, headings. The input preserves structural markup. |
+| `provide-value` | Constrained value entry — number, date, time, color, duration, or other typed scalar. |
+| `provide-file` | User supplies a file or artifact — upload, attach, drag-drop, pipe, or path argument. |
+| `provide-structured-input` | Multi-field data entry submitted as a unit — a set of related inputs captured together. |
+
+#### Selection — user chooses from options
+
+| Action | Description |
+|---|---|
+| `select-one` | Choose exactly one option from a set. |
+| `select-many` | Choose zero or more options from a set. |
+| `select-toggle` | Binary on/off choice — a single option that is either active or inactive. |
+| `select-range` | Choose a value within a continuous or stepped range. |
+
+#### Confirmation — user approves or rejects
+
+| Action | Description |
+|---|---|
+| `confirm` | Approve, accept, or proceed with a proposed action or state change. |
+| `dismiss` | Reject, cancel, close, or abort the current context. |
+| `acknowledge` | Signal "I have seen this" — no decision required, only receipt. |
+
+#### Navigation — user moves through information space
+
+| Action | Description |
+|---|---|
+| `navigate` | Go to a different view, page, screen, or context. |
+| `navigate-back` | Return to the previous context in the navigation history. |
+| `navigate-drill` | Move deeper into a hierarchy — from summary to detail, from parent to child. |
+| `navigate-tab` | Switch between parallel, peer-level views within the same context. |
+| `navigate-search` | Find a target by query — locate an item, view, or piece of information. |
+
+#### Manipulation — user changes objects directly
+
+| Action | Description |
+|---|---|
+| `reorder` | Change the sequence or position of items within a collection. |
+| `move` | Relocate an object to a different container, group, or context. Includes grouping (move into a container) and ungrouping (move out of a container). |
+| `edit-inline` | Modify a value in place without entering a separate editing context. |
+
+#### Command — user triggers operations
+
+| Action | Description |
+|---|---|
+| `invoke` | Execute a named operation — create, save, run, send, print, share. |
+| `invoke-destructive` | Execute an irreversible or high-consequence operation — delete, purge, revoke, overwrite. Always requires confirmation at the adapter level. |
+| `invoke-batch` | Apply an operation to multiple selected items at once. |
+| `undo` | Reverse the most recent action. |
+| `redo` | Reapply a previously undone action. |
+| `export` | Produce output in a different form — download, copy, print, serialize. |
+| `hand-off` | Transfer responsibility to another actor — assign to a person, delegate to a system, share to an external service, schedule for later. |
+
+#### Disclosure — user controls information visibility
+
+| Action | Description |
+|---|---|
+| `expand` | Reveal additional detail or content that is currently hidden. |
+| `collapse` | Hide detail or content, showing only a summary or heading. |
+| `filter` | Narrow a visible set by applying criteria — only matching items remain visible. |
+| `sort` | Change the ordering of a collection by a chosen attribute or direction. |
+| `inspect` | View properties, metadata, or extended information about a specific object without navigating away. |
+
+---
+
+### Shows
+
+Shows describe what information the user perceives. Each Show is a unit of displayed content.
+
+| Show | Description |
+|---|---|
+| `data-value` | A single piece of information — a label, a number, a status string. |
+| `data-list` | An ordered or unordered collection of items. |
+| `data-table` | Structured rows and columns — each row is an entity, each column an attribute. |
+| `data-tree` | A hierarchical structure — parent-child relationships rendered as a nested outline. |
+| `data-chart` | A visual representation of data — trend line, bar chart, distribution, relationship graph. |
+| `status` | A state indicator — success, warning, error, in-progress, pending, or other lifecycle state. |
+| `progress` | A completion indicator — percentage, step count, or continuous bar showing how far through a process the user is. Distinct from status (which is a state label); progress is a measured quantity. |
+| `message` | Informational, instructional, or error text — context-sensitive communication to the user. |
+| `media` | Non-textual content — image, video, audio, embedded visualization, or rich preview. |
+| `empty-state` | Placeholder content shown when no data exists — communicates absence and often suggests a next action. |
+| `summary` | Aggregated or derived overview — counts, totals, averages, key metrics computed from underlying data. |
+| `diff` | A comparison between two states — additions, removals, and changes rendered together. |
+| `timeline` | A chronological sequence of events — activity log, history, or schedule rendered in time order. |
+| `code` | Structured or formatted content displayed in a monospace context — source code, configuration, command output, structured data serializations. |
+
+---
+
+### Flows
+
+Flows describe composite interaction patterns that combine multiple Shows and Actions into a coherent user experience. The surface declares the Flow; the adapter decides how to implement it.
+
+A fragment may declare at most one Flow. Not every fragment needs a Flow — simple data displays or single-action fragments can rely on Shows and Actions alone.
+
+| Flow | Description | Typical Shows | Typical Actions |
+|---|---|---|---|
+| `guided-flow` | Multi-step sequential process that collects input and produces a result. The user progresses through stages with the option to go back and review. | message, data-value, status | provide-text, provide-value, select-one, confirm, navigate-back |
+| `crud-collection` | View, create, read, update, and delete items in a collection. The standard pattern for managing a set of domain objects. | data-list or data-table, empty-state | invoke, invoke-destructive, edit-inline, navigate-drill, filter, sort |
+| `search-and-act` | Find an item by query, then perform an operation on it. Query first, results second, action third. | data-list or data-table, empty-state | navigate-search, invoke, navigate-drill |
+| `review-and-approve` | Inspect a proposed change or request, then approve or reject it. Read-then-decide. | diff or data-value or summary, message | confirm, dismiss, provide-text (for comments) |
+| `bulk-operation` | Select multiple items from a collection, then apply a single operation to all of them. | data-list or data-table | select-many, invoke-batch, confirm |
+| `configure` | Set parameters for a system, feature, or process. Multiple related settings edited together and applied as a unit. | data-value, data-list | provide-value, select-one, select-toggle, select-range, confirm |
+| `monitor` | Observe ongoing or periodically changing state. Data updates automatically or on refresh. | status, data-chart, summary, timeline, data-table | filter, sort, navigate-drill, inspect |
+| `import-export` | Bring external data in or send internal data out. Usually involves a file and a preview or confirmation step. | data-table or data-list (preview), status, message | provide-file, confirm, export |
+| `onboarding` | First-time orientation or setup. Guides the user through initial configuration, introduces key concepts, and establishes starting state. | message, media, data-value | provide-text, provide-value, select-one, confirm, acknowledge |
+| `compare` | Evaluate two or more alternatives side by side. The user examines differences and optionally selects a preferred option. | data-table, diff, summary | select-one, navigate-tab, inspect |
+
+---
 
 ## Cross-feature composition
 
@@ -47,11 +172,33 @@ Multiple features can target the same page. `/parlay view-page ==page-name==` co
 
 When layout needs to be locked, use `/parlay lock-page` to create a page manifest (see page.schema.md).
 
+## Adapter mapping
+
+The adapter is responsible for mapping every Action, Show, and Flow to a framework-specific implementation. See adapter.schema.md for the mapping structure.
+
+Actions, Shows, and Flows that do not apply to a given framework should be mapped with `widget: not-applicable` and a description explaining why.
+
+Adapters may also declare `requires: custom-implementation` for vocabulary items that are supported in concept but have no built-in framework primitive (e.g., `undo`/`redo` in most web frameworks, `diff` in most component libraries).
+
+## Validation
+
+When a surface file is loaded, the tool verifies:
+- All Shows values are valid Show identifiers from this vocabulary
+- All Actions values are valid Action identifiers from this vocabulary
+- All Flow values (if present) are valid Flow identifiers from this vocabulary
+- Every fragment has at least one Show
+- Every fragment has a Source reference
+
+Unknown identifiers are errors. Missing Actions is allowed (pure display fragments). Missing Flow is allowed (simple fragments).
+
 ## Parsing
 
 - Fragment boundaries: `---` separators
 - Fragment name: `## ` heading
 - Field extraction: `**Field**:` pattern
+- Shows parsing: comma-separated identifiers after `**Shows**:`
+- Actions parsing: comma-separated identifiers after `**Actions**:`
+- Flow parsing: single identifier after `**Flow**:`
 - Source references: comma-separated `@` prefixed values
 - Page/Region/Order: plain text or integer values
 - Notes: `- ` prefixed lines under `**Notes**:`

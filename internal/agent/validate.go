@@ -79,10 +79,9 @@ type deepRegion struct {
 }
 
 type deepComponent struct {
-	Source string         `yaml:"source"`
-	Widget string         `yaml:"widget"`
-	Type   string         `yaml:"type"`
-	Data   *deepData      `yaml:"data"`
+	Source   string       `yaml:"source"`
+	Widget   string       `yaml:"widget"`
+	Data     *deepData    `yaml:"data"`
 	Children []string     `yaml:"children"`
 }
 
@@ -95,10 +94,11 @@ type deepInput struct {
 }
 
 // deepAdapter is the parsed adapter structure for vocabulary validation.
+// Maps surface vocabulary terms (shows/actions/flows) to framework widgets.
 type deepAdapter struct {
-	ComponentTypes map[string]interface{} `yaml:"component-types"`
-	ElementTypes   map[string]interface{} `yaml:"element-types"`
-	ActionTypes    map[string]interface{} `yaml:"action-types"`
+	Shows   map[string]interface{} `yaml:"shows"`
+	Actions map[string]interface{} `yaml:"actions"`
+	Flows   map[string]interface{} `yaml:"flows"`
 }
 
 // ValidationError is a structured error returned by deep validation.
@@ -246,15 +246,31 @@ func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []Validatio
 		}}
 	}
 
-	// Check component types against adapter
+	// Check component widgets against adapter vocabulary. The buildfile
+	// contains framework-specific widget names populated from the adapter's
+	// shows/actions mappings. Widgets that don't appear in ANY adapter
+	// section are flagged.
+	allWidgets := make(map[string]bool)
+	for _, sections := range []map[string]interface{}{adapter.Shows, adapter.Actions, adapter.Flows} {
+		for _, v := range sections {
+			if m, ok := v.(map[string]interface{}); ok {
+				if w, ok := m["widget"]; ok {
+					allWidgets[fmt.Sprint(w)] = true
+				}
+				if p, ok := m["pattern"]; ok {
+					allWidgets[fmt.Sprint(p)] = true
+				}
+			}
+		}
+	}
 	for compName, comp := range bf.Components {
-		if comp.Type != "" && adapter.ComponentTypes != nil {
-			if _, ok := adapter.ComponentTypes[comp.Type]; !ok {
+		if comp.Widget != "" && comp.Widget != "not-applicable" {
+			if !allWidgets[comp.Widget] {
 				errors = append(errors, ValidationError{
-					Code:    "unknown-component-type",
-					Message: fmt.Sprintf("component %q uses type %q which is not in adapter %q", compName, comp.Type, bf.Adapter),
-					Context: fmt.Sprintf("components.%s.type", compName),
-					Fix:     fmt.Sprintf("change the component type to one defined in the adapter, or add %q to the adapter's component-types section", comp.Type),
+					Code:    "unknown-widget",
+					Message: fmt.Sprintf("component %q uses widget %q which is not in adapter %q", compName, comp.Widget, bf.Adapter),
+					Context: fmt.Sprintf("components.%s.widget", compName),
+					Fix:     fmt.Sprintf("change the widget to one defined in the adapter's shows/actions/flows sections, or add %q to the adapter", comp.Widget),
 				})
 			}
 		}

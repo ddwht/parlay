@@ -29,7 +29,6 @@ routes:
 components:
   cluster-view:
     source: "@test-feature/cluster-list"
-    type: data-display
     data:
       inputs:
         - model: Cluster
@@ -154,15 +153,21 @@ models: {}
 components:
   my-comp:
     source: "@test-feature/frag"
-    type: unknown-type
+    widget: unknown-widget
 `
 	adapter := `name: test-adapter
 framework: Test
-component-types:
-  data-display:
-    widget: div
-  interactive-wizard:
-    widget: form
+shows:
+  data-value:
+    widget: span
+  data-list:
+    widget: ul
+actions:
+  invoke:
+    widget: button
+flows:
+  guided-flow:
+    pattern: form-wizard
 `
 	bfPath := filepath.Join(dir, "buildfile.yaml")
 	adPath := filepath.Join(dir, "test-adapter.adapter.yaml")
@@ -171,7 +176,7 @@ component-types:
 
 	errors := ValidateBuildfileDeep(bfPath, adPath)
 	if len(errors) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
+		t.Fatalf("expected 1 error for unknown-widget, got %d: %v", len(errors), errors)
 	}
 }
 

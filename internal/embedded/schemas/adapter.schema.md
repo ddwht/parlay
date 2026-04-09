@@ -3,41 +3,42 @@
 File: `.parlay/adapters/<adapter-name>.adapter.yaml`
 Registered via `/parlay register-adapter` or bundled during `/parlay init`.
 
-A framework adapter maps abstract buildfile types to framework-specific widgets, patterns, and conventions. It teaches the tool how to generate buildfiles and code for a specific prototype framework.
+A framework adapter maps the surface interaction vocabulary (Shows, Actions, Flows) to framework-specific widgets, patterns, and conventions. It teaches the tool how to generate buildfiles and code for a specific prototype framework.
+
+The adapter is a **pure translation layer**: it maps generic user interactions to framework-specific implementations. It has no knowledge of the project's codebase, features, or domain. It answers one question: "how does this framework implement this interaction?"
 
 ## Structure
 
 ```yaml
-name: <adapter name — e.g., go-cli, angular-clarity, react-mui>
-framework: <human-readable framework name — e.g., "Angular + Clarity">
+name: <adapter name — e.g., go-cli, angular-clarity, react-mui, ios-uikit>
+framework: <human-readable framework name — e.g., "Go CLI", "Angular + Clarity">
 version: <adapter version>
 
-component-types:
-  <abstract-type>:
-    widget: <framework-specific widget>
-    description: <how this maps in this framework>
-    import: <framework import path if applicable>
-
-element-types:
-  <abstract-type>:
-    widget: <framework-specific widget>
+shows:
+  <surface-show-type>:
+    widget: <framework-specific widget or "not-applicable">
     description: <how this renders in this framework>
+    import: <framework import path, if applicable>
+    requires: <"custom-implementation" if no built-in primitive exists>
 
-action-types:
-  <abstract-type>:
-    widget: <framework-specific widget>
+actions:
+  <surface-action-type>:
+    widget: <framework-specific widget or "not-applicable">
     description: <how this interaction works in this framework>
+    import: <framework import path, if applicable>
+    requires: <"custom-implementation" if no built-in primitive exists>
+    requires-confirmation: <true — only for invoke-destructive>
 
-layout-patterns:
-  <pattern-name>:
-    description: <what this layout looks like>
+flows:
+  <surface-flow-type>:
+    pattern: <framework-specific composite pattern name>
+    description: <how this flow is implemented in this framework>
     regions: [<region names this pattern provides>]
-    implementation: <framework-specific approach>
 
 file-conventions:
   source-root: <where generated code lives — e.g., "src/", "cmd/", "app/">
   component-pattern: <how components map to files — e.g., "one-file-per-component", "feature-modules">
-  naming: <file naming convention — e.g., "kebab-case", "PascalCase">
+  naming: <file naming convention — e.g., "kebab-case", "snake_case", "PascalCase">
   entry-point: <main file — e.g., "main.go", "main.ts", "App.tsx">
 
 patterns:
@@ -51,135 +52,67 @@ patterns:
     default: <inline | toast | dialog | console>
     rationale: <why this fits the framework>
   confirmation:
-    required-for: [<actions that need confirmation>]
+    required-for: [<action types that need confirmation>]
     style: <prompt | dialog | inline>
   content:
     timestamps: <relative | absolute | both>
     empty-states: <message | hidden | placeholder>
 ```
 
-The `patterns` section guides the agent's design decisions when generating components. Different frameworks have different idioms — a CLI prefers sequential prompts and concise output; a web app prefers progressive disclosure and visual feedback. By declaring patterns in the adapter, the agent makes consistent decisions across all features built with the same adapter.
+## Mapping rules
 
-## Example: go-cli adapter
+### Shows mapping
 
-```yaml
-name: go-cli
-framework: "Go CLI"
-version: "1.0"
+Every Show type from the surface vocabulary must appear in the `shows:` section. The adapter specifies which framework widget renders each information type.
 
-component-types:
-  interactive-wizard:
-    widget: sequential-prompts
-    description: Series of bufio or survey prompts in sequence
-  command-output:
-    widget: cobra-command
-    description: Cobra command with fmt.Print output
-  interactive-prompt:
-    widget: survey-prompt
-    description: Single interactive prompt using survey or bufio
-  data-display:
-    widget: fmt-output
-    description: Formatted terminal output
-  report:
-    widget: sectioned-output
-    description: Multiple labeled sections printed to terminal
+| Surface Show | What to map |
+|---|---|
+| `data-value` | How a single value is displayed (label, badge, chip, fmt.Println) |
+| `data-list` | How an ordered/unordered collection renders (ul/ol, bulleted-list, List component) |
+| `data-table` | How rows × columns render (HTML table, tabwriter, DataGrid) |
+| `data-tree` | How nested hierarchy renders (TreeView, indented-list, collapsible outline) |
+| `data-chart` | How data visualization renders (Chart.js, D3, not-applicable for CLI) |
+| `status` | How lifecycle state renders (badge color, icon, [OK]/[ERR] prefix) |
+| `progress` | How completion renders (progress bar, percentage text, spinner) |
+| `message` | How informational text renders (paragraph, alert box, fmt.Println) |
+| `media` | How non-text content renders (img tag, video player, not-applicable for CLI) |
+| `empty-state` | How absence renders (placeholder, illustration, simple message) |
+| `summary` | How aggregated metrics render (card grid, stat line, headed-section) |
+| `diff` | How state comparison renders (unified diff, side-by-side, colored +/- lines) |
+| `timeline` | How chronological sequence renders (vertical timeline, activity log, bulleted dates) |
+| `code` | How structured/formatted content renders (pre/code block, syntax-highlighted, indented) |
 
-element-types:
-  text-output:
-    widget: fmt.Println
-    description: Single line printed to stdout
-  data-list:
-    widget: bulleted-list
-    description: "  - item" formatted lines
-  data-table:
-    widget: tabwriter
-    description: Aligned columns using tabwriter
-  status-indicator:
-    widget: prefixed-message
-    description: "[OK]", "[WARN]", "[ERR]" prefixed messages
-  path-reference:
-    widget: fmt.Println
-    description: File path printed to stdout
-  grouped-output:
-    widget: headed-section
-    description: "**heading**:" followed by indented items
-  code-block:
-    widget: indented-block
-    description: Indented monospace output
+### Actions mapping
 
-action-types:
-  selection:
-    widget: select-prompt
-    description: Lettered options (A/B/C) with bufio readline
-  confirmation:
-    widget: confirm-prompt
-    description: Y/N prompt with bufio readline
-  text-input:
-    widget: text-prompt
-    description: Free-form input with bufio readline
-  navigation:
-    widget: not-applicable
-    description: CLI tools don't navigate — commands are entry points
-  file-operation:
-    widget: os-file-ops
-    description: os.MkdirAll, os.WriteFile, os.ReadFile
-  state-mutation:
-    widget: in-memory-update
-    description: Modify struct fields in memory
+Every Action type from the surface vocabulary must appear in the `actions:` section. The adapter specifies which framework widget implements each interaction.
 
-layout-patterns:
-  sequential-prompts:
-    description: One prompt after another, building up state
-    regions: [prompts, confirmation]
-    implementation: Sequential function calls with accumulated config
-  report-output:
-    description: Headed sections with lists and counts
-    regions: [header, sections, footer]
-    implementation: Print sections to stdout in order
-  interactive-flow:
-    description: Output followed by a prompt followed by more output
-    regions: [display, prompt, result]
-    implementation: Print, read input, print result
+For actions that don't apply to the framework (e.g., `reorder` via drag-and-drop in a CLI), use `widget: not-applicable` with a description explaining why.
 
-file-conventions:
-  source-root: "cmd/parlay/"
-  component-pattern: one-file-per-command
-  naming: snake_case
-  entry-point: "cmd/parlay/main.go"
-  internal-packages: "internal/"
+For actions that are conceptually supported but lack a built-in framework primitive (e.g., `undo`/`redo` in most frameworks), use `requires: custom-implementation`.
 
-patterns:
-  interaction:
-    prefer: [sequential-prompts, lettered-options, immediate-feedback]
-    avoid: [modal-dialogs, hover-interactions, drag-and-drop]
-  information-density:
-    default: high
-    rationale: CLI users expect concise, scannable output without scrolling
-  error-placement:
-    default: inline
-    rationale: Errors print immediately after the failing action; no separate error region
-  confirmation:
-    required-for: [destructive-operations, irreversible-changes]
-    style: prompt
-  content:
-    timestamps: absolute
-    empty-states: message
-```
+### Flows mapping
 
-## Adapter validation
+Every Flow type from the surface vocabulary must appear in the `flows:` section. The adapter specifies which composite pattern implements each flow and what layout regions it provides.
 
-When an adapter is loaded, the tool verifies:
-- All abstract component types from the buildfile schema have mappings
-- All abstract element types have mappings
-- All abstract action types have mappings
-- At least one layout pattern is defined
-- The patterns section is present (warning if missing — patterns are strongly recommended for consistent design decisions)
+Flows are higher-level than Shows and Actions — they describe how multiple widgets and interactions compose into a coherent user experience. The adapter pattern name should be specific enough that two agents reading it produce structurally similar code.
 
-Missing mappings are warnings (the adapter may not support every type), not errors.
+## Validation
 
-## Parsing
+When an adapter file is loaded, the tool verifies:
+- Every Show type from the surface vocabulary has an entry in `shows:`
+- Every Action type from the surface vocabulary has an entry in `actions:`
+- Every Flow type from the surface vocabulary has an entry in `flows:`
+- Missing entries are errors — the adapter must be comprehensive
+- `widget: not-applicable` is allowed (with description explaining why)
+- `requires: custom-implementation` is allowed (the agent is expected to write the implementation from scratch)
+- The `file-conventions` section is complete
 
-- YAML structure
-- Type mappings: `<abstract-type>` keys under component-types, element-types, action-types
-- Layout patterns: named patterns with region lists
-- File conventions: string values for source-root, naming, entry-point
+## Relationship to buildfile
+
+The buildfile references widget names from the adapter, not surface vocabulary terms. When the agent generates a buildfile from a surface + adapter:
+
+1. Read the surface fragment's Shows/Actions/Flow
+2. Look up each term in the adapter to get the framework-specific widget
+3. Write the widget name into the buildfile
+
+The buildfile is fully framework-specific. The surface vocabulary does not appear in it. The adapter is the bridge between the two.

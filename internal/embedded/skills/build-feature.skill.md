@@ -45,12 +45,13 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
    - Create `fixtures:` with representative sample data
    - Map each surface fragment to a `component:`:
-     - Set `type:` to an abstract component type from the buildfile schema
-     - Set `widget:` to the framework-specific widget from the adapter
+     - Look up each Show in the fragment's `**Shows**:` field in the adapter's `shows:` section → write the adapter's widget name as the element's `widget:`
+     - Look up each Action in the fragment's `**Actions**:` field in the adapter's `actions:` section → write the adapter's widget name as the action's `widget:`
+     - Look up the fragment's `**Flow**:` (if present) in the adapter's `flows:` section → write the adapter's pattern name as the route's `flow-pattern:`
+     - Set the component's primary `widget:` from the adapter's action mapping for the dominant action (e.g., `invoke` → `cobra-command`)
      - Define `data:` inputs and computed values
-     - Define `elements:` with adapter element-types
-     - Define `actions:` with adapter action-types
      - Define `operations:` (file reads, writes, directory creation)
+     - The buildfile must NOT contain surface vocabulary terms. Only framework-specific widget names from the adapter.
    - Define `routes:` mapping commands to components
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 

@@ -54,36 +54,22 @@ A pluggable framework or tool integration.
 
 ### FrameworkAdapter
 
-Maps abstract component concepts to framework-specific widgets, patterns, and conventions. Loaded during build-feature to generate framework-appropriate buildfiles.
+A pure translation layer that maps the surface interaction vocabulary (Shows, Actions, Flows) to framework-specific widgets, patterns, and conventions. Loaded during build-feature to generate framework-appropriate buildfiles.
 
 **Properties**:
-- name: string (e.g., "go-cli", "angular-clarity", "react-mui")
+- name: string (e.g., "go-cli", "angular-clarity", "react-mui", "ios-uikit")
 - framework: string (matches ProjectConfig.prototype-framework)
-- component-types: ComponentMapping[] (abstract type → framework widget)
-- layout-patterns: LayoutPattern[] (available layout strategies)
-- interaction-patterns: InteractionPattern[] (how user actions are handled)
+- shows: map of surface Show type → {widget, description, import}
+- actions: map of surface Action type → {widget, description, import, requires-confirmation}
+- flows: map of surface Flow type → {pattern, description, regions}
 - file-conventions: FileConvention (where generated code goes, naming rules)
+- patterns: DesignPatterns (interaction style, information density, error placement, confirmation style)
 
 **Relationships**:
 - belongs to Extension (one adapter per prototype-framework)
-- consumed by build-feature to generate buildfile.yaml
-- consumed by code generator to produce prototype code
+- consumed by build-feature to generate buildfile.yaml (surface vocabulary → framework widgets)
+- consumed by code generator to produce prototype code (file conventions + patterns)
 - stored at `.parlay/adapters/<name>.adapter.yaml`
-
----
-
-### ComponentMapping
-
-A single mapping from abstract component type to framework-specific widget.
-
-**Properties**:
-- abstract-type: string (e.g., "data-display", "selection", "confirmation", "navigation", "form-input")
-- widget: string (framework-specific — e.g., "clr-datagrid" for Clarity, "cobra.Command" for Go CLI)
-- description: string
-- supports: string[] (what the widget can do — "sort", "filter", "paginate", etc.)
-
-**Relationships**:
-- belongs to FrameworkAdapter
 
 ---
 
@@ -473,9 +459,10 @@ Operations implied by the dialogs, mapped to the commands that trigger them.
 Project
   ├── ProjectConfig (ai-agent, sdd-framework, prototype-framework)
   ├── FrameworkAdapter[]
-  │     ├── ComponentMapping[]
-  │     ├── LayoutPattern[]
-  │     └── InteractionPattern[]
+  │     ├── Shows mapping (surface Show → widget)
+  │     ├── Actions mapping (surface Action → widget)
+  │     ├── Flows mapping (surface Flow → pattern)
+  │     └── DesignPatterns
   ├── Feature[]
   │     ├── Intent[]
   │     ├── Dialog[]

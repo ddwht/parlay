@@ -21,13 +21,12 @@ var registerAdapterCmd = &cobra.Command{
 }
 
 type adapterFile struct {
-	Name           string                 `yaml:"name"`
-	Framework      string                 `yaml:"framework"`
-	Version        string                 `yaml:"version"`
-	ComponentTypes map[string]interface{} `yaml:"component-types"`
-	ElementTypes   map[string]interface{} `yaml:"element-types"`
-	ActionTypes    map[string]interface{} `yaml:"action-types"`
-	LayoutPatterns map[string]interface{} `yaml:"layout-patterns"`
+	Name            string                 `yaml:"name"`
+	Framework       string                 `yaml:"framework"`
+	Version         string                 `yaml:"version"`
+	Shows           map[string]interface{} `yaml:"shows"`
+	Actions         map[string]interface{} `yaml:"actions"`
+	Flows           map[string]interface{} `yaml:"flows"`
 	FileConventions map[string]interface{} `yaml:"file-conventions"`
 }
 
@@ -53,11 +52,9 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	// Element: adapter-name (text-output → fmt.Println)
 	fmt.Printf("Registered framework adapter %q:\n", adapter.Name)
 
-	// Element: component-count (text-output → fmt.Println)
-	fmt.Printf("  Component types: %d\n", len(adapter.ComponentTypes))
-
-	// Element: pattern-count (text-output → fmt.Println)
-	fmt.Printf("  Layout patterns: %d\n", len(adapter.LayoutPatterns))
+	// Element: vocab-count (data-value → fmt.Printf)
+	fmt.Printf("  Shows: %d  Actions: %d  Flows: %d\n",
+		len(adapter.Shows), len(adapter.Actions), len(adapter.Flows))
 
 	// Element: conventions (text-output → fmt.Println)
 	if sr, ok := adapter.FileConventions["source-root"]; ok {

@@ -1,110 +1,229 @@
 name: go-cli
 framework: "Go CLI"
-version: "1.0"
+version: "2.0"
 
-component-types:
-  interactive-wizard:
-    widget: sequential-prompts
-    description: Series of bufio prompts in sequence, building up configuration state
-    import: bufio
-  command-output:
-    widget: cobra-command
-    description: Cobra command handler that performs operations and prints results
-    import: github.com/spf13/cobra
-  interactive-prompt:
-    widget: bufio-prompt
-    description: Single prompt with bufio.NewReader for user input
-    import: bufio
-  data-display:
-    widget: fmt-output
-    description: Formatted terminal output using fmt.Printf
-    import: fmt
-  report:
-    widget: sectioned-output
-    description: Multiple headed sections printed to stdout in sequence
-    import: fmt
-
-element-types:
-  text-output:
-    widget: fmt.Println
-    description: Single line to stdout
+shows:
+  data-value:
+    widget: fmt.Printf
+    description: Single value printed to stdout with optional label
   data-list:
     widget: bulleted-list
-    description: Lines prefixed with "  - " or "  N. " for ordered
+    description: Lines prefixed with "  - " or "  N. " for ordered lists
   data-table:
     widget: tabwriter
     description: Aligned columns using text/tabwriter
-  status-indicator:
+    import: text/tabwriter
+  data-tree:
+    widget: indented-tree
+    description: Nested items rendered with increasing indentation (2 spaces per level)
+  data-chart:
+    widget: not-applicable
+    description: CLI cannot display graphical charts; use data-table or summary as fallback
+  status:
     widget: prefixed-message
-    description: Status prefix in brackets — "[OK]", "[WARN]", "[ERR]"
-  path-reference:
-    widget: path-line
-    description: File path printed with context — "Created spec/intents/..."
-  grouped-output:
+    description: Status prefix in brackets — "[OK]", "[WARN]", "[ERR]", "[SKIP]"
+  progress:
+    widget: progress-line
+    description: Text-based progress — "[####----] 40%" or "Step 3/7"
+  message:
+    widget: fmt.Println
+    description: Single line or paragraph to stdout
+  media:
+    widget: not-applicable
+    description: CLI cannot display rich media; describe or link instead
+  empty-state:
+    widget: fmt.Println
+    description: A friendly message explaining absence and suggesting a next action
+  summary:
     widget: headed-section
-    description: Bold heading followed by indented items — "**name**:\n  1. item"
-  code-block:
+    description: Bold heading followed by key-value lines — "Total: 42\nActive: 38"
+  diff:
+    widget: diff-output
+    description: Additions prefixed with "+", removals with "-", context lines unprefixed
+    requires: custom-implementation
+  timeline:
+    widget: timestamped-list
+    description: Lines prefixed with a timestamp or relative time — "2m ago  deployed v3.1"
+  code:
     widget: indented-block
-    description: Content indented with 4 spaces
+    description: Content indented with 4 spaces or fenced with backticks for terminal rendering
 
-action-types:
-  selection:
+actions:
+  provide-text:
+    widget: text-prompt
+    description: Print label, read line with bufio.NewReader
+    import: bufio
+  provide-rich-text:
+    widget: not-applicable
+    description: CLI cannot support rich text editing; fall back to provide-text with markdown input
+  provide-value:
+    widget: text-prompt
+    description: Print label, read line, parse and validate the typed value
+    import: bufio
+  provide-file:
+    widget: path-argument
+    description: Accept a file path as a positional argument or --file flag
+  provide-structured-input:
+    widget: sequential-prompts
+    description: Series of bufio prompts in sequence, building up a struct
+    import: bufio
+  select-one:
     widget: lettered-prompt
     description: Print lettered options (A/B/C), read single letter with bufio
-  confirmation:
+    import: bufio
+  select-many:
+    widget: checkbox-prompt
+    description: Print numbered options, user enters comma-separated numbers
+    import: bufio
+    requires: custom-implementation
+  select-toggle:
     widget: yn-prompt
     description: Print question, read Y/N with bufio
-  text-input:
+    import: bufio
+  select-range:
     widget: text-prompt
-    description: Print label, read line with bufio
-  navigation:
+    description: Print range bounds, read a number within range
+    import: bufio
+  confirm:
+    widget: yn-prompt
+    description: Print question, read Y/N with bufio
+    import: bufio
+  dismiss:
+    widget: os.Exit
+    description: Exit the process — CLI dismissal is process termination
+  acknowledge:
+    widget: enter-to-continue
+    description: Print message, wait for Enter key press
+    import: bufio
+  navigate:
     widget: not-applicable
-    description: CLI commands are entry points — no in-app navigation
-  file-operation:
-    widget: os-file-ops
-    description: os.MkdirAll, os.WriteFile, os.ReadFile, os.ReadDir
-  state-mutation:
-    widget: struct-update
-    description: Update Go struct fields in memory
+    description: CLI commands are entry points — no in-app navigation; use separate commands instead
+  navigate-back:
+    widget: not-applicable
+    description: CLI has no navigation history; user runs the previous command again
+  navigate-drill:
+    widget: subcommand
+    description: Implemented as a cobra subcommand — "parlay inspect @feature"
+  navigate-tab:
+    widget: not-applicable
+    description: CLI has no tab metaphor; use separate commands or --view flag
+  navigate-search:
+    widget: flag-filter
+    description: Implemented as a --query or --search flag that filters output
+  reorder:
+    widget: not-applicable
+    description: CLI cannot support drag-and-drop reordering; use explicit move commands
+  move:
+    widget: not-applicable
+    description: Not applicable as a direct interaction; use invoke with source/target arguments
+  edit-inline:
+    widget: text-prompt
+    description: Print current value, prompt for replacement with bufio
+    import: bufio
+  invoke:
+    widget: cobra-command
+    description: Cobra command handler that performs the operation and prints results
+    import: github.com/spf13/cobra
+  invoke-destructive:
+    widget: cobra-command
+    description: Cobra command handler with mandatory Y/N confirmation before execution
+    import: github.com/spf13/cobra
+    requires-confirmation: true
+  invoke-batch:
+    widget: cobra-command
+    description: Cobra command that accepts multiple targets via repeated args or glob
+    import: github.com/spf13/cobra
+  undo:
+    widget: not-applicable
+    description: CLI commands are one-shot; undo is not natively supported
+  redo:
+    widget: not-applicable
+    description: CLI commands are one-shot; redo is not natively supported
+  export:
+    widget: file-write
+    description: Write output to a file path specified via --output flag or stdout redirection
+  hand-off:
+    widget: not-applicable
+    description: CLI has no built-in delegation; implement as invoke with a target argument
+  expand:
+    widget: not-applicable
+    description: CLI output is linear; use --verbose flag as the expand metaphor
+  collapse:
+    widget: not-applicable
+    description: CLI output is linear; default output is the collapsed view
+  filter:
+    widget: flag-filter
+    description: Implemented as --filter or --type flags that narrow the output set
+  sort:
+    widget: flag-sort
+    description: Implemented as --sort flag with column name and optional --desc
+  inspect:
+    widget: subcommand
+    description: Implemented as a show/describe/inspect subcommand that prints extended detail
 
-layout-patterns:
-  sequential-prompts:
-    description: One prompt after another, accumulating answers into a config struct
+flows:
+  guided-flow:
+    pattern: sequential-prompts
+    description: One prompt after another, accumulating answers into a config struct. After all prompts, perform operations and print summary.
     regions: [prompts, output]
-    implementation: |
-      reader := bufio.NewReader(os.Stdin)
-      for each prompt: print question, read answer, store in struct
-      after all prompts: perform operations, print summary
-  report-output:
-    description: Headed sections with lists, counts, and status indicators
-    regions: [header, sections, actions]
-    implementation: |
-      Print heading
-      for each section: print section header, print items
-      if actions available: print prompt, read selection
-  command-with-confirmation:
-    description: Show preview, ask for confirmation, then execute
+  crud-collection:
+    pattern: cobra-subcommands
+    description: Each CRUD operation is a separate subcommand — add, list, show, edit, delete. The parent command prints help listing available subcommands.
+    regions: [command, output]
+  search-and-act:
+    pattern: flag-filter-then-command
+    description: First command lists/searches with filter flags, second command acts on a found item by ID or name.
+    regions: [search, action]
+  review-and-approve:
+    pattern: display-then-confirm
+    description: Print the proposed change or request, then prompt for Y/N approval. Optionally accept a comment via --comment flag.
     regions: [preview, confirmation, result]
-    implementation: |
-      Gather and display preview data
-      Prompt for confirmation or additional input
-      Execute operation, print result
-  file-generator:
-    description: Read inputs, generate files, report what was created
-    regions: [status, files-created, next-steps]
-    implementation: |
-      Read source files, process
-      Create output files
-      Print paths of created files and next-step hint
+  bulk-operation:
+    pattern: multi-arg-command
+    description: Accept multiple targets as repeated arguments or via stdin piping. Confirm before executing.
+    regions: [selection, confirmation, result]
+  configure:
+    pattern: sequential-prompts
+    description: Present each setting as a prompt with the current value shown. After all prompts, write the config file and confirm.
+    regions: [prompts, output]
+  monitor:
+    pattern: watch-loop
+    description: Periodic refresh of output — poll and reprint, or stream with timestamps. Exit with Ctrl+C.
+    regions: [header, output]
+    requires: custom-implementation
+  import-export:
+    pattern: file-ops
+    description: Read from an input file (--input flag), optionally preview, confirm, then write to output (--output flag or stdout).
+    regions: [preview, confirmation, output]
+  onboarding:
+    pattern: sequential-prompts
+    description: Same as guided-flow but with explanatory messages between prompts. Produces initial config and prints a "you're ready" summary.
+    regions: [prompts, output]
+  compare:
+    pattern: side-by-side-output
+    description: Print two alternatives in columns using tabwriter, or sequentially with clear separation. Optionally prompt for selection.
+    regions: [comparison, selection]
+    requires: custom-implementation
 
 file-conventions:
-  source-root: "cmd/parlay/"
-  internal-root: "internal/"
+  source-root: "cmd/"
   component-pattern: one-file-per-command
   naming: snake_case
-  entry-point: "cmd/parlay/main.go"
-  packages:
-    commands: "internal/commands/"
-    parsers: "internal/parser/"
-    config: "internal/config/"
-    embedded: "internal/embedded/"
+  entry-point: "main.go"
+
+patterns:
+  interaction:
+    prefer: [single-purpose-commands, explicit-flags, terse-prompts]
+    avoid: [hidden-state, magic-defaults, interactive-modes-without-escape]
+  information-density:
+    default: medium
+    rationale: CLI users want compact output but with enough context to understand state
+  error-placement:
+    default: console
+    rationale: Errors print to stderr with a clear prefix; CLI users read terminal output linearly
+  confirmation:
+    required-for: [invoke-destructive]
+    style: prompt
+  content:
+    timestamps: relative
+    empty-states: message
