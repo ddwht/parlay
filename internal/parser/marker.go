@@ -9,13 +9,22 @@ import (
 )
 
 // Marker is the parlay metadata embedded at the top of a generated file.
-// It identifies which buildfile component the file was generated from
-// and which feature it belongs to. The marker is the source of truth for
-// "this file is tool-owned" — files without a marker are user-owned and
-// must not be modified or deleted by parlay tooling without consent.
+// It identifies ownership and provenance so the tool can track, verify,
+// and incrementally regenerate generated files. Files without a marker
+// are user-owned and must not be modified or deleted by parlay tooling.
+//
+// Three marker variants:
+//
+//	Component file:   parlay-component: X
+//	Component test:   parlay-component: X + parlay-artifact: test
+//	Section-derived:  parlay-section: models (or routes, fixtures, etc.)
+//
+// A marker is valid if it has at least one of Component or Section.
 type Marker struct {
 	Feature   string `json:"feature" yaml:"feature"`
-	Component string `json:"component" yaml:"component"`
+	Component string `json:"component,omitempty" yaml:"component,omitempty"`
+	Section   string `json:"section,omitempty" yaml:"section,omitempty"`
+	Artifact  string `json:"artifact,omitempty" yaml:"artifact,omitempty"`
 	Path      string `json:"path" yaml:"path"`
 }
 
@@ -63,14 +72,25 @@ func parseMarkerFromReader(r io.Reader, path string) (*Marker, error) {
 			}
 			marker.Component = component
 		}
+		if section, ok := matchField(stripped, "parlay-section:"); ok {
+			if marker == nil {
+				marker = &Marker{Path: path}
+			}
+			marker.Section = section
+		}
+		if artifact, ok := matchField(stripped, "parlay-artifact:"); ok {
+			if marker == nil {
+				marker = &Marker{Path: path}
+			}
+			marker.Artifact = artifact
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	// A marker is only valid if it identifies a component. The feature
-	// field is recommended but optional (component name should be unique
-	// within a feature's source root anyway).
-	if marker == nil || marker.Component == "" {
+	// A marker is valid if it identifies at least one of: a component
+	// (implementation or test file) or a section (cross-cutting file).
+	if marker == nil || (marker.Component == "" && marker.Section == "") {
 		return nil, nil
 	}
 	return marker, nil

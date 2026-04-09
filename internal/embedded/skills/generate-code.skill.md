@@ -38,12 +38,14 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
 5. **Determine source root** — From the adapter's `file-conventions.source-root` (e.g., `cmd/{feature}/`, `src/{feature}/`, `app/{feature}/`). This is where generated code will live. It must be outside `spec/` and `.parlay/`.
 
-6. **Compute the source diff** — Run: `parlay diff @{feature}` to find out which buildfile components have changed source dependencies since the last successful end-to-end generation.
-   - The JSON output reports `components.stable[]`, `components.dirty[]`, `components.removed[]`. On `first_build: true`, treat every component as new — there is no committed state to compare against.
+6. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last successful end-to-end generation. The JSON output reports:
+   - `components.stable[]`, `components.dirty[]`, `components.removed[]` — per-component status based on source changes (intents/dialogs/surface). On `first_build: true`, treat every component as new.
+   - `sections` — per-section status for the buildfile's major sections (`models`, `routes`, `fixtures`). Values: `"changed"`, `"stable"`, `"new"`, `"removed"`. Used to determine which **cross-cutting files** (model definitions, entry points) need regeneration. Section changes don't affect per-component files — only files marked with `parlay-section:`.
 
-7. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file in the source root to its owning component (via the `parlay-component:` marker). Returns JSON `{source_root, files: [{feature, component, path}]}`.
-   - Use this map to find the file path for each dirty/removed component without re-deriving filenames from the adapter naming convention.
-   - Files without a marker are user-owned; never modify or delete them.
+7. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file in the source root to its owning marker. Returns JSON `{source_root, files: [{feature, component, section, artifact, path}]}`.
+   - Files with `parlay-component:` belong to that component. Files with `parlay-section:` belong to that buildfile section. Files with `parlay-artifact: test` are test files for their component.
+   - Use this map to find file paths for dirty/removed components AND for changed sections without re-deriving filenames from the adapter naming convention.
+   - Files without ANY parlay marker are user-owned; never modify or delete them.
 
 8. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated @{feature}` to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
    - If `has_hashes` is `false`, this is the very first generation for the feature — there is no committed code state yet. Treat every component as new regardless of what `parlay diff` reported, and skip the modified-file check entirely.
@@ -62,17 +64,32 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
     - Map the component to a file path using the adapter's `component-pattern` and `naming` conventions (or, if the file already exists with a marker, reuse its path)
     - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
     - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
-    - Add the marker at the top of every generated file. Two-line format:
+    - Add the marker at the top of every generated file. Use the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell).
+    - **Component implementation files** get a two-line marker:
       ```
       // parlay-feature: {feature}
       // parlay-component: {component-name}
-      // Generated from .parlay/build/{feature}/buildfile.yaml — do not edit by hand
       ```
-      Use the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell). For non-comment formats, use the closest equivalent (frontmatter, sidecar file).
+    - **Component test files** get a three-line marker:
+      ```
+      // parlay-feature: {feature}
+      // parlay-component: {component-name}
+      // parlay-artifact: test
+      ```
+      Test files ride the same component's dirty/stable status. When a component is dirty, regenerate BOTH its implementation and its test file.
 
-11. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have the `parlay-component:` marker — never touch user-owned files.
+11. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
 
-12. **Generate cross-cutting files** — From the buildfile's `models:`, `routes:`, and any framework-required entry points (per the adapter's `entry-point` field), produce the supporting files: data models, routing/main, fixtures used as runtime data sources, etc. These are also written with the marker.
+12. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
+    - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. Mark it with `parlay-section: models`.
+    - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from `buildfile.routes`. Mark it with `parlay-section: routes`.
+    - If a section is `"stable"`: leave the corresponding file untouched (look it up via scan-generated by its `parlay-section:` marker).
+    - If a section is `"removed"`: delete the corresponding file.
+    - Cross-cutting files use a two-line marker:
+      ```
+      // parlay-feature: {feature}
+      // parlay-section: models
+      ```
 
 13. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 

@@ -63,19 +63,18 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	featurePath := config.FeaturePath(slug)
 	output := diffOutput{Feature: slug}
 
-	var stored *HashedSources
+	var storedBaseline Baseline
 	if blData, err := os.ReadFile(baselinePath(slug)); err == nil {
-		var baseline Baseline
-		if err := yaml.Unmarshal(blData, &baseline); err != nil {
+		if err := yaml.Unmarshal(blData, &storedBaseline); err != nil {
 			t.Fatal(err)
 		}
-		stored = baseline.Sources
-		if stored == nil {
+		if storedBaseline.Sources == nil {
 			output.FirstBuild = true
 		}
 	} else {
 		output.FirstBuild = true
 	}
+	stored := storedBaseline.Sources
 	if stored == nil {
 		stored = &HashedSources{}
 	}
@@ -113,6 +112,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 				currentIntents, currentDialogs, fragmentBySlug,
 				output.Intents, output.Dialogs, output.Fragments,
 			)
+			output.Sections = computeSectionDiff(buildfilePath, storedBaseline.BuildfileSections)
 		}
 	}
 	return output
@@ -425,6 +425,84 @@ components:
 	}
 	if len(out.Components.Stable) != 1 || out.Components.Stable[0] != "comp-b" {
 		t.Errorf("expected only comp-b stable, got %+v", out.Components.Stable)
+	}
+}
+
+func TestDiff_SectionChanged(t *testing.T) {
+	dir := setupTestDir(t)
+
+	intents := `## Do Something
+
+**Goal**: Do the thing
+**Persona**: User
+`
+	writeFeatureFiles(t, "my-feature", intents, "", "")
+
+	// Original buildfile with one model
+	originalBuildfile := `feature: my-feature
+adapter: go-cli
+models:
+  Task:
+    properties:
+      text:
+        type: string
+routes:
+  - path: "do"
+    page: cli
+components:
+  do-comp:
+    source: "@my-feature/do-something"
+`
+	writeBuildfile(t, "my-feature", originalBuildfile)
+
+	// Save baseline with source hashes AND section hashes via saveBuildState.
+	// We need a source root with at least one marker file for saveBuildState.
+	sourceRoot := filepath.Join(dir, "cmd", "my-feature")
+	writeMarkedFile(t, filepath.Join(sourceRoot, "do.go"),
+		"my-feature", "do-comp", "func Do() {}")
+
+	_, err := saveBuildState("my-feature", sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify sections are reported as stable when nothing changed
+	out := runDiffForTest(t, "my-feature")
+	if out.Sections == nil {
+		t.Fatal("expected sections in diff output")
+	}
+	if out.Sections["models"] != "stable" {
+		t.Errorf("sections.models = %q, want stable", out.Sections["models"])
+	}
+	if out.Sections["routes"] != "stable" {
+		t.Errorf("sections.routes = %q, want stable", out.Sections["routes"])
+	}
+
+	// Now modify the models section in the buildfile (add a property)
+	modifiedBuildfile := `feature: my-feature
+adapter: go-cli
+models:
+  Task:
+    properties:
+      text:
+        type: string
+      priority:
+        type: string
+routes:
+  - path: "do"
+    page: cli
+components:
+  do-comp:
+    source: "@my-feature/do-something"
+`
+	writeBuildfile(t, "my-feature", modifiedBuildfile)
+
+	out = runDiffForTest(t, "my-feature")
+	if out.Sections["models"] != "changed" {
+		t.Errorf("sections.models = %q, want changed after adding property", out.Sections["models"])
+	}
+	if out.Sections["routes"] != "stable" {
+		t.Errorf("sections.routes = %q, want stable (routes didn't change)", out.Sections["routes"])
 	}
 }
 

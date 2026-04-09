@@ -161,6 +161,84 @@ func TestScanGenerated_FindsMarkedFiles(t *testing.T) {
 	}
 }
 
+func TestParseMarker_SectionTag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.go")
+	content := `// parlay-feature: task-list
+// parlay-section: models
+// Generated from buildfile — do not edit by hand
+
+package main
+
+type Task struct {}
+`
+	os.WriteFile(path, []byte(content), 0644)
+
+	marker, err := ParseMarker(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker == nil {
+		t.Fatal("expected marker, got nil")
+	}
+	if marker.Section != "models" {
+		t.Errorf("Section = %q, want models", marker.Section)
+	}
+	if marker.Component != "" {
+		t.Errorf("Component = %q, want empty (section-derived file)", marker.Component)
+	}
+}
+
+func TestParseMarker_ArtifactTag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "add_test.go")
+	content := `// parlay-feature: task-list
+// parlay-component: add-task-command
+// parlay-artifact: test
+// Generated from testcases.yaml — do not edit by hand
+
+package main
+
+func TestAddTask(t *testing.T) {}
+`
+	os.WriteFile(path, []byte(content), 0644)
+
+	marker, err := ParseMarker(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker == nil {
+		t.Fatal("expected marker, got nil")
+	}
+	if marker.Component != "add-task-command" {
+		t.Errorf("Component = %q, want add-task-command", marker.Component)
+	}
+	if marker.Artifact != "test" {
+		t.Errorf("Artifact = %q, want test", marker.Artifact)
+	}
+}
+
+func TestParseMarker_SectionOnly_NoComponent(t *testing.T) {
+	// A file with only parlay-section: (no component) is valid.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	content := `// parlay-section: routes
+package main
+`
+	os.WriteFile(path, []byte(content), 0644)
+
+	marker, err := ParseMarker(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker == nil {
+		t.Fatal("expected marker for section-only file, got nil")
+	}
+	if marker.Section != "routes" {
+		t.Errorf("Section = %q, want routes", marker.Section)
+	}
+}
+
 func TestScanGenerated_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	markers, err := ScanGenerated(dir)

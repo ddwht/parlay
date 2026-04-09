@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anthropics/parlay/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -101,6 +102,19 @@ func saveBuildState(slug, sourceRoot string) (*saveBuildStateResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compute baseline: %w", err)
 	}
+
+	// Hash the buildfile's major sections (models, routes, fixtures) so
+	// the diff command can report section-level changes for cross-cutting
+	// files. The buildfile may not exist on the very first run.
+	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	sectionHashes, err := hashBuildfileSections(buildfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("hash buildfile sections: %w", err)
+	}
+	if sectionHashes != nil {
+		baseline.BuildfileSections = sectionHashes
+	}
+
 	baselineBytes, err := marshalBaseline(baseline)
 	if err != nil {
 		return nil, fmt.Errorf("marshal baseline: %w", err)

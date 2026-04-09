@@ -49,13 +49,14 @@ type componentDiff struct {
 
 // diffOutput is the top-level JSON shape for `parlay diff @<feature>`.
 type diffOutput struct {
-	Feature      string          `json:"feature"`
-	FirstBuild   bool            `json:"first_build"`
-	HasBuildfile bool            `json:"has_buildfile"`
-	Intents      sourceLevelDiff `json:"intents"`
-	Dialogs      sourceLevelDiff `json:"dialogs"`
-	Fragments    sourceLevelDiff `json:"surface_fragments"`
-	Components   componentDiff   `json:"components"`
+	Feature      string            `json:"feature"`
+	FirstBuild   bool              `json:"first_build"`
+	HasBuildfile bool              `json:"has_buildfile"`
+	Intents      sourceLevelDiff   `json:"intents"`
+	Dialogs      sourceLevelDiff   `json:"dialogs"`
+	Fragments    sourceLevelDiff   `json:"surface_fragments"`
+	Components   componentDiff     `json:"components"`
+	Sections     map[string]string `json:"sections,omitempty"`
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
@@ -65,22 +66,21 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	output := diffOutput{Feature: slug}
 
 	// Load existing baseline (or treat as first build).
-	var stored *HashedSources
+	var storedBaseline Baseline
 	blData, err := os.ReadFile(baselinePath(slug))
 	if err != nil {
 		output.FirstBuild = true
 	} else {
-		var baseline Baseline
-		if err := yaml.Unmarshal(blData, &baseline); err != nil {
+		if err := yaml.Unmarshal(blData, &storedBaseline); err != nil {
 			return fmt.Errorf("invalid baseline: %w", err)
 		}
-		stored = baseline.Sources
 		// Older baselines without Sources are treated as first build for diff
 		// purposes — there's nothing to compare against.
-		if stored == nil {
+		if storedBaseline.Sources == nil {
 			output.FirstBuild = true
 		}
 	}
+	stored := storedBaseline.Sources
 	if stored == nil {
 		stored = &HashedSources{}
 	}
@@ -127,10 +127,48 @@ func runDiff(cmd *cobra.Command, args []string) error {
 				currentIntents, currentDialogs, fragmentBySlug,
 				output.Intents, output.Dialogs, output.Fragments,
 			)
+
+			// Section-level diff for cross-cutting files (models → store.go,
+			// routes → main.go, etc.). Compares current buildfile section
+			// hashes to stored ones in the baseline.
+			output.Sections = computeSectionDiff(buildfilePath, storedBaseline.BuildfileSections)
 		}
 	}
 
 	return emitDiffJSON(&output)
+}
+
+// computeSectionDiff hashes the current buildfile's major sections and
+// compares to the stored section hashes from the baseline. Returns a map
+// of section name → "changed" | "stable" | "new" | "removed". Used by
+// the generate-code skill to determine which cross-cutting files need
+// regeneration.
+func computeSectionDiff(buildfilePath string, storedSections map[string]string) map[string]string {
+	currentSections, err := hashBuildfileSections(buildfilePath)
+	if err != nil || currentSections == nil {
+		return nil
+	}
+	if storedSections == nil {
+		storedSections = make(map[string]string)
+	}
+
+	result := make(map[string]string)
+	for name, currentHash := range currentSections {
+		storedHash, exists := storedSections[name]
+		if !exists {
+			result[name] = "new"
+		} else if currentHash != storedHash {
+			result[name] = "changed"
+		} else {
+			result[name] = "stable"
+		}
+	}
+	for name := range storedSections {
+		if _, exists := currentSections[name]; !exists {
+			result[name] = "removed"
+		}
+	}
+	return result
 }
 
 // computeComponentImpact walks each component in the buildfile, traces

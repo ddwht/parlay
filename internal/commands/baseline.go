@@ -31,9 +31,10 @@ var checkDriftCmd = &cobra.Command{
 //     (parlay diff). Used to determine which buildfile components
 //     are stable / dirty / removed without re-running the agent.
 type Baseline struct {
-	GeneratedAt string                `yaml:"generated-at"`
-	Intents     map[string]IntentHash `yaml:"intents"`
-	Sources     *HashedSources        `yaml:"sources,omitempty"`
+	GeneratedAt       string                `yaml:"generated-at"`
+	Intents           map[string]IntentHash `yaml:"intents"`
+	Sources           *HashedSources        `yaml:"sources,omitempty"`
+	BuildfileSections map[string]string     `yaml:"buildfile-sections,omitempty"`
 }
 
 // IntentHash stores hashes of individual intent fields for granular drift detection.
@@ -255,6 +256,42 @@ func hashDialogContent(dialog parser.Dialog) string {
 		}
 	}
 	return sha256Hex(b.String())
+}
+
+// hashBuildfileSections reads a buildfile.yaml and returns per-section
+// content hashes for the major sections (models, routes, fixtures). Used
+// by save-build-state to track which buildfile sections changed between
+// generations, enabling the diff command to report section-level changes
+// for cross-cutting files.
+//
+// Returns nil (no error) if the buildfile doesn't exist yet.
+func hashBuildfileSections(buildfilePath string) (map[string]string, error) {
+	data, err := os.ReadFile(buildfilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	sections := make(map[string]string)
+	for _, key := range []string{"models", "routes", "fixtures"} {
+		if section, ok := raw[key]; ok {
+			// Re-serialize the section for a stable hash (map key ordering
+			// in YAML is deterministic per the yaml.v3 library).
+			sectionBytes, err := yaml.Marshal(section)
+			if err != nil {
+				continue
+			}
+			sections[key] = sha256Hex(string(sectionBytes))
+		}
+	}
+	return sections, nil
 }
 
 // hashFragmentContent returns a content hash for a surface fragment.
