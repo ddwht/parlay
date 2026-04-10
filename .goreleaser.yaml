@@ -20,6 +20,9 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    hooks:
+      post:
+        - cmd: '{{ if eq .Os "darwin" }}codesign -s - -f "{{ .Path }}"{{ else }}true{{ end }}'
 
 archives:
   - format: tar.gz
