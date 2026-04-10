@@ -55,6 +55,87 @@ func ValidateSurface(path string, content []byte) error {
 	return nil
 }
 
+// ValidateBlueprint checks blueprint.yaml has valid structure and cross-references.
+func ValidateBlueprint(path string, content []byte) error {
+	if err := ValidateYAML(path, content); err != nil {
+		return err
+	}
+
+	var bp struct {
+		App           string `yaml:"app"`
+		Navigation    *struct {
+			Strategy     string `yaml:"strategy"`
+			DefaultRoute string `yaml:"default-route"`
+			Routes       []struct {
+				Path  string `yaml:"path"`
+				Shell string `yaml:"shell"`
+				Guard string `yaml:"guard"`
+			} `yaml:"routes"`
+		} `yaml:"navigation"`
+		Shells        map[string]interface{} `yaml:"shells"`
+		Authorization *struct {
+			Strategy string                 `yaml:"strategy"`
+			Guards   map[string]interface{} `yaml:"guards"`
+		} `yaml:"authorization"`
+	}
+	if err := yaml.Unmarshal(content, &bp); err != nil {
+		return fmt.Errorf("blueprint structure invalid: %w", err)
+	}
+
+	// Validate navigation strategy
+	if bp.Navigation != nil && bp.Navigation.Strategy != "" {
+		validStrategies := map[string]bool{
+			"hash": true, "browser": true, "native-stack": true,
+			"native-tab": true, "cli-subcommands": true,
+		}
+		if !validStrategies[bp.Navigation.Strategy] {
+			return fmt.Errorf("invalid navigation.strategy %q — must be one of: hash, browser, native-stack, native-tab, cli-subcommands", bp.Navigation.Strategy)
+		}
+	}
+
+	// Validate authorization strategy
+	if bp.Authorization != nil && bp.Authorization.Strategy != "" {
+		validAuthStrategies := map[string]bool{
+			"role-based": true, "permission-based": true,
+			"attribute-based": true, "none": true,
+		}
+		if !validAuthStrategies[bp.Authorization.Strategy] {
+			return fmt.Errorf("invalid authorization.strategy %q — must be one of: role-based, permission-based, attribute-based, none", bp.Authorization.Strategy)
+		}
+	}
+
+	// Cross-reference: shell names in routes must exist in shells
+	if bp.Navigation != nil && bp.Navigation.Routes != nil {
+		seenPaths := make(map[string]bool)
+		for _, route := range bp.Navigation.Routes {
+			// Check for duplicate paths
+			if seenPaths[route.Path] {
+				return fmt.Errorf("duplicate route path %q in navigation.routes", route.Path)
+			}
+			seenPaths[route.Path] = true
+
+			// Check shell reference
+			if route.Shell != "" && bp.Shells != nil {
+				if _, ok := bp.Shells[route.Shell]; !ok {
+					return fmt.Errorf("route %q references shell %q which is not defined in shells:", route.Path, route.Shell)
+				}
+			}
+
+			// Check guard reference
+			if route.Guard != "" && route.Guard != "none" {
+				if bp.Authorization == nil || bp.Authorization.Guards == nil {
+					return fmt.Errorf("route %q references guard %q but no authorization.guards are defined", route.Path, route.Guard)
+				}
+				if _, ok := bp.Authorization.Guards[route.Guard]; !ok {
+					return fmt.Errorf("route %q references guard %q which is not defined in authorization.guards:", route.Path, route.Guard)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // deepBuildfile is the parsed structure for deep validation.
 type deepBuildfile struct {
 	Feature    string                       `yaml:"feature"`

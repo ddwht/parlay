@@ -15,6 +15,7 @@ func TestWriteSchemas_WritesAllSchemas(t *testing.T) {
 
 	expected := []string{
 		"adapter.schema.md",
+		"blueprint.schema.md",
 		"buildfile.schema.md",
 		"dialog.schema.md",
 		"feature-structure.schema.md",
@@ -43,7 +44,7 @@ func TestSchemaNames_ReturnsAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(names) != 8 {
-		t.Errorf("expected 8 schemas, got %d: %v", len(names), names)
+	if len(names) != 9 {
+		t.Errorf("expected 9 schemas, got %d: %v", len(names), names)
 	}
 }

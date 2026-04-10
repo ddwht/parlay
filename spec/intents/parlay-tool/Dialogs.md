@@ -294,6 +294,49 @@ System: Domain model integrated and saved.
 
 ---
 
+### Define Application Blueprint
+
+**Trigger**: Team is ready to define app-level architecture before first code generation
+
+User: I need to set up the blueprint for this project.
+System: Let's define how the app is wired together. First, what navigation strategy does the app use?
+  A: Browser routing (React, Angular, Vue web apps)
+  B: Hash routing (SPAs without server-side routing)
+  C: Native tab bar (iOS, Android)
+  D: Native stack navigation (iOS, Android)
+  E: CLI subcommands (Go CLI, Node CLI)
+User: Selects A
+System: Got it — browser routing. What's the default route (where "/" redirects to)?
+User: /dashboard
+System: Now let's define the layout shells. A shell is the persistent chrome (sidebar, header, footer) that wraps a set of pages.
+System: How many distinct shells does the app have?
+User: Two — one for the main app with a sidebar, and one for auth pages that's just centered content.
+System (background): Scaffolds shell definitions from the user's description.
+System: Here's what I've drafted:
+System: ==shows shells YAML snippet==
+System: Which pages does each shell wrap?
+User: The app shell wraps dashboard, tasks, settings. The auth shell wraps login and register.
+System (background): Maps pages to shells.
+System: Do any routes require authentication or specific roles?
+User: Everything under the app shell needs login. The users page also needs admin.
+System (background): Creates authorization guards and attaches them to routes.
+System (condition: features have surfaces with Pages): I can see Page targets from your feature surfaces: ==list==. I'll wire those into the route table.
+System (background): Generates the full blueprint.yaml at .parlay/blueprint.yaml.
+System (background): Runs `parlay validate --type blueprint --json .parlay/blueprint.yaml`.
+System (condition: validation passes): [OK] Blueprint saved to .parlay/blueprint.yaml. All references validated.
+System (condition: validation fails): Found ==number== issues:
+System: - ==issue description==
+System: Let me fix those and try again.
+System: You can refine the data, errors, and state sections later. The blueprint is ready for code generation.
+
+#### Branch: Minimal CLI Blueprint
+
+User: This is a CLI app, I just need the basics.
+System (background): Creates a minimal blueprint with `navigation.strategy: cli-subcommands` and no shells.
+System: [OK] Minimal blueprint saved. CLI apps don't need shells or guards — the blueprint just records the navigation strategy for code generation.
+
+---
+
 ### Sync Intents and Dialogs
 
 **Trigger**: /parlay-sync @feature-name

@@ -14,15 +14,16 @@ type ProjectConfig struct {
 }
 
 const (
-	ParlayDir   = ".parlay"
-	ConfigFile  = "config.yaml"
-	SchemasDir  = "schemas"
-	AdaptersDir = "adapters"
-	BuildDir    = "build"
-	SpecDir     = "spec"
-	IntentsDir  = "intents"
-	HandoffDir  = "handoff"
-	PagesDir    = "pages"
+	ParlayDir     = ".parlay"
+	ConfigFile    = "config.yaml"
+	BlueprintFile = "blueprint.yaml"
+	SchemasDir    = "schemas"
+	AdaptersDir   = "adapters"
+	BuildDir      = "build"
+	SpecDir       = "spec"
+	IntentsDir    = "intents"
+	HandoffDir    = "handoff"
+	PagesDir      = "pages"
 )
 
 func ConfigPath() string {
@@ -31,6 +32,10 @@ func ConfigPath() string {
 
 func SchemasPath() string {
 	return filepath.Join(ParlayDir, SchemasDir)
+}
+
+func BlueprintPath() string {
+	return filepath.Join(ParlayDir, BlueprintFile)
 }
 
 func FeaturePath(slug string) string {

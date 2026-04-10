@@ -12,7 +12,9 @@ This skill reads ONLY from these locations:
 
 - `.parlay/schemas/buildfile.schema.md`
 - `.parlay/schemas/adapter.schema.md`
+- `.parlay/schemas/blueprint.schema.md`
 - `.parlay/config.yaml`
+- `.parlay/blueprint.yaml` — application blueprint (optional for CLIs, recommended for web/mobile)
 - `.parlay/adapters/{framework}.adapter.yaml`
 - `.parlay/build/*/buildfile.yaml` — ALL features' buildfiles
 - The existing prototype source tree (for incremental updates)
@@ -27,6 +29,7 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 1. **Load schemas** — Read these before generating:
    - `.parlay/schemas/buildfile.schema.md`
    - `.parlay/schemas/adapter.schema.md`
+   - `.parlay/schemas/blueprint.schema.md`
 
 2. **Load project config** — Read `.parlay/config.yaml` to determine the prototype framework.
 
@@ -39,19 +42,28 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
    - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
 
-6. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
+6. **Load and merge blueprint** — Read `.parlay/blueprint.yaml` if it exists. The blueprint provides app-level structural decisions that complement the per-feature buildfiles:
+   - For each route in the merged route table (from step 5), join on `path` to the blueprint's `navigation.routes` to determine: which `shell` wraps it, which `guard` protects it, whether it's `lazy`-loaded. Routes not listed in the blueprint get the default shell (first shell in `shells:`) and no guard.
+   - Record the `navigation.strategy` and `navigation.default-route` — these drive the router component and the root redirect.
+   - Record `authorization.guards` — each guard becomes a wrapper component.
+   - Record `errors.boundaries` — each boundary scope becomes an error boundary component.
+   - Record `state.global` — each global state slice becomes a context provider.
+   - Record `data` settings — the fetching strategy and caching config drive the data infrastructure setup.
+   - If the blueprint doesn't exist, proceed without it — the agent uses its own judgment for these decisions (as it did before the blueprint existed). This is the backwards-compatible path.
 
-7. **Compute the project-level diff** — Run: `parlay diff` (no @feature) to get the unified change report. The JSON output has:
+7. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
+
+8. **Compute the project-level diff** — Run: `parlay diff` (no @feature) to get the unified change report. The JSON output has:
    - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
    - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration.
 
-8. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file to its owner.
+9. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file to its owner.
    - Files with `parlay-feature: X + parlay-component: Y` belong to feature X's component Y.
    - Files with `parlay-scope: project + parlay-section: Z` are project-scoped cross-cutting files.
    - Files with `parlay-artifact: test` are test files for their parent component.
    - Files without ANY parlay marker are user-owned; never modify or delete them.
 
-9. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+10. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
    - If `has_hashes` is `false`, this is the very first generation — treat everything as new and skip the modified-file check.
    - Otherwise, for each component the diff says is `stable`, check that its file is in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
      ```
@@ -62,9 +74,9 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
      ```
    - If a stable file is in `verify.missing[]`, the user deleted it — ask whether to regenerate or to drop the component.
 
-9. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
+11. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
 
-10. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
+12. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
     - Map the component to a file path using the adapter's `component-pattern` and `naming` conventions (or, if the file already exists with a marker, reuse its path)
     - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
     - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
@@ -82,34 +94,40 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       ```
       Test files ride the same component's dirty/stable status. When a component is dirty, regenerate BOTH its implementation and its test file.
 
-11. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
+13. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
 
-12. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
+14. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
     - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. Mark it with `parlay-section: models`.
     - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from `buildfile.routes`. Mark it with `parlay-section: routes`.
+    - If `sections.blueprint` is `"changed"` or `"new"`: regenerate the cross-cutting blueprint-derived files:
+      - **Shell components**: One layout component per shell in `blueprint.shells`. Mark each with `parlay-section: shell-{name}`.
+      - **Guard components**: One route guard per guard in `blueprint.authorization.guards`. Mark each with `parlay-section: guard-{name}`.
+      - **Error boundaries**: Error boundary components per scope in `blueprint.errors.boundaries`. Mark with `parlay-section: errors`.
+      - **State providers**: Context providers per global state slice in `blueprint.state.global`. Mark with `parlay-section: state`.
+      - **Route wiring**: The entry point / router file must reflect `navigation.strategy`, `navigation.default-route`, `navigation.not-found`, and the shell→route→guard assignments. This file is also marked `parlay-section: routes`, so it is regenerated whenever routes OR blueprint changes.
     - If a section is `"stable"`: leave the corresponding file untouched (look it up via scan-generated by its `parlay-section:` marker).
     - If a section is `"removed"`: delete the corresponding file.
     - Cross-cutting files use a two-line marker:
       ```
-      // parlay-feature: {feature}
+      // parlay-scope: project
       // parlay-section: models
       ```
 
-13. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
-14. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
-    - **If any test fails, STOP.** Do not proceed to step 15. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
+16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
+    - **If any test fails, STOP.** Do not proceed to step 17. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-15. **Commit the build state** — Only if all tests passed in step 14: run `parlay save-build-state --source-root {source-root}`. This atomically writes:
+17. **Commit the build state** — Only if all tests passed in step 16: run `parlay save-build-state --source-root {source-root}`. This atomically writes:
     - Per-feature baselines for ALL features (source hashes for per-feature diff)
     - Project-level baseline at `.parlay/build/_project/.baseline.yaml` (merged section hashes)
     - Project-level code-hashes at `.parlay/build/_project/.code-hashes.yaml` (all generated files)
     - This is the **only** sanctioned write path for these files. No @feature argument — the command operates at project level.
 
-16. **Report** —
+18. **Report** —
     - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, confirm that `save-build-state` succeeded, and tell the user how to run the prototype.
-    - On test failure (stopped at step 14): list the failing tests with summaries, and ask the user how to proceed. **Do not call `save-build-state` when tests have failed** — the whole point of running tests before committing state is to avoid committing a broken state.
-    - On generation failure (stopped before step 14): report the underlying error and stop.
+    - On test failure (stopped at step 16): list the failing tests with summaries, and ask the user how to proceed. **Do not call `save-build-state` when tests have failed** — the whole point of running tests before committing state is to avoid committing a broken state.
+    - On generation failure (stopped before step 16): report the underlying error and stop.
 
 ## Determinism contract
 

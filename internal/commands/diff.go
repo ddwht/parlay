@@ -479,6 +479,12 @@ func hashMergedBuildfileSections(features []string) map[string]string {
 		}
 	}
 
+	// Include blueprint hash as a section — when the blueprint changes,
+	// cross-cutting files (shells, guards, providers) need regeneration.
+	if blueprintData, err := os.ReadFile(config.BlueprintPath()); err == nil {
+		sectionContent["blueprint"] = string(blueprintData)
+	}
+
 	result := make(map[string]string)
 	for key, content := range sectionContent {
 		result[key] = sha256Hex(content)

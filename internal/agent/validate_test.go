@@ -180,6 +180,114 @@ flows:
 	}
 }
 
+func TestValidateBlueprint_Valid(t *testing.T) {
+	blueprint := `app: my-app
+
+shells:
+  main:
+    description: Main app shell with sidebar
+    chrome:
+      - region: sidebar
+        widget: Sider
+        content: primary navigation
+    wraps: [dashboard, tasks, settings]
+  auth:
+    description: Centered auth layout
+    chrome: []
+    wraps: [login, register]
+
+navigation:
+  strategy: browser
+  default-route: /dashboard
+  routes:
+    - path: /dashboard
+      shell: main
+      guard: require-auth
+    - path: /login
+      shell: auth
+      guard: none
+
+authorization:
+  strategy: role-based
+  guards:
+    require-auth:
+      requires: user
+      redirect: /login
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidateBlueprint_InvalidStrategy(t *testing.T) {
+	blueprint := `app: my-app
+navigation:
+  strategy: invalid-thing
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err == nil {
+		t.Error("expected error for invalid strategy")
+	}
+}
+
+func TestValidateBlueprint_MissingShellRef(t *testing.T) {
+	blueprint := `app: my-app
+shells:
+  main:
+    description: Main shell
+    wraps: all
+navigation:
+  strategy: browser
+  routes:
+    - path: /dashboard
+      shell: nonexistent
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err == nil {
+		t.Error("expected error for missing shell reference")
+	}
+}
+
+func TestValidateBlueprint_MissingGuardRef(t *testing.T) {
+	blueprint := `app: my-app
+navigation:
+  strategy: browser
+  routes:
+    - path: /dashboard
+      guard: require-auth
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err == nil {
+		t.Error("expected error for missing guard reference")
+	}
+}
+
+func TestValidateBlueprint_DuplicateRoutes(t *testing.T) {
+	blueprint := `app: my-app
+navigation:
+  strategy: browser
+  routes:
+    - path: /dashboard
+    - path: /dashboard
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err == nil {
+		t.Error("expected error for duplicate route paths")
+	}
+}
+
+func TestValidateBlueprint_Minimal(t *testing.T) {
+	blueprint := `app: ""
+navigation:
+  strategy: cli-subcommands
+`
+	err := ValidateBlueprint("test.yaml", []byte(blueprint))
+	if err != nil {
+		t.Errorf("expected no error for minimal blueprint, got: %v", err)
+	}
+}
+
 func TestValidateBuildfileDeep_MultipleErrors(t *testing.T) {
 	dir := t.TempDir()
 

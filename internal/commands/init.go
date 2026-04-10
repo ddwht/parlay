@@ -73,6 +73,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	schemaNames, _ := embedded.SchemaNames()
 
+	// Operation: scaffold ".parlay/blueprint.yaml" with navigation strategy
+	blueprintStrategy := inferNavigationStrategy(framework)
+	blueprintContent := fmt.Sprintf("app: \"\"\n\nnavigation:\n  strategy: %s\n", blueprintStrategy)
+	if err := os.WriteFile(config.BlueprintPath(), []byte(blueprintContent), 0644); err != nil {
+		return fmt.Errorf("failed to write blueprint: %w", err)
+	}
+
 	// Operation: copy-bundled-adapter "{prototype-framework}" → ".parlay/adapters/"
 	adapterName := copyBundledAdapter(framework)
 
@@ -108,6 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("Project bootstrapped:")
 	fmt.Printf("  .parlay/config.yaml        — %s + %s + %s\n", agent, sdd, framework)
+	fmt.Printf("  .parlay/blueprint.yaml     — navigation: %s\n", blueprintStrategy)
 	fmt.Printf("  .parlay/schemas/            — %d schemas\n", len(schemaNames))
 	if adapterName != "" {
 		fmt.Printf("  .parlay/adapters/           — %s adapter\n", adapterName)
@@ -124,6 +132,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("Ready. Run: parlay add-feature <name>")
 
 	return nil
+}
+
+func inferNavigationStrategy(framework string) string {
+	lower := strings.ToLower(framework)
+	switch {
+	case strings.Contains(lower, "cli"):
+		return "cli-subcommands"
+	case strings.Contains(lower, "ios") || strings.Contains(lower, "android"):
+		return "native-tab"
+	default:
+		return "browser"
+	}
 }
 
 func copyBundledAdapter(framework string) string {

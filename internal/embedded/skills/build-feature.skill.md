@@ -15,23 +15,30 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - `.parlay/schemas/surface.schema.md`
    - `.parlay/schemas/intent.schema.md`
    - `.parlay/schemas/dialog.schema.md`
+   - `.parlay/schemas/blueprint.schema.md`
 
 2. **Load project config** — Read `.parlay/config.yaml` to determine the prototype framework.
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary (component types, element types, action types, layout patterns, file conventions).
 
-4. **Read feature files**:
+4. **Load application blueprint** (if exists) — Read `.parlay/blueprint.yaml` for app-level architectural decisions. Use it to:
+   - If `authorization` defines roles/guards: include role-aware user data in fixtures (e.g., an admin user and a regular user). Add guard-related elements to components on guarded routes (e.g., an "unauthorized" redirect or message element with `visible-when: user not authenticated`).
+   - If `authorization` defines policies: add policy-check conditions to action `enabled-when` fields where the policy's `controls` matches the action's domain (e.g., `enabled-when: policy:manage-discussions passes` for a delete button).
+   - If `data` defines caching invalidation rules: use them to inform `effect:` targets on mutation actions (e.g., the invalidation scope tells you which queries/lists are affected by a create/delete).
+   - The blueprint is optional — if it doesn't exist, proceed without it (the agent will invent these decisions during code generation, as it did before).
+
+5. **Read feature files**:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
    - `spec/intents/{feature}/surface.md`
    - `spec/intents/{feature}/domain-model.md` (if exists)
 
-5. **Check readiness** — Run: `parlay check-readiness @{feature} --stage build-feature`
+6. **Check readiness** — Run: `parlay check-readiness @{feature} --stage build-feature`
    - This returns JSON with errors (blocking) and warnings (non-blocking)
    - If any errors are reported, present them to the user with the suggested fixes and stop — do not proceed to generation
    - If only warnings are reported (e.g., open questions), inform the user and ask whether to proceed
 
-6. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last build.
+7. **Compute the diff** — Run: `parlay diff @{feature}` to find out what changed since the last build.
    - On the first build (`first_build: true`) or when the buildfile doesn't exist yet (`has_buildfile: false`), generate the entire buildfile from scratch.
    - On subsequent builds, the JSON output reports:
      - `components.stable[]` — components whose source dependencies (fragment, referenced intents, matching dialogs) all have unchanged hashes. **Preserve these entries verbatim** in the new buildfile — do not regenerate them.
@@ -40,7 +47,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
      - `surface_fragments.new[]` — fragments in the current surface that aren't in any existing component. Decide whether to introduce new components for them.
    - Tell the user what's about to be regenerated before doing it (e.g., "Regenerating 2 components: upgrade-prompt, preflight-check. Keeping 5 stable components.").
 
-7. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
+8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
    - Create `fixtures:` with representative sample data
@@ -55,7 +62,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Define `routes:` mapping commands to components
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 
-8. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
+9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
    - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
    - Use the intent's **Verify** bullets as the basis for test assertions
@@ -63,13 +70,13 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - Reference fixtures from the buildfile
    - Follow the testcases schema exactly
 
-9. **Validate** — Run all (use `--json` flag for structured error parsing):
+10. **Validate** — Run all (use `--json` flag for structured error parsing):
    - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml --json .parlay/build/{feature}/buildfile.yaml`
    - `parlay validate --type yaml --json .parlay/build/{feature}/testcases.yaml`
    - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
    - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
 
-10. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
+11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
 
 This skill stops at the build specification. **Do NOT save the baseline or any other build state from this skill.** The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) are committed atomically as a unit at the end of `/parlay-generate-code`, only after a successful end-to-end generation. Saving baseline here would commit source state without corresponding code state, breaking the consistency invariant and stranding the feature in a state where `parlay diff` reports everything stable but no code exists.
 

@@ -412,6 +412,38 @@
 
 ---
 
+## Define Application Blueprint
+
+**Goal**: Declare the cross-cutting architectural decisions for an application — layout shells, navigation topology, authorization model, data strategy, error handling, state architecture, and platform integration — so that code generation produces a deterministic app structure.
+**Persona**: Tech lead / Architect
+**Priority**: P1
+**Context**: The project has at least one feature with a reviewed surface, and the team is ready to describe how the app is wired together before generating code. The adapter describes framework conventions; the blueprint describes this specific app's structure.
+**Action**: Author a YAML file at `.parlay/blueprint.yaml` that declares shells, routes with guards, authorization roles/policies, data strategy, error boundaries, global state, and (for native apps) platform integration.
+**Objects**: blueprint, shell, navigation, guard, role, policy, error-boundary, state-slice
+
+**Constraints**:
+- The blueprint is a project-level singleton — one per app, not per feature
+- The blueprint lives in `.parlay/` (tool zone) — it is team-authored, not designer-authored
+- Every section is optional — a CLI app may only declare `navigation.strategy: cli-subcommands`
+- Shell names referenced in navigation routes must exist in the `shells:` section
+- Guard names referenced in navigation routes must exist in the `authorization.guards:` section
+- The blueprint must not duplicate what the adapter already provides (framework conventions) — it captures only per-app decisions
+- Code generation reads the blueprint alongside the buildfile and adapter, preserving the codegen boundary (never reads `spec/intents/`)
+
+**Verify**:
+- `.parlay/blueprint.yaml` is created and passes `parlay validate --type blueprint`
+- Shell references in `navigation.routes[].shell` resolve to entries in `shells:`
+- Guard references in `navigation.routes[].guard` resolve to entries in `authorization.guards:`
+- `parlay diff` includes `sections.blueprint` in project-level diff output
+- `generate-code` uses the blueprint to produce deterministic shell components, route wiring, guards, error boundaries, and state providers
+- Two agents reading the same buildfile + blueprint + adapter produce structurally equivalent app shells
+
+**Questions**:
+- Should `parlay init` scaffold a minimal blueprint, or should it be a separate command?
+- Can the blueprint be generated from an existing codebase via an extraction skill?
+
+---
+
 ## Sync Intents and Dialogs
 
 **Goal**: Identify gaps and drift across the full artifact chain — intents without dialogs, stale downstream artifacts, broken references — and help the designer bring everything back in sync.

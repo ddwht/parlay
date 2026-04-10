@@ -20,6 +20,7 @@ spec/                              ← Designer authors and reviews; engineering
 
 .parlay/                           ← Tool internals — never user-facing
   config.yaml                      ← Tool config (agent, sdd framework, prototype framework)
+  blueprint.yaml                   ← Application blueprint — team-authored, project-level singleton
   schemas/                         ← Internal schema definitions
   adapters/                        ← Framework adapters
   build/                           ← Internal build artifacts (per feature)
@@ -35,7 +36,7 @@ spec/                              ← Designer authors and reviews; engineering
 |---|---|---|
 | `spec/intents/` | Designer authors and reviews | Per-feature design source: intents, dialogs, surface, domain model |
 | `spec/handoff/` | Engineering consumes | Per-feature engineering specification |
-| `.parlay/` | Tool only — never user-facing | Config, schemas, adapters, internal build artifacts |
+| `.parlay/` | Tool only — never user-facing | Config, blueprint, schemas, adapters, internal build artifacts |
 
 ## Feature files
 

@@ -22,7 +22,7 @@ var validateAdapter string
 var validateJSON bool
 
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, yaml")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml")
 	validateCmd.MarkFlagRequired("type")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
@@ -55,10 +55,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = agent.ValidateSurface
 	case "buildfile":
 		validator = agent.ValidateBuildfile
+	case "blueprint":
+		validator = agent.ValidateBlueprint
 	case "yaml":
 		validator = agent.ValidateYAML
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, yaml", validateType)
+		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml", validateType)
 	}
 
 	if err := validator(path, content); err != nil {
