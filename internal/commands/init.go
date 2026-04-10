@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ddwht/parlay/internal/config"
@@ -22,6 +23,11 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
+// options for each prompt — single source of truth
+var agentOptions = []string{"Claude Code", "Cursor", "Generic"}
+var sddOptions = []string{"GitHub SpecKit", "Kiro", "None"}
+var frameworkOptions = []string{"Go CLI", "React + Ant Design"}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(config.ParlayDir); err == nil {
 		return fmt.Errorf("project already initialized (.parlay/ exists)")
@@ -29,26 +35,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	// Element: agent-prompt (text-output → fmt.Println)
-	fmt.Println("What AI agent would you like to use?")
-	// Action: read-agent (text-input → text-prompt)
-	fmt.Print("> ")
-	agent, _ := reader.ReadString('\n')
-	agent = strings.TrimSpace(agent)
+	agent, err := promptChoice(reader, "What AI agent would you like to use?", agentOptions)
+	if err != nil {
+		return err
+	}
 
-	// Element: sdd-prompt (text-output → fmt.Println)
-	fmt.Println("What SDD framework do you want to use?")
-	// Action: read-sdd (text-input → text-prompt)
-	fmt.Print("> ")
-	sdd, _ := reader.ReadString('\n')
-	sdd = strings.TrimSpace(sdd)
+	sdd, err := promptChoice(reader, "What SDD framework do you want to use?", sddOptions)
+	if err != nil {
+		return err
+	}
 
-	// Element: framework-prompt (text-output → fmt.Println)
-	fmt.Println("What prototype framework do you want to use?")
-	// Action: read-framework (text-input → text-prompt)
-	fmt.Print("> ")
-	framework, _ := reader.ReadString('\n')
-	framework = strings.TrimSpace(framework)
+	framework, err := promptChoice(reader, "What prototype framework do you want to use?", frameworkOptions)
+	if err != nil {
+		return err
+	}
 
 	cfg := &config.ProjectConfig{
 		AIAgent:            agent,
@@ -66,19 +66,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Operation: copy-embedded schemas → ".parlay/schemas/"
-	schemasPath := config.SchemasPath()
-	if err := embedded.WriteSchemas(schemasPath); err != nil {
-		return fmt.Errorf("failed to write schemas: %w", err)
-	}
-	schemaNames, _ := embedded.SchemaNames()
-
 	// Operation: scaffold ".parlay/blueprint.yaml" with navigation strategy
 	blueprintStrategy := inferNavigationStrategy(framework)
 	blueprintContent := fmt.Sprintf("app: \"\"\n\nnavigation:\n  strategy: %s\n", blueprintStrategy)
 	if err := os.WriteFile(config.BlueprintPath(), []byte(blueprintContent), 0644); err != nil {
 		return fmt.Errorf("failed to write blueprint: %w", err)
 	}
+
+	// Operation: copy-embedded schemas → ".parlay/schemas/"
+	schemasPath := config.SchemasPath()
+	if err := embedded.WriteSchemas(schemasPath); err != nil {
+		return fmt.Errorf("failed to write schemas: %w", err)
+	}
+	schemaNames, _ := embedded.SchemaNames()
 
 	// Operation: copy-bundled-adapter "{prototype-framework}" → ".parlay/adapters/"
 	adapterName := copyBundledAdapter(framework)
@@ -134,6 +134,35 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// promptChoice displays a numbered menu and returns the selected option.
+func promptChoice(reader *bufio.Reader, question string, options []string) (string, error) {
+	fmt.Println(question)
+	for i, opt := range options {
+		fmt.Printf("  %d. %s\n", i+1, opt)
+	}
+	fmt.Print("> ")
+
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	input = strings.TrimSpace(input)
+
+	// Accept number
+	if n, err := strconv.Atoi(input); err == nil && n >= 1 && n <= len(options) {
+		return options[n-1], nil
+	}
+
+	// Accept exact text match (case-insensitive)
+	for _, opt := range options {
+		if strings.EqualFold(input, opt) {
+			return opt, nil
+		}
+	}
+
+	return "", fmt.Errorf("invalid choice %q — enter a number 1-%d", input, len(options))
+}
+
 func inferNavigationStrategy(framework string) string {
 	lower := strings.ToLower(framework)
 	switch {
@@ -147,10 +176,10 @@ func inferNavigationStrategy(framework string) string {
 }
 
 func copyBundledAdapter(framework string) string {
-	// Map framework name to bundled adapter file
+	// Map framework display name to bundled adapter file name
 	adapterMap := map[string]string{
 		"go cli":             "go-cli",
-		"angular + clarity":  "angular-clarity",
+		"react + ant design": "react-antd",
 	}
 
 	adapterName := ""
@@ -183,3 +212,4 @@ func copyBundledAdapter(framework string) string {
 	os.WriteFile(dstPath, data, 0644)
 	return adapterName
 }
+
