@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anthropics/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

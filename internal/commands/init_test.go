@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/anthropics/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/config"
 )
 
 func setupTestDir(t *testing.T) string {

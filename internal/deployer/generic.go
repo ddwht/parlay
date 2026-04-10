@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anthropics/parlay/internal/embedded"
+	"github.com/ddwht/parlay/internal/embedded"
 )
 
 // GenericDeployer writes all skills into a single AGENT_INSTRUCTIONS.md for agents without specific integration.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anthropics/parlay/internal/embedded"
+	"github.com/ddwht/parlay/internal/embedded"
 )
 
 // ClaudeDeployer deploys skills as .claude/skills/parlay-*/SKILL.md for Claude Code.

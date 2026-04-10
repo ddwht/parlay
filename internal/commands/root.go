@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -8,6 +10,25 @@ var rootCmd = &cobra.Command{
 	Use:   "parlay",
 	Short: "Intent-first toolkit for design-to-specification workflows",
 	Long:  "Parlay takes user intents and dialogues and parlays them into prototypes, surfaces, and engineering specifications.",
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print the version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("parlay %s (%s)\n", appVersion, appCommit)
+	},
+}
+
+var (
+	appVersion = "dev"
+	appCommit  = "none"
+)
+
+// SetVersion is called from main to inject build-time values.
+func SetVersion(version, commit string) {
+	appVersion = version
+	appCommit = commit
 }
 
 func Execute() error {
@@ -40,4 +61,5 @@ func init() {
 	rootCmd.AddCommand(scanGeneratedCmd)
 	rootCmd.AddCommand(verifyGeneratedCmd)
 	rootCmd.AddCommand(saveBuildStateCmd)
+	rootCmd.AddCommand(versionCmd)
 }

@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/anthropics/parlay/internal/config"
-	"github.com/anthropics/parlay/internal/deployer"
-	"github.com/anthropics/parlay/internal/embedded"
+	"github.com/ddwht/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/deployer"
+	"github.com/ddwht/parlay/internal/embedded"
 	"github.com/spf13/cobra"
 )
 

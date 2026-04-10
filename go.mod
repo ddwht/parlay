@@ -1,4 +1,4 @@
-module github.com/anthropics/parlay
+module github.com/ddwht/parlay
 
 go 1.24.2
 

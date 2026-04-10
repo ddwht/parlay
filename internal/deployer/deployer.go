@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/parlay/internal/embedded"
+	"github.com/ddwht/parlay/internal/embedded"
 )
 
 // Deployer packages agent-agnostic skills into agent-specific format.

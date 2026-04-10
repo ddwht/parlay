@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anthropics/parlay/internal/embedded"
+	"github.com/ddwht/parlay/internal/embedded"
 )
 
 // CursorDeployer deploys skills as .cursor/skills/parlay-*.md for Cursor.

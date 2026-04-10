@@ -1,0 +1,54 @@
+version: 2
+
+project_name: parlay
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/parlay
+    binary: parlay
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+homebrew_casks:
+  - name: parlay
+    homepage: "https://github.com/ddwht/parlay"
+    description: "Intent-driven specification framework"
+    repository:
+      owner: ddwht
+      name: homebrew-parlay
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_msg_template: "Update parlay to {{ .Tag }}"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anthropics/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/config"
 )
 
 func TestAddFeature_CreatesFeatureFolder(t *testing.T) {

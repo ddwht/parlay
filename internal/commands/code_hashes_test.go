@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anthropics/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/config"
 )
 
 // writeMarkedFile creates a file with a parlay marker for the given

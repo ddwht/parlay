@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/anthropics/parlay/internal/agent"
+	"github.com/ddwht/parlay/internal/agent"
 	"github.com/spf13/cobra"
 )
 

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anthropics/parlay/internal/config"
-	"github.com/anthropics/parlay/internal/parser"
+	"github.com/ddwht/parlay/internal/config"
+	"github.com/ddwht/parlay/internal/parser"
 )
 
 func TestCheckChain_NoDownstreamArtifacts(t *testing.T) {
