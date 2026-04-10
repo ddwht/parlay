@@ -543,7 +543,7 @@ Parlay is agent-agnostic. Skills are plain markdown instructions any AI can foll
 | Agent | Deployer | Skills Location | Config File |
 |---|---|---|---|
 | Claude Code | ClaudeDeployer | `.claude/skills/parlay-*/SKILL.md` | `CLAUDE.md` |
-| Cursor | CursorDeployer | `.cursor/skills/parlay-*.md` | `.cursorrules` |
+| Cursor | CursorDeployer | `.cursor/rules/parlay-*.mdc` | `.cursor/rules/parlay-project.mdc` |
 | Other | GenericDeployer | `AGENT_INSTRUCTIONS.md` | — |
 
 Adding a new agent requires only a new deployer — zero changes to skills or schemas.
