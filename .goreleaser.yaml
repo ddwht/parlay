@@ -20,9 +20,6 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
-    hooks:
-      post:
-        - cmd: '{{ if eq .Os "darwin" }}codesign -s - -f "{{ .Path }}"{{ else }}true{{ end }}'
 
 archives:
   - format: tar.gz
@@ -44,14 +41,3 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
-
-homebrew_casks:
-  - name: parlay
-    homepage: "https://github.com/ddwht/parlay"
-    description: "Intent-driven specification framework"
-    repository:
-      owner: ddwht
-      name: homebrew-parlay
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    commit_msg_template: "Update parlay to {{ .Tag }}"

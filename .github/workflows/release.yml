@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,4 +30,48 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          SHA=$(curl -sL "https://github.com/ddwht/parlay/archive/refs/tags/${TAG}.tar.gz" | sha256sum | cut -d' ' -f1)
+
+          FORMULA=$(cat <<RUBY
+          class Parlay < Formula
+            desc "Intent-driven specification framework"
+            homepage "https://github.com/ddwht/parlay"
+            url "https://github.com/ddwht/parlay/archive/refs/tags/${TAG}.tar.gz"
+            sha256 "${SHA}"
+            license "MIT"
+
+            depends_on "go" => :build
+
+            def install
+              ldflags = %W[
+                -s -w
+                -X main.version=#{version}
+                -X main.commit=#{tap.user}
+              ]
+              system "go", "build", *std_go_args(ldflags:), "./cmd/parlay"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/parlay version")
+            end
+          end
+          RUBY
+          )
+
+          # Clone tap, update formula, push
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ddwht/homebrew-parlay.git" tap
+          mkdir -p tap/Formula
+          echo "$FORMULA" > tap/Formula/parlay.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/parlay.rb
+          git commit -m "Update parlay to ${TAG}" || echo "No changes"
+          git push
