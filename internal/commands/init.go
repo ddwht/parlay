@@ -26,7 +26,7 @@ var initCmd = &cobra.Command{
 // options for each prompt — single source of truth
 var agentOptions = []string{"Claude Code", "Cursor", "Generic"}
 var sddOptions = []string{"GitHub SpecKit", "Kiro", "None"}
-var frameworkOptions = []string{"Go CLI", "React + Ant Design"}
+var frameworkOptions = []string{"Go CLI", "React + Ant Design", "None (register adapter later)"}
 
 func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(config.ParlayDir); err == nil {
