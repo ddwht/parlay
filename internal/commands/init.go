@@ -1,8 +1,5 @@
 package commands
 
-// Generated from buildfile component: project-setup-wizard
-// Type: interactive-wizard | Widget: sequential-prompts | Layout: sequential-prompts
-
 import (
 	"bufio"
 	"fmt"
@@ -23,10 +20,21 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
-// options for each prompt — single source of truth
+// frameworkEntry ties display name, adapter slug, and nav strategy together.
+type frameworkEntry struct {
+	Display     string // shown in menu and saved to config
+	Adapter     string // embedded adapter slug (empty = no bundled adapter)
+	NavStrategy string // blueprint navigation strategy
+}
+
+// Single source of truth for all options.
 var agentOptions = []string{"Claude Code", "Cursor", "Generic"}
 var sddOptions = []string{"GitHub SpecKit", "Kiro", "None"}
-var frameworkOptions = []string{"Go CLI", "React + Ant Design", "None (register adapter later)"}
+var frameworks = []frameworkEntry{
+	{Display: "Go CLI", Adapter: "go-cli", NavStrategy: "cli-subcommands"},
+	{Display: "React + Ant Design", Adapter: "react-antd", NavStrategy: "browser"},
+	{Display: "None (register adapter later)", Adapter: "", NavStrategy: "browser"},
+}
 
 func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(config.ParlayDir); err == nil {
@@ -45,15 +53,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	framework, err := promptChoice(reader, "What prototype framework do you want to use?", frameworkOptions)
+	// Build display list from frameworks
+	fwDisplays := make([]string, len(frameworks))
+	for i, fw := range frameworks {
+		fwDisplays[i] = fw.Display
+	}
+	fwChoice, err := promptChoice(reader, "What prototype framework do you want to use?", fwDisplays)
 	if err != nil {
 		return err
+	}
+
+	// Find the matching entry
+	var fw frameworkEntry
+	for _, f := range frameworks {
+		if f.Display == fwChoice {
+			fw = f
+			break
+		}
 	}
 
 	cfg := &config.ProjectConfig{
 		AIAgent:            agent,
 		SDDFramework:       sdd,
-		PrototypeFramework: framework,
+		PrototypeFramework: fw.Display,
 	}
 
 	// Operation: create-directory ".parlay/"
@@ -67,8 +89,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Operation: scaffold ".parlay/blueprint.yaml" with navigation strategy
-	blueprintStrategy := inferNavigationStrategy(framework)
-	blueprintContent := fmt.Sprintf("app: \"\"\n\nnavigation:\n  strategy: %s\n", blueprintStrategy)
+	blueprintContent := fmt.Sprintf("app: \"\"\n\nnavigation:\n  strategy: %s\n", fw.NavStrategy)
 	if err := os.WriteFile(config.BlueprintPath(), []byte(blueprintContent), 0644); err != nil {
 		return fmt.Errorf("failed to write blueprint: %w", err)
 	}
@@ -80,8 +101,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	schemaNames, _ := embedded.SchemaNames()
 
-	// Operation: copy-bundled-adapter "{prototype-framework}" → ".parlay/adapters/"
-	adapterName := copyBundledAdapter(framework)
+	// Operation: copy-bundled-adapter (if selected)
+	adapterName := ""
+	if fw.Adapter != "" {
+		adapterName = copyBundledAdapter(fw.Adapter)
+	}
 
 	// Operation: create-directory "spec/intents/" (designer-authored input)
 	if err := os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755); err != nil {
@@ -111,11 +135,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Element: summary (text-output → fmt.Println)
+	// Element: summary
 	fmt.Println()
 	fmt.Println("Project bootstrapped:")
-	fmt.Printf("  .parlay/config.yaml        — %s + %s + %s\n", agent, sdd, framework)
-	fmt.Printf("  .parlay/blueprint.yaml     — navigation: %s\n", blueprintStrategy)
+	fmt.Printf("  .parlay/config.yaml        — %s + %s + %s\n", agent, sdd, fw.Display)
+	fmt.Printf("  .parlay/blueprint.yaml     — navigation: %s\n", fw.NavStrategy)
 	fmt.Printf("  .parlay/schemas/            — %d schemas\n", len(schemaNames))
 	if adapterName != "" {
 		fmt.Printf("  .parlay/adapters/           — %s adapter\n", adapterName)
@@ -127,7 +151,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  skills                      — %d skills deployed for %s\n", len(skills), dep.Name())
 	}
 
-	// Element: next-step (text-output → fmt.Println)
+	// Element: next-step
 	fmt.Println()
 	fmt.Println("Ready. Run: parlay add-feature <name>")
 
@@ -163,53 +187,19 @@ func promptChoice(reader *bufio.Reader, question string, options []string) (stri
 	return "", fmt.Errorf("invalid choice %q — enter a number 1-%d", input, len(options))
 }
 
-func inferNavigationStrategy(framework string) string {
-	lower := strings.ToLower(framework)
-	switch {
-	case strings.Contains(lower, "cli"):
-		return "cli-subcommands"
-	case strings.Contains(lower, "ios") || strings.Contains(lower, "android"):
-		return "native-tab"
-	default:
-		return "browser"
-	}
-}
-
-func copyBundledAdapter(framework string) string {
-	// Map framework display name to bundled adapter file name
-	adapterMap := map[string]string{
-		"go cli":             "go-cli",
-		"react + ant design": "react-antd",
-	}
-
-	adapterName := ""
-	for key, name := range adapterMap {
-		if strings.EqualFold(framework, key) {
-			adapterName = name
-			break
-		}
-	}
-
-	if adapterName == "" {
-		return ""
-	}
-
+// copyBundledAdapter copies an embedded adapter by slug to .parlay/adapters/.
+func copyBundledAdapter(adapterSlug string) string {
 	adaptersDir := config.AdaptersPath()
 	os.MkdirAll(adaptersDir, 0755)
 
-	// Try to copy from bundled adapters directory
-	srcPath := filepath.Join("adapters", adapterName+".adapter.yaml")
-	data, err := os.ReadFile(srcPath)
+	data, err := embedded.ReadAdapter(adapterSlug)
 	if err != nil {
-		// Try embedded adapters
-		data, err = embedded.ReadAdapter(adapterName)
-		if err != nil {
-			return ""
-		}
+		return ""
 	}
 
-	dstPath := filepath.Join(adaptersDir, adapterName+".adapter.yaml")
-	os.WriteFile(dstPath, data, 0644)
-	return adapterName
+	dstPath := filepath.Join(adaptersDir, adapterSlug+".adapter.yaml")
+	if err := os.WriteFile(dstPath, data, 0644); err != nil {
+		return ""
+	}
+	return adapterSlug
 }
-
