@@ -3,16 +3,23 @@
 File: `.parlay/adapters/<adapter-name>.adapter.yaml`
 Registered via `/parlay register-adapter` or bundled during `/parlay init`.
 
-A framework adapter maps the surface interaction vocabulary (Shows, Actions, Flows) to framework-specific widgets, patterns, and conventions. It teaches the tool how to generate buildfiles and code for a specific prototype framework.
+A framework adapter is a **two-level artifact**:
 
-The adapter is a **pure translation layer**: it maps generic user interactions to framework-specific implementations. It has no knowledge of the project's codebase, features, or domain. It answers one question: "how does this framework implement this interaction?"
+1. **Framework vocabulary** — maps the surface interaction vocabulary (Shows, Actions, Flows) to framework-specific widgets. This is the baseline, shared across teams using the same framework.
+2. **Team implementation patterns** — composition recipes, conventions, and coding standards that define HOW generated code should be structured. This is team-owned and frequently customized.
+
+Parlay ships adapter TEMPLATES with the widget mappings pre-filled. Teams customize the compositions, conventions, and patterns sections to match their codebase standards. The adapter is the team's "coding standards for generated code" — they own it, version it, and evolve it.
+
+The adapter has no knowledge of the project's domain, features, or data. It answers two questions: "what framework widget implements this interaction?" and "how does our team structure the generated code?"
 
 ## Structure
 
 ```yaml
-name: <adapter name — e.g., go-cli, angular-clarity, react-mui, ios-uikit>
-framework: <human-readable framework name — e.g., "Go CLI", "Angular + Clarity">
+name: <adapter name — e.g., go-cli, react-antd, angular-clarity, ios-uikit>
+framework: <human-readable framework name — e.g., "Go CLI", "React + Ant Design">
 version: <adapter version>
+
+# --- Section 1: Framework vocabulary (shared baseline) ---
 
 shows:
   <surface-show-type>:
@@ -35,11 +42,31 @@ flows:
     description: <how this flow is implemented in this framework>
     regions: [<region names this pattern provides>]
 
+# --- Section 2: Composition recipes (team-customizable) ---
+
+compositions:
+  <recipe-name>:
+    trigger: <when to use this recipe — surface vocabulary conditions>
+    state: [<runtime state variables this composition needs>]
+    wiring: <how components/widgets connect — event flow description>
+    description: <human-readable explanation of the pattern>
+
+# --- Section 3: Conventions (team-customizable) ---
+
+conventions:
+  <convention-name>:
+    rule: <structured rule the agent must follow>
+    applies-to: <scope — "all components", specific surface terms, or conditions>
+
+# --- Section 4: File conventions (team-customizable) ---
+
 file-conventions:
   source-root: <where generated code lives — e.g., "src/", "cmd/", "app/">
   component-pattern: <how components map to files — e.g., "one-file-per-component", "feature-modules">
   naming: <file naming convention — e.g., "kebab-case", "snake_case", "PascalCase">
   entry-point: <main file — e.g., "main.go", "main.ts", "App.tsx">
+
+# --- Section 5: Design patterns (team-customizable) ---
 
 patterns:
   interaction:
@@ -59,7 +86,7 @@ patterns:
     empty-states: <message | hidden | placeholder>
 ```
 
-## Mapping rules
+## Section 1: Framework vocabulary
 
 ### Shows mapping
 
@@ -96,16 +123,83 @@ Every Flow type from the surface vocabulary must appear in the `flows:` section.
 
 Flows are higher-level than Shows and Actions — they describe how multiple widgets and interactions compose into a coherent user experience. The adapter pattern name should be specific enough that two agents reading it produce structurally similar code.
 
+## Section 2: Composition recipes
+
+Compositions describe HOW common widget combinations work together at runtime. They capture the state management and event wiring patterns that the buildfile deliberately does not specify.
+
+The agent uses compositions as implementation recipes: when it sees a component with matching surface terms (the `trigger`), it follows the recipe's state and wiring patterns.
+
+```yaml
+compositions:
+  crud-table-with-drawer:
+    trigger: "component has data-table + navigate-drill + inspect"
+    state: [selectedItem, drawerOpen]
+    wiring: "row-click sets selectedItem and opens drawer; drawer-close clears selectedItem"
+    description: "Table with row selection opening a side panel for detail view"
+
+  form-in-modal:
+    trigger: "component has provide-structured-input + dismiss"
+    state: [modalOpen, formInstance]
+    wiring: "button opens modal; form-submit validates, saves, closes; cancel discards and closes"
+    description: "Modal dialog containing a form for create/edit operations"
+
+  multi-select-toolbar:
+    trigger: "component has select-many + invoke-batch"
+    state: [selectedRowKeys]
+    wiring: "table rowSelection feeds toolbar badge count; bulk action executes and clears selection"
+    description: "Table with checkboxes and a toolbar that appears when items are selected"
+
+  wizard-steps:
+    trigger: "fragment has flow: guided-flow or flow: onboarding"
+    state: [currentStep, formData]
+    wiring: "next validates current step then advances; back preserves data and decrements; complete submits all"
+    description: "Multi-step form with progress indicator and back/next navigation"
+```
+
+Compositions are optional. If no composition matches, the agent uses its own judgment — the testcases will verify the resulting behavior regardless. Compositions improve consistency between agents, not correctness.
+
+Teams customize compositions to match their codebase patterns. A team that uses Redux would write different state/wiring than a team using React Context. Both are valid — the adapter captures the team's choice so every generated component follows the same pattern.
+
+## Section 3: Conventions
+
+Conventions are structured rules that constrain the agent's implementation choices. They reduce variance between agents without requiring a DSL. The agent MUST follow conventions when generating code.
+
+```yaml
+conventions:
+  state-management:
+    rule: "useState for component-local state. React Context for page-level shared state. No external state libraries."
+    applies-to: all components
+
+  event-naming:
+    rule: "Events use the format on{Action}{Target} — e.g., onOpenDrawer, onCreateTask, onCloseModal."
+    applies-to: all emit effects
+
+  data-fetching:
+    rule: "Custom hooks (useQuery pattern) for API calls. Loading state renders Spin. Error state renders Result with retry button."
+    applies-to: components with api-fetch data sources
+
+  error-handling:
+    rule: "notification.error() for async operation failures. Form.Item rules for synchronous field validation. Never use alert()."
+    applies-to: all components
+
+  file-structure:
+    rule: "One file per component. Shared hooks in src/hooks/. Shared types in src/types/. No barrel exports."
+    applies-to: file generation
+```
+
+Conventions are the most frequently customized section. Teams should review and adjust them during adapter setup. Conventions that are too generic ("write clean code") are useless — each convention should make a SPECIFIC choice that eliminates a decision point for the agent.
+
 ## Validation
 
 When an adapter file is loaded, the tool verifies:
 - Every Show type from the surface vocabulary has an entry in `shows:`
 - Every Action type from the surface vocabulary has an entry in `actions:`
 - Every Flow type from the surface vocabulary has an entry in `flows:`
-- Missing entries are errors — the adapter must be comprehensive
+- Missing vocabulary entries are errors — the adapter must be comprehensive
 - `widget: not-applicable` is allowed (with description explaining why)
-- `requires: custom-implementation` is allowed (the agent is expected to write the implementation from scratch)
+- `requires: custom-implementation` is allowed (the agent writes the implementation)
 - The `file-conventions` section is complete
+- `compositions:` and `conventions:` sections are optional but recommended
 
 ## Relationship to buildfile
 
@@ -116,3 +210,22 @@ The buildfile references widget names from the adapter, not surface vocabulary t
 3. Write the widget name into the buildfile
 
 The buildfile is fully framework-specific. The surface vocabulary does not appear in it. The adapter is the bridge between the two.
+
+When the agent generates CODE from a buildfile:
+
+1. Read the buildfile's components, elements, and actions (framework-specific widgets)
+2. Check if a composition recipe matches the component's surface terms — if so, follow the recipe's state/wiring pattern
+3. Follow the conventions for all implementation decisions (state management, naming, data flow, error handling)
+4. Write code files following the file-conventions
+
+The buildfile stays small (it describes WHAT). The adapter carries the implementation knowledge (HOW). The testcases verify behavior (CORRECT).
+
+## Ownership model
+
+| Section | Authored by | Customized by | Changes when |
+|---|---|---|---|
+| Shows/Actions/Flows | Parlay (shipped with adapter template) | Rarely — only if team uses different widgets | Framework version upgrade |
+| Compositions | Parlay (ships defaults) | Team (adapts to their patterns) | Team discovers a better pattern |
+| Conventions | Parlay (ships defaults) | Team (enforces their standards) | Team standards evolve |
+| File conventions | Parlay (ships defaults) | Team (matches their project structure) | Project restructure |
+| Patterns | Parlay (ships defaults) | Team (matches their UX preferences) | Design system changes |

@@ -238,6 +238,72 @@ flows:
     description: "Side-by-side layout (Flex/Row/Col), Descriptions for each alternative, Tag for differences, optional Radio.Group for selection."
     regions: [left, right, actions]
 
+compositions:
+  crud-table-with-drawer:
+    trigger: "component has data-table + navigate-drill + inspect"
+    state: [selectedItem, drawerOpen]
+    wiring: "Table onRow click sets selectedItem and setDrawerOpen(true). Drawer onClose sets setDrawerOpen(false) and clears selectedItem."
+    description: "Table with row selection opening a side Drawer for detail view"
+
+  form-in-modal:
+    trigger: "component has provide-structured-input + dismiss"
+    state: [modalOpen, formInstance]
+    wiring: "Button onClick sets setModalOpen(true). Modal onOk calls form.validateFields() then submits. Modal onCancel calls form.resetFields() and setModalOpen(false)."
+    description: "Modal dialog containing a Form for create/edit operations"
+
+  multi-select-toolbar:
+    trigger: "component has select-many + invoke-batch"
+    state: [selectedRowKeys]
+    wiring: "Table rowSelection onChange updates selectedRowKeys. Bulk action Buttons appear when selectedRowKeys.length > 0. After batch operation, setSelectedRowKeys([])."
+    description: "Table with checkboxes and a conditional toolbar for batch operations"
+
+  wizard-steps:
+    trigger: "fragment has flow: guided-flow or flow: onboarding"
+    state: [currentStep, stepFormData]
+    wiring: "Steps component shows currentStep. Next Button calls form.validateFields() then setCurrentStep(s => s + 1). Back Button calls setCurrentStep(s => s - 1). Form data accumulates across steps."
+    description: "Multi-step form with Steps progress indicator and back/next navigation"
+
+  tabbed-settings:
+    trigger: "fragment has flow: configure + navigate-tab"
+    state: [activeTab, isDirty]
+    wiring: "Tabs onChange updates activeTab. Any form field change sets isDirty(true). Save Button shows Modal.confirm then persists and sets isDirty(false). Navigation away with isDirty shows warning."
+    description: "Tabbed settings panel with unsaved-changes tracking"
+
+  file-import-preview:
+    trigger: "component has provide-file + data-table + confirm"
+    state: [uploadedFile, parsedRows, importProgress]
+    wiring: "Upload.Dragger onDrop parses file into parsedRows. Preview Table shows parsedRows with validation status. Confirm Button triggers import with Progress tracking."
+    description: "File upload with preview table and validation before import"
+
+conventions:
+  state-management:
+    rule: "useState for component-local state. React Context (via createContext + useContext) for page-level shared state between sibling components. No external state libraries (Redux, Zustand) unless the team explicitly adds them."
+    applies-to: all components
+
+  event-naming:
+    rule: "Callback props use on{Action}{Target} — e.g., onOpenDrawer, onCreateTask, onCloseModal. Internal handlers use handle{Action}{Target} — e.g., handleSubmitForm, handleDeleteTask."
+    applies-to: all components
+
+  data-fetching:
+    rule: "Mock data via imported constants for prototypes. Production-ready code uses custom hooks (e.g., useTasks, useSettings) that encapsulate fetch + loading + error state. Loading renders <Spin />. Error renders <Result status='error' />."
+    applies-to: components with api-fetch data sources
+
+  error-handling:
+    rule: "Form validation uses Form.Item rules (synchronous inline). Async operation failures use message.error() or notification.error(). Never use window.alert(). System-level errors render a <Result status='500' /> page."
+    applies-to: all components
+
+  file-structure:
+    rule: "One file per component (PascalCase.tsx). Shared hooks in src/hooks/. Shared types in src/types/. Mock data in src/data/. Feature components in src/features/{feature-name}/. No barrel exports (index.ts re-exports)."
+    applies-to: file generation
+
+  component-exports:
+    rule: "Named exports for components (export const TaskBoard). Default export only for the App root. Each component file exports exactly one component."
+    applies-to: all components
+
+  styling:
+    rule: "Use Ant Design's built-in component props for styling (size, type, style). Inline style objects for layout (margins, padding, flex). No CSS files or CSS-in-JS for prototype code."
+    applies-to: all components
+
 file-conventions:
   source-root: "src/"
   component-pattern: feature-modules
