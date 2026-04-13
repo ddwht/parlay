@@ -1,0 +1,363 @@
+name: angular-material
+framework: "Angular + Material"
+version: "1.0"
+
+shows:
+  data-value:
+    widget: MatCard
+    description: "MatCard with content section for labeled value display. For metrics, use a custom stat component with mat-card."
+    import: "@angular/material/card"
+  data-list:
+    widget: MatList
+    description: "MatList with mat-list-item for ordered/unordered collections. Use mat-nav-list for clickable items, mat-selection-list for checkable items."
+    import: "@angular/material/list"
+  data-table:
+    widget: MatTable
+    description: "mat-table with matColumnDef, mat-sort-header for sorting, mat-paginator for pagination. Uses MatTableDataSource for filtering/sorting/pagination integration."
+    import: "@angular/material/table"
+  data-tree:
+    widget: MatTree
+    description: "mat-tree with mat-tree-node for flat trees or mat-nested-tree-node for nested hierarchies. Toggle via matTreeNodeToggle."
+    import: "@angular/material/tree"
+  data-chart:
+    widget: not-applicable
+    description: "Angular Material does not include charts. Use a third-party library (ng2-charts with Chart.js, or ngx-echarts)."
+    requires: custom-implementation
+  status:
+    widget: MatBadge+MatChip
+    description: "matBadge directive for count/dot indicators on elements. MatChipSet with mat-chip for labeled status tags with color variants."
+    import: "@angular/material/badge, @angular/material/chips"
+  progress:
+    widget: MatProgressBar
+    description: "mat-progress-bar with modes: determinate (percentage), indeterminate (infinite), buffer, query. Use mat-progress-spinner for circular."
+    import: "@angular/material/progress-bar"
+  message:
+    widget: MatSnackBar
+    description: "MatSnackBar service for transient messages. For persistent inline messages, use a styled div with mat-icon prefix."
+    import: "@angular/material/snack-bar"
+  media:
+    widget: not-applicable
+    description: "Angular Material does not include media components. Use native HTML img/video with Material-styled containers (mat-card)."
+  empty-state:
+    widget: MatCard
+    description: "MatCard with centered content, mat-icon illustration, and text. No built-in empty state component — compose from card + icon + typography."
+  summary:
+    widget: MatGridList
+    description: "mat-grid-list with mat-grid-tile for metric card grids. Each tile contains a mat-card with stat content."
+    import: "@angular/material/grid-list"
+  diff:
+    widget: not-applicable
+    description: "No built-in diff component. Use a third-party library or custom implementation with color-coded text."
+    requires: custom-implementation
+  timeline:
+    widget: MatStepper
+    description: "mat-stepper in vertical orientation for chronological event display. Each mat-step represents an event with label and content."
+    import: "@angular/material/stepper"
+  code:
+    widget: not-applicable
+    description: "No built-in code display. Use a pre/code element with monospace font. For syntax highlighting, use a third-party library."
+    requires: custom-implementation
+
+actions:
+  provide-text:
+    widget: MatInput
+    description: "matInput directive on input/textarea inside mat-form-field. Supports placeholder, label, hint, error states."
+    import: "@angular/material/input, @angular/material/form-field"
+  provide-rich-text:
+    widget: MatInput
+    description: "matInput on textarea inside mat-form-field. For actual rich text, use a third-party editor."
+    import: "@angular/material/input"
+    requires: custom-implementation
+  provide-value:
+    widget: MatInput+MatDatepicker
+    description: "matInput for numbers with type=number. MatDatepicker for dates, MatTimepicker for times. MatSlider for range values."
+    import: "@angular/material/input, @angular/material/datepicker, @angular/material/slider"
+  provide-file:
+    widget: not-applicable
+    description: "No built-in file upload. Use native input[type=file] styled with mat-raised-button as trigger."
+    requires: custom-implementation
+  provide-structured-input:
+    widget: MatFormField+ReactiveForm
+    description: "Angular Reactive Forms (FormGroup, FormControl, FormArray) with mat-form-field wrapping each control. Validation via Validators + mat-error."
+    import: "@angular/material/form-field, @angular/forms"
+  select-one:
+    widget: MatSelect
+    description: "mat-select with mat-option inside mat-form-field. Use mat-radio-group with mat-radio-button for visible options."
+    import: "@angular/material/select, @angular/material/radio"
+  select-many:
+    widget: MatSelect+MatCheckbox
+    description: "mat-select with multiple attribute for dropdown multi-select. MatCheckbox group or mat-selection-list for visible multi-select."
+    import: "@angular/material/select, @angular/material/checkbox, @angular/material/list"
+  select-toggle:
+    widget: MatSlideToggle
+    description: "mat-slide-toggle for boolean on/off. Use mat-checkbox for labeled boolean."
+    import: "@angular/material/slide-toggle"
+  select-range:
+    widget: MatSlider
+    description: "mat-slider with matSliderThumb. For date ranges, use mat-date-range-input with mat-date-range-picker."
+    import: "@angular/material/slider, @angular/material/datepicker"
+  confirm:
+    widget: MatDialog
+    description: "MatDialog.open() with confirmation template containing mat-dialog-content and mat-dialog-actions (confirm/cancel buttons)."
+    import: "@angular/material/dialog"
+  dismiss:
+    widget: MatDialogRef
+    description: "dialogRef.close() or mat-dialog-close directive on cancel button."
+    import: "@angular/material/dialog"
+  acknowledge:
+    widget: MatSnackBar
+    description: "MatSnackBar with action button that dismisses. Self-dismisses after duration."
+    import: "@angular/material/snack-bar"
+  navigate:
+    widget: MatSidenav+RouterLink
+    description: "mat-nav-list items with routerLink directives inside mat-sidenav. Use mat-toolbar for top-level navigation."
+    import: "@angular/material/sidenav, @angular/material/list, @angular/router"
+  navigate-back:
+    widget: MatButton+Location
+    description: "mat-icon-button with arrow_back icon, calls location.back() or router.navigate."
+    import: "@angular/material/button, @angular/common"
+  navigate-drill:
+    widget: MatTable+RouterLink
+    description: "Table row click via (click) event navigating to detail route. Or mat-nav-list items with routerLink."
+    import: "@angular/material/table, @angular/router"
+  navigate-tab:
+    widget: MatTabGroup
+    description: "mat-tab-group with mat-tab for peer-level view switching. Use mat-tab-nav-bar with mat-tab-link for route-based tabs."
+    import: "@angular/material/tabs"
+  navigate-search:
+    widget: MatAutocomplete
+    description: "matInput with mat-autocomplete for search-as-you-type. Filter options in component as user types."
+    import: "@angular/material/autocomplete, @angular/material/form-field"
+  reorder:
+    widget: CdkDragDrop
+    description: "cdkDropList container with cdkDrag items. Use moveItemInArray() on (cdkDropListDropped) event."
+    import: "@angular/cdk/drag-drop"
+  move:
+    widget: CdkDragDrop
+    description: "cdkDropList with [cdkDropListConnectedTo] linking multiple containers. Use transferArrayItem() on drop."
+    import: "@angular/cdk/drag-drop"
+  edit-inline:
+    widget: MatInput
+    description: "Toggle between text display and matInput on click/double-click. Save on blur or Enter key."
+    import: "@angular/material/input"
+    requires: custom-implementation
+  invoke:
+    widget: MatButton
+    description: "mat-raised-button (primary action), mat-button (secondary), mat-flat-button (contained), mat-icon-button (icon-only)."
+    import: "@angular/material/button"
+  invoke-destructive:
+    widget: MatButton+MatDialog
+    description: "mat-raised-button with color='warn' opens a MatDialog confirmation before executing. Always requires confirmation."
+    import: "@angular/material/button, @angular/material/dialog"
+    requires-confirmation: true
+  invoke-batch:
+    widget: MatSelectionList+MatButton
+    description: "mat-selection-list for item selection, mat-raised-button for batch action. Show selected count in button label."
+    import: "@angular/material/list, @angular/material/button"
+  undo:
+    widget: MatSnackBar
+    description: "MatSnackBar with 'Undo' action button. On action click, reverse the operation."
+    import: "@angular/material/snack-bar"
+    requires: custom-implementation
+  redo:
+    widget: not-applicable
+    description: "No built-in redo. Implement via command pattern tracking action history."
+    requires: custom-implementation
+  export:
+    widget: MatButton
+    description: "mat-button triggers file download via Blob URL or server-side export endpoint."
+    import: "@angular/material/button"
+  hand-off:
+    widget: not-applicable
+    description: "No built-in delegation. Implement as an invoke action targeting an external system."
+  expand:
+    widget: MatExpansionPanel
+    description: "mat-expansion-panel inside mat-accordion. Panel header toggles content visibility."
+    import: "@angular/material/expansion"
+  collapse:
+    widget: MatExpansionPanel
+    description: "mat-expansion-panel close. Use expanded property or close() method."
+    import: "@angular/material/expansion"
+  filter:
+    widget: MatFormField+MatChipSet
+    description: "matInput for text filter bound to MatTableDataSource.filter. MatChipSet for active filter tags. MatSelect for category filters."
+    import: "@angular/material/form-field, @angular/material/chips"
+  sort:
+    widget: MatSort
+    description: "matSort directive on mat-table, mat-sort-header on column headers. Sorting handled by MatTableDataSource or custom sort function."
+    import: "@angular/material/sort"
+  inspect:
+    widget: MatSidenav+MatDialog
+    description: "mat-sidenav in 'over' mode for side panel detail view. Or MatDialog for modal detail view."
+    import: "@angular/material/sidenav, @angular/material/dialog"
+
+flows:
+  guided-flow:
+    pattern: MatStepper+ReactiveForm
+    description: "mat-horizontal-stepper or mat-vertical-stepper with mat-step per stage. Each step contains a reactive form. Navigation via matStepperNext/matStepperPrevious buttons."
+    regions: [stepper, step-content, actions]
+  crud-collection:
+    pattern: MatTable+MatDialog+ReactiveForm
+    description: "mat-table for list view. MatDialog.open() for create/edit forms. Delete via warn-colored button with confirmation dialog. MatPaginator for pagination."
+    regions: [toolbar, main, dialog]
+  search-and-act:
+    pattern: MatAutocomplete+MatTable+MatMenu
+    description: "matInput with mat-autocomplete for search. Results in mat-table. Row actions via mat-menu triggered by mat-icon-button."
+    regions: [search, results, actions]
+  review-and-approve:
+    pattern: MatCard+MatStepper+MatDialog
+    description: "mat-card for proposed change display. mat-stepper for review stages. MatDialog for approve/reject confirmation with optional comment."
+    regions: [preview, timeline, actions]
+  bulk-operation:
+    pattern: MatSelectionList+MatButton+MatProgressBar
+    description: "mat-selection-list or mat-table with mat-checkbox column for selection. Toolbar shows selected count. Batch action with mat-progress-bar during execution."
+    regions: [selection, toolbar, progress]
+  configure:
+    pattern: MatTabGroup+ReactiveForm+MatExpansionPanel
+    description: "mat-tab-group for setting categories. Each tab contains reactive form sections. mat-accordion with mat-expansion-panel for collapsible groups."
+    regions: [tabs, form, actions]
+  monitor:
+    pattern: MatCard+MatProgressBar+MatBadge
+    description: "mat-card grid for metrics. mat-progress-bar for resource utilization. matBadge for alert counts. Auto-refresh via interval or WebSocket."
+    regions: [metrics, charts, activity]
+    requires: custom-implementation
+  import-export:
+    pattern: MatButton+MatTable+MatProgressBar
+    description: "mat-raised-button triggers native file input. Preview in mat-table with validation status column. mat-progress-bar during import. mat-snack-bar for result."
+    regions: [upload, preview, progress]
+  onboarding:
+    pattern: MatStepper+ReactiveForm+MatCard
+    description: "mat-horizontal-stepper with welcome mat-card, configuration forms per step, and completion summary. Use linear mode to enforce step order."
+    regions: [stepper, step-content, summary]
+  compare:
+    pattern: MatGridList+MatCard+MatChip
+    description: "mat-grid-list with two mat-grid-tiles for side-by-side. mat-card in each tile. mat-chip for difference highlights. MatRadioGroup for selection."
+    regions: [left, right, actions]
+
+compositions:
+  crud-table-with-sidenav:
+    trigger: "component has data-table + navigate-drill + inspect"
+    state: [selectedItem, sidenavOpened]
+    wiring: "Table row (click) sets selectedItem and opens mat-sidenav. Sidenav (closedStart) clears selectedItem."
+    description: "Table with row selection opening a side panel for detail view"
+
+  form-in-dialog:
+    trigger: "component has provide-structured-input + dismiss"
+    state: [dialogRef]
+    wiring: "Button opens MatDialog.open(FormComponent, {data}). Form onSubmit validates, saves, dialogRef.close(result). Cancel calls dialogRef.close()."
+    description: "Dialog containing a reactive form for create/edit operations"
+
+  multi-select-toolbar:
+    trigger: "component has select-many + invoke-batch"
+    state: [selectedItems]
+    wiring: "mat-selection-list (selectionChange) updates selectedItems. Toolbar appears when selectedItems.length > 0. Batch action clears selection."
+    description: "List with checkboxes and a conditional toolbar for batch operations"
+
+  wizard-steps:
+    trigger: "fragment has flow: guided-flow or flow: onboarding"
+    state: [stepper, stepFormGroups]
+    wiring: "MatStepper with linear=true. Each mat-step has stepControl bound to a FormGroup. matStepperNext validates before advancing. Final step calls onSubmit with accumulated data."
+    description: "Multi-step form with stepper progress indicator and back/next navigation"
+
+  tabbed-settings:
+    trigger: "fragment has flow: configure + navigate-tab"
+    state: [selectedTabIndex, formGroup, isDirty]
+    wiring: "MatTabGroup (selectedTabChange) updates selectedTabIndex. Form valueChanges sets isDirty. Save button persists and resets isDirty. CanDeactivate guard warns on unsaved changes."
+    description: "Tabbed settings panel with unsaved-changes tracking"
+
+  file-import-preview:
+    trigger: "component has provide-file + data-table + confirm"
+    state: [parsedData, validationErrors, importProgress]
+    wiring: "File input (change) parses file into parsedData. Preview mat-table shows rows with validation status. Confirm button triggers import with mat-progress-bar."
+    description: "File upload with preview table and validation before import"
+
+conventions:
+  state-management:
+    rule: "Component-local state via class properties. Shared state via injectable services with BehaviorSubject. Use signals for reactive state in Angular 17+. No external state libraries (NgRx, Akita) unless the team explicitly adds them."
+    applies-to: all components
+
+  event-naming:
+    rule: "Output EventEmitters use past-tense names: itemSelected, formSubmitted, dialogClosed. Handler methods use on-prefix: onItemSelected(), onFormSubmitted()."
+    applies-to: all components
+
+  data-fetching:
+    rule: "Injectable services with HttpClient for API calls. Return Observable<T>. Components subscribe via async pipe in templates. Loading state via boolean flag or dedicated loading signal."
+    applies-to: components with api-fetch data sources
+
+  error-handling:
+    rule: "Form validation via Validators + mat-error inside mat-form-field. Async failures use MatSnackBar.open() with error message and retry action. HTTP errors caught via catchError in service or interceptor."
+    applies-to: all components
+
+  file-structure:
+    rule: "Feature-based organization: src/app/features/{feature-name}/. One folder per component with .ts, .html, .scss files. Shared components in src/app/core/components/. Types in types/ subfolder. Services in services/ subfolder."
+    applies-to: file generation
+
+  component-style:
+    rule: "Standalone components (no NgModules). Import Material modules directly in component imports array. Use OnPush change detection strategy. Prefer signals over zone-based change detection."
+    applies-to: all components
+
+  styling:
+    rule: "Use Angular Material's built-in component appearance and theming. Component-scoped SCSS for layout. Reference system tokens via CSS custom properties (--mat-sys-*). Never hardcode color/spacing values."
+    applies-to: all components
+
+design-system:
+  colors:
+    source: framework
+    format: "M3 system tokens via --mat-sys-primary, --mat-sys-on-primary, --mat-sys-surface, --mat-sys-error, etc. (39 color tokens). Palette set via mat.theme({color: mat.$violet-palette}). Override via mat.theme-overrides()."
+    usage: "Use system token CSS custom properties. Never hardcode hex values. Choose primary palette at theme level, not per component."
+  spacing:
+    source: not-defined
+    format: "Angular Material does not define spacing tokens. Components handle internal spacing."
+    usage: "Use consistent multiples of 8px (8, 16, 24, 32, 48). Apply via component SCSS. Use CSS gap for flex/grid layouts."
+  border-radius:
+    source: framework
+    format: "M3 shape tokens: --mat-sys-corner-none (0), --mat-sys-corner-extra-small (4px), --mat-sys-corner-small (8px), --mat-sys-corner-medium (12px), --mat-sys-corner-large (16px), --mat-sys-corner-extra-large (28px), --mat-sys-corner-full (9999px)."
+    usage: "Use shape tokens. Most components apply border-radius automatically via their shape override (e.g., mat.card-overrides({elevated-container-shape: 16px}))."
+  typography:
+    source: framework
+    format: "M3 type scale tokens: --mat-sys-display-large, --mat-sys-headline-medium, --mat-sys-title-small, --mat-sys-body-large, --mat-sys-label-medium, etc. (5 scales x 3 sizes). Font configured via mat.theme({typography: Roboto})."
+    usage: "Use Material typography CSS classes or reference system tokens. Configure font family at theme level."
+  shadows:
+    source: framework
+    format: "M3 elevation tokens: --mat-sys-level0 through --mat-sys-level5. Components like mat-card and mat-dialog apply elevation automatically."
+    usage: "Use elevation tokens. Prefer component-level elevation (e.g., mat-card appearance) over manual box-shadow."
+  icons:
+    source: framework
+    format: "<mat-icon> with Material Icons font (ligatures: <mat-icon>home</mat-icon>) or Material Symbols (fontSet). SVG icons via MatIconRegistry.addSvgIcon()."
+    usage: "Use mat-icon component. Do not use raw SVG or emoji. Import icon font in index.html."
+  motion:
+    source: not-defined
+    format: "Angular Material components handle their own transitions (dialog open/close, expansion, etc.). @angular/animations is deprecated since v20.2."
+    usage: "Rely on built-in component transitions. For custom animation, use native CSS transitions."
+  layout:
+    source: not-defined
+    format: "mat-sidenav-container for page shells. mat-grid-list for tile grids. CDK BreakpointObserver for responsive queries. No built-in flex/grid system (@angular/flex-layout is deprecated)."
+    usage: "Use CSS Flexbox/Grid for page layout. mat-sidenav for shell structure. mat-grid-list for dashboard grids. BreakpointObserver for responsive behavior."
+
+file-conventions:
+  source-root: "src/app/"
+  component-pattern: feature-modules
+  naming: kebab-case
+  entry-point: "src/app/app.component.ts"
+  packages:
+    features: "src/app/features/"
+    core: "src/app/core/"
+    types: "src/app/features/{feature}/types/"
+    services: "src/app/features/{feature}/services/"
+
+patterns:
+  interaction:
+    prefer: [dialogs-for-creation, sidenav-for-detail, stepper-for-multi-step, snackbar-for-feedback]
+    avoid: [nested-dialogs, bottom-sheets-for-complex-forms, alert-dialogs-for-non-errors]
+  information-density:
+    default: medium
+    rationale: "Material Design 3 emphasizes clarity and readability with generous spacing. Density can be reduced via mat.theme({density: -1}) for data-heavy views."
+  error-placement:
+    default: inline
+    rationale: "Form errors via mat-error inside mat-form-field (inline below field). Async errors via MatSnackBar (toast). System errors via dedicated error page."
+  confirmation:
+    required-for: [invoke-destructive, bulk-operation]
+    style: dialog
+  content:
+    timestamps: relative
+    empty-states: placeholder
