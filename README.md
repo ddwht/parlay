@@ -3,7 +3,9 @@
 An intent-driven specification framework that turns user goals into working prototypes through a deterministic pipeline. Describe what users need, not how to code it.
 
 ```
-intent → dialog → surface → buildfile → code
+intent → dialog → surface → [design-spec] → buildfile → code
+                                ↑ optional
+                             (from Figma)
 ```
 
 Parlay bridges the gap between design and code generation by providing:
@@ -20,8 +22,7 @@ Parlay bridges the gap between design and code generation by providing:
 
 ```bash
 # Homebrew (macOS / Linux)
-brew tap ddwht/parlay
-brew install parlay
+brew install ddwht/parlay/parlay
 
 # Shell script (macOS / Linux)
 curl -sSfL https://raw.githubusercontent.com/ddwht/parlay/main/install.sh | sh
@@ -207,6 +208,16 @@ This reads your intents and dialogs, resolves ambiguities conversationally, and 
 
 The vocabulary is closed — `data-list`, `status`, `provide-text`, `empty-state`, `invoke` are defined terms, not free text.
 
+### Enrich with Figma (Optional)
+
+If a Figma design exists for the feature, enrich the surface with visual details:
+
+```
+/parlay-reference-design-spec @task-list <figma-link>
+```
+
+This reads Figma via MCP, maps Figma components to surface fragments, and generates `.parlay/build/task-list/design-spec.yaml` with per-fragment widget specifics, layout, tokens, variants, spacing, and colors. Build-feature uses it automatically when present. Skip this step if you don't have a Figma design — adapter defaults apply.
+
 ### Define the Blueprint
 
 Edit `.parlay/blueprint.yaml` to describe how your app is wired together. For a CLI app this is minimal:
@@ -362,6 +373,7 @@ spec/
     <feature>/
       buildfile.yaml              Deterministic build spec
       testcases.yaml              Property-based tests
+      design-spec.yaml            Visual details from Figma (optional)
       .baseline.yaml              Source hash baseline
     _project/
       .baseline.yaml              Merged section hashes
@@ -378,15 +390,16 @@ Three zones with strict ownership:
 
 ## Schemas
 
-Parlay has 9 schemas defining every artifact:
+Parlay has 10 schemas defining every artifact:
 
 | Schema | What it defines |
 |---|---|
 | `intent.schema.md` | Goal, Persona, Priority, Context, Action, Objects, Constraints, Verify |
 | `dialog.schema.md` | User/System/Background/Conditional turns, Options, Branches |
 | `surface.schema.md` | 15 Shows, 31 Actions, 10 Flows — closed interaction vocabulary |
-| `adapter.schema.md` | Widget mappings, compositions, conventions, file conventions, patterns |
+| `adapter.schema.md` | Widget mappings, design system, compositions, conventions, patterns |
 | `blueprint.schema.md` | Shells, navigation, authorization, data, errors, state, platform |
+| `design-spec.schema.md` | Per-fragment visual details from Figma (widget, layout, tokens, variants) |
 | `buildfile.schema.md` | Models, fixtures, routes, components (elements, actions, operations) |
 | `testcases.schema.md` | Suites, cases, steps (render/click/input/select), 15 verification types |
 | `page.schema.md` | Cross-feature page manifests with region ordering |
@@ -403,6 +416,7 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 | `/parlay-add-feature <name>` | Create a feature folder with intents.md and dialogs.md |
 | `/parlay-scaffold-dialogs @<feature>` | Generate dialog templates from authored intents |
 | `/parlay-create-surface @<feature>` | Generate surface.md with ambiguity resolution |
+| `/parlay-reference-design-spec @<feature> <figma-link>` | Extract visual details from Figma into design-spec.yaml (optional) |
 | `/parlay-build-feature @<feature>` | Generate buildfile.yaml + testcases.yaml |
 | `/parlay-generate-code` | Generate prototype code (project-level, all features) |
 | `/parlay-generate-enggspec @<feature>` | Generate engineering specification for handoff |
@@ -447,6 +461,7 @@ The adapter is the bridge between framework-agnostic surface vocabulary and fram
 | `shows:` | Maps 15 Show types to framework widgets | Rarely (framework upgrade) |
 | `actions:` | Maps 31 Action types to framework widgets | Rarely |
 | `flows:` | Maps 10 Flow patterns to composite patterns | Rarely |
+| `design-system:` | Inventories design tokens per category (colors, spacing, typography, etc.) with `source: framework / figma / not-defined` | Team |
 | `compositions:` | Runtime recipes (e.g., crud-table-with-drawer) | Team |
 | `conventions:` | Structured rules (state management, naming, error handling) | Team |
 | `file-conventions:` | Source root, component pattern, naming, entry point | Team |
@@ -503,6 +518,26 @@ compositions:
     trigger: "component has data-table + navigate-drill + inspect"
     state: [selectedItem, drawerOpen]
     wiring: "row-click sets selectedItem and opens drawer"
+
+design-system:
+  colors:
+    source: framework
+    format: "ConfigProvider theme.token — colorPrimary, colorSuccess, colorError, etc."
+    usage: "Use token names. Never hardcode hex values."
+  spacing:
+    source: framework
+    format: "theme.token — padding, paddingSM, paddingLG, margin, marginSM, marginLG"
+    usage: "Use token names. Base unit is 4px."
+  typography:
+    source: framework
+    format: "Typography components (Title, Text, Paragraph). Tokens: fontSize, fontSizeLG"
+  icons:
+    source: framework
+    format: "@ant-design/icons — named imports (PlusOutlined, DeleteOutlined)"
+  motion:
+    source: not-defined
+    format: "No motion token system."
+  # ... all 8 standard categories
 
 conventions:
   state-management:
