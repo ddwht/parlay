@@ -147,30 +147,35 @@
 
 ---
 
-## Generate Surface from Figma
+## Reference Design Spec from Figma
 
-**Goal**: Use an existing Figma design to generate or update the surface document, so visual work done in Figma carries over into the same format.
+**Goal**: Enrich an existing surface with per-fragment visual design details extracted from a Figma file, producing a design-spec.yaml that captures widget specifics, layout, tokens, variants, spacing, and colors that the surface deliberately omits.
 **Persona**: UX Designer
 **Priority**: P2
-**Context**: The designer has already created visual mockups in Figma and wants to use them as the basis for the surface rather than generating from intents alone.
-**Action**: AI agent connects to Figma via MCP, extracts components and layout, and produces surface fragments.
-**Objects**: surface, fragment, figma-design, feature
+**Context**: The surface is authored and reviewed, a Figma design exists for the feature, and the team wants higher visual fidelity in the generated prototype than adapter defaults provide.
+**Action**: AI agent connects to Figma via MCP, maps Figma components to existing surface fragments, and generates a design-spec.yaml with per-fragment visual annotations.
+**Objects**: design-spec, surface, fragment, figma-design, design-token, feature
 
 **Constraints**:
-- Must integrate with Figma via MCP
-- The output must be the same surface format as intent-generated surfaces
-- The designer must review the generated surface before it is used
-- When a Figma design covers multiple features, the tool must ask how to split fragments across features
+- The surface must already exist — this skill enriches, it does not create the surface
+- Fragment names in design-spec.yaml must match fragment names in surface.md exactly
+- The design-spec is optional — the pipeline must work without it
+- Requires Figma MCP — if unavailable, the skill must inform the user and stop
+- The design-spec references the adapter's design-system categories — token category names must match
+- The design-spec is a tool internal at `.parlay/build/<feature>/design-spec.yaml`, same visibility as buildfile.yaml
+- Build-feature reads the design-spec IF it exists; if not, adapter defaults apply unchanged
 
 **Verify**:
-- Generated fragments follow the same surface schema as intent-generated surfaces
-- Multi-feature designs prompt the user to assign fragments to features
-- Generated `**Source**:` fields reference the Figma source
+- design-spec.yaml is generated at `.parlay/build/<feature>/design-spec.yaml`
+- Every fragment key in design-spec.yaml matches a fragment name in surface.md
+- Token category references match categories declared in the adapter's design-system section
+- build-feature produces a richer buildfile when design-spec.yaml exists compared to when it does not
+- The pipeline works identically when design-spec.yaml does not exist (no regression)
+- Figma MCP unavailability produces a clear error message, not a crash
 
 **Questions**:
-- How should conflicts between an existing surface and the Figma import be resolved?
-- Should changes in Figma automatically trigger surface updates, or is it always a manual pull?
-- Can the tool map Figma components to fragment names from existing intents?
+- Should the design-spec support incremental updates when the Figma design changes?
+- Should the tool warn when design-system categories marked `source: figma` in the adapter have no corresponding values in the design-spec?
 
 ---
 

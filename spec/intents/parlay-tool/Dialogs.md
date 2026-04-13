@@ -86,24 +86,41 @@ System: Generated ==number== fragments. For better results, use the /parlay-crea
 
 ---
 
-### Generate Surface from Figma
+### Reference Design Spec from Figma
 
-**Trigger**: /parlay-create-surface-by-figma ==figma-link==
+**Trigger**: /parlay-reference-design-spec @feature-name ==figma-link==
 
-User: /parlay-create-surface-by-figma ==link to Figma file==
-System: I see the Figma link. Let me use Figma MCP to read the design.
-System (background): Connects to Figma via MCP, extracts components, layout structure, and content.
-System (condition: design maps to single feature): I've generated ==number== fragments in surface.md from the Figma design. Please review.
-System (condition: design covers multiple features): This Figma design seems to cover multiple features. I found components that could belong to:
-System: - @upgrade-plan — ==list of components==
-System: - @fleet-overview — ==list of components==
-System: How should I split these?
-  A: Assign to the features I listed
-  B: Put everything in @upgrade-plan-creation for now
-  C: Let me assign them manually
+User: /parlay-reference-design-spec @upgrade-plan-creation ==link to Figma file==
+System (background): Checks for Figma MCP availability.
+System (condition: Figma MCP unavailable): I need Figma MCP to read the design file, but it's not available. Please configure Figma MCP and try again.
+System (background): Loads schemas and reads spec/intents/upgrade-plan-creation/surface.md.
+System (condition: no surface): I can't create a design spec yet — surface.md doesn't exist for @upgrade-plan-creation. Run /parlay-create-surface @upgrade-plan-creation first.
+System (background): Loads framework adapter and extracts design-system categories.
+System (background): Connects to Figma via MCP, reads the design file.
+System: I found ==number== components in the Figma file. Let me map them to your ==number== surface fragments.
+System: Here's my proposed mapping:
+System: - ==Fragment A== → ==Figma Component X==
+System: - ==Fragment B== → ==Figma Component Y==
+System: - ==Fragment C== → (no Figma match — adapter defaults will apply)
+System: Does this mapping look right?
+  A: Yes, proceed
+  B: Let me adjust the mapping
+  C: Cancel
 User: Selects A
-System (background): Generates surface fragments and distributes them to the appropriate feature surface files.
-System: Updated surface.md in ==number== features. Review each one.
+System (background): Extracts visual details from mapped Figma components.
+System (background): Generates design-spec.yaml at .parlay/build/upgrade-plan-creation/design-spec.yaml.
+System: Design spec generated with ==number== fragment annotations:
+System: - ==Fragment A==: widget specifics, layout, 3 token categories, 2 variant states
+System: - ==Fragment B==: widget specifics, spacing, colors
+System: ==number== adapter design-system categories now have Figma-sourced values: ==list==
+System: Run /parlay-build-feature @upgrade-plan-creation to produce a richer buildfile.
+
+#### Branch: Design-spec already exists
+
+User: /parlay-reference-design-spec @upgrade-plan-creation ==link to updated Figma file==
+System: A design-spec already exists for @upgrade-plan-creation. I'll update it while preserving any manual edits.
+System (background): Reads existing design-spec.yaml, re-extracts from Figma, merges.
+System: Updated ==number== fragments, preserved ==number== manually edited fragments. Review the changes.
 
 ---
 
