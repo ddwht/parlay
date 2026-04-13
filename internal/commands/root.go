@@ -62,4 +62,5 @@ func init() {
 	rootCmd.AddCommand(verifyGeneratedCmd)
 	rootCmd.AddCommand(saveBuildStateCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(upgradeCmd)
 }
