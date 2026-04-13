@@ -23,6 +23,10 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 		content += fmt.Sprintf("---\n\n## Skill: parlay-%s\n\n%s\n\n", skill.Name, string(skill.Content))
 	}
 
+	content += "---\n\n## Interactive Questions\n\n"
+	content += "When a skill step says to \"ask the user\", \"present options\", or \"wait for the user's response\", "
+	content += "you MUST present the question and stop. Do not continue to the next step until the user has responded. "
+	content += "The skill requires the user's answer to decide what to do next.\n\n"
 	content += "---\n\n## CLI Utility Commands\n\n"
 	content += "- `parlay init` — Bootstrap project\n"
 	content += "- `parlay add-feature <name>` — Create feature folder\n"

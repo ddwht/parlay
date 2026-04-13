@@ -61,6 +61,10 @@ Skills are available as .cursor/rules/parlay-*.mdc files.
 
 Load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
 
+## Interactive Questions
+
+When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
+
 ## File Ownership
 
 Three-zone layout — strict ownership:
