@@ -66,7 +66,15 @@ file-conventions:
   naming: <file naming convention — e.g., "kebab-case", "snake_case", "PascalCase">
   entry-point: <main file — e.g., "main.go", "main.ts", "App.tsx">
 
-# --- Section 5: Design patterns (team-customizable) ---
+# --- Section 5: Design system inventory ---
+
+design-system:
+  <category-name>:
+    source: <framework | figma | not-defined>
+    format: <how to use it — token names, component props, API>
+    usage: <rules for the agent — what to do and what to avoid>
+
+# --- Section 6: Design patterns (team-customizable) ---
 
 patterns:
   interaction:
@@ -189,6 +197,37 @@ conventions:
 
 Conventions are the most frequently customized section. Teams should review and adjust them during adapter setup. Conventions that are too generic ("write clean code") are useless — each convention should make a SPECIFIC choice that eliminates a decision point for the agent.
 
+## Section 5: Design system inventory
+
+The design system section is a structured inventory of where each category of design decisions comes from. It tells the agent: for colors, use framework tokens; for motion, check the design-spec; for icons, the framework doesn't define them.
+
+Each category has three fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `source` | Yes | Where values come from: `framework` (use built-in tokens), `figma` (extract from design-spec), or `not-defined` (agent uses sensible defaults) |
+| `format` | Yes (when source is `framework` or `figma`) | How to use the values — token names, component APIs, import paths |
+| `usage` | No | Constraints for the agent — what to do and what to avoid |
+
+### Standard categories
+
+Every adapter should declare these categories. Use `source: not-defined` for categories the framework doesn't cover.
+
+| Category | What it covers |
+|---|---|
+| `colors` | Brand, semantic (success/error/warning), text, background, border |
+| `spacing` | Padding, margin, gaps — the spatial rhythm |
+| `border-radius` | Corner rounding |
+| `typography` | Font families, sizes, weights, line heights |
+| `shadows` | Elevation and depth |
+| `icons` | Icon set, import pattern, sizing |
+| `motion` | Transitions, animations, timing functions |
+| `layout` | Grid system, flex/flow utilities, responsive primitives |
+
+When `source: framework`, the agent uses the framework's token system and never hardcodes values. When `source: figma`, the agent reads values from the per-fragment design-spec. When `source: not-defined`, the agent uses its judgment — the design-spec may provide values later, or the agent picks reasonable defaults.
+
+Teams can add custom categories beyond the standard set (e.g., `z-index`, `breakpoints`, `opacity`).
+
 ## Validation
 
 When an adapter file is loaded, the tool verifies:
@@ -199,7 +238,8 @@ When an adapter file is loaded, the tool verifies:
 - `widget: not-applicable` is allowed (with description explaining why)
 - `requires: custom-implementation` is allowed (the agent writes the implementation)
 - The `file-conventions` section is complete
-- `compositions:` and `conventions:` sections are optional but recommended
+- `compositions:`, `conventions:`, and `design-system:` sections are optional but recommended
+- If `design-system:` is present, each category must have a `source:` field with value `framework`, `figma`, or `not-defined`
 
 ## Relationship to buildfile
 
@@ -227,5 +267,6 @@ The buildfile stays small (it describes WHAT). The adapter carries the implement
 | Shows/Actions/Flows | Parlay (shipped with adapter template) | Rarely — only if team uses different widgets | Framework version upgrade |
 | Compositions | Parlay (ships defaults) | Team (adapts to their patterns) | Team discovers a better pattern |
 | Conventions | Parlay (ships defaults) | Team (enforces their standards) | Team standards evolve |
+| Design system | Parlay (ships defaults for known frameworks) | Team (marks source per category) | Framework upgrade or Figma integration |
 | File conventions | Parlay (ships defaults) | Team (matches their project structure) | Project restructure |
 | Patterns | Parlay (ships defaults) | Team (matches their UX preferences) | Design system changes |

@@ -304,6 +304,40 @@ conventions:
     rule: "Use Ant Design's built-in component props for styling (size, type, style). Inline style objects for layout (margins, padding, flex). No CSS files or CSS-in-JS for prototype code."
     applies-to: all components
 
+design-system:
+  colors:
+    source: framework
+    format: "ConfigProvider theme.token — colorPrimary, colorSuccess, colorError, colorWarning, colorInfo, colorTextBase, colorBgBase, colorBorder, colorBgContainer, colorFill"
+    usage: "Always reference via theme tokens. Never hardcode hex values. Override brand colors via ConfigProvider theme prop at the app root."
+  spacing:
+    source: framework
+    format: "theme.token — padding, paddingXS, paddingSM, paddingMD, paddingLG, paddingXL, margin, marginXS, marginSM, marginMD, marginLG, marginXL"
+    usage: "Use token names for all padding/margin. Base unit is 4px. Use Space component for inline gaps, Flex for flexible layouts."
+  border-radius:
+    source: framework
+    format: "theme.token — borderRadius (6px default), borderRadiusSM (4px), borderRadiusLG (8px)"
+    usage: "Use token names. Most Ant components apply border-radius automatically."
+  typography:
+    source: framework
+    format: "Typography components (Title level={1-5}, Text, Paragraph, Link). Tokens: fontSize (14px), fontSizeSM (12px), fontSizeLG (16px), fontSizeHeading1-5, fontWeightStrong (600)"
+    usage: "Use Typography components for all text. Do not use raw HTML heading/paragraph tags. For inline emphasis use Text with strong/italic/type props."
+  shadows:
+    source: framework
+    format: "theme.token — boxShadow, boxShadowSecondary, boxShadowTertiary"
+    usage: "Use tokens. Most elevation is handled by Card/Modal/Dropdown components automatically."
+  icons:
+    source: framework
+    format: "@ant-design/icons — named imports (PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, CheckOutlined, CloseOutlined, etc.)"
+    usage: "Use Ant icon components. Do not use raw SVG, emoji, or external icon libraries."
+  motion:
+    source: not-defined
+    format: "Ant Design applies built-in transitions to components (Modal open/close, Collapse expand, etc.) but exposes no motion token system."
+    usage: "Rely on built-in component transitions. For custom animation, use CSS transition with duration 0.2-0.3s ease."
+  layout:
+    source: framework
+    format: "Layout (Sider, Header, Content, Footer), Row/Col (24-column grid), Flex, Space. Responsive via Col xs/sm/md/lg/xl/xxl props."
+    usage: "Use Ant layout components for page structure. Col span for grid-based layouts. Space/Flex for inline arrangement. Do not use raw CSS grid/flexbox for page layout."
+
 file-conventions:
   source-root: "src/"
   component-pattern: feature-modules

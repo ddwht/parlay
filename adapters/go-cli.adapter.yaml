@@ -205,6 +205,36 @@ flows:
     regions: [comparison, selection]
     requires: custom-implementation
 
+design-system:
+  colors:
+    source: not-defined
+    format: "ANSI escape codes for terminal color (optional)"
+    usage: "Do not use color by default. If color is needed, use only standard ANSI codes and respect NO_COLOR environment variable."
+  spacing:
+    source: not-defined
+    format: "Indentation (2 spaces per level), blank lines between sections"
+    usage: "Use consistent indentation. Separate logical sections with a blank line. Keep output within 80 columns."
+  border-radius:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  typography:
+    source: not-defined
+    format: "Terminal monospace font. Emphasis via UPPERCASE, [brackets], or *asterisks*."
+    usage: "Use [OK], [ERR], [WARN] prefixes for status. Use UPPERCASE sparingly for emphasis."
+  shadows:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  icons:
+    source: not-defined
+    format: "Not applicable. Use text prefixes ([OK], [ERR], >, -) instead."
+  motion:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  layout:
+    source: not-defined
+    format: "text/tabwriter for aligned columns. Bulleted lists with - prefix. Numbered lists with N. prefix."
+    usage: "Use tabwriter for any tabular data. Keep output scannable — one item per line."
+
 file-conventions:
   source-root: "cmd/"
   component-pattern: one-file-per-command
