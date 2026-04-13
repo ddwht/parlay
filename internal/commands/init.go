@@ -34,6 +34,7 @@ var frameworks = []frameworkEntry{
 	{Display: "Go CLI", Adapter: "go-cli", NavStrategy: "cli-subcommands"},
 	{Display: "React + Ant Design", Adapter: "react-antd", NavStrategy: "browser"},
 	{Display: "Angular + Material", Adapter: "angular-material", NavStrategy: "browser"},
+	{Display: "Angular + Clarity", Adapter: "angular-clarity", NavStrategy: "browser"},
 	{Display: "None (register adapter later)", Adapter: "", NavStrategy: "browser"},
 }
 

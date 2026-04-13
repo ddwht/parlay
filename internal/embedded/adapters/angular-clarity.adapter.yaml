@@ -1,0 +1,364 @@
+name: angular-clarity
+framework: "Angular + Clarity"
+version: "1.0"
+
+shows:
+  data-value:
+    widget: ClrStackView
+    description: "clr-stack-view with clr-stack-block for labeled key-value pairs. Use clr-stack-header for group titles. For single metrics, use a card with styled content."
+    import: "@clr/angular (ClrStackViewModule)"
+  data-list:
+    widget: ClrDatagrid
+    description: "clr-datagrid for structured lists with built-in sorting, filtering, pagination. For simple lists, use standard HTML list with Clarity card styling."
+    import: "@clr/angular (ClrDatagridModule)"
+  data-table:
+    widget: ClrDatagrid
+    description: "clr-datagrid with clr-dg-column (sortable via [clrDgField]), clr-dg-row, clr-dg-cell. Built-in filtering (clr-dg-string-filter, clr-dg-numeric-filter), pagination (clr-dg-pagination), selection, expandable rows, column toggle, virtual scroll, and server-driven mode via (clrDgRefresh)."
+    import: "@clr/angular (ClrDatagridModule)"
+  data-tree:
+    widget: ClrTree
+    description: "clr-tree with clr-tree-node for hierarchical display. Use [clrRecursiveFor] directive for dynamic recursive trees. Supports expand/collapse, lazy loading, and selection."
+    import: "@clr/angular (ClrTreeViewModule)"
+  data-chart:
+    widget: not-applicable
+    description: "Clarity does not include chart components. Use a third-party library (e.g., ngx-echarts, ng2-charts). Clarity provides --cds-alias-viz-general-* color tokens for data visualization palettes."
+    requires: custom-implementation
+  status:
+    widget: ClrLabel+ClrBadge
+    description: "clr-label for status tags with color variants (info, success, warning, danger). clr-badge for numeric indicators. Use [clrAlertType] colors for consistency."
+    import: "@clr/angular (ClrEmphasisModule)"
+  progress:
+    widget: ClrProgressBar
+    description: "clr-progress-bar with value/max attributes. Supports labeled, indeterminate, and success/danger/warning color types. Use clr-spinner for indeterminate circular loading."
+    import: "@clr/angular (ClrProgressBarModule)"
+  message:
+    widget: ClrAlert
+    description: "clr-alert with [clrAlertType] (info, success, warning, danger). Use [clrAlertAppLevel] for top-of-page banners. [clrAlertLightweight] for borderless inline. [clrAlertSizeSmall] for compact."
+    import: "@clr/angular (ClrAlertModule)"
+  media:
+    widget: not-applicable
+    description: "Clarity does not include media components. Use native HTML img/video inside a Clarity card layout."
+  empty-state:
+    widget: ClrDatagridPlaceholder
+    description: "clr-dg-placeholder inside clr-datagrid for empty table state. For non-table contexts, compose with Clarity card, cds-icon, and text."
+    import: "@clr/angular (ClrDatagridModule)"
+  summary:
+    widget: ClrStackView
+    description: "clr-stack-view for key-value summaries. For metric grids, use Clarity cards in a .clr-row / .clr-col-* grid layout."
+    import: "@clr/angular (ClrStackViewModule)"
+  diff:
+    widget: not-applicable
+    description: "No built-in diff component. Use a third-party library or custom implementation with Clarity color tokens for additions/removals."
+    requires: custom-implementation
+  timeline:
+    widget: ClrTimeline
+    description: "clr-timeline with clr-timeline-step for chronological events. Each step has clr-timeline-step-header (icon/state), clr-timeline-step-title, and clr-timeline-step-description."
+    import: "@clr/angular (ClrTimelineModule)"
+  code:
+    widget: not-applicable
+    description: "No built-in code display. Use pre/code HTML elements with monospace font. For syntax highlighting, use a third-party library."
+    requires: custom-implementation
+
+actions:
+  provide-text:
+    widget: ClrInput
+    description: "input[clrInput] inside clr-input-container with label, helper text (clr-control-helper), and validation errors (clr-control-error with [clrIfError])."
+    import: "@clr/angular (ClrInputModule)"
+  provide-rich-text:
+    widget: ClrTextarea
+    description: "textarea[clrTextarea] inside clr-textarea-container. For actual rich text editing, use a third-party editor."
+    import: "@clr/angular (ClrTextareaModule)"
+    requires: custom-implementation
+  provide-value:
+    widget: ClrInput+ClrDatepicker
+    description: "clr-number-input-container for numbers. clr-date-container with input[clrDate] for dates, clr-date-range-container for date ranges. clr-range-container with input[clrRange] for sliders."
+    import: "@clr/angular (ClrNumberInputModule, ClrDatepickerModule, ClrRangeModule)"
+  provide-file:
+    widget: ClrFileInput
+    description: "clr-file-input-container with input[type=file]. Supports clr-file-list for showing selected files, clr-file-error for validation, clr-file-info for metadata."
+    import: "@clr/angular (ClrFileInputModule)"
+  provide-structured-input:
+    widget: ClrForm+ReactiveForm
+    description: "form[clrForm] with Angular Reactive Forms. Layout via [clrLayout] (vertical, horizontal, compact). Each control in its *-container component. Validation via clr-control-error with [clrIfError]."
+    import: "@clr/angular (ClrCommonFormsModule), @angular/forms"
+  select-one:
+    widget: ClrSelect+ClrRadio
+    description: "select[clrSelect] inside clr-select-container for dropdown. clr-radio-container with radio[clrRadio] for visible options. clr-combobox for searchable select."
+    import: "@clr/angular (ClrSelectModule, ClrRadioModule, ClrComboboxModule)"
+  select-many:
+    widget: ClrCheckbox+ClrCombobox
+    description: "clr-checkbox-container with checkbox[clrCheckbox] for visible multi-select. clr-combobox with [clrMulti] for dropdown multi-select."
+    import: "@clr/angular (ClrCheckboxModule, ClrComboboxModule)"
+  select-toggle:
+    widget: ClrToggle
+    description: "checkbox[clrToggle] inside clr-toggle-wrapper / clr-toggle-container for binary on/off toggle switch."
+    import: "@clr/angular (ClrCheckboxModule)"
+  select-range:
+    widget: ClrRange+ClrDateRange
+    description: "clr-range-container with input[clrRange] for numeric range. clr-date-range-container with [clrStartDate]/[clrEndDate] for date ranges."
+    import: "@clr/angular (ClrRangeModule, ClrDatepickerModule)"
+  confirm:
+    widget: ClrModal
+    description: "clr-modal with [(clrModalOpen)] binding. Content structured with confirmation message and action buttons (confirm/cancel)."
+    import: "@clr/angular (ClrModalModule)"
+  dismiss:
+    widget: ClrModal
+    description: "Set [(clrModalOpen)] to false, or use [clrModalClosable] X button. Cancel button sets open to false."
+    import: "@clr/angular (ClrModalModule)"
+  acknowledge:
+    widget: ClrAlert
+    description: "clr-alert with [clrAlertAppLevel] for top-of-page banners. Self-closes via [clrAlertClosable] dismiss button."
+    import: "@clr/angular (ClrAlertModule)"
+  navigate:
+    widget: ClrVerticalNav+RouterLink
+    description: "clr-vertical-nav with [clrVerticalNavLink] items bound to routerLink. Use clr-header for top-level navigation."
+    import: "@clr/angular (ClrVerticalNavModule, ClrNavigationModule), @angular/router"
+  navigate-back:
+    widget: ClrButton+Location
+    description: "clr-button or button with cds-icon shape='arrow' direction='left', calls location.back() or router.navigate()."
+    import: "@clr/angular (ClrButtonModule, ClrIconModule), @angular/common"
+  navigate-drill:
+    widget: ClrDatagrid+RouterLink
+    description: "Datagrid row click via (clrDgRowClick) or clr-dg-detail pane for inline drill-down. Or clr-dg-action-overflow with navigation item."
+    import: "@clr/angular (ClrDatagridModule), @angular/router"
+  navigate-tab:
+    widget: ClrTabs
+    description: "clr-tabs with clr-tab and clr-tab-content for peer-level view switching. Use clr-tab-link with routerLink for route-based tabs."
+    import: "@clr/angular (ClrTabsModule)"
+  navigate-search:
+    widget: ClrCombobox
+    description: "clr-combobox with [clrFilter] for search-as-you-type. Options filtered as user types. Or clr-datalist-container with datalist for native autocomplete."
+    import: "@clr/angular (ClrComboboxModule, ClrDatalistModule)"
+  reorder:
+    widget: CdkDragDrop
+    description: "cdkDropList container with cdkDrag items. Use moveItemInArray() on (cdkDropListDropped). Angular CDK is a Clarity peer dependency."
+    import: "@angular/cdk/drag-drop"
+  move:
+    widget: CdkDragDrop
+    description: "cdkDropList with [cdkDropListConnectedTo] linking multiple containers. Use transferArrayItem() on drop."
+    import: "@angular/cdk/drag-drop"
+  edit-inline:
+    widget: ClrInput
+    description: "Toggle between text display and clrInput on click/double-click. Save on blur or Enter key."
+    import: "@clr/angular (ClrInputModule)"
+    requires: custom-implementation
+  invoke:
+    widget: ClrButton
+    description: "clr-button or button with Clarity button classes: .btn (default), .btn-primary, .btn-success, .btn-warning, .btn-danger. Icon buttons via .btn-icon with cds-icon."
+    import: "@clr/angular (ClrButtonModule)"
+  invoke-destructive:
+    widget: ClrButton+ClrModal
+    description: "button.btn.btn-danger opens clr-modal confirmation dialog before executing destructive action. Always requires confirmation."
+    import: "@clr/angular (ClrButtonModule, ClrModalModule)"
+    requires-confirmation: true
+  invoke-batch:
+    widget: ClrDatagridActionBar
+    description: "clr-dg-action-bar appears when rows are selected in datagrid (via [(clrDgSelected)]). Contains batch action buttons."
+    import: "@clr/angular (ClrDatagridModule)"
+  undo:
+    widget: ClrAlert
+    description: "clr-alert with 'Undo' action link. Alert dismisses on action or timeout."
+    import: "@clr/angular (ClrAlertModule)"
+    requires: custom-implementation
+  redo:
+    widget: not-applicable
+    description: "No built-in redo. Implement via command pattern tracking action history."
+    requires: custom-implementation
+  export:
+    widget: ClrButton
+    description: "button.btn triggers file download via Blob URL or server-side export endpoint."
+    import: "@clr/angular (ClrButtonModule)"
+  hand-off:
+    widget: not-applicable
+    description: "No built-in delegation. Implement as an invoke action targeting an external system."
+  expand:
+    widget: ClrAccordion
+    description: "clr-accordion with clr-accordion-panel. Panel expands to reveal clr-accordion-content on header click."
+    import: "@clr/angular (ClrAccordionModule)"
+  collapse:
+    widget: ClrAccordion
+    description: "clr-accordion-panel collapses on header click. Use [clrAccordionPanelOpen] for programmatic control."
+    import: "@clr/angular (ClrAccordionModule)"
+  filter:
+    widget: ClrDatagridFilter
+    description: "Built-in clr-dg-string-filter and clr-dg-numeric-filter on datagrid columns. Custom filters via clr-dg-filter implementing ClrDatagridFilterInterface."
+    import: "@clr/angular (ClrDatagridModule)"
+  sort:
+    widget: ClrDatagridColumn
+    description: "clr-dg-column with [clrDgField] for automatic sorting, or [clrDgSortBy] with custom ClrDatagridComparatorInterface."
+    import: "@clr/angular (ClrDatagridModule)"
+  inspect:
+    widget: ClrSidePanel+ClrDatagridDetail
+    description: "clr-side-panel for slide-in detail view. Or clr-dg-detail within datagrid for inline detail pane. Or clr-signpost for contextual inspection."
+    import: "@clr/angular (ClrSidePanelModule, ClrDatagridModule, ClrSignpostModule)"
+
+flows:
+  guided-flow:
+    pattern: ClrWizard
+    description: "clr-wizard modal with clr-wizard-page per step. Built-in stepnav, back/next/finish buttons, validation per page. Supports vertical/horizontal stepnav layout."
+    regions: [stepnav, page-content, actions]
+  crud-collection:
+    pattern: ClrDatagrid+ClrModal+ClrForm
+    description: "clr-datagrid for list view with sorting/filtering/pagination. clr-modal with form[clrForm] for create/edit. Delete via btn-danger with confirmation modal."
+    regions: [action-bar, main, modal]
+  search-and-act:
+    pattern: ClrCombobox+ClrDatagrid+ClrDropdown
+    description: "clr-combobox or clr-input for search. Results in clr-datagrid. Row actions via clr-dg-action-overflow dropdown."
+    regions: [search, results, actions]
+  review-and-approve:
+    pattern: ClrStackView+ClrTimeline+ClrModal
+    description: "clr-stack-view for proposed change details. clr-timeline for review history. clr-modal for approve/reject confirmation with optional comment."
+    regions: [preview, timeline, actions]
+  bulk-operation:
+    pattern: ClrDatagrid+ClrDatagridActionBar+ClrProgressBar
+    description: "clr-datagrid with [(clrDgSelected)] for row selection. clr-dg-action-bar for bulk action buttons (appears when selected). clr-progress-bar during execution."
+    regions: [selection, action-bar, progress]
+  configure:
+    pattern: ClrTabs+ClrForm+ClrAccordion
+    description: "clr-tabs for setting categories. Each tab contains form[clrForm] with controls in *-container components. clr-accordion for collapsible subsections."
+    regions: [tabs, form, actions]
+  monitor:
+    pattern: ClrStackView+ClrProgressBar+ClrBadge+ClrTimeline
+    description: "Cards with clr-stack-view for metrics. clr-progress-bar for utilization. clr-badge for alert counts. clr-timeline for recent events. Auto-refresh via interval or WebSocket."
+    regions: [metrics, charts, activity]
+    requires: custom-implementation
+  import-export:
+    pattern: ClrFileInput+ClrDatagrid+ClrProgressBar
+    description: "clr-file-input-container for file upload. clr-datagrid preview with validation status column. clr-progress-bar during import. clr-alert for result."
+    regions: [upload, preview, progress]
+  onboarding:
+    pattern: ClrWizard+ClrForm
+    description: "clr-wizard with [clrWizardInPage] for embedded (non-modal) onboarding. Each wizard-page contains a clr-form section. Finish action completes setup."
+    regions: [stepnav, page-content, summary]
+  compare:
+    pattern: ClrDatagrid+ClrStackView+ClrLabel
+    description: "Two clr-stack-views side by side in .clr-row / .clr-col-6 grid. clr-label for difference highlights. Or two-column clr-datagrid with comparison values."
+    regions: [left, right, actions]
+
+compositions:
+  crud-datagrid-with-detail:
+    trigger: "component has data-table + navigate-drill + inspect"
+    state: [selectedItem, detailOpen]
+    wiring: "Datagrid [clrIfDetail] shows clr-dg-detail pane on row selection. Detail pane close clears selection. Or clr-side-panel opens on row click."
+    description: "Datagrid with built-in detail pane or side panel for item inspection"
+
+  form-in-modal:
+    trigger: "component has provide-structured-input + dismiss"
+    state: [modalOpen, formGroup]
+    wiring: "Button sets modalOpen=true. clr-modal [(clrModalOpen)]=modalOpen contains form[clrForm]. Submit validates, saves, sets modalOpen=false. Cancel sets modalOpen=false."
+    description: "Modal dialog containing a Clarity reactive form for create/edit"
+
+  multi-select-action-bar:
+    trigger: "component has select-many + invoke-batch"
+    state: [selectedItems]
+    wiring: "Datagrid [(clrDgSelected)]=selectedItems enables multi-select. clr-dg-action-bar appears when selectedItems.length > 0. Batch action clears selection."
+    description: "Datagrid with checkbox selection and conditional action bar for batch operations"
+
+  wizard-steps:
+    trigger: "fragment has flow: guided-flow or flow: onboarding"
+    state: [wizard, pageFormGroups]
+    wiring: "clr-wizard with clr-wizard-page per step. Each page has a FormGroup. (clrWizardOnNext) validates current page form. (clrWizardOnFinish) submits accumulated data."
+    description: "Clarity Wizard with per-page form validation and accumulated submission"
+
+  tabbed-settings:
+    trigger: "fragment has flow: configure + navigate-tab"
+    state: [activeTab, formGroup, isDirty]
+    wiring: "clr-tabs with (clrTabsCurrentTabContentChanged). Form valueChanges sets isDirty. Save button persists and resets isDirty. CanDeactivate guard warns on unsaved changes."
+    description: "Tabbed settings with unsaved-changes tracking"
+
+  file-import-preview:
+    trigger: "component has provide-file + data-table + confirm"
+    state: [uploadedFiles, parsedRows, importProgress]
+    wiring: "clr-file-input-container (change) parses file into parsedRows. Preview clr-datagrid shows rows with validation status. Confirm button triggers import with clr-progress-bar."
+    description: "File upload with preview datagrid and validation before import"
+
+conventions:
+  state-management:
+    rule: "Component-local state via class properties. Shared state via injectable services with BehaviorSubject. Use signals for reactive state in Angular 17+. No external state libraries (NgRx, Akita) unless the team explicitly adds them."
+    applies-to: all components
+
+  event-naming:
+    rule: "Output EventEmitters use past-tense names: itemSelected, formSubmitted, modalClosed. Handler methods use on-prefix: onItemSelected(), onFormSubmitted()."
+    applies-to: all components
+
+  data-fetching:
+    rule: "Injectable services with HttpClient for API calls. Return Observable<T>. For datagrid server-driven mode, handle (clrDgRefresh) event and set [clrDgLoading] during fetch. Components subscribe via async pipe."
+    applies-to: components with api-fetch data sources
+
+  error-handling:
+    rule: "Form validation via Validators + clr-control-error with [clrIfError] inside form containers. Async failures use clr-alert with [clrAlertType]='danger'. HTTP errors caught via catchError in service or interceptor."
+    applies-to: all components
+
+  file-structure:
+    rule: "Feature-based organization: src/app/features/{feature-name}/. One folder per component with .ts, .html, .scss files. Shared components in src/app/core/components/. Types in types/ subfolder. Services in services/ subfolder."
+    applies-to: file generation
+
+  component-style:
+    rule: "Standalone components where possible. Import Clarity modules (ClrDatagridModule, ClrModalModule) directly in component imports array. Use OnPush change detection strategy."
+    applies-to: all components
+
+  styling:
+    rule: "Use Clarity's built-in component classes and CSS custom properties. Reference --clr-* and --cds-* tokens. Never hardcode color/spacing values. Component-scoped SCSS for layout only."
+    applies-to: all components
+
+design-system:
+  colors:
+    source: framework
+    format: "Two-layer token system. --cds-global-color-{hue}-{shade} for primitives (hues: blue, green, red, yellow, violet, construction/gray, etc.; shades: 50-1000). --cds-alias-status-{info|success|warning|danger|neutral} for semantic status. --clr-global-selection-color, --clr-global-hover-color for interaction states."
+    usage: "Use --cds-alias-status-* for status colors. Use --cds-global-color-* for palette access. Never hardcode hex values. Themes switch via cds-theme attribute on body (light, dark, high-contrast)."
+  spacing:
+    source: framework
+    format: "T-shirt sizing tokens: --clr-base-layout-space-{0|4xs|3xs|2xs|xs|s|m|l|xl|2xl|3xl|4xl|5xl}. Gaps: --clr-base-gap-{xs|s|m|l|xl|2xl}. Row heights: --clr-base-row-height-{xs|s|m|l}. Density switchable via [clr-density='compact'] attribute."
+    usage: "Use layout-space tokens for padding/margin. Use gap tokens for flex/grid gaps. Use density attribute for data-heavy views."
+  border-radius:
+    source: framework
+    format: "--clr-base-border-radius-{xs|s|m|l|xl} (2px, 4px, 8px, 12px, 16px). Global: --clr-global-borderradius. Maps from --cds-alias-object-border-radius-100."
+    usage: "Use border-radius tokens. Components apply radius automatically."
+  typography:
+    source: framework
+    format: "Font: Metropolis (--clr-body-font, --clr-display-font). Weights: --clr-font-weight-{light|regular|semibold|bold|extrabold}. Scale: --clr-h1-font-size through --clr-h6-font-size, --clr-p0-* through --clr-p8-* for body text. Named levels: DISPLAY-40, HEADLINE-32, TITLE-24, SECTION-20, BODY-14."
+    usage: "Use Clarity typography CSS classes or heading variables. Configure font via SCSS overrides if using a custom font."
+  shadows:
+    source: framework
+    format: "--cds-alias-object-shadow-{100|200|300} (3 elevation levels). Defined as composite box-shadow values."
+    usage: "Use shadow tokens for elevation. Cards and modals apply shadows automatically."
+  icons:
+    source: framework
+    format: "cds-icon component with [shape] attribute. Register icons via ClarityIcons.addIcons() in app init. Collections: core, essential, commerce, media, social, technology, chart, text-edit, travel. Hundreds of icons available."
+    usage: "Use cds-icon with shape attribute. Register only needed icons to minimize bundle. Use [status] attribute for colored icons (info, success, warning, danger)."
+  motion:
+    source: framework
+    format: "Components handle their own animations (modal: fadeDown 0.2s ease-in-out, expandable: height animation). Low-motion theme available via theme.low-motion.scss for prefers-reduced-motion."
+    usage: "Rely on built-in component transitions. For custom animation, use CSS transitions. Import low-motion theme for accessibility."
+  layout:
+    source: framework
+    format: "Application shell: clr-main-container > clr-header + .content-container > clr-vertical-nav + .content-area. CSS grid: .clr-row + .clr-col-{1-12} with responsive breakpoints. CDK BreakpointObserver for responsive queries."
+    usage: "Use clr-main-container for app shell. .clr-row/.clr-col-* for page grids. clr-vertical-nav for sidebar. Content padding via --clr-content-area-padding-* tokens."
+
+file-conventions:
+  source-root: "src/app/"
+  component-pattern: feature-modules
+  naming: kebab-case
+  entry-point: "src/app/app.component.ts"
+  packages:
+    features: "src/app/features/"
+    core: "src/app/core/"
+    types: "src/app/features/{feature}/types/"
+    services: "src/app/features/{feature}/services/"
+
+patterns:
+  interaction:
+    prefer: [wizard-for-multi-step, datagrid-for-data, side-panel-for-detail, signpost-for-help, alerts-for-feedback]
+    avoid: [nested-modals, wizard-for-simple-forms, custom-tables-over-datagrid]
+  information-density:
+    default: medium
+    rationale: "Clarity is designed for enterprise data-heavy UIs. Supports density attribute [clr-density='compact'] for data-heavy views. Default spacing is comfortable."
+  error-placement:
+    default: inline
+    rationale: "Form errors via clr-control-error inside form containers (inline below field). Async errors via clr-alert (inline or app-level banner). System errors via dedicated error page."
+  confirmation:
+    required-for: [invoke-destructive, bulk-operation]
+    style: dialog
+  content:
+    timestamps: relative
+    empty-states: placeholder

@@ -457,6 +457,7 @@ The adapter is the bridge between framework-agnostic surface vocabulary and fram
 - **go-cli** — Go + Cobra CLI (commands, prompts, tabwriter tables)
 - **react-antd** — React + Ant Design (Table, Modal, Form, Steps, etc.)
 - **angular-material** — Angular + Material (MatTable, MatDialog, MatStepper, M3 tokens)
+- **angular-clarity** — Angular + Clarity (ClrDatagrid, ClrWizard, ClrSidePanel, CDS tokens)
 
 ### Creating an Adapter
 
