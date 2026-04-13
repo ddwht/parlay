@@ -297,6 +297,10 @@ conventions:
     rule: "Standalone components where possible. Import Clarity modules (ClrDatagridModule, ClrModalModule) directly in component imports array. Use OnPush change detection strategy."
     applies-to: all components
 
+  icon-registration:
+    rule: "Every cds-icon shape used in any template must be imported from '@cds/core/icon' (e.g., import { plusIcon } from '@cds/core/icon') and registered via ClarityIcons.addIcons() in the app entry point (main.ts), before bootstrapApplication(). Unregistered icons render as '...' with no error. When generating or updating components, collect all cds-icon shapes across all templates and ensure main.ts registers the full set."
+    applies-to: all components using cds-icon
+
   styling:
     rule: "Use Clarity's built-in component classes and CSS custom properties. Reference --clr-* and --cds-* tokens. Never hardcode color/spacing values. Component-scoped SCSS for layout only."
     applies-to: all components
@@ -324,8 +328,8 @@ design-system:
     usage: "Use shadow tokens for elevation. Cards and modals apply shadows automatically."
   icons:
     source: framework
-    format: "cds-icon component with [shape] attribute. Register icons via ClarityIcons.addIcons() in app init. Collections: core, essential, commerce, media, social, technology, chart, text-edit, travel. Hundreds of icons available."
-    usage: "Use cds-icon with shape attribute. Register only needed icons to minimize bundle. Use [status] attribute for colored icons (info, success, warning, danger)."
+    format: "cds-icon component with [shape] attribute. Import individual icon objects (e.g., plusIcon, trashIcon) from '@cds/core/icon' and register via ClarityIcons.addIcons() in the app entry point (main.ts) before bootstrapping. Collections: core, essential, commerce, media, social, technology, chart, text-edit, travel."
+    usage: "Use cds-icon with shape attribute. Register only needed icons to minimize bundle. Use [status] attribute for colored icons (info, success, warning, danger). IMPORTANT: Icons will render as '...' if not registered — every cds-icon shape used in templates must have a corresponding ClarityIcons.addIcons() call in main.ts."
   motion:
     source: framework
     format: "Components handle their own animations (modal: fadeDown 0.2s ease-in-out, expandable: height animation). Low-motion theme available via theme.low-motion.scss for prefers-reduced-motion."
