@@ -56,21 +56,30 @@ This is an **optional** step between surface creation and build-feature. The pip
 7. **Extract visual details per mapped fragment** — For each mapped pair:
    - **widget**: Determine the exact framework widget variant from the Figma component structure (e.g., "Table with fixed header and bordered cells" not just "Table")
    - **layout**: Extract from auto-layout properties (direction, spacing, padding, alignment, item sizes)
-   - **tokens**: Cross-reference applied styles with the adapter's `design-system:` categories. For categories with `source: figma`, record the specific values.
+   - **tokens**: Cross-reference applied styles with the adapter's `design-system:` categories, respecting the `source` field for each category:
+     - `source: figma` — record the specific Figma token values as-is (these ARE the source of truth).
+     - `source: framework` — do NOT record raw Figma hex values or Figma token names. Instead, map each Figma visual property to the closest framework token or component class from the adapter's `format` and `usage` fields (e.g., map a red background to `--cds-alias-status-danger`, not `#ec221f`; map a primary-styled button to the framework's `btn btn-primary` class, not a custom `.btn-brand` class). If no close framework match exists, omit the value — the framework default will apply.
+     - `source: not-defined` — record the Figma values as-is (these fill a gap the framework doesn't cover).
    - **variants**: Extract from Figma component variants/properties (loading, error, empty, hover states)
    - **spacing**: Extract padding and gap values
    - **colors**: Extract fill and stroke color references
 
-8. **Detect shared values** — If multiple fragments use the same tokens, spacing, or colors, extract them into the `shared:` section to avoid repetition.
+8. **Confirm token mapping** — For `source: framework` categories, present the proposed Figma-to-framework token mapping table to the user for confirmation (same pattern as Step 6's component mapping). Group by category (colors, spacing, typography, etc.). For each mapping:
+   - Clear 1:1 match → show as the proposed mapping
+   - Ambiguous (multiple framework candidates) → offer lettered options (A/B/C)
+   - No match → propose omitting (adapter defaults apply)
+   Ask the user to confirm or adjust before proceeding.
 
-9. **Generate design-spec.yaml** — Write to `.parlay/build/{feature}/design-spec.yaml`:
+9. **Detect shared values** — If multiple fragments use the same tokens, spacing, or colors, extract them into the `shared:` section to avoid repetition.
+
+10. **Generate design-spec.yaml** — Write to `.parlay/build/{feature}/design-spec.yaml`:
    - If the file already exists, read it first and preserve fragments that were manually edited (compare against a stored hash or check for a `# manual` comment marker)
    - Set `feature:`, `figma-source:`, `generated:` fields
    - Write `shared:` section if common values were detected
    - Write per-fragment sections for each mapped fragment
    - Skip unmapped fragments — they use adapter defaults
 
-10. **Report** — Tell the user:
+11. **Report** — Tell the user:
     - How many fragments were mapped from Figma
     - How many fragments were skipped (no Figma match)
     - Which adapter design-system categories now have Figma-sourced values

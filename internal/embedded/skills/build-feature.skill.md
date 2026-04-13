@@ -43,7 +43,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - On the first build (`first_build: true`) or when the buildfile doesn't exist yet (`has_buildfile: false`), generate the entire buildfile from scratch.
    - On subsequent builds, the JSON output reports:
      - `components.stable[]` — components whose source dependencies (fragment, referenced intents, matching dialogs) all have unchanged hashes. **Preserve these entries verbatim** in the new buildfile — do not regenerate them.
-     - `components.dirty[]` — components whose dependency chain has changes. Regenerate only these components, using `changed_sources` as a hint about what to focus on.
+     - `components.dirty[]` — components whose dependency chain has changes. Regenerate only these components, using `changed_sources` as a hint about what to focus on. Values prefixed with `design-spec:` indicate the component's design-spec entry changed (new Figma extraction, updated layout, changed tokens) — regenerate using the updated design-spec values, especially layout and widget refinements.
      - `components.removed[]` — components whose source fragment no longer exists. Drop these entries from the new buildfile.
      - `surface_fragments.new[]` — fragments in the current surface that aren't in any existing component. Decide whether to introduce new components for them.
    - Tell the user what's about to be regenerated before doing it (e.g., "Regenerating 2 components: upgrade-prompt, preflight-check. Keeping 5 stable components.").
@@ -63,7 +63,10 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - **When design-spec.yaml exists** — for each fragment that has a corresponding entry in `design-spec.yaml.fragments`:
      - Use the `widget` field to refine the component's `widget:` value (more specific than the adapter's generic mapping)
      - Use `layout` values to add layout-specific properties to elements (column widths, flex ratios, alignment)
-     - Use `tokens` to add token references to elements — especially for adapter design-system categories with `source: figma`
+     - Use `tokens` to add token references to elements. The design-spec has already mapped values per the adapter's `design-system` source rules:
+       - `source: figma` — use the design-spec values directly (authoritative Figma tokens).
+       - `source: framework` — the design-spec values are already framework token references (mapped during extraction). Use them as-is. If a value does not look like a recognized framework token, discard it and fall back to the adapter's default guidance. Never write raw hex values, Figma token names, or custom CSS classes for framework-sourced categories.
+       - `source: not-defined` — use the design-spec values as supplementary guidance.
      - Use `variants` to add state-specific elements (loading skeleton, error result, empty illustration) with appropriate `visible-when` conditions
      - Use `spacing` and `colors` to add style values to elements
      - Apply `shared` values from the design-spec to all fragments, unless a per-fragment value overrides

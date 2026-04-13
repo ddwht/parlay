@@ -76,9 +76,11 @@ Each key under `fragments:` must match a fragment name from the feature's `surfa
 
 Token category names in the `tokens:` field should reference categories declared in the adapter's `design-system:` section. This is the link between the design-spec and the adapter:
 
-- Adapter declares `colors: { source: figma, format: "..." }` → design-spec provides the actual color values per fragment
-- Adapter declares `spacing: { source: framework, format: "..." }` → design-spec spacing values are hints that complement framework tokens
-- Adapter declares `motion: { source: not-defined }` → design-spec can provide motion values that the framework doesn't cover
+- Adapter declares `colors: { source: figma }` → design-spec provides the actual Figma color values per fragment. These are authoritative — build-feature uses them directly.
+- Adapter declares `spacing: { source: framework }` → design-spec values MUST be framework token references, not raw Figma values. The reference-design-spec skill maps Figma visual properties to the closest framework token during extraction. Build-feature uses these mapped token references. If a value cannot be mapped to a framework token, it is omitted from the design-spec (the framework default applies).
+- Adapter declares `motion: { source: not-defined }` → design-spec can provide motion values that the framework doesn't cover. Values are recorded as-is from Figma.
+
+**Contract**: For `source: framework` categories, the design-spec never contains raw hex values, Figma token names, or custom class names. It only contains framework token references that match the adapter's `format` field. This invariant is maintained by the reference-design-spec skill during extraction — the user confirms the mapping before the design-spec is written.
 
 When a design-system category has `source: figma` but the design-spec has no corresponding value for a fragment, the agent treats it as `not-defined` for that fragment and uses sensible defaults.
 

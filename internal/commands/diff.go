@@ -62,6 +62,7 @@ type diffOutput struct {
 	Intents      sourceLevelDiff   `json:"intents"`
 	Dialogs      sourceLevelDiff   `json:"dialogs"`
 	Fragments    sourceLevelDiff   `json:"surface_fragments"`
+	DesignSpec   sourceLevelDiff   `json:"design_spec"`
 	Components   componentDiff     `json:"components"`
 	Sections     map[string]string `json:"sections,omitempty"`
 }
@@ -122,6 +123,18 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	output.Dialogs = diffStringMap(stored.Dialogs, currentDialogHashes)
 	output.Fragments = diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
+	// Design-spec diff (optional — missing file yields empty maps).
+	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(designSpecPath)
+	if currentDSFragments == nil {
+		currentDSFragments = make(map[string]string)
+	}
+	storedDSFragments := stored.DesignSpecFragments
+	if storedDSFragments == nil {
+		storedDSFragments = make(map[string]string)
+	}
+	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
+
 	// Component-level impact analysis is only meaningful when there's a
 	// committed baseline AND a buildfile to walk. On first_build (no
 	// baseline yet) we leave Components empty: there's nothing to compare
@@ -135,7 +148,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 			output.Components = computeComponentImpact(
 				buildfilePath, slug,
 				currentIntents, currentDialogs, fragmentBySlug,
-				output.Intents, output.Dialogs, output.Fragments,
+				output.Intents, output.Dialogs, output.Fragments, output.DesignSpec,
 			)
 
 			// Section-level diff for cross-cutting files (models → store.go,
@@ -190,7 +203,7 @@ func computeComponentImpact(
 	currentIntents []parser.Intent,
 	currentDialogs []parser.Dialog,
 	fragmentBySlug map[string]*parser.Fragment,
-	intentsDiff, dialogsDiff, fragmentsDiff sourceLevelDiff,
+	intentsDiff, dialogsDiff, fragmentsDiff, designSpecDiff sourceLevelDiff,
 ) componentDiff {
 	var result componentDiff
 
@@ -205,6 +218,8 @@ func computeComponentImpact(
 	changedDialogs := makeSet(dialogsDiff.Changed)
 	changedFragments := makeSet(fragmentsDiff.Changed)
 	removedFragments := makeSet(fragmentsDiff.Removed)
+	changedDesignSpec := makeSet(designSpecDiff.Changed)
+	newDesignSpec := makeSet(designSpecDiff.New)
 
 	intentBySlug := make(map[string]*parser.Intent, len(currentIntents))
 	for i := range currentIntents {
@@ -272,6 +287,12 @@ func computeComponentImpact(
 			}
 		}
 
+		// Check if the component's source fragment has a changed or new
+		// design-spec entry.
+		if changedDesignSpec[fragSlug] || newDesignSpec[fragSlug] {
+			changedSources = append(changedSources, "design-spec:"+fragSlug)
+		}
+
 		if len(changedSources) > 0 {
 			result.Dirty = append(result.Dirty, componentImpact{
 				Name:           compName,
@@ -306,6 +327,32 @@ func diffStringMap(stored, current map[string]string) sourceLevelDiff {
 	sort.Strings(d.New)
 	sort.Strings(d.Removed)
 	return d
+}
+
+// diffDesignSpec computes the design-spec diff. When the shared section
+// changes, ALL current fragment entries are reported as changed (since shared
+// values affect every fragment). Per-fragment changes are reported individually.
+func diffDesignSpec(storedFrags map[string]string, storedShared string, currentFrags map[string]string, currentShared string) sourceLevelDiff {
+	// If the shared section changed, all current fragments are dirty.
+	sharedChanged := currentShared != storedShared && (currentShared != "" || storedShared != "")
+
+	if sharedChanged {
+		var d sourceLevelDiff
+		for slug := range currentFrags {
+			d.Changed = append(d.Changed, slug)
+		}
+		for slug := range storedFrags {
+			if _, exists := currentFrags[slug]; !exists {
+				d.Removed = append(d.Removed, slug)
+			}
+		}
+		sort.Strings(d.Changed)
+		sort.Strings(d.Removed)
+		return d
+	}
+
+	// No shared change — compare per-fragment.
+	return diffStringMap(storedFrags, currentFrags)
 }
 
 func makeSet(items []string) map[string]bool {
@@ -401,6 +448,18 @@ func runProjectDiff(cmd *cobra.Command) error {
 		dialogsDiff := diffStringMap(stored.Dialogs, currentDialogHashes)
 		fragmentsDiff := diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
+		// Design-spec diff for this feature.
+		dsPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+		currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(dsPath)
+		if currentDSFragments == nil {
+			currentDSFragments = make(map[string]string)
+		}
+		storedDSFragments := stored.DesignSpecFragments
+		if storedDSFragments == nil {
+			storedDSFragments = make(map[string]string)
+		}
+		designSpecDiff := diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
+
 		buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
 		if fileExists(buildfilePath) {
 			view.HasBuildfile = true
@@ -408,7 +467,7 @@ func runProjectDiff(cmd *cobra.Command) error {
 				view.Components = computeComponentImpact(
 					buildfilePath, slug,
 					currentIntents, currentDialogs, fragmentBySlug,
-					intentsDiff, dialogsDiff, fragmentsDiff,
+					intentsDiff, dialogsDiff, fragmentsDiff, designSpecDiff,
 				)
 			}
 		}

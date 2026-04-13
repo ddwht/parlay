@@ -103,6 +103,18 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	output.Dialogs = diffStringMap(stored.Dialogs, currentDialogHashes)
 	output.Fragments = diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
+	// Design-spec diff.
+	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(designSpecPath)
+	if currentDSFragments == nil {
+		currentDSFragments = make(map[string]string)
+	}
+	storedDSFragments := stored.DesignSpecFragments
+	if storedDSFragments == nil {
+		storedDSFragments = make(map[string]string)
+	}
+	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
+
 	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
@@ -110,7 +122,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 			output.Components = computeComponentImpact(
 				buildfilePath, slug,
 				currentIntents, currentDialogs, fragmentBySlug,
-				output.Intents, output.Dialogs, output.Fragments,
+				output.Intents, output.Dialogs, output.Fragments, output.DesignSpec,
 			)
 			output.Sections = computeSectionDiff(buildfilePath, storedBaseline.BuildfileSections)
 		}
@@ -556,5 +568,388 @@ components:
 	out := runDiffForTest(t, "my-feature")
 	if len(out.Components.Removed) != 1 || out.Components.Removed[0] != "comp-a" {
 		t.Errorf("expected comp-a in Removed, got %+v", out.Components)
+	}
+}
+
+// writeDesignSpec writes a design-spec.yaml at the canonical build location.
+func writeDesignSpec(t *testing.T, slug, content string) {
+	t.Helper()
+	if err := os.MkdirAll(config.BuildPath(slug), 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiff_DesignSpecNew_DirtiesComponent(t *testing.T) {
+	setupTestDir(t)
+
+	intents := `## Intent A
+
+**Goal**: Goal A
+**Persona**: User
+`
+	surface := `## Fragment A
+
+**Shows**: Stuff
+**Source**: @my-feature/intent-a
+`
+	writeFeatureFiles(t, "my-feature", intents, "", surface)
+
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	b := Baseline{
+		GeneratedAt: "2026-04-07T00:00:00Z",
+		Intents:     map[string]IntentHash{},
+		Sources: &HashedSources{
+			Intents:          map[string]string{},
+			SurfaceFragments: map[string]string{},
+		},
+	}
+	for _, intent := range parsed {
+		b.Intents[intent.Slug] = hashIntent(intent)
+		b.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+	for _, frag := range parsedFragments {
+		b.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	}
+	writeBaseline(t, "my-feature", b)
+
+	buildfile := `feature: my-feature
+adapter: go-cli
+components:
+  comp-a:
+    source: "@my-feature/fragment-a"
+`
+	writeBuildfile(t, "my-feature", buildfile)
+
+	// Add a design-spec with an entry for fragment-a (first time — not in baseline)
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+fragments:
+  Fragment A:
+    widget: "Table with fixed header"
+    layout:
+      - "3 columns, equal width"
+`)
+
+	out := runDiffForTest(t, "my-feature")
+	if len(out.DesignSpec.New) != 1 || out.DesignSpec.New[0] != "fragment-a" {
+		t.Errorf("expected fragment-a in DesignSpec.New, got %+v", out.DesignSpec)
+	}
+	if len(out.Components.Dirty) != 1 || out.Components.Dirty[0].Name != "comp-a" {
+		t.Errorf("expected comp-a dirty, got %+v", out.Components)
+	}
+	found := false
+	for _, src := range out.Components.Dirty[0].ChangedSources {
+		if src == "design-spec:fragment-a" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected design-spec:fragment-a in changed_sources, got %v",
+			out.Components.Dirty[0].ChangedSources)
+	}
+}
+
+func TestDiff_DesignSpecChanged_DirtiesComponent(t *testing.T) {
+	setupTestDir(t)
+
+	intents := `## Intent A
+
+**Goal**: Goal A
+**Persona**: User
+`
+	surface := `## Fragment A
+
+**Shows**: Stuff
+**Source**: @my-feature/intent-a
+`
+	writeFeatureFiles(t, "my-feature", intents, "", surface)
+
+	// Write the initial design-spec
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+fragments:
+  Fragment A:
+    widget: "Table"
+    layout:
+      - "sidebar filter panel"
+`)
+
+	// Build a baseline that includes the design-spec hashes
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(config.BuildPath("my-feature"), "design-spec.yaml"))
+	b := Baseline{
+		GeneratedAt: "2026-04-07T00:00:00Z",
+		Intents:     map[string]IntentHash{},
+		Sources: &HashedSources{
+			Intents:             map[string]string{},
+			SurfaceFragments:    map[string]string{},
+			DesignSpecFragments: dsFrags,
+			DesignSpecShared:    dsShared,
+		},
+	}
+	for _, intent := range parsed {
+		b.Intents[intent.Slug] = hashIntent(intent)
+		b.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+	for _, frag := range parsedFragments {
+		b.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	}
+	writeBaseline(t, "my-feature", b)
+
+	buildfile := `feature: my-feature
+adapter: go-cli
+components:
+  comp-a:
+    source: "@my-feature/fragment-a"
+`
+	writeBuildfile(t, "my-feature", buildfile)
+
+	// Now change the design-spec (layout changed from sidebar to inline)
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+fragments:
+  Fragment A:
+    widget: "Table"
+    layout:
+      - "inline horizontal filter bar"
+`)
+
+	out := runDiffForTest(t, "my-feature")
+	if len(out.DesignSpec.Changed) != 1 || out.DesignSpec.Changed[0] != "fragment-a" {
+		t.Errorf("expected fragment-a in DesignSpec.Changed, got %+v", out.DesignSpec)
+	}
+	if len(out.Components.Dirty) != 1 || out.Components.Dirty[0].Name != "comp-a" {
+		t.Errorf("expected comp-a dirty, got %+v", out.Components)
+	}
+}
+
+func TestDiff_DesignSpecSharedChanged_DirtiesAll(t *testing.T) {
+	setupTestDir(t)
+
+	intents := `## Intent A
+
+**Goal**: Goal A
+**Persona**: User
+
+---
+
+## Intent B
+
+**Goal**: Goal B
+**Persona**: User
+`
+	surface := `## Fragment A
+
+**Shows**: Stuff for A
+**Source**: @my-feature/intent-a
+
+---
+
+## Fragment B
+
+**Shows**: Stuff for B
+**Source**: @my-feature/intent-b
+`
+	writeFeatureFiles(t, "my-feature", intents, "", surface)
+
+	// Write design-spec with shared section and two fragments
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+shared:
+  tokens:
+    colors: "--cds-alias-status-info"
+fragments:
+  Fragment A:
+    widget: "Table"
+  Fragment B:
+    widget: "Form"
+`)
+
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(config.BuildPath("my-feature"), "design-spec.yaml"))
+	b := Baseline{
+		GeneratedAt: "2026-04-07T00:00:00Z",
+		Intents:     map[string]IntentHash{},
+		Sources: &HashedSources{
+			Intents:             map[string]string{},
+			SurfaceFragments:    map[string]string{},
+			DesignSpecFragments: dsFrags,
+			DesignSpecShared:    dsShared,
+		},
+	}
+	for _, intent := range parsed {
+		b.Intents[intent.Slug] = hashIntent(intent)
+		b.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+	for _, frag := range parsedFragments {
+		b.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	}
+	writeBaseline(t, "my-feature", b)
+
+	buildfile := `feature: my-feature
+adapter: go-cli
+components:
+  comp-a:
+    source: "@my-feature/fragment-a"
+  comp-b:
+    source: "@my-feature/fragment-b"
+`
+	writeBuildfile(t, "my-feature", buildfile)
+
+	// Change only the shared section
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+shared:
+  tokens:
+    colors: "--cds-alias-status-danger"
+fragments:
+  Fragment A:
+    widget: "Table"
+  Fragment B:
+    widget: "Form"
+`)
+
+	out := runDiffForTest(t, "my-feature")
+	// Both fragments should be reported as changed due to shared change
+	if len(out.DesignSpec.Changed) != 2 {
+		t.Errorf("expected 2 changed design-spec entries, got %+v", out.DesignSpec)
+	}
+	if len(out.Components.Dirty) != 2 {
+		t.Errorf("expected 2 dirty components, got %+v", out.Components)
+	}
+}
+
+func TestDiff_NoDesignSpec_AllStable(t *testing.T) {
+	setupTestDir(t)
+
+	intents := `## Intent A
+
+**Goal**: Goal A
+**Persona**: User
+`
+	surface := `## Fragment A
+
+**Shows**: Stuff
+**Source**: @my-feature/intent-a
+`
+	writeFeatureFiles(t, "my-feature", intents, "", surface)
+
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	b := Baseline{
+		GeneratedAt: "2026-04-07T00:00:00Z",
+		Intents:     map[string]IntentHash{},
+		Sources: &HashedSources{
+			Intents:          map[string]string{},
+			SurfaceFragments: map[string]string{},
+		},
+	}
+	for _, intent := range parsed {
+		b.Intents[intent.Slug] = hashIntent(intent)
+		b.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+	for _, frag := range parsedFragments {
+		b.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	}
+	writeBaseline(t, "my-feature", b)
+
+	buildfile := `feature: my-feature
+adapter: go-cli
+components:
+  comp-a:
+    source: "@my-feature/fragment-a"
+`
+	writeBuildfile(t, "my-feature", buildfile)
+
+	// No design-spec file, no design-spec in baseline → stable
+	out := runDiffForTest(t, "my-feature")
+	if len(out.DesignSpec.Changed) != 0 || len(out.DesignSpec.New) != 0 || len(out.DesignSpec.Removed) != 0 {
+		t.Errorf("expected no design-spec changes, got %+v", out.DesignSpec)
+	}
+	if len(out.Components.Stable) != 1 || out.Components.Stable[0] != "comp-a" {
+		t.Errorf("expected comp-a stable, got %+v", out.Components)
+	}
+}
+
+func TestDiff_DesignSpecUnrelatedFragment_StableComponent(t *testing.T) {
+	setupTestDir(t)
+
+	intents := `## Intent A
+
+**Goal**: Goal A
+**Persona**: User
+
+---
+
+## Intent B
+
+**Goal**: Goal B
+**Persona**: User
+`
+	surface := `## Fragment A
+
+**Shows**: Stuff for A
+**Source**: @my-feature/intent-a
+
+---
+
+## Fragment B
+
+**Shows**: Stuff for B
+**Source**: @my-feature/intent-b
+`
+	writeFeatureFiles(t, "my-feature", intents, "", surface)
+
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	b := Baseline{
+		GeneratedAt: "2026-04-07T00:00:00Z",
+		Intents:     map[string]IntentHash{},
+		Sources: &HashedSources{
+			Intents:          map[string]string{},
+			SurfaceFragments: map[string]string{},
+		},
+	}
+	for _, intent := range parsed {
+		b.Intents[intent.Slug] = hashIntent(intent)
+		b.Sources.Intents[intent.Slug] = hashIntentContent(intent)
+	}
+	for _, frag := range parsedFragments {
+		b.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	}
+	writeBaseline(t, "my-feature", b)
+
+	buildfile := `feature: my-feature
+adapter: go-cli
+components:
+  comp-a:
+    source: "@my-feature/fragment-a"
+  comp-b:
+    source: "@my-feature/fragment-b"
+`
+	writeBuildfile(t, "my-feature", buildfile)
+
+	// Add design-spec only for fragment-a, not fragment-b
+	writeDesignSpec(t, "my-feature", `feature: my-feature
+figma-source: https://figma.com/file/abc
+fragments:
+  Fragment A:
+    widget: "Table with fixed header"
+`)
+
+	out := runDiffForTest(t, "my-feature")
+	// comp-a should be dirty (new design-spec entry), comp-b should be stable
+	if len(out.Components.Dirty) != 1 || out.Components.Dirty[0].Name != "comp-a" {
+		t.Errorf("expected only comp-a dirty, got %+v", out.Components.Dirty)
+	}
+	if len(out.Components.Stable) != 1 || out.Components.Stable[0] != "comp-b" {
+		t.Errorf("expected comp-b stable, got %+v", out.Components.Stable)
 	}
 }

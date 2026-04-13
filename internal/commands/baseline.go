@@ -52,9 +52,11 @@ type IntentHash struct {
 // Maps are slug → hex-encoded sha256 prefix (16 chars). Surface fragments
 // are keyed by Slugify(fragment.Name).
 type HashedSources struct {
-	Intents          map[string]string `yaml:"intents,omitempty"`
-	Dialogs          map[string]string `yaml:"dialogs,omitempty"`
-	SurfaceFragments map[string]string `yaml:"surface-fragments,omitempty"`
+	Intents             map[string]string `yaml:"intents,omitempty"`
+	Dialogs             map[string]string `yaml:"dialogs,omitempty"`
+	SurfaceFragments    map[string]string `yaml:"surface-fragments,omitempty"`
+	DesignSpecFragments map[string]string `yaml:"design-spec-fragments,omitempty"`
+	DesignSpecShared    string            `yaml:"design-spec-shared,omitempty"`
 }
 
 type driftItem struct {
@@ -108,6 +110,15 @@ func buildBaseline(slug string) (*Baseline, error) {
 		baseline.Sources.SurfaceFragments = make(map[string]string)
 		for _, frag := range fragments {
 			baseline.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+		}
+	}
+
+	// Hash design-spec fragments (optional — missing file is not an error).
+	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	if dsFragments, dsShared, err := hashDesignSpecFragments(designSpecPath); err == nil {
+		if len(dsFragments) > 0 || dsShared != "" {
+			baseline.Sources.DesignSpecFragments = dsFragments
+			baseline.Sources.DesignSpecShared = dsShared
 		}
 	}
 
@@ -300,4 +311,47 @@ func hashFragmentContent(frag parser.Fragment) string {
 	return sha256Hex(fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%v",
 		frag.Name, frag.Shows, frag.Actions, frag.Source,
 		frag.Page, frag.Region, frag.Order, frag.Notes))
+}
+
+// hashDesignSpecFragments parses a design-spec.yaml and returns per-fragment
+// content hashes plus a hash of the shared section. Fragment keys are
+// slugified for consistency with surface fragment slugs. Returns nil maps
+// if the file doesn't exist.
+func hashDesignSpecFragments(designSpecPath string) (fragments map[string]string, sharedHash string, err error) {
+	data, err := os.ReadFile(designSpecPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, "", err
+	}
+
+	fragments = make(map[string]string)
+
+	// Hash the shared section (affects all fragments).
+	if shared, ok := raw["shared"]; ok {
+		sharedBytes, err := yaml.Marshal(shared)
+		if err == nil {
+			sharedHash = sha256Hex(string(sharedBytes))
+		}
+	}
+
+	// Hash each fragment entry.
+	if fragsRaw, ok := raw["fragments"]; ok {
+		if fragsMap, ok := fragsRaw.(map[string]interface{}); ok {
+			for name, value := range fragsMap {
+				fragBytes, err := yaml.Marshal(value)
+				if err != nil {
+					continue
+				}
+				fragments[parser.Slugify(name)] = sha256Hex(string(fragBytes))
+			}
+		}
+	}
+
+	return fragments, sharedHash, nil
 }
