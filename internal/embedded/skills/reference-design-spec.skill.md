@@ -51,7 +51,11 @@ This is an **optional** step between surface creation and build-feature. The pip
    - Exact match: auto-map
    - Multiple candidates: ask user to pick
    - No match: skip (adapter defaults)
-   - Figma component with no fragment: skip (note in report)
+   - Figma component with no fragment: present each unmapped component to the user and ask:
+     - A: Create a new fragment in surface.md for this element (provide a suggested name, Shows, Actions, Page, Region, and Order based on the Figma context — e.g., a page header becomes a fragment in the `header` region)
+     - B: Skip — it's decorative or not part of this feature
+     - C: Assign to an existing fragment (list candidates)
+     If the user chooses A, write the new fragment to surface.md before proceeding to extraction.
 
 7. **Extract visual details per mapped fragment** — For each mapped pair:
    - **widget**: Determine the exact framework widget variant from the Figma component structure (e.g., "Table with fixed header and bordered cells" not just "Table")
