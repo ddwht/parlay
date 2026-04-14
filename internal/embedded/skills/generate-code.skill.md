@@ -41,6 +41,17 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
    - MERGE the `models:` sections: collect all entity definitions from all features. If the same entity appears in multiple features with different properties, take the UNION of properties. This produces the complete model layer.
    - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
+   - **External type resolution** (brownfield): for each entity in the merged model set, grep the source tree (under `file-conventions.source-root`) for existing type/interface/struct definitions matching the entity name (e.g., `interface User`, `type User struct`, `export type User`).
+     - If exactly **one match** is found: record it as an external type (entity name → import path). In step 14, generate an import statement for this entity instead of a type declaration.
+     - If **multiple matches** are found: present disambiguation to the user via AskUserQuestion:
+       ```
+       Found multiple existing definitions for "User":
+       A: src/types/user.ts (line 14) — interface User { id: string; name: string; }
+       B: src/models/auth.ts (line 42) — interface User { id: number; email: string; }
+       C: Generate a new type (ignore existing definitions)
+       ```
+     - If **no match** is found: proceed as before (generate the type declaration).
+     - Store the external type map (`{ entityName: importPath }`) for use in step 14.
 
 6. **Load and merge blueprint** — Read `.parlay/blueprint.yaml` if it exists. The blueprint provides app-level structural decisions that complement the per-feature buildfiles:
    - For each route in the merged route table (from step 5), join on `path` to the blueprint's `navigation.routes` to determine: which `shell` wraps it, which `guard` protects it, whether it's `lazy`-loaded. Routes not listed in the blueprint get the default shell (first shell in `shells:`) and no guard.
@@ -97,7 +108,7 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 13. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
 
 14. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
-    - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. Mark it with `parlay-section: models`.
+    - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. For each entity in the merged model set, check the external type map (from step 5): if the entity is external, emit an import statement pointing to the existing file instead of a type declaration; if the entity is not external, generate the type declaration as before. The resulting models file may contain a mix of imports and declarations. Mark it with `parlay-section: models`.
     - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from `buildfile.routes`. Mark it with `parlay-section: routes`.
     - If `sections.blueprint` is `"changed"` or `"new"`: regenerate the cross-cutting blueprint-derived files:
       - **Shell components**: One layout component per shell in `blueprint.shells`. Mark each with `parlay-section: shell-{name}`.
@@ -112,6 +123,51 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       // parlay-scope: project
       // parlay-section: models
       ```
+
+14.5. **Mount into existing files (brownfield)** — This step runs only when the adapter has a `mount-strategies:` section AND the project has existing source files that are not Parlay-generated (i.e., files without `parlay-component:` or `parlay-section:` markers).
+
+   For each route in the merged route table that references a page:
+
+   1. **Find the target file**: search the source tree for the file implementing the page component. Use the page name from the buildfile route. If the file has a `parlay-section:` marker, it is Parlay-owned — skip (step 14 already handles it). If the file is not found, skip (new page — step 14 creates it).
+
+   2. **Read the file**: read the full content of the target file.
+
+   3. **Match mount strategy**: scan each strategy in the adapter's `mount-strategies:` for a `detection` pattern that appears in the file content.
+      - **1 match**: proceed with this strategy automatically.
+      - **0 matches**: ask the user via AskUserQuestion:
+        ```
+        <file> uses widgets that don't match any mount strategy in the adapter.
+        How should the new <Component> be added?
+        A: Show me the file so I can describe the pattern
+        B: Skip — I'll integrate manually
+        C: Add as a new standalone route instead
+        ```
+      - **Multiple matches**: ask the user to choose:
+        ```
+        <file> has multiple integration points:
+        A: New <strategy-1-name> (found <detection-1> on line N)
+        B: New <strategy-2-name> (found <detection-2> on line M)
+        C: Skip — I'll integrate manually
+        ```
+
+   4. **Find existing instances**: search the file for existing instances of the chosen strategy's template pattern. These serve as style examples for indentation, prop naming, and code conventions.
+
+   5. **Generate mount diff**: using the template with placeholders filled from the buildfile component data, and existing instances as style guides, generate the insertion code.
+
+   6. **Present diff for review**: show the user a unified diff of the target file:
+      ```
+      Proposed change to <file>:
+
+      <unified diff showing the added lines>
+
+      A: Apply this change
+      B: Skip — I'll integrate manually
+      C: Edit the proposed change
+      ```
+
+   7. **Apply or skip**: on approval, write the modified file. On skip, continue to the next route. On edit, accept the user's modification and apply it.
+
+   Mount diffs are typically small (1-3 files, a few lines each). The files being modified are page components (adding tabs, panels, sections), route config files (adding route entries), and navigation menus (adding menu items).
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 

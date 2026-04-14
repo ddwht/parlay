@@ -477,3 +477,94 @@
 - Should the sync also detect dialogs that cover functionality not captured in any intent (orphan dialogs)?
 - Should it suggest splitting a dialog that covers too many intents?
 - Can the AI pre-fill dialog templates with a best guess based on the intent's Goal and Action fields?
+
+---
+
+## Onboard Existing Codebase
+
+**Goal**: Analyze an existing codebase and draft a framework adapter with mount-strategies, file conventions, and coding conventions populated from the project's actual structure and patterns.
+**Persona**: Tech Lead
+**Priority**: P1
+**Context**: A team has an existing project and wants to use Parlay to add new features to it. They need an adapter that reflects their codebase conventions and declares how new components can be integrated into existing pages.
+**Action**: AI agent reads representative source files, detects the framework and UI library, identifies widget patterns (Tabs, Routes, Menus), extracts coding conventions, and drafts a complete adapter YAML for review.
+**Objects**: adapter, mount-strategy, codebase, framework-detection
+
+**Constraints**:
+- Must produce a reviewable draft adapter, not auto-register it — the team reviews and adjusts before registering
+- Must not create persistent project-level indexes or appmaps — all codebase knowledge is captured in the adapter (reusable, framework-level) or read from live source code at generation time
+- Must work for any supported framework (React, Angular, Go CLI, etc.)
+- Must detect common widget patterns (Tabs, Routes, Menus, Collapse, etc.) and generate mount-strategy entries with detection patterns and code templates
+- The adapter remains framework-level and reusable — project-specific file paths do not belong in it
+- Mount-strategy templates use `{{placeholder}}` syntax for values that vary per integration
+
+**Verify**:
+- Adapter YAML is generated with shows, actions, flows, compositions, conventions, file-conventions, and mount-strategies sections
+- Detected mount-strategy patterns match widgets that actually exist in the codebase
+- The adapter is framework-level — another project using the same framework could use it with convention adjustments
+- Team can review and edit the draft before registering via `/parlay-register-adapter`
+
+**Questions**:
+- Should the onboard skill also draft a blueprint from the existing route config and layout components?
+- How should conventions be handled when the codebase is inconsistent (e.g., some modules use Redux, others use Context)?
+
+---
+
+## Mount Generated Feature into Existing Pages
+
+**Goal**: When generating code for a new feature that targets an existing page, produce a reviewable diff showing exactly how the new component integrates into the existing file, rather than regenerating the entire file.
+**Persona**: UX Designer
+**Priority**: P0
+**Context**: Brownfield project — the Settings page already exists with tabs, and a new feature adds a tab to it. The agent must not overwrite the existing page but instead propose a small change.
+**Action**: During generate-code, the agent reads the target page file, matches a mount strategy from the adapter, finds existing instances of the pattern as style examples, generates a new instance, and presents a diff for user confirmation.
+**Objects**: mount-strategy, mount-point, diff, existing-file, component
+
+**Constraints**:
+- Must never silently modify existing files — all changes to non-Parlay files are presented as reviewable diffs
+- Must read the target file first, then match a mount strategy from the adapter's `mount-strategies:` section by looking for the `detection` pattern in the file content — the code determines the strategy, not the other way around
+- Must use the existing disambiguation pattern (A/B/C lettered options) when zero or multiple mount strategies match
+- When zero strategies match: ask the user how to integrate (show file / skip / add as new route)
+- When multiple strategies match: present each with the line number where the detection pattern was found, let user choose
+- When exactly one strategy matches: proceed automatically — find existing instances of the template pattern in the file, use them as style examples, generate a new instance
+- Generated component files are still created automatically with markers (no diff review needed for new files)
+- Files with `parlay-section:` markers are Parlay-owned and handled by the existing step 14 — mount diffs apply only to user-owned files
+- Mount diffs are typically small: 1-3 files, a few lines each (an import + a component reference)
+
+**Verify**:
+- Agent produces a diff for each existing file that needs modification
+- Diff is small and reviewable (a few lines, not a full file rewrite)
+- User can approve, skip, or edit each proposed diff
+- New component files are created automatically without requiring diff review
+- Greenfield behavior is unchanged when no existing files are found or adapter has no mount-strategies
+- Existing file content outside the mount point is never modified
+
+**Questions**:
+- Should mount diffs be batched (show all diffs at once) or presented one at a time?
+- What happens when a feature is regenerated — should the mount diff be re-applied or is it a one-time operation?
+
+---
+
+## Resolve External Types During Code Generation
+
+**Goal**: When generating code that declares a model type, detect if that type already exists in the source tree and import it instead of re-declaring it, avoiding namespace collisions in brownfield projects.
+**Persona**: Developer
+**Priority**: P1
+**Context**: Brownfield project has existing TypeScript interfaces or Go structs (e.g., `User`, `Settings`) that new Parlay features reference in their intents' Objects fields. Without detection, generate-code would create a duplicate type declaration that conflicts with the existing one.
+**Action**: At generate-code time, before writing the models/types cross-cutting file, grep the source tree for existing type definitions matching each entity name. If found, emit an import statement instead of a type declaration.
+**Objects**: model, type, import, external-type
+
+**Constraints**:
+- Must not require a persistent project-level type index or domain model annotation — detection happens by grepping source code at generation time
+- Must search the source tree (under adapter's `file-conventions.source-root`) for type/interface/struct definitions matching the entity name
+- Must handle framework-specific type declaration patterns: `interface X` (TypeScript), `type X struct` (Go), `class X` (Python/Java)
+- When exactly one match is found: record as external, generate import instead of declaration
+- When multiple matches are found: present disambiguation with file paths and snippets, let user choose or opt to generate new
+- When no match is found: generate the type declaration as before
+- Must not modify existing type files — only the generated models file changes (mix of imports for external types and declarations for new types)
+- The buildfile schema does not change — it continues to reference entity names without knowing whether they're external or Parlay-owned
+
+**Verify**:
+- When an existing type is found in the source tree, the generated code imports it from its actual location
+- When no existing type is found, a new type declaration is generated (current behavior preserved)
+- Multiple matches trigger disambiguation with file paths and type snippets
+- Existing type files are never modified by Parlay
+- The buildfile contains no external/import annotations — the resolution is fully at generate-code time

@@ -71,7 +71,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
      - Use `spacing` and `colors` to add style values to elements
      - Apply `shared` values from the design-spec to all fragments, unless a per-fragment value overrides
    - When design-spec.yaml does not exist: proceed exactly as before — adapter defaults apply, agent uses its judgment
-   - Define `routes:` mapping commands to components
+   - Define `routes:` mapping commands to components. The buildfile does not need to know whether the project is greenfield or brownfield — mount resolution happens entirely at generate-code time based on whether target page files already exist in the source tree.
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
 
 9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):

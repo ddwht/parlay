@@ -257,3 +257,12 @@ patterns:
   content:
     timestamps: relative
     empty-states: message
+
+# --- Section 7: Mount strategies ---
+
+mount-strategies:
+  cobra-subcommand:
+    detection: "AddCommand("
+    template: |
+      rootCmd.AddCommand({{varName}}Cmd)
+    description: "Register a new cobra subcommand in the root command"

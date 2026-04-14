@@ -361,3 +361,27 @@ patterns:
   content:
     timestamps: relative
     empty-states: placeholder
+
+# --- Section 7: Mount strategies ---
+
+mount-strategies:
+  tabbed-page:
+    detection: "mat-tab-group"
+    template: |
+      <mat-tab label="{{label}}">
+        <{{component-selector}} />
+      </mat-tab>
+    description: "Add a new tab to a Material tab group"
+  route-entry:
+    detection: "path:"
+    template: |
+      { path: '{{path}}', component: {{Component}} }
+    description: "Add a new route entry to an Angular routing module"
+  sidenav:
+    detection: "mat-nav-list"
+    template: |
+      <a mat-list-item routerLink="{{path}}" routerLinkActive="active">
+        <mat-icon>{{icon}}</mat-icon>
+        {{label}}
+      </a>
+    description: "Add a new item to a Material sidenav navigation list"

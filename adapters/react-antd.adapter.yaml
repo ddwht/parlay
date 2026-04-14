@@ -366,3 +366,33 @@ patterns:
   content:
     timestamps: relative
     empty-states: placeholder
+
+# --- Section 7: Mount strategies ---
+
+mount-strategies:
+  tabbed-page:
+    detection: "<Tabs"
+    template: |
+      <Tabs.TabPane key="{{key}}" tab="{{label}}">
+        <{{Component}} />
+      </Tabs.TabPane>
+    description: "Add a new tab to a page using Ant Design Tabs"
+  route-entry:
+    detection: "<Route"
+    template: |
+      <Route path="{{path}}" element={<{{Component}} />} />
+    description: "Add a new route to a React Router route list"
+  sidebar-menu:
+    detection: "<Menu"
+    template: |
+      <Menu.Item key="{{key}}" icon={<{{Icon}} />}>
+        <Link to="{{path}}">{{label}}</Link>
+      </Menu.Item>
+    description: "Add a new item to an Ant Design sidebar Menu"
+  collapse-panel:
+    detection: "<Collapse"
+    template: |
+      <Collapse.Panel key="{{key}}" header="{{header}}">
+        <{{Component}} />
+      </Collapse.Panel>
+    description: "Add a new collapsible panel to an Ant Design Collapse"

@@ -28,6 +28,7 @@ type adapterFile struct {
 	Actions         map[string]interface{} `yaml:"actions"`
 	Flows           map[string]interface{} `yaml:"flows"`
 	FileConventions map[string]interface{} `yaml:"file-conventions"`
+	MountStrategies map[string]interface{} `yaml:"mount-strategies,omitempty"`
 }
 
 func runRegisterAdapter(cmd *cobra.Command, args []string) error {
@@ -55,6 +56,11 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	// Element: vocab-count (data-value → fmt.Printf)
 	fmt.Printf("  Shows: %d  Actions: %d  Flows: %d\n",
 		len(adapter.Shows), len(adapter.Actions), len(adapter.Flows))
+
+	// Element: mount-strategies count (data-value → fmt.Printf)
+	if len(adapter.MountStrategies) > 0 {
+		fmt.Printf("  Mount strategies: %d\n", len(adapter.MountStrategies))
+	}
 
 	// Element: conventions (text-output → fmt.Println)
 	if sr, ok := adapter.FileConventions["source-root"]; ok {

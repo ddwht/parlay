@@ -86,6 +86,7 @@ func skillTitle(name string) string {
 		"view-page":            "Assemble and display a page view",
 		"lock-page":            "Lock a page layout into a manifest",
 		"register-adapter":     "Register a framework adapter",
+		"onboard":              "Onboard existing codebase and draft adapter",
 		"validate":             "Validate a spec file against its schema",
 	}
 	if t, ok := titles[name]; ok {

@@ -92,6 +92,15 @@ patterns:
   content:
     timestamps: <relative | absolute | both>
     empty-states: <message | hidden | placeholder>
+
+# --- Section 7: Mount strategies (team-customizable) ---
+
+mount-strategies:
+  <strategy-name>:
+    detection: <widget/pattern to grep for in source code>
+    template: |
+      <code template with {{placeholders}}>
+    description: <when this strategy applies>
 ```
 
 ## Section 1: Framework vocabulary
@@ -228,6 +237,48 @@ When `source: framework`, the agent uses the framework's token system and never 
 
 Teams can add custom categories beyond the standard set (e.g., `z-index`, `breakpoints`, `opacity`).
 
+## Section 7: Mount strategies
+
+Mount strategies describe HOW to integrate a new component into an existing file. They are used in brownfield projects where pages, routes, and navigation already exist in the source tree.
+
+Each strategy has three fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `detection` | Yes | A string pattern the agent greps for in existing source files to identify this integration point |
+| `template` | Yes | A code template with `{{placeholder}}` markers showing the shape of code to insert |
+| `description` | Yes | When this strategy applies — helps the agent and the onboard skill decide which strategy to use |
+
+### How mount strategies are used
+
+Mount strategies are consumed by `generate-code` (step 14.5) when a surface fragment targets a Page that already exists in the source tree as a non-Parlay file (no `parlay-section:` marker). The agent:
+
+1. Reads the surface fragment's `Page:` and `Region:` fields from the buildfile route
+2. Finds the file implementing that page (by searching the source tree for the component name)
+3. Reads the file content
+4. Scans the adapter's `mount-strategies:` for strategies whose `detection` pattern appears in the file
+5. Applies disambiguation:
+   - **1 match**: proceeds automatically
+   - **0 matches**: asks the user via AskUserQuestion ("file doesn't match any mount strategy — how should the component be added?")
+   - **Multiple matches**: asks the user to choose which integration point, showing each match with its line number
+6. Finds existing instances of the matched template pattern in the file — these serve as style examples for indentation, prop naming, and code conventions
+7. Generates a new instance following the template with placeholders filled from the buildfile component data
+8. Produces a reviewable diff for the user (apply / skip / edit)
+
+Mount strategies are **optional**. If no `mount-strategies:` section exists, `generate-code` falls back to generating standalone files and the entry point as before (greenfield behavior). This ensures full backward compatibility.
+
+### Relationship to compositions
+
+Mount strategies and compositions serve different purposes:
+- **Compositions** describe HOW widgets wire together **within** a component (state + events)
+- **Mount strategies** describe WHERE a new component slots **into** an existing file (insertion point + template)
+
+A component may use both: a composition for its internal wiring, and a mount strategy for its integration point in an existing page.
+
+### Template placeholders
+
+Templates use double-brace syntax: `{{key}}`, `{{label}}`, `{{Component}}`, `{{path}}`, etc. Placeholder names are freeform — the agent fills them from the buildfile component data (component name, route path, page name) and adapter conventions (naming, import style).
+
 ## Validation
 
 When an adapter file is loaded, the tool verifies:
@@ -240,6 +291,7 @@ When an adapter file is loaded, the tool verifies:
 - The `file-conventions` section is complete
 - `compositions:`, `conventions:`, and `design-system:` sections are optional but recommended
 - If `design-system:` is present, each category must have a `source:` field with value `framework`, `figma`, or `not-defined`
+- If `mount-strategies:` is present, each strategy must have `detection:`, `template:`, and `description:` fields. `detection:` must be a non-empty string. `template:` must contain at least one `{{placeholder}}`
 
 ## Relationship to buildfile
 
@@ -270,3 +322,4 @@ The buildfile stays small (it describes WHAT). The adapter carries the implement
 | Design system | Parlay (ships defaults for known frameworks) | Team (marks source per category) | Framework upgrade or Figma integration |
 | File conventions | Parlay (ships defaults) | Team (matches their project structure) | Project restructure |
 | Patterns | Parlay (ships defaults) | Team (matches their UX preferences) | Design system changes |
+| Mount strategies | Parlay (ships defaults for known frameworks) | Team (adapts to their codebase integration patterns) | Team discovers new integration patterns or changes page structure |

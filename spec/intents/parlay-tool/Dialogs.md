@@ -398,3 +398,89 @@ System: Which intents should I generate templates for?
 User: ==Selects specific intents==
 System (background): Generates dialog templates for selected intents only.
 System: Added ==number== templates to dialogs.md. Ready for your review.
+
+---
+
+### Onboard Existing Codebase
+
+**Trigger**: /parlay-onboard ==source-root==
+
+User: /parlay-onboard src/
+System (background): Reads package.json / go.mod / angular.json to detect framework.
+System (condition: framework detected): Detected framework: React + Ant Design (from package.json dependencies).
+System (condition: framework unclear): I couldn't determine your UI framework automatically.
+  A: React + Ant Design
+  B: Angular + Clarity
+  C: Angular + Material
+  D: Other (describe)
+User: A
+System (background): Loads bundled react-antd adapter as starting template.
+System (background): Scans directory structure for file conventions (naming, component-pattern, entry-point).
+System (background): Reads 5-10 representative components to extract coding conventions (state management, data fetching, event naming, error handling).
+System (background): Greps source tree for widget patterns (<Tabs, <Route, <Menu, <Collapse, AddCommand, etc.).
+System: I've analyzed your codebase. Here's the drafted adapter:
+System: **Framework**: React + Ant Design
+System: **File conventions**: source-root: src/, naming: PascalCase, component-pattern: feature-modules, entry-point: src/App.tsx
+System: **Conventions detected**:
+System: - State management: "React Context + useReducer (found in ==N== files)"
+System: - Data fetching: "Custom hooks with axios (found in ==N== files)"
+System: **Mount strategies detected**:
+System: - tabbed-page: Found <Tabs> in ==list of files==
+System: - route-entry: Found <Route> in src/App.tsx (==N== routes)
+System: - sidebar-menu: Found <Menu> in src/layout/Sidebar.tsx
+System: How would you like to proceed?
+  A: Register this adapter
+  B: Let me review and edit the YAML first
+  C: Re-scan with a different source root
+User: Selects A
+System (background): Writes adapter to .parlay/adapters/react-antd.adapter.yaml.
+System (background): Updates .parlay/config.yaml with prototype framework.
+System: [OK] Adapter registered. You can now add features with /parlay-add-feature and they'll generate code that fits your existing codebase.
+
+---
+
+### Mount Feature into Existing Page
+
+**Trigger**: During /parlay-generate-code when a route targets a page that already exists in the source tree as a non-Parlay file
+
+System (background): Processing route for page "Settings". Found existing file: src/pages/Settings.tsx (no parlay marker — user-owned).
+System (background): Reads src/pages/Settings.tsx. Scans adapter mount-strategies for detection patterns in file content.
+System (condition: one match): Found <Tabs> on line 24 — matches mount strategy "tabbed-page".
+System (background): Finds existing TabPane instances in the file as style examples.
+System (background): Generates new TabPane from template, matching existing indentation and prop style.
+System: Proposed change to src/pages/Settings.tsx:
+System: ==unified diff showing added import + added TabPane==
+  A: Apply this change
+  B: Skip — I'll integrate manually
+  C: Edit the proposed change
+User: A
+System (background): Applies the diff.
+System (condition: zero matches): src/pages/Settings.tsx uses widgets that don't match any mount strategy in the adapter. How should the new ==component== be added?
+  A: Show me the file so I can describe the pattern
+  B: Skip — I'll integrate manually
+  C: Add as a new standalone route instead
+User: Selects A
+System (background): Shows the file content. User describes the integration pattern.
+System (condition: multiple matches): src/pages/Settings.tsx has multiple integration points:
+  A: New TabPane (found <Tabs> on line 24)
+  B: New Collapse.Panel (found <Collapse> on line 48)
+  C: Skip — I'll integrate manually
+User: A
+System (background): Proceeds with tabbed-page strategy.
+
+---
+
+### External Type Disambiguation
+
+**Trigger**: During /parlay-generate-code step 5 (model merge) when grepping for an entity name yields matches in the source tree
+
+System (background): Merging models across all features. Checking source tree for existing type definitions.
+System (condition: one match): Found existing definition for "User" at src/types/user.ts. Will import instead of generating.
+System (condition: multiple matches): Found multiple existing definitions for "User":
+  A: src/types/user.ts (line 14) — interface User { id: string; name: string; email: string; }
+  B: src/models/auth.ts (line 42) — interface User { id: number; email: string; role: Role; }
+  C: Generate a new type (ignore existing definitions)
+User: A
+System (background): Records src/types/user.ts as the import source for User.
+System (background): Continues model merge. Generated models file will contain `import { User } from '../types/user'` instead of a User type declaration.
+System (condition: no match for entity): No existing definition found for "Plan" — will generate a new type declaration as usual.

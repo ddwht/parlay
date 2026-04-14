@@ -362,3 +362,24 @@ patterns:
   content:
     timestamps: relative
     empty-states: placeholder
+
+# --- Section 7: Mount strategies ---
+
+mount-strategies:
+  tabbed-page:
+    detection: "clr-tabs"
+    template: |
+      <clr-tab>
+        <button clrTabLink>{{label}}</button>
+        <clr-tab-content>
+          <{{component-selector}} />
+        </clr-tab-content>
+      </clr-tab>
+    description: "Add a new tab to a Clarity tabbed page"
+  vertical-nav:
+    detection: "clr-vertical-nav"
+    template: |
+      <a clrVerticalNavLink routerLink="{{path}}" routerLinkActive="active">
+        {{label}}
+      </a>
+    description: "Add a new item to a Clarity vertical navigation"

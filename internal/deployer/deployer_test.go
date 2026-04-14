@@ -137,6 +137,13 @@ func TestGenericDeployer_Layout(t *testing.T) {
 	}
 }
 
+func TestSkillTitle_OnboardSkill(t *testing.T) {
+	title := skillTitle("onboard")
+	if title != "Onboard existing codebase and draft adapter" {
+		t.Errorf("skillTitle(onboard) = %q, want %q", title, "Onboard existing codebase and draft adapter")
+	}
+}
+
 func TestRegistry(t *testing.T) {
 	tests := []struct {
 		name     string
