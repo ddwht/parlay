@@ -8,40 +8,41 @@ import (
 	"github.com/ddwht/parlay/internal/embedded"
 )
 
-// CursorDeployer deploys skills as .cursor/rules/parlay-*.mdc for Cursor.
+// CursorDeployer deploys skills as .cursor/skills/parlay-*/SKILL.md
+// and a single always-apply rule in .cursor/rules/parlay.mdc.
 type CursorDeployer struct{}
 
 func (d *CursorDeployer) Name() string { return "Cursor" }
 
 func (d *CursorDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
-	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
-	if err := os.MkdirAll(rulesDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .cursor/rules/: %w", err)
-	}
-
-	// Deploy each skill as an .mdc file with frontmatter
+	// Deploy each skill as .cursor/skills/parlay-<name>/SKILL.md
 	for _, skill := range skills {
-		frontmatter := fmt.Sprintf(`---
-description: "Parlay skill: %s"
-alwaysApply: false
+		skillDir := filepath.Join(projectRoot, ".cursor", "skills", "parlay-"+skill.Name)
+		if err := os.MkdirAll(skillDir, 0755); err != nil {
+			return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
+		}
+
+		content := fmt.Sprintf(`---
+name: parlay-%s
+description: "Parlay: %s"
 ---
 
-`, skillTitle(skill.Name))
-		content := frontmatter + string(skill.Content)
-		path := filepath.Join(rulesDir, "parlay-"+skill.Name+".mdc")
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write rule %s: %w", path, err)
+%s`, skill.Name, skillTitle(skill.Name), string(skill.Content))
+
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write skill %s: %w", skillPath, err)
 		}
 	}
 
-	// Write a parlay-project.mdc with alwaysApply: true for project context
+	// Write a single always-apply rule for project context
 	return writeCursorProjectRule(projectRoot, skills)
 }
 
 func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) error {
 	var commands string
 	for _, skill := range skills {
-		commands += fmt.Sprintf("- parlay-%s — %s\n", skill.Name, skillTitle(skill.Name))
+		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skillTitle(skill.Name))
 	}
 
 	content := fmt.Sprintf(`---
@@ -52,14 +53,14 @@ alwaysApply: true
 # Parlay Project
 
 This project uses the Parlay intent-driven design toolkit.
-Skills are available as .cursor/rules/parlay-*.mdc files.
+All operations are available as /parlay-* slash commands.
 
-## Available Skills
+## Available Commands
 
 %s
 ## Schema Loading
 
-Load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
+Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
 
 ## Interactive Questions
 
@@ -75,7 +76,10 @@ Three-zone layout — strict ownership:
 `, commands)
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
-	return os.WriteFile(filepath.Join(rulesDir, "parlay-project.mdc"), []byte(content), 0644)
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .cursor/rules/: %w", err)
+	}
+	return os.WriteFile(filepath.Join(rulesDir, "parlay.mdc"), []byte(content), 0644)
 }
 
 func init() {
