@@ -1,11 +1,19 @@
+// parlay-extends: claude-md-section-preservation/claudemd-marker-preservation
+
 package deployer
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ddwht/parlay/internal/embedded"
+)
+
+const (
+	parlayMarkerBegin = "<!-- parlay:begin -->"
+	parlayMarkerEnd   = "<!-- parlay:end -->"
 )
 
 // ClaudeDeployer deploys skills as .claude/skills/parlay-*/SKILL.md for Claude Code.
@@ -44,7 +52,8 @@ func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
 		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skillTitle(skill.Name))
 	}
 
-	content := fmt.Sprintf(`# Parlay Project
+	parlaySection := fmt.Sprintf(`%s
+# Parlay Project
 
 This project uses the Parlay intent-driven design toolkit.
 All operations are available as /parlay-* slash commands.
@@ -67,27 +76,52 @@ Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
-`, commands)
+%s`, parlayMarkerBegin, commands, parlayMarkerEnd)
 
-	return os.WriteFile(filepath.Join(projectRoot, "CLAUDE.md"), []byte(content), 0644)
+	claudePath := filepath.Join(projectRoot, "CLAUDE.md")
+
+	existing, err := os.ReadFile(claudePath)
+	if err != nil {
+		// No existing file — write the parlay section with markers + trailing newline.
+		return os.WriteFile(claudePath, []byte(parlaySection+"\n"), 0644)
+	}
+
+	content := string(existing)
+	beginIdx := strings.Index(content, parlayMarkerBegin)
+	endIdx := strings.Index(content, parlayMarkerEnd)
+
+	if beginIdx >= 0 && endIdx >= 0 && endIdx > beginIdx {
+		// Markers found — replace between them, preserve outside.
+		above := content[:beginIdx]
+		below := content[endIdx+len(parlayMarkerEnd):]
+		return os.WriteFile(claudePath, []byte(above+parlaySection+below), 0644)
+	}
+
+	// No markers found — existing content is user-owned.
+	// Prepend parlay section with markers, append existing content below.
+	fmt.Fprintf(os.Stderr, "[WARN] CLAUDE.md has no parlay markers — preserving existing content below parlay section.\n")
+	merged := parlaySection + "\n\n" + content
+	return os.WriteFile(claudePath, []byte(merged), 0644)
 }
 
 func skillTitle(name string) string {
 	titles := map[string]string{
 		"add-feature":          "Create a new feature",
 		"scaffold-dialogs":     "Scaffold dialog templates from intents",
-		"create-surface":       "Generate surface from intents and dialogs",
+		"create-artifacts":     "Determine and create surface.md, infrastructure.md, or both",
+		"create-surface":       "Generate surface from intents and dialogs (deprecated — use create-artifacts)",
 		"build-feature":        "Generate buildfile and testcases",
 		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",
 		"extract-domain-model": "Extract domain model from all features",
 		"load-domain-model":    "Load and integrate external domain model",
+		"collect-questions":    "Collect open questions from intents",
+		"reference-design-spec": "Extract design spec from Figma",
 		"sync":                 "Check intent-dialog coverage",
 		"view-page":            "Assemble and display a page view",
 		"lock-page":            "Lock a page layout into a manifest",
 		"register-adapter":     "Register a framework adapter",
 		"onboard":              "Onboard existing codebase and draft adapter",
-		"validate":             "Validate a spec file against its schema",
 	}
 	if t, ok := titles[name]; ok {
 		return t
