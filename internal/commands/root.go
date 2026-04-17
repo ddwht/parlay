@@ -49,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(generateEnggspecCmdImpl)
 	rootCmd.AddCommand(extractDomainModelCmdImpl)
 	rootCmd.AddCommand(loadDomainModelCmdImpl)
+	rootCmd.AddCommand(createArtifactsCmdImpl)
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)
