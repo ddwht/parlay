@@ -1,3 +1,7 @@
+// parlay-feature: parlay-tool
+// parlay-component: check-readiness
+// parlay-extends: infrastructure-layer/CheckReadinessInfraSupport
+
 package commands
 
 import (
@@ -144,15 +148,24 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	// Build-feature requires everything create-surface requires
 	issues = append(issues, checkCreateSurfaceReadiness(featurePath)...)
 
-	// Surface must exist with fragments that have Source and Page/Region targets
+	// At least one of surface.md or infrastructure.md must exist.
 	surfacePath := filepath.Join(featurePath, "surface.md")
-	if !fileExists(surfacePath) {
+	infraPath := filepath.Join(featurePath, "infrastructure.md")
+	hasSurface := fileExists(surfacePath)
+	hasInfra := fileExists(infraPath)
+
+	if !hasSurface && !hasInfra {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
-			Code:     "no-surface",
-			Message:  "surface.md does not exist",
-			Fix:      "run /parlay-create-surface @{feature} to generate it",
+			Code:     "no-surface-no-infrastructure",
+			Message:  "neither surface.md nor infrastructure.md exists",
+			Fix:      "run /parlay-create-surface for user-facing features, or author infrastructure.md directly for behind-the-scenes features",
 		})
+		return issues
+	}
+
+	if !hasSurface {
+		// Pure infrastructure feature — skip surface validation, proceed.
 		return issues
 	}
 

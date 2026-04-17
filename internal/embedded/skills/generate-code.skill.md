@@ -209,6 +209,33 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
 
    Tier 1 diffs are typically small (1-3 files, a few lines each — adding tabs, panels, section, route entries, menu items). Tier 2 diffs are typically larger (a new function plus a dispatch line plus flag declarations) but still additive — the agent does not rewrite existing logic, it layers new logic alongside.
 
+14.7. **Process cross-cutting entries** — If any feature's buildfile has a `cross-cutting:` section, process each entry here — AFTER component generation (step 12–14) and brownfield mount (step 14.5), but BEFORE tests (step 15). This ensures infrastructure changes are in place when tests exercise the components that depend on them.
+
+   For each `cross-cutting:` entry in the merged buildfile:
+
+   1. **Resolve targets**: if the entry has `target-files:`, use the explicit paths. If it has `target-pattern:`, grep the source tree under `file-conventions.source-root` to find matching files. If zero files match, warn but don't error (the pattern may be ahead of the codebase). If the entry has both, resolve both and take the union.
+
+   2. **For each resolved target file**:
+      - If the file doesn't exist AND the entry has `introduces:`: create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review.
+      - If the file doesn't exist AND the entry only has `target-files:` (no introduces): error — the target is missing.
+      - If the file exists: apply Tier 2 intelligent merge — read the file, read the entry's `transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
+
+   3. **Present diff for review**: same A/B/C menu as brownfield mount:
+      ```
+      Cross-cutting change: <entry-id> (source: <source-ref>)
+      Target: <file-path>
+
+      <unified diff>
+
+      A: Apply this change
+      B: Skip — I'll integrate manually
+      C: Edit the proposed change
+      ```
+
+   4. **Apply or skip**: on approval, write the modified file. On skip, continue.
+
+   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
+
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
 16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.

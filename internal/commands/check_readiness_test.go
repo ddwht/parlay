@@ -87,7 +87,7 @@ func TestReadiness_BuildFeature_NoSurface(t *testing.T) {
 
 	hasError := false
 	for _, i := range issues {
-		if i.Code == "no-surface" {
+		if i.Code == "no-surface" || i.Code == "no-surface-no-infrastructure" {
 			hasError = true
 		}
 	}
