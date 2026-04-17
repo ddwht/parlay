@@ -487,23 +487,13 @@ func runProjectDiff(cmd *cobra.Command) error {
 	return nil
 }
 
-// discoverFeatures scans spec/intents/ for feature directories.
+// discoverFeatures scans spec/intents/ for feature directories,
+// including initiative-nested features via config.AllFeatures().
 func discoverFeatures() ([]string, error) {
-	intentsDir := filepath.Join(config.SpecDir, config.IntentsDir)
-	entries, err := os.ReadDir(intentsDir)
+	features, err := config.AllFeatures()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var features []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			features = append(features, entry.Name())
-		}
-	}
-	sort.Strings(features)
 	return features, nil
 }
 

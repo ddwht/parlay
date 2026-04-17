@@ -78,7 +78,38 @@ components:
 
     children:
       - <nested component-name references>
+
+cross-cutting:
+  - id: <unique identifier>
+    source: <@feature/intent-slug — traceability reference>
+    target-files:
+      - <explicit file paths to modify>
+    target-pattern: <grep pattern for fan-out — resolve to files at generation time>
+    transform: <human-readable description of what the change does>
+    introduces:
+      - <new functions/types being added — with optional signatures>
+    caching: <caching strategy — tree-scan-on-first-access, none, per-process>
+    backward-compatible: <true | false>
 ```
+
+## Cross-cutting section
+
+The `cross-cutting:` section describes infrastructure changes that flow through `infrastructure.md` → buildfile → generate-code via Tier 2 intelligent merge. Each entry targets one or more existing files and describes a modification or introduction.
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | Unique identifier within the section |
+| `source` | Yes | `@feature/intent-slug` traceability reference |
+| `target-files` | No* | Explicit file paths to modify |
+| `target-pattern` | No* | Grep pattern to resolve target files at generation time |
+| `transform` | Yes | Human-readable change description — tells the agent WHAT to change |
+| `introduces` | No | New functions, types, or constants being added |
+| `caching` | No | Caching strategy for the introduced/modified code |
+| `backward-compatible` | No | Whether existing callers must continue working |
+
+\* At least one of `target-files` or `target-pattern` must be present.
+
+The section is optional. Buildfiles without it remain valid. When present, entries follow the same diff lifecycle as components: `parlay diff` classifies each as stable/dirty/removed.
 
 ## Widget population
 
