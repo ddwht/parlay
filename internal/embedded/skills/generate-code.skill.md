@@ -104,6 +104,19 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       // parlay-artifact: test
       ```
       Test files ride the same component's dirty/stable status. When a component is dirty, regenerate BOTH its implementation and its test file.
+    - **Multi-component (extended) files** result from intelligent merge (see step 14.5 Tier 2 — when one component's behavior is layered into a file already owned by another component). They carry the primary owner's two-line marker plus one `parlay-extends:` line per additional component:
+      ```
+      // parlay-feature: {primary-feature}
+      // parlay-component: {primary-component}
+      // parlay-extends: {extending-feature}/{extending-component}
+      ```
+      Multiple `parlay-extends:` lines may appear if more than one feature has extended the file. The primary owner is whichever component first claimed the file (or, in brownfield, the component that semantically matches the original user-authored implementation). Optional per-function markers may appear above each extending function for human-readability:
+      ```go
+      // parlay-feature: {extending-feature}
+      // parlay-component: {extending-component}
+      func someExtensionFunction() { ... }
+      ```
+      These per-function markers are documentation only; the file-level marker block is what scan-generated reads.
 
 13. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
 
@@ -124,24 +137,19 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       // parlay-section: models
       ```
 
-14.5. **Mount into existing files (brownfield)** — This step runs only when the adapter has a `mount-strategies:` section AND the project has existing source files that are not Parlay-generated (i.e., files without `parlay-component:` or `parlay-section:` markers).
+14.5. **Mount into existing files (brownfield)** — This step runs when the project has existing source files that are not Parlay-generated (i.e., files without `parlay-component:` or `parlay-section:` markers). It has two tiers:
+
+   - **Tier 1 — Templated mount**: structural insertion via adapter `mount-strategies:` (the fast path — adding a tab, a menu item, a route registration, a prompt step into known scaffolds).
+   - **Tier 2 — Intelligent merge** (fallback): when the existing file IS the surface the route targets but no mount-strategy template fits the change, the agent reads the file and produces a merge diff that layers new behavior in alongside existing code (the slow path — adding a flag to an existing command, extending a function with new branching, etc.).
 
    For each route in the merged route table that references a page:
 
-   1. **Find the target file**: search the source tree for the file implementing the page component. Use the page name from the buildfile route. If the file has a `parlay-section:` marker, it is Parlay-owned — skip (step 14 already handles it). If the file is not found, skip (new page — step 14 creates it).
+   1. **Find the target file**: search the source tree for the file implementing the page component, using the page name from the buildfile route and the adapter's `file-conventions.naming` and `component-pattern`. If the file has a `parlay-section:` marker, it is Parlay-owned — skip (step 14 already handles it). If the file is not found, skip (new page — step 14 creates it).
 
    2. **Read the file**: read the full content of the target file.
 
-   3. **Match mount strategy**: scan each strategy in the adapter's `mount-strategies:` for a `detection` pattern that appears in the file content.
-      - **1 match**: proceed with this strategy automatically.
-      - **0 matches**: ask the user via AskUserQuestion:
-        ```
-        <file> uses widgets that don't match any mount strategy in the adapter.
-        How should the new <Component> be added?
-        A: Show me the file so I can describe the pattern
-        B: Skip — I'll integrate manually
-        C: Add as a new standalone route instead
-        ```
+   3. **Tier 1 — Templated mount**: scan each strategy in the adapter's `mount-strategies:` (if any) for a `detection` pattern that appears in the file content.
+      - **1 match**: proceed with this strategy → step 5.
       - **Multiple matches**: ask the user to choose:
         ```
         <file> has multiple integration points:
@@ -149,25 +157,57 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
         B: New <strategy-2-name> (found <detection-2> on line M)
         C: Skip — I'll integrate manually
         ```
+        → step 5.
+      - **0 matches**: proceed to Tier 2 (step 4) before falling back to AskUserQuestion.
 
-   4. **Find existing instances**: search the file for existing instances of the chosen strategy's template pattern. These serve as style examples for indentation, prop naming, and code conventions.
+   4. **Tier 2 — Intelligent merge** (only if Tier 1 found 0 matches): determine whether the existing file is **the same surface** as the route's component before giving up.
 
-   5. **Generate mount diff**: using the template with placeholders filled from the buildfile component data, and existing instances as style guides, generate the insertion code.
+      The file is the same surface if BOTH:
+      - **Naming match**: the file name corresponds to the route path under the adapter's `file-conventions.naming` and `component-pattern` rules (e.g., for go-cli with `naming: snake_case`, route `add-feature` maps to file `add_feature.go`).
+      - **Purpose match**: the file declares a primary entity whose identifier matches the route. For cobra, this is a `cobra.Command{Use: "{route.path}..."}` declaration; for React, an exported component named `{PageName}`; for Angular, a `@Component({selector: ...})` matching the route. The adapter MAY declare an optional `purpose-marker:` regex per file pattern to make this rigorous; without one, naming-match alone is the fallback signal.
 
-   6. **Present diff for review**: show the user a unified diff of the target file:
+      If the file is the same surface, perform an intelligent merge:
+
+      a. Read the existing file fully (already done in step 2).
+      b. Read the component spec from the buildfile (data.inputs, elements, actions, operations, computed values).
+      c. Identify which behaviors the existing file already implements and which are new in the component spec.
+      d. Generate a merge that:
+         - **Preserves all existing user-owned code paths verbatim** (do not rewrite working code).
+         - **Adds new behaviors as additional functions, branches, or flag declarations** rather than inline edits to existing functions. New entry-point logic typically takes the form of an early-return guard at the top of the existing function (e.g., `if newFlag != "" { return runExtendedBehavior(...) }`) followed by the original function body unchanged.
+         - **Wires new flags via the adapter's idiomatic mechanism** (cobra: `Flags().StringVar` in `init()`; etc.).
+         - **Renders error/status output via framework-idiomatic mechanisms**, not literal element-by-element translation. Buildfile elements like `[ERR]`-prefixed messages may not translate verbatim if the framework already has an error channel (e.g., Go cobra returns `error`, which cobra's main loop prints to stderr without needing an explicit `[ERR]` prefix).
+         - **Updates the file's marker block**: replace the original two-line marker (or add one if the file had only legacy comments) with the multi-component form documented in step 12: primary's `parlay-feature:` + `parlay-component:` lines, plus a `parlay-extends: {feature}/{component}` line for the new owner.
+      e. Continue to step 6.
+
+      If the file is NOT the same surface (naming or purpose mismatch), fall back to AskUserQuestion:
+      ```
+      <file> exists in the source tree but doesn't match any mount strategy in the adapter, and its purpose differs from <Component>'s route.
+      How should <Component> be added?
+      A: Show me the file so I can describe the pattern
+      B: Skip — I'll integrate manually
+      C: Add as a new standalone route instead (generates a new file, route registration via mount-strategy)
+      ```
+
+   5. **Find existing instances** (Tier 1 only): search the file for existing instances of the chosen strategy's template pattern. These serve as style examples for indentation, prop naming, and code conventions.
+
+   6. **Generate diff**:
+      - **Tier 1**: use the strategy template with placeholders filled from the buildfile component, and existing instances as style guides; produce an insertion diff.
+      - **Tier 2**: produce the merge diff from step 4d (additive changes only — new flag declarations, new functions, dispatch line, expanded marker block).
+
+   7. **Present diff for review**: show the user a unified diff of the target file:
       ```
       Proposed change to <file>:
 
-      <unified diff showing the added lines>
+      <unified diff showing added/modified lines>
 
       A: Apply this change
       B: Skip — I'll integrate manually
       C: Edit the proposed change
       ```
 
-   7. **Apply or skip**: on approval, write the modified file. On skip, continue to the next route. On edit, accept the user's modification and apply it.
+   8. **Apply or skip**: on approval, write the modified file. On skip, continue to the next route. On edit, accept the user's modification and apply it.
 
-   Mount diffs are typically small (1-3 files, a few lines each). The files being modified are page components (adding tabs, panels, sections), route config files (adding route entries), and navigation menus (adding menu items).
+   Tier 1 diffs are typically small (1-3 files, a few lines each — adding tabs, panels, section, route entries, menu items). Tier 2 diffs are typically larger (a new function plus a dispatch line plus flag declarations) but still additive — the agent does not rewrite existing logic, it layers new logic alongside.
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
@@ -206,6 +246,13 @@ Three read helpers and one write helper cooperate to make incremental rebuilds s
 - **`parlay save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
 
 The skill calls the three read helpers before regenerating, then `parlay save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
+
+**Multi-component (extended) files** — files produced by intelligent merge (step 14.5 Tier 2) carry a primary `parlay-component:` marker plus one or more `parlay-extends:` lines. These files belong to multiple components at once, with consequences for the read helpers:
+
+- `parlay scan-generated` reports the file's primary component AND its extending components. A single file path appears once but maps to multiple `(feature, component)` owners.
+- `parlay verify-generated` hashes the file as a unit; the file is `stable` only if every component named in its marker block (primary + all `parlay-extends:`) is currently `stable` per `parlay diff`. If ANY claimed component is dirty in the diff, the file requires regeneration via re-merge.
+- Re-merge re-runs step 14.5 for the dirty component(s) against the current state of the file (which includes the other components' contributions). The agent must preserve all currently-claimed components in the resulting file; dropping any without explicit removal would silently un-extend the file.
+- A component being `removed` in the diff means its claim on the file should be revoked: drop its `parlay-extends:` line and remove the spans it owned (identified by per-function markers if present). If the removed component was the primary owner, ownership transfers to the first remaining `parlay-extends:` line, which is promoted to the primary marker.
 
 **The very first generation** of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
 
