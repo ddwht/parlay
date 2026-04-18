@@ -1,0 +1,252 @@
+feature: helper-extraction
+adapter: go-cli
+
+models:
+  DuplicateGroup:
+    properties:
+      function-name:
+        type: string
+        required: true
+        description: Name of the duplicated function
+      similarity:
+        type: enum
+        enum: [identical, near-identical]
+        required: true
+        description: Whether the copies are byte-identical or structurally similar with minor differences
+      similarity-percent:
+        type: number
+        required: false
+        description: Structural similarity percentage (for near-identical matches)
+      source-files:
+        type: string[]
+        required: true
+        description: List of generated files containing this duplicate
+      differences:
+        type: string
+        required: false
+        description: Human-readable description of differences for near-identical matches
+      proposed-target:
+        type: string
+        required: true
+        description: Proposed shared package path determined from adapter file-conventions
+
+  ExtractionResult:
+    properties:
+      function-name:
+        type: string
+        required: true
+      target-path:
+        type: string
+        required: true
+        description: Where the function was extracted to
+      files-updated:
+        type: number
+        required: true
+        description: Number of files that had imports updated
+      skipped:
+        type: boolean
+        required: true
+      commit-message:
+        type: string
+        required: false
+
+fixtures:
+  project-with-duplicates:
+    description: A project where two generated files contain identical helper functions.
+    data:
+      DuplicateGroup:
+        - function-name: threeTreeRoots
+          similarity: identical
+          source-files:
+            - internal/commands/add_feature.go
+            - internal/commands/new_initiative.go
+          proposed-target: internal/config/helpers.go
+        - function-name: isOrphanFeatureDir
+          similarity: near-identical
+          similarity-percent: 92
+          source-files:
+            - internal/commands/add_feature.go
+            - internal/commands/move_feature.go
+          differences: "differs only in error message string"
+          proposed-target: internal/config/helpers.go
+
+  project-no-duplicates:
+    description: A project where all generated helpers are unique to their files.
+    data:
+      DuplicateGroup: []
+
+  project-with-structural-differences:
+    description: A project where functions are similar but serve different purposes (low similarity).
+    data:
+      DuplicateGroup:
+        - function-name: createDirsAcrossTrees
+          similarity: near-identical
+          similarity-percent: 85
+          source-files:
+            - internal/commands/add_feature.go
+            - internal/commands/new_initiative.go
+          differences: "add_feature creates both initiative and feature subdirectories; new_initiative creates only initiative"
+          proposed-target: internal/config/helpers.go
+
+routes:
+  - path: simplify
+    page: simplify
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components: [DuplicationScanResults, ExtractionProposalReview]
+
+components:
+  DuplicationScanResults:
+    source: "@helper-extraction/duplication-scan-results"
+    widget: cobra-command
+    description: Initial scan phase of /parlay-simplify. Scans all parlay-generated files for duplicated function bodies, groups by signature+body similarity, and reports the findings before proposing any extractions.
+
+    data:
+      inputs:
+        - name: source-root
+          model: DuplicateGroup
+          field: ""
+          from: computed
+      computed:
+        - name: generated-files
+          from: "scan-generated to find all files with parlay markers"
+          type: string[]
+        - name: duplicate-groups
+          from: "compare function bodies across generated files, group by >80% structural similarity"
+          type: DuplicateGroup[]
+        - name: group-count
+          from: "len(duplicate-groups)"
+          type: number
+
+    elements:
+      - name: scan-summary
+        widget: headed-section
+        bind: duplicate-groups
+        format: "Found {group-count} duplicated helper(s) across generated files:"
+        visible-when: "group-count > 0"
+
+      - name: duplicate-list
+        widget: bulleted-list
+        bind: duplicate-groups
+        format: "{i}. `{function-name}` — {similarity} in {source-files}"
+        visible-when: "group-count > 0"
+
+      - name: no-duplicates
+        widget: fmt.Println
+        bind: ""
+        format: "No duplicated helpers found across generated files. Nothing to extract."
+        visible-when: "group-count == 0"
+
+    actions:
+      - name: invoke-simplify
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: simplify
+
+    operations:
+      - type: read-file
+        path: "{source-root}"
+        parse: scan-generated
+        bind: generated-files
+      - type: filter
+        source: generated-files
+        where: "has parlay marker"
+        bind: marked-files
+
+  ExtractionProposalReview:
+    source: "@helper-extraction/extraction-proposal-review"
+    widget: cobra-command
+    description: Per-extraction review phase of /parlay-simplify. For each duplicated helper group, shows the proposed extraction diff and waits for the designer's approval. Processes groups sequentially — each extraction is independent.
+
+    data:
+      inputs:
+        - name: duplicate-groups
+          model: DuplicateGroup
+          field: ""
+          from: computed
+      computed:
+        - name: current-group
+          from: "the duplicate group currently being reviewed"
+          type: DuplicateGroup
+        - name: extraction-diff
+          from: "generate unified diff: remove function from source files, add to proposed-target, update imports"
+          type: string
+        - name: applied-count
+          from: "number of extractions applied so far"
+          type: number
+        - name: skipped-count
+          from: "number of extractions skipped"
+          type: number
+        - name: total-files-updated
+          from: "total files that had imports updated across all extractions"
+          type: number
+
+    elements:
+      - name: group-header
+        widget: fmt.Println
+        bind: current-group
+        format: "**{i}. `{function-name}`**"
+        visible-when: always
+
+      - name: source-files-list
+        widget: bulleted-list
+        bind: current-group.source-files
+        format: "From: {file}"
+        visible-when: always
+
+      - name: target-path
+        widget: fmt.Printf
+        bind: current-group.proposed-target
+        format: "To: {proposed-target}"
+        visible-when: always
+
+      - name: near-identical-note
+        widget: fmt.Println
+        bind: current-group
+        format: "Note: near-identical — functions {differences}. Using the version from {source-files[0]}."
+        visible-when: "current-group.similarity == near-identical"
+
+      - name: extraction-diff-display
+        widget: diff-output
+        bind: extraction-diff
+        format: ""
+        visible-when: always
+
+      - name: applied-status
+        widget: prefixed-message
+        bind: current-group
+        format: "[OK] Extracted `{function-name}` → {target-path}. Updated {files-updated} files."
+        visible-when: "extraction applied"
+
+      - name: skipped-status
+        widget: fmt.Println
+        bind: current-group
+        format: "Skipped. The duplicate stays in both files."
+        visible-when: "extraction skipped"
+
+      - name: completion-summary
+        widget: fmt.Println
+        bind: ""
+        format: "Done. Extracted {applied-count} helper(s) into shared packages. Each extraction is a separate commit for git traceability."
+        visible-when: "all groups processed and applied-count > 0"
+
+      - name: all-skipped-summary
+        widget: fmt.Println
+        bind: ""
+        format: "All extractions skipped. No changes made."
+        visible-when: "all groups processed and applied-count == 0"
+
+    actions:
+      - name: choose-action
+        widget: lettered-prompt
+        enabled-when: always
+        effect: call
+        target: apply-or-skip-extraction
+
+      - name: provide-override-path
+        widget: text-prompt
+        enabled-when: "user selected 'Change the target package'"
+        effect: "mutate:DuplicateGroup.proposed-target=<input>"
+        target: current-group.proposed-target
