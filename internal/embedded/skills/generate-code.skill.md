@@ -111,10 +111,10 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       // parlay-extends: {extending-feature}/{extending-component}
       ```
       Multiple `parlay-extends:` lines may appear if more than one feature has extended the file. The primary owner is whichever component first claimed the file (or, in brownfield, the component that semantically matches the original user-authored implementation). Optional per-function markers may appear above each extending function for human-readability:
-      ```go
+      ```
       // parlay-feature: {extending-feature}
       // parlay-component: {extending-component}
-      func someExtensionFunction() { ... }
+      <function or class declaration for the extending behavior>
       ```
       These per-function markers are documentation only; the file-level marker block is what scan-generated reads.
 
@@ -163,8 +163,8 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
    4. **Tier 2 — Intelligent merge** (only if Tier 1 found 0 matches): determine whether the existing file is **the same surface** as the route's component before giving up.
 
       The file is the same surface if BOTH:
-      - **Naming match**: the file name corresponds to the route path under the adapter's `file-conventions.naming` and `component-pattern` rules (e.g., for go-cli with `naming: snake_case`, route `add-feature` maps to file `add_feature.go`).
-      - **Purpose match**: the file declares a primary entity whose identifier matches the route. For cobra, this is a `cobra.Command{Use: "{route.path}..."}` declaration; for React, an exported component named `{PageName}`; for Angular, a `@Component({selector: ...})` matching the route. The adapter MAY declare an optional `purpose-marker:` regex per file pattern to make this rigorous; without one, naming-match alone is the fallback signal.
+      - **Naming match**: the file name corresponds to the route path under the adapter's `file-conventions.naming` and `component-pattern` rules (e.g., with `naming: snake_case`, route `add-feature` maps to a file named `add_feature.*`).
+      - **Purpose match**: the file declares a primary entity whose identifier matches the route. The adapter MAY declare an optional `purpose-marker:` regex per file pattern to identify these declarations rigorously; without one, naming-match alone is the fallback signal.
 
       If the file is the same surface, perform an intelligent merge:
 
@@ -174,8 +174,8 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       d. Generate a merge that:
          - **Preserves all existing user-owned code paths verbatim** (do not rewrite working code).
          - **Adds new behaviors as additional functions, branches, or flag declarations** rather than inline edits to existing functions. New entry-point logic typically takes the form of an early-return guard at the top of the existing function (e.g., `if newFlag != "" { return runExtendedBehavior(...) }`) followed by the original function body unchanged.
-         - **Wires new flags via the adapter's idiomatic mechanism** (cobra: `Flags().StringVar` in `init()`; etc.).
-         - **Renders error/status output via framework-idiomatic mechanisms**, not literal element-by-element translation. Buildfile elements like `[ERR]`-prefixed messages may not translate verbatim if the framework already has an error channel (e.g., Go cobra returns `error`, which cobra's main loop prints to stderr without needing an explicit `[ERR]` prefix).
+         - **Wires new inputs via the adapter's idiomatic mechanism** (flags, props, arguments — whatever the framework uses for parameterization).
+         - **Renders error/status output via framework-idiomatic mechanisms**, not literal element-by-element translation. Buildfile elements like `[ERR]`-prefixed messages may not translate verbatim if the framework already has its own error channel.
          - **Updates the file's marker block**: replace the original two-line marker (or add one if the file had only legacy comments) with the multi-component form documented in step 12: primary's `parlay-feature:` + `parlay-component:` lines, plus a `parlay-extends: {feature}/{component}` line for the new owner.
       e. Continue to step 6.
 

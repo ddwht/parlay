@@ -12,25 +12,23 @@ Determine whether a feature needs `surface.md`, `infrastructure.md`, or both —
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
 
-2. **Analyze intents for artifact signals** — For each intent, classify whether it contributes to surface, infrastructure, or is ambiguous:
+2. **Analyze intents for artifact signals** — For each intent, classify whether it contributes to surface, infrastructure, or is ambiguous. The classification is based on what the intent DESCRIBES, not on persona names (which are project-specific):
 
-   **Surface signals** (the intent describes user-facing output):
-   - Persona is UX Designer
-   - Objects reference user-facing concepts (feature, initiative, page, command output, report)
-   - Dialog System turns show CLI output, prompts, status messages, or formatted results
-   - The intent's Goal describes what the user sees or interacts with
+   **Surface signals** (the intent describes visible output):
+   - Dialog System turns show visible output — rendered results, prompts, status messages, formatted data
+   - The intent's Goal describes what someone sees or interacts with when the feature runs
+   - Objects reference output-facing concepts (reports, prompts, displays, confirmations)
 
-   **Infrastructure signals** (the intent describes behind-the-scenes code changes):
-   - Persona is Parlay Developer (or equivalent non-designer role)
-   - Objects reference code constructs (config, resolver, validator, schema, helper, function name)
-   - Constraints name specific functions, file paths, or detection patterns
-   - Dialog System turns describe code modifications, file changes, or internal operations
-   - The intent's Goal describes changing how existing code works
+   **Infrastructure signals** (the intent describes internal code changes with no direct visible output):
+   - Dialog System turns describe code modifications, internal operations, or structural changes
+   - The intent's Goal describes changing how existing code works behind the scenes
+   - Constraints name implementation details — specific functions, file paths, detection patterns
+   - Objects reference internal constructs (helpers, resolvers, validators, registries)
 
    **Ambiguous signals** (conflicting indicators):
-   - Persona is UX Designer but Constraints reference internal function names
-   - Dialog shows both CLI output and code modification steps
-   - Objects mix user-facing and code-level concepts
+   - The intent describes both visible output AND internal code changes
+   - Dialog shows both rendered results and code modification steps
+   - Objects mix output-facing and internal concepts
 
    **Blueprint check** (after per-intent analysis): If `.parlay/blueprint.yaml` exists, check whether the feature's intents imply changes to any cross-cutting system documented there (e.g., deployers, registries, shared layers). Features that appear surface-only from their intents may also need infrastructure to integrate with the project's shared architecture. When in doubt, recommend **both** and explain the blueprint-derived reason to the designer.
 
