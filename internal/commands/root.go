@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(extractDomainModelCmdImpl)
 	rootCmd.AddCommand(loadDomainModelCmdImpl)
 	rootCmd.AddCommand(createArtifactsCmdImpl)
+	rootCmd.AddCommand(newInitiativeCmd)
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)

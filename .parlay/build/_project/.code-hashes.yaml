@@ -1,0 +1,20 @@
+generated-at: "2026-04-18T08:09:31Z"
+files:
+    internal/commands/add_feature.go:
+        component: feature-scaffold-confirmation
+        hash: 0d139fc50ad90884
+    internal/commands/check_readiness.go:
+        component: check-readiness
+        hash: 792d2cf1402bbb56
+    internal/commands/create_artifacts.go:
+        component: ArtifactDecisionPrompt
+        hash: 58fad3d31c6c3f39
+    internal/commands/new_initiative.go:
+        component: EmptyInitiativeCreationResult
+        hash: 8cedb6705593b24d
+    internal/commands/new_initiative_test.go:
+        component: EmptyInitiativeCreationResult
+        hash: 22ba1eb290edaa2c
+    internal/commands/validate.go:
+        component: validate
+        hash: 90a26d9075a5e142

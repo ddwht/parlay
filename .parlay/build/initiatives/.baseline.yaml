@@ -1,0 +1,37 @@
+generated-at: "2026-04-18T08:09:31Z"
+intents:
+    create-a-feature-inside-an-initiative:
+        content-hash: dba5d389998834ce
+        goal-hash: 16fa291c2f1378ac
+        constraints-hash: 702d7b8e23c902d7
+        verify-hash: 3cb6607ba09be567
+        objects-hash: d92ccbe68289d9f9
+    create-an-empty-initiative:
+        content-hash: 79cf9c89875233ce
+        goal-hash: 02fdd9f925b98748
+        constraints-hash: 419bb0fb27a03fce
+        verify-hash: 3a8691112f9c5465
+        objects-hash: 478eb592511704b2
+    group-features-under-an-initiative:
+        content-hash: d7ff8c02989dfd44
+        goal-hash: b15fa4893d133f98
+        constraints-hash: 6c4bd0a48cce7ac3
+        verify-hash: 34c6cba78421d192
+        objects-hash: 8592a68d583625af
+sources:
+    intents:
+        create-a-feature-inside-an-initiative: 030a3e0e77b5e281
+        create-an-empty-initiative: 8bfed8660e82bdaa
+        group-features-under-an-initiative: 0a3883586ae2479b
+    dialogs:
+        create-a-feature-inside-an-initiative: 324034014469f5e9
+        create-an-empty-initiative: 453e39c7692c4ebc
+        group-features-under-an-initiative: 15bf0d425cca3621
+    surface-fragments:
+        empty-initiative-creation-result: b098576594b39594
+        feature-creation-result: 5bc29263cda01c02
+        initiative-orientation: bea865aeb8b18734
+buildfile-sections:
+    fixtures: e9a3635e39a3449b
+    models: d3373d399f3224df
+    routes: 812326b516bf53ea

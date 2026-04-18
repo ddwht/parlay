@@ -122,6 +122,7 @@ func skillTitle(name string) string {
 		"lock-page":            "Lock a page layout into a manifest",
 		"register-adapter":     "Register a framework adapter",
 		"onboard":              "Onboard existing codebase and draft adapter",
+		"new-initiative":       "Create an empty initiative directory",
 	}
 	if t, ok := titles[name]; ok {
 		return t

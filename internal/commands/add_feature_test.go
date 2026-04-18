@@ -74,3 +74,96 @@ func TestAddFeature_SlugifiesName(t *testing.T) {
 		t.Error("slug not correctly derived from name")
 	}
 }
+
+// --- Initiative tests (parlay-feature: initiatives) ---
+
+func TestAddFeatureWithInitiative_CreatesInitiativeAndFeature(t *testing.T) {
+	setupTestDir(t)
+	for _, root := range threeTreeRoots() {
+		os.MkdirAll(root, 0755)
+	}
+
+	err := runAddFeatureWithInitiative("password reset", "password-reset", "auth overhaul")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(config.SpecDir, config.IntentsDir, "auth-overhaul", "password-reset"),
+		filepath.Join(config.SpecDir, config.HandoffDir, "auth-overhaul", "password-reset"),
+		filepath.Join(config.BuildRoot(), "auth-overhaul", "password-reset"),
+	} {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("directory not created: %s", path)
+		}
+	}
+
+	intentsPath := filepath.Join(config.SpecDir, config.IntentsDir, "auth-overhaul", "password-reset", "intents.md")
+	if _, err := os.Stat(intentsPath); os.IsNotExist(err) {
+		t.Error("intents.md not created inside initiative feature")
+	}
+}
+
+func TestAddFeatureWithInitiative_ReusesExistingInitiative(t *testing.T) {
+	setupTestDir(t)
+	for _, root := range threeTreeRoots() {
+		os.MkdirAll(root, 0755)
+	}
+
+	runAddFeatureWithInitiative("password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative("sso setup", "sso-setup", "auth overhaul")
+
+	if err != nil {
+		t.Fatalf("adding second feature to existing initiative should succeed, got: %v", err)
+	}
+
+	path := filepath.Join(config.SpecDir, config.IntentsDir, "auth-overhaul", "sso-setup")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("second feature not created inside initiative")
+	}
+}
+
+func TestAddFeatureWithInitiative_ScopeCollision(t *testing.T) {
+	setupTestDir(t)
+	for _, root := range threeTreeRoots() {
+		os.MkdirAll(root, 0755)
+	}
+
+	runAddFeatureWithInitiative("password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative("password reset", "password-reset", "auth overhaul")
+
+	if err == nil {
+		t.Error("expected scope collision error, got nil")
+	}
+}
+
+func TestAddFeatureWithInitiative_TopLevelCollision(t *testing.T) {
+	setupTestDir(t)
+	for _, root := range threeTreeRoots() {
+		os.MkdirAll(root, 0755)
+	}
+
+	orphanPath := filepath.Join(config.SpecDir, config.IntentsDir, "password-reset")
+	os.MkdirAll(orphanPath, 0755)
+	os.WriteFile(filepath.Join(orphanPath, "intents.md"), []byte("# Password Reset\n"), 0644)
+
+	err := runAddFeatureWithInitiative("login", "login", "password-reset")
+
+	if err == nil {
+		t.Error("expected top-level collision error, got nil")
+	}
+}
+
+func TestAddFeatureWithInitiative_SameSlugDifferentInitiative(t *testing.T) {
+	setupTestDir(t)
+	for _, root := range threeTreeRoots() {
+		os.MkdirAll(root, 0755)
+	}
+
+	runAddFeatureWithInitiative("password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative("password reset", "password-reset", "billing")
+
+	if err != nil {
+		t.Errorf("same slug in different initiative should succeed, got: %v", err)
+	}
+}

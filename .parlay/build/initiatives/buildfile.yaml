@@ -1,0 +1,577 @@
+feature: initiatives
+adapter: go-cli
+
+models:
+  Initiative:
+    properties:
+      slug:
+        type: string
+        required: true
+        description: Lowercase-hyphenated identifier; unique at the top level of spec/intents/ — cannot collide with orphan feature slugs or other initiative slugs
+      readme:
+        type: string
+        required: false
+        description: Optional narrative content stored in <initiative>/README.md
+      classification:
+        type: enum
+        enum: [deferred, initiative]
+        required: true
+        description: "deferred when the directory is empty or holds only non-classifying files; initiative once it contains at least one feature subdirectory"
+    states:
+      values: [deferred, initiative]
+      transitions:
+        deferred: [initiative]
+        initiative: [deferred]
+
+  Feature:
+    properties:
+      slug:
+        type: string
+        required: true
+        description: Leaf slug; unique within its parent — top-level scope (orphan features) or within a single initiative scope
+      qualified-path:
+        type: string
+        required: true
+        description: "<feature-slug> for an orphan; <initiative-slug>/<feature-slug> for a nested feature"
+      parent:
+        type: string
+        required: false
+        description: Initiative slug if nested; empty for orphans
+      classification:
+        type: enum
+        enum: [deferred, feature]
+        required: true
+        description: feature once intents.md exists at the directory root
+    states:
+      values: [deferred, feature]
+      transitions:
+        deferred: [feature]
+
+  Project:
+    properties:
+      intents-tree:
+        type: string
+        required: true
+        description: Path to spec/intents/ — designer-authored
+      handoff-tree:
+        type: string
+        required: true
+        description: Path to spec/handoff/ — engineering-consumed
+      build-tree:
+        type: string
+        required: true
+        description: Path to .parlay/build/ — tool internals
+
+fixtures:
+  empty-project:
+    description: A fresh project with no initiatives or orphan features yet.
+    data:
+      Initiative: []
+      Feature: []
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+  project-with-orphan-features:
+    description: A project with two orphan features at the top level and no initiatives — typical pre-grouping state that triggers the orientation conversation.
+    data:
+      Initiative: []
+      Feature:
+        - slug: password-reset
+          qualified-path: password-reset
+          parent: ""
+          classification: feature
+        - slug: standalone-thing
+          qualified-path: standalone-thing
+          parent: ""
+          classification: feature
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+  project-with-initiative:
+    description: A project with one fully-populated initiative, plus an orphan feature alongside.
+    data:
+      Initiative:
+        - slug: auth-overhaul
+          classification: initiative
+      Feature:
+        - slug: password-reset
+          qualified-path: auth-overhaul/password-reset
+          parent: auth-overhaul
+          classification: feature
+        - slug: sso-setup
+          qualified-path: auth-overhaul/sso-setup
+          parent: auth-overhaul
+          classification: feature
+        - slug: standalone-thing
+          qualified-path: standalone-thing
+          parent: ""
+          classification: feature
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+  duplicate-slug-different-scopes:
+    description: Two features with the same leaf slug in different initiatives — valid under the per-scope uniqueness rule.
+    data:
+      Initiative:
+        - slug: auth-overhaul
+          classification: initiative
+        - slug: billing
+          classification: initiative
+      Feature:
+        - slug: password-reset
+          qualified-path: auth-overhaul/password-reset
+          parent: auth-overhaul
+          classification: feature
+        - slug: password-reset
+          qualified-path: billing/password-reset
+          parent: billing
+          classification: feature
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+  empty-initiative:
+    description: An initiative directory created by parlay new-initiative but not yet populated with any features. Deferred classification.
+    data:
+      Initiative:
+        - slug: auth-overhaul
+          classification: deferred
+      Feature: []
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+  orphan-feature-blocks-initiative:
+    description: An orphan feature exists at the top level with a slug that someone now wants to use as an initiative — triggers top-level namespace collision.
+    data:
+      Initiative: []
+      Feature:
+        - slug: password-reset
+          qualified-path: password-reset
+          parent: ""
+          classification: feature
+      Project:
+        - intents-tree: spec/intents/
+          handoff-tree: spec/handoff/
+          build-tree: .parlay/build/
+
+routes:
+  - path: initiatives
+    page: initiatives
+    flow-pattern: sequential-prompts
+    regions:
+      main:
+        components: [InitiativeOrientation]
+
+  - path: add-feature
+    page: add-feature
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [FeatureCreationResult]
+
+  - path: new-initiative
+    page: new-initiative
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [EmptyInitiativeCreationResult]
+
+components:
+  InitiativeOrientation:
+    source: "@initiatives/initiative-orientation"
+    widget: cobra-command
+    description: Educational command (`parlay help initiatives`) that explains the initiative concept, shows an example layout, lists the load-bearing rules, and offers three entry-point commands. Agent-delivered today; CLI form provided for parity.
+
+    data:
+      inputs:
+        - name: project
+          model: Project
+          field: ""
+          from: fixture
+
+      computed:
+        - name: example-tree
+          from: render hard-coded example layout showing one initiative with three features, plus an orphan feature alongside
+          type: string
+        - name: rules
+          from: hard-coded list of three load-bearing rules (per-scope slug uniqueness, flat hierarchy, top-level shared namespace)
+          type: string[]
+
+    elements:
+      - name: concept-explanation
+        widget: fmt.Println
+        bind: project.intents-tree
+        format: "An initiative is a directory under {project.intents-tree} that holds member features. Orphan features (not in any initiative) sit at the top level alongside. Member features are addressed as @<initiative>/<feature>; orphans stay bare as @<feature>."
+        visible-when: always
+
+      - name: example-layout
+        widget: indented-tree
+        bind: example-tree
+        format: |
+          spec/intents/
+            auth-overhaul/                        (initiative)
+              password-reset/                     (feature)
+              sso-setup/                          (feature)
+              login-flow/                         (feature)
+            some-unrelated-feature/               (orphan, still works)
+        visible-when: always
+
+      - name: rules-list
+        widget: bulleted-list
+        bind: rules
+        format: |
+          - Feature slugs are unique per parent, not globally — two initiatives can each have a `password-reset` feature.
+          - Initiatives are flat — one level only. No sub-initiatives.
+          - At the top level, initiative names and orphan feature names share one namespace.
+        visible-when: always
+
+      - name: lockstep-note
+        widget: fmt.Println
+        bind: project.handoff-tree
+        format: "Under the hood, {project.handoff-tree} and .parlay/build/ mirror the same hierarchy in lockstep. Parlay keeps all three trees in sync whenever you use its commands. External operations (mv, IDE refactors) require parlay repair to reconcile."
+        visible-when: always
+
+      - name: starting-paths-prompt
+        widget: fmt.Println
+        bind: project.intents-tree
+        format: "How would you like to start?"
+        visible-when: always
+
+    actions:
+      - name: choose-starting-path
+        widget: lettered-prompt
+        enabled-when: always
+        effect: navigate
+        target: chosen-route
+
+  FeatureCreationResult:
+    source: "@initiatives/feature-creation-result"
+    widget: cobra-command
+    description: Output of `parlay add-feature <name> --initiative <initiative-name>`. Reports success, scope-based collision, top-level namespace collision, or partial-failure warning — all variants share one component, distinguished by status and visible-when conditions.
+
+    data:
+      inputs:
+        - name: feature-name
+          model: Feature
+          field: slug
+          from: command-argument
+        - name: initiative-name
+          model: Initiative
+          field: slug
+          from: command-argument
+        - name: project
+          model: Project
+          field: ""
+          from: fixture
+
+      computed:
+        - name: feature-slug
+          from: Slugify(feature-name)
+          type: string
+        - name: initiative-slug
+          from: Slugify(initiative-name)
+          type: string
+        - name: feature-path
+          from: "{project.intents-tree}{initiative-slug}/{feature-slug}"
+          type: string
+        - name: initiative-was-created
+          from: the initiative directory did not exist before this command and was just created
+          type: boolean
+        - name: scope-collision
+          from: a feature with the same leaf slug already exists inside the target initiative
+          type: boolean
+        - name: top-level-collision
+          from: the target initiative slug exists at the top level as an orphan feature
+          type: boolean
+        - name: partial-failure
+          from: initiative directories were created but feature directory creation subsequently failed
+          type: boolean
+        - name: any-failure
+          from: scope-collision or top-level-collision or partial-failure
+          type: boolean
+
+    elements:
+      - name: status-success
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[OK]"
+        visible-when: not any-failure
+
+      - name: status-error
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[ERR]"
+        visible-when: scope-collision or top-level-collision
+
+      - name: status-warning
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[WARN]"
+        visible-when: partial-failure
+
+      - name: initiative-created-message
+        widget: fmt.Println
+        bind: initiative-slug
+        format: "Initiative {initiative-slug} created."
+        visible-when: initiative-was-created and not any-failure
+
+      - name: feature-added-message
+        widget: fmt.Println
+        bind: feature-slug
+        format: "Feature {feature-slug} added to initiative {initiative-slug} at {feature-path}/."
+        visible-when: not any-failure
+
+      - name: scope-collision-message
+        widget: fmt.Println
+        bind: feature-path
+        format: "Feature `{feature-slug}` already exists inside initiative `{initiative-slug}` at {feature-path}/. Pick a different feature name, or move the existing feature somewhere else first."
+        visible-when: scope-collision
+
+      - name: top-level-collision-message
+        widget: fmt.Println
+        bind: initiative-slug
+        format: "`{initiative-slug}` exists at the top level as a feature, not an initiative. A feature and an initiative can't share a top-level slug. Either pick a different initiative name, or first move the existing `{initiative-slug}` feature into an initiative with /parlay-move-feature."
+        visible-when: top-level-collision
+
+      - name: partial-failure-message
+        widget: fmt.Println
+        bind: initiative-slug
+        format: "Created initiative `{initiative-slug}` (in deferred classification — no features yet), but couldn't create feature `{feature-slug}`. Re-run the same command after fixing the issue — it's idempotent and will reuse the existing initiative directory."
+        visible-when: partial-failure
+
+      - name: next-step-message
+        widget: fmt.Println
+        bind: feature-path
+        format: "Start with intents.md. When ready, run: /parlay-scaffold-dialogs @{initiative-slug}/{feature-slug}"
+        visible-when: not any-failure
+
+    actions:
+      - name: invoke-add-feature-with-initiative
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: add-feature-with-initiative
+
+    operations:
+      - type: transform
+        source: feature-name
+        using: slugify
+        bind: feature-slug
+
+      - type: transform
+        source: initiative-name
+        using: slugify
+        bind: initiative-slug
+
+      - type: read-file
+        path: spec/intents/{initiative-slug}/
+        bind: initiative-state
+
+      - type: filter
+        source: initiative-state
+        where: "is-orphan-feature == true"
+        bind: top-level-collision-detected
+
+      - type: create-directory
+        path: spec/intents/{initiative-slug}/
+
+      - type: create-directory
+        path: spec/handoff/{initiative-slug}/
+
+      - type: create-directory
+        path: .parlay/build/{initiative-slug}/
+
+      - type: create-directory
+        path: spec/intents/{initiative-slug}/{feature-slug}/
+
+      - type: create-directory
+        path: spec/handoff/{initiative-slug}/{feature-slug}/
+
+      - type: create-directory
+        path: .parlay/build/{initiative-slug}/{feature-slug}/
+
+      - type: write-file
+        path: spec/intents/{initiative-slug}/{feature-slug}/intents.md
+        template: feature-intents-template
+
+      - type: write-file
+        path: spec/intents/{initiative-slug}/{feature-slug}/dialogs.md
+        template: feature-dialogs-template
+
+  EmptyInitiativeCreationResult:
+    source: "@initiatives/empty-initiative-creation-result"
+    widget: cobra-command
+    description: Output of `parlay new-initiative <name>`. Reports successful creation across the three trees (with deferred-classification note and next-step guidance), idempotent no-op when the initiative already exists, or top-level namespace collision when the slug is taken by an orphan feature.
+
+    data:
+      inputs:
+        - name: initiative-name
+          model: Initiative
+          field: slug
+          from: command-argument
+        - name: project
+          model: Project
+          field: ""
+          from: fixture
+
+      computed:
+        - name: initiative-slug
+          from: Slugify(initiative-name)
+          type: string
+        - name: initiative-path
+          from: "{project.intents-tree}{initiative-slug}"
+          type: string
+        - name: handoff-path
+          from: "{project.handoff-tree}{initiative-slug}"
+          type: string
+        - name: build-path
+          from: "{project.build-tree}{initiative-slug}"
+          type: string
+        - name: already-exists
+          from: spec/intents/<initiative-slug>/ already exists as an initiative or empty (deferred) directory
+          type: boolean
+        - name: top-level-collision
+          from: spec/intents/<initiative-slug>/ exists as an orphan feature with intents.md at its root
+          type: boolean
+
+    elements:
+      - name: status-success
+        widget: prefixed-message
+        bind: initiative-slug
+        format: "[OK]"
+        visible-when: not (already-exists or top-level-collision)
+
+      - name: status-noop
+        widget: prefixed-message
+        bind: initiative-slug
+        format: "[OK]"
+        visible-when: already-exists
+
+      - name: status-error
+        widget: prefixed-message
+        bind: initiative-slug
+        format: "[ERR]"
+        visible-when: top-level-collision
+
+      - name: created-message
+        widget: fmt.Println
+        bind: initiative-path
+        format: "Initiative {initiative-slug} created at {initiative-path}/ (with matching parallel paths under {handoff-path}/ and {build-path}/)."
+        visible-when: not (already-exists or top-level-collision)
+
+      - name: deferred-classification-note
+        widget: fmt.Println
+        bind: initiative-slug
+        format: "The directory is empty and in deferred classification — it becomes a proper initiative once it contains at least one feature subdirectory. A README.md on its own does not change that — it is narrative, not a classification signal."
+        visible-when: not (already-exists or top-level-collision)
+
+      - name: already-exists-message
+        widget: fmt.Println
+        bind: initiative-path
+        format: "Initiative {initiative-slug} already exists at {initiative-path}/ — no changes made."
+        visible-when: already-exists
+
+      - name: collision-message
+        widget: fmt.Println
+        bind: initiative-slug
+        format: "`{initiative-slug}` exists at the top level as a feature. An initiative can't share a top-level slug with a feature. Pick a different name, or first move the existing feature into an initiative with /parlay-move-feature."
+        visible-when: top-level-collision
+
+      - name: next-steps-list
+        widget: bulleted-list
+        bind: initiative-slug
+        format: |
+          - Add features with /parlay-add-feature <name> --initiative {initiative-slug}
+          - Move existing features in with /parlay-move-feature @<feature> --to {initiative-slug}
+          - Optionally write {initiative-path}/README.md with the initiative's "why" and scope notes
+        visible-when: not (already-exists or top-level-collision)
+
+    actions:
+      - name: invoke-new-initiative
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: new-initiative
+
+    operations:
+      - type: transform
+        source: initiative-name
+        using: slugify
+        bind: initiative-slug
+
+      - type: read-file
+        path: spec/intents/{initiative-slug}/
+        bind: existing-state
+
+      - type: create-directory
+        path: spec/intents/{initiative-slug}/
+
+      - type: create-directory
+        path: spec/handoff/{initiative-slug}/
+
+      - type: create-directory
+        path: .parlay/build/{initiative-slug}/
+
+cross-cutting:
+  - id: directory-classification-validation
+    source: "@initiatives/group-features-under-an-initiative"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "hasIntentsMd|AllFeaturePaths"
+    transform: >
+      Replace inline classification logic in AllFeaturePaths with a dedicated classifyDir function.
+      Introduce DirClass enum (Feature=1, Initiative=2, Deferred=3) and classifyDir(path string) (DirClass, error).
+      Feature: directory contains intents.md directly. Initiative: directory contains direct-child subdirectories
+      with intents.md (not recursively). Deferred: matches neither rule — valid, silently skipped in enumeration.
+      Two error states: (1) Hybrid — directory has both intents.md and child dirs with intents.md — error names
+      the offending path and explains the mutual exclusion rule. (2) Sub-initiative — a directory at depth 2+
+      classifies as an initiative — error names the offending path and cites the flat-hierarchy rule.
+      AllFeaturePaths calls classifyDir for each entry and propagates errors instead of silently skipping
+      invalid structures.
+    introduces:
+      - "classifyDir(path string) (DirClass, error)"
+      - "DirClass (type DirClass int — Feature=1, Initiative=2, Deferred=3)"
+    backward-compatible: true
+
+  - id: duplicate-slug-detection
+    source: "@initiatives/group-features-under-an-initiative"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "resolveQualifiedPath|AllFeaturePaths"
+    transform: >
+      Add defensive duplicate-slug detection during path resolution and feature enumeration.
+      Introduce checkSlugUniqueness(parentDir string) error that slugifies each sibling directory
+      name in the given parent and checks for collisions. When two or more directories slugify to
+      the same identifier, return an error listing all conflicting paths. Call checkSlugUniqueness
+      from resolveQualifiedPath before returning a resolved path, and from AllFeaturePaths during
+      the directory scan. This guards against external filesystem corruption (manual cp, IDE
+      drag-and-drop) — parlay commands enforce uniqueness at creation time so this should never
+      fire during normal operation. The check is per-parent-directory, bounded by sibling count.
+    introduces:
+      - "checkSlugUniqueness(parentDir string) error"
+    backward-compatible: true
+
+  - id: cross-tree-traversal-consistency
+    source: "@initiatives/group-features-under-an-initiative"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "AllFeaturePaths"
+    transform: >
+      Modify AllFeaturePaths so that when called with a non-spec/intents tree root (spec/handoff/
+      or .parlay/build/), classification is always performed against the spec/intents/ tree — the
+      authoritative source — rather than the requested tree root. A feature that exists in
+      spec/intents/ but is missing from the requested tree should still appear in enumeration
+      (flagged as out-of-sync) rather than being silently omitted. Cache the spec/intents/ scan
+      result per-process (tree-scan-on-first-access) to avoid repeated filesystem walks when
+      multiple commands enumerate features in a single invocation.
+    caching: tree-scan-on-first-access
+    backward-compatible: true

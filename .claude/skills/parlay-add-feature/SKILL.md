@@ -1,3 +1,8 @@
+---
+name: parlay-add-feature
+description: "Parlay: Create a new feature"
+---
+
 # Add Feature
 
 Create a new feature folder with intents.md and dialogs.md. Optionally place it inside an initiative.

@@ -16,6 +16,7 @@ All operations are available as /parlay-* slash commands.
 - `/parlay-generate-enggspec` — Generate engineering specification
 - `/parlay-load-domain-model` — Load and integrate external domain model
 - `/parlay-lock-page` — Lock a page layout into a manifest
+- `/parlay-new-initiative` — Create an empty initiative directory
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
 - `/parlay-reference-design-spec` — Extract design spec from Figma
 - `/parlay-register-adapter` — Register a framework adapter
