@@ -52,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(createArtifactsCmdImpl)
 	rootCmd.AddCommand(newInitiativeCmd)
 	rootCmd.AddCommand(simplifyCmd)
+	rootCmd.AddCommand(moveFeatureCmd)
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)

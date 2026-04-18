@@ -1,0 +1,19 @@
+generated-at: "2026-04-18T09:53:59Z"
+intents:
+    move-a-feature-between-locations:
+        content-hash: a39f49fbee12076a
+        goal-hash: de322602ab7c76a5
+        constraints-hash: ff6e0bfba69d2f6a
+        verify-hash: 1eebf010fc899ac7
+        objects-hash: 14607978ec61e84f
+sources:
+    intents:
+        move-a-feature-between-locations: ef784d1b50311ae0
+    dialogs:
+        move-a-feature-between-locations: 0f083b87f9d4872f
+    surface-fragments:
+        move-result: 71d2dd429361277f
+buildfile-sections:
+    fixtures: 3cf1a01a53ef042f
+    models: b91a7e33facfe1d5
+    routes: 9638152e9491b0e1

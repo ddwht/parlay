@@ -1,4 +1,4 @@
-generated-at: "2026-04-18T09:19:55Z"
+generated-at: "2026-04-18T09:53:59Z"
 files:
     internal/commands/add_feature.go:
         component: feature-scaffold-confirmation
@@ -9,6 +9,12 @@ files:
     internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
         hash: 58fad3d31c6c3f39
+    internal/commands/move_feature.go:
+        component: MoveResult
+        hash: cf2cf62f51d97438
+    internal/commands/move_feature_test.go:
+        component: MoveResult
+        hash: 674a4aeda0e7f8cc
     internal/commands/new_initiative.go:
         component: EmptyInitiativeCreationResult
         hash: 8cedb6705593b24d
