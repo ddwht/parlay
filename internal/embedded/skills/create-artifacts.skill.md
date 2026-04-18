@@ -32,10 +32,13 @@ Determine whether a feature needs `surface.md`, `infrastructure.md`, or both —
    - Dialog shows both CLI output and code modification steps
    - Objects mix user-facing and code-level concepts
 
+   **Blueprint check** (after per-intent analysis): If `.parlay/blueprint.yaml` exists, check whether the feature's intents imply changes to any cross-cutting system documented there (e.g., deployers, registries, shared layers). Features that appear surface-only from their intents may also need infrastructure to integrate with the project's shared architecture. When in doubt, recommend **both** and explain the blueprint-derived reason to the designer.
+
 3. **Determine the artifact set**:
-   - All intents are surface → **surface only**
+   - All intents are surface, no blueprint implications → **surface only**
    - All intents are infrastructure → **infrastructure only**
    - Mix of surface and infrastructure intents → **both**
+   - Surface intents with blueprint-derived infrastructure implications → **both** (explain why)
    - Any ambiguous intents → **ask the designer** (step 4)
 
 4. **Present the decision** — Show the designer:

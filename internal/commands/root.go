@@ -52,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(newInitiativeCmd)
 	rootCmd.AddCommand(simplifyCmd)
 	rootCmd.AddCommand(moveFeatureCmd)
+	rootCmd.AddCommand(repairCmd)
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)

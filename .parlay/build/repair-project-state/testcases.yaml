@@ -1,0 +1,161 @@
+feature: repair-project-state
+framework: go-test
+
+suites:
+  - name: RepairReport — project in lockstep
+    component: RepairReport
+    fixture: project-in-lockstep
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: no mismatches reports lockstep
+        description: When all three trees are consistent, the command reports success and exits cleanly.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: lockstep-message
+            expected: true
+          - verify: hidden
+            target: mismatch-count
+
+  - name: RepairReport — initiative rename
+    component: RepairReport
+    fixture: initiative-rename
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: detects rename and applies on confirmation
+        description: An initiative renamed in spec/intents/ is detected and the rename is applied to the other two trees.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: rename-prompt
+            expected: true
+          - action: click
+            target: rename-prompt
+          - verify: visible
+            target: applied-status
+            expected: true
+
+  - name: RepairReport — feature move
+    component: RepairReport
+    fixture: feature-move
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: detects move and applies on confirmation
+        description: A feature moved via plain mv is detected and the move is replicated on the other trees.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: rename-prompt
+            expected: true
+          - action: click
+            target: rename-prompt
+          - verify: visible
+            target: applied-status
+            expected: true
+
+  - name: RepairReport — ambiguous renames
+    component: RepairReport
+    fixture: ambiguous-renames
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: presents candidate pairings for disambiguation
+        description: When multiple renames happened simultaneously, the designer picks the correct pairing.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: ambiguous-prompt
+            expected: true
+          - verify: count
+            target: ambiguous-prompt
+            expected: 2
+
+  - name: RepairReport — missing directory
+    component: RepairReport
+    fixture: missing-directory
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: offers to recreate missing directory
+        description: A directory present in spec/intents/ but missing from another tree triggers a recreate prompt.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: missing-prompt
+            expected: true
+
+  - name: RepairReport — extra directory
+    component: RepairReport
+    fixture: extra-directory
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: delete prompt defaults to no
+        description: Extra directories prompt for deletion with default no — pressing Enter keeps them.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: delete-prompt
+            expected: true
+          - verify: text
+            target: delete-prompt
+            expected: "3 files"
+
+  - name: RepairReport — unrecognized mismatch
+    component: RepairReport
+    fixture: unrecognized
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: unrecognized mismatch is reported with paths and left unresolved
+        description: Mismatches that don't fit any category are reported with full paths and left for manual resolution.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: unrecognized-message
+            expected: true
+
+  - name: RepairReport — dry-run
+    component: RepairReport
+    fixture: initiative-rename
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: dry-run reports without applying or prompting
+        description: With --dry-run, mismatches are listed with [WOULD FIX] prefix but no changes are made.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: dry-run-prefix
+            expected: true
+          - verify: hidden
+            target: rename-prompt
+
+  - name: RepairReport — rollback on failure
+    component: RepairReport
+    fixture: initiative-rename
+    intent: "@repair-project-state/repair-project-state"
+
+    cases:
+      - name: failed repair is rolled back and reported
+        description: If a confirmed repair fails partway, it is rolled back and the error is reported. Other repairs continue.
+        steps:
+          - action: render
+            target: RepairReport
+          - verify: visible
+            target: failed-status
+            expected: true
+          - verify: text
+            target: failed-status
+            expected: "rolled back"

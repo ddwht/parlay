@@ -39,6 +39,7 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "- `parlay check-coverage @<feature>` — Coverage check (JSON)\n"
 	content += "- `parlay view-page <page>` — Assemble page view\n"
 	content += "- `parlay lock-page <page>` — Lock page layout\n"
+	content += "- `parlay repair [--dry-run] [--yes]` — Validate and reconcile the three parallel trees\n"
 	content += "- `parlay upgrade` — Redeploy skills and schemas from the binary\n"
 
 	return os.WriteFile(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content), 0644)

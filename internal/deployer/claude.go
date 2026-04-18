@@ -122,6 +122,7 @@ func skillTitle(name string) string {
 		"register-adapter":     "Register a framework adapter",
 		"onboard":              "Onboard existing codebase and draft adapter",
 		"new-initiative":       "Create an empty initiative directory",
+		"repair":              "Validate and reconcile the three parallel trees",
 	}
 	if t, ok := titles[name]; ok {
 		return t

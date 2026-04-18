@@ -1,4 +1,4 @@
-generated-at: "2026-04-18T10:04:29Z"
+generated-at: "2026-04-18T10:25:57Z"
 files:
     internal/commands/add_feature.go:
         component: feature-scaffold-confirmation
@@ -21,6 +21,9 @@ files:
     internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
         hash: 22ba1eb290edaa2c
+    internal/commands/repair.go:
+        component: RepairReport
+        hash: e849d1f3aa33601b
     internal/commands/simplify.go:
         component: DuplicationScanResults
         hash: 2f1e5d5996ae1550
