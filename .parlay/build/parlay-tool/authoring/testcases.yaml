@@ -1,0 +1,154 @@
+feature: parlay-tool/authoring
+framework: go-test
+
+suites:
+  - name: FeatureScaffoldConfirmation — creates feature
+    component: FeatureScaffoldConfirmation
+    fixture: new-feature
+    intent: "@parlay-tool/authoring/author-intents"
+
+    cases:
+      - name: creates feature directory with intents.md and dialogs.md
+        description: The command creates the feature folder and scaffolds both template files.
+        steps:
+          - action: render
+            target: FeatureScaffoldConfirmation
+          - verify: element
+            target: created-path
+          - verify: element
+            target: files-list
+          - verify: element
+            target: next-step
+
+  - name: DialogGenerationReport — generates complete dialogs
+    component: DialogGenerationReport
+    fixture: feature-with-intents-no-dialogs
+    intent: "@parlay-tool/authoring/scaffold-dialogs-from-intents"
+
+    cases:
+      - name: generates complete dialogs for intents without dialogs
+        description: Each intent that lacks a dialog gets a template appended to dialogs.md.
+        steps:
+          - action: render
+            target: DialogGenerationReport
+          - verify: visible
+            target: templates-generated
+            expected: true
+
+      - name: reports all covered when no gaps
+        description: When every intent already has a dialog, no templates are generated.
+        steps:
+          - action: render
+            target: DialogGenerationReport
+          - verify: visible
+            target: all-covered
+            expected: true
+
+  - name: DialogUpdateProposals — proposes updates from changed intents
+    component: DialogUpdateProposals
+    fixture: feature-with-changed-intents
+    intent: "@parlay-tool/authoring/update-dialogs-from-changed-intents"
+
+    cases:
+      - name: proposes new branch for new constraint
+        description: When an intent adds a new Constraint, the agent proposes a dialog branch for it.
+        steps:
+          - action: render
+            target: DialogUpdateProposals
+          - verify: visible
+            target: update-detail
+            expected: true
+          - verify: text
+            target: update-detail
+            expected: "new-constraint"
+
+      - name: skips cosmetic changes silently
+        description: Rewording that doesn't change the dialog flow produces no proposal.
+        steps:
+          - action: render
+            target: DialogUpdateProposals
+          - verify: visible
+            target: cosmetic-skip
+            expected: true
+
+      - name: designer can accept or reject each update independently
+        description: Each proposed update has accept/skip/edit options.
+        steps:
+          - action: render
+            target: DialogUpdateProposals
+          - verify: element
+            target: choose-update-action
+
+      - name: reports up to date when nothing changed
+        description: When no intent changes affect dialogs, the message says "up to date."
+        steps:
+          - action: render
+            target: DialogUpdateProposals
+          - verify: visible
+            target: no-updates
+            expected: true
+
+  - name: CoverageReport — full coverage
+    component: CoverageReport
+    fixture: feature-all-up-to-date
+    intent: "@parlay-tool/authoring/sync-intents-and-dialogs"
+
+    cases:
+      - name: all covered with no orphans
+        description: When every intent has a dialog and there are no orphans, reports all clear.
+        steps:
+          - action: render
+            target: CoverageReport
+          - verify: visible
+            target: all-clear
+            expected: true
+
+  - name: CoverageReport — gaps found
+    component: CoverageReport
+    fixture: coverage-with-gaps
+    intent: "@parlay-tool/authoring/sync-intents-and-dialogs"
+
+    cases:
+      - name: uncovered intents are listed
+        description: Intents without matching dialogs are listed with an option to generate templates.
+        steps:
+          - action: render
+            target: CoverageReport
+          - verify: visible
+            target: uncovered-list
+            expected: true
+          - verify: element
+            target: generate-templates-prompt
+
+      - name: orphan dialogs are listed
+        description: Dialogs that don't trace to any intent are flagged.
+        steps:
+          - action: render
+            target: CoverageReport
+          - verify: visible
+            target: orphan-list
+            expected: true
+
+  # --- Infrastructure: cross-cutting test suites ---
+
+  - name: scaffold-dialogs-skill-complete-generation — skill extended with update phase
+    component: scaffold-dialogs-skill-complete-generation
+    fixture: feature-with-changed-intents
+    intent: "@parlay-tool/authoring/update-dialogs-from-changed-intents"
+
+    cases:
+      - name: scaffold-dialogs skill includes update phase after scaffolding
+        description: The skill first scaffolds missing templates, then compares existing dialogs against changed intents.
+        steps:
+          - action: render
+            target: scaffold-dialogs-skill-complete-generation
+          - verify: element
+            target: scaffold-dialogs-skill-complete-generation
+
+      - name: designer approval required before modifying dialogs.md
+        description: Each proposed update requires explicit acceptance before the file is modified.
+        steps:
+          - action: render
+            target: scaffold-dialogs-skill-complete-generation
+          - verify: element
+            target: scaffold-dialogs-skill-complete-generation

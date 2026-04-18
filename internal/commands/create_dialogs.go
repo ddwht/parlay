@@ -1,7 +1,7 @@
-package commands
+// parlay-feature: parlay-tool/authoring
+// parlay-component: DialogGenerationReport
 
-// Generated from buildfile component: dialog-template-report
-// Type: command-output | Widget: cobra-command | Layout: file-generator
+package commands
 
 import (
 	"fmt"

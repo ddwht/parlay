@@ -1,14 +1,20 @@
-generated-at: "2026-04-18T10:25:57Z"
+generated-at: "2026-04-18T12:24:38Z"
 files:
     internal/commands/add_feature.go:
-        component: feature-scaffold-confirmation
-        hash: 0d139fc50ad90884
+        component: FeatureScaffoldConfirmation
+        hash: 13610de5a544a5ca
+    internal/commands/check_coverage.go:
+        component: CoverageReport
+        hash: 47250e86050bee50
     internal/commands/check_readiness.go:
         component: check-readiness
         hash: 1bf592333df08061
     internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
         hash: 58fad3d31c6c3f39
+    internal/commands/create_dialogs.go:
+        component: DialogGenerationReport
+        hash: 70a462f4074fd98d
     internal/commands/move_feature.go:
         component: MoveResult
         hash: cf2cf62f51d97438

@@ -1,3 +1,6 @@
+// parlay-feature: parlay-tool/authoring
+// parlay-component: CoverageReport
+
 package commands
 
 import (

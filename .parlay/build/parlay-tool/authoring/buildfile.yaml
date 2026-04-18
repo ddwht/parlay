@@ -1,0 +1,342 @@
+feature: parlay-tool/authoring
+adapter: go-cli
+
+models:
+  Feature:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Display name of the feature
+      slug:
+        type: string
+        required: true
+        description: Slugified folder name
+      path:
+        type: string
+        required: true
+        description: "spec/intents/<slug>/"
+
+  DialogUpdate:
+    properties:
+      intent-title:
+        type: string
+        required: true
+        description: Name of the intent that changed
+      change-type:
+        type: enum
+        enum: [new-constraint, new-verify, renamed, cosmetic]
+        required: true
+      intent-field:
+        type: string
+        required: true
+        description: Which intent field changed (Constraints, Verify, Goal, etc.)
+      proposed-change:
+        type: string
+        required: true
+        description: Description of the proposed dialog modification
+      accepted:
+        type: boolean
+        required: false
+
+  CoverageReport:
+    properties:
+      covered-intents:
+        type: string[]
+        required: true
+      uncovered-intents:
+        type: string[]
+        required: true
+      orphan-dialogs:
+        type: string[]
+        required: true
+      drifted-intents:
+        type: string[]
+        required: false
+
+fixtures:
+  new-feature:
+    description: A freshly created feature with no intents yet.
+    data:
+      Feature:
+        - name: "upgrade plan creation"
+          slug: "upgrade-plan-creation"
+          path: "spec/intents/upgrade-plan-creation/"
+
+  feature-with-intents-no-dialogs:
+    description: A feature with 3 intents and no dialogs — ready for scaffolding.
+    data:
+      Feature:
+        - name: "upgrade plan creation"
+          slug: "upgrade-plan-creation"
+          path: "spec/intents/upgrade-plan-creation/"
+
+  feature-with-changed-intents:
+    description: A feature where intents have changed after dialogs were authored — update proposals expected.
+    data:
+      DialogUpdate:
+        - intent-title: "Group Features under an Initiative"
+          change-type: new-constraint
+          intent-field: Constraints
+          proposed-change: "Add branch 'Hybrid directory detected' to cover the new mutual exclusion constraint"
+        - intent-title: "Create a Feature Inside an Initiative"
+          change-type: cosmetic
+          intent-field: Goal
+          proposed-change: ""
+
+  feature-all-up-to-date:
+    description: A feature where all dialogs match their intents — no updates needed.
+    data:
+      DialogUpdate: []
+
+  coverage-with-gaps:
+    description: A feature with partial coverage — some intents lack dialogs, some dialogs are orphaned.
+    data:
+      CoverageReport:
+        - covered-intents: ["Check Upgrade Readiness", "Start Cluster Upgrade"]
+          uncovered-intents: ["Resolve Upgrade Blockers"]
+          orphan-dialogs: ["Legacy Admin Flow"]
+
+routes:
+  - path: add-feature
+    page: add-feature
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [FeatureScaffoldConfirmation]
+
+  - path: create-dialogs
+    page: create-dialogs
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [DialogGenerationReport, DialogUpdateProposals]
+
+  - path: sync
+    page: sync
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [CoverageReport]
+
+components:
+  FeatureScaffoldConfirmation:
+    source: "@parlay-tool/authoring/feature-scaffold-confirmation"
+    widget: cobra-command
+    description: Output of `parlay add-feature <name>`. Creates the feature directory with intents.md and dialogs.md templates.
+
+    data:
+      inputs:
+        - name: feature-name
+          model: Feature
+          field: name
+          from: command-argument
+      computed:
+        - name: slug
+          from: "Slugify(feature-name)"
+          type: string
+        - name: path
+          from: "spec/intents/{slug}/"
+          type: string
+
+    elements:
+      - name: created-path
+        widget: fmt.Printf
+        bind: path
+        format: "Created feature at {path}"
+        visible-when: always
+      - name: files-list
+        widget: bulleted-list
+        bind: ""
+        format: "intents.md, dialogs.md"
+        visible-when: always
+      - name: next-step
+        widget: fmt.Println
+        bind: slug
+        format: "Start with intents.md. When ready, run: parlay create-dialogs @{slug}"
+        visible-when: always
+
+    actions:
+      - name: invoke-add-feature
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: add-feature
+
+  DialogGenerationReport:
+    source: "@parlay-tool/authoring/dialog-generation-report"
+    widget: cobra-command
+    description: Generation phase output of `/parlay-scaffold-dialogs`. Reports how many complete dialogs were generated — full flows with triggers, turns, and edge case branches from Constraints and Verify items.
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: Feature
+          field: slug
+          from: command-argument
+      computed:
+        - name: intent-count
+          from: "count of intents in intents.md"
+          type: number
+        - name: new-template-count
+          from: "intents that don't have matching dialogs"
+          type: number
+        - name: skipped-count
+          from: "intents that already have dialogs"
+          type: number
+
+    elements:
+      - name: intent-count-message
+        widget: fmt.Println
+        bind: intent-count
+        format: "Found {intent-count} intents."
+        visible-when: always
+      - name: dialogs-generated
+        widget: fmt.Println
+        bind: new-template-count
+        format: "Generated {new-template-count} complete dialogs in dialogs.md."
+        visible-when: "new-template-count > 0"
+      - name: skipped-message
+        widget: fmt.Println
+        bind: skipped-count
+        format: "Skipped {skipped-count} intents that already have dialogs."
+        visible-when: "skipped-count > 0"
+      - name: all-covered
+        widget: fmt.Println
+        bind: ""
+        format: "All intents already have dialogs. Checking for updates..."
+        visible-when: "new-template-count == 0"
+
+    actions:
+      - name: invoke-scaffold
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: create-dialogs
+
+  DialogUpdateProposals:
+    source: "@parlay-tool/authoring/dialog-update-proposals"
+    widget: cobra-command
+    description: Update phase output of `/parlay-scaffold-dialogs`. Compares existing dialogs against changed intents and proposes specific updates for designer approval.
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: Feature
+          field: slug
+          from: command-argument
+      computed:
+        - name: updates
+          from: "compare each dialog against its matched intent, find meaningful drift"
+          type: DialogUpdate[]
+        - name: update-count
+          from: "len(updates where change-type != cosmetic)"
+          type: number
+        - name: applied-count
+          from: "updates accepted by the designer"
+          type: number
+        - name: skipped-count
+          from: "updates rejected or cosmetic"
+          type: number
+
+    elements:
+      - name: updates-found
+        widget: headed-section
+        bind: updates
+        format: "Found {update-count} dialog update(s) based on intent changes:"
+        visible-when: "update-count > 0"
+      - name: update-detail
+        widget: fmt.Println
+        bind: update
+        format: "**{intent-title}** ({change-type}): {intent-field} changed\n  Proposed: {proposed-change}"
+        visible-when: "change-type != cosmetic"
+      - name: cosmetic-skip
+        widget: fmt.Println
+        bind: update
+        format: "Skipped — cosmetic, no dialog impact."
+        visible-when: "change-type == cosmetic"
+      - name: applied-status
+        widget: prefixed-message
+        bind: update
+        format: "[OK] Applied update."
+        visible-when: "update.accepted"
+      - name: no-updates
+        widget: fmt.Println
+        bind: ""
+        format: "Dialogs are up to date — no updates needed."
+        visible-when: "update-count == 0"
+      - name: completion
+        widget: fmt.Println
+        bind: ""
+        format: "Done. Applied {applied-count} update(s), skipped {skipped-count}."
+        visible-when: "update-count > 0"
+
+    actions:
+      - name: choose-update-action
+        widget: lettered-prompt
+        enabled-when: "change-type != cosmetic"
+        effect: call
+        target: accept-or-skip-update
+
+  CoverageReport:
+    source: "@parlay-tool/authoring/coverage-report"
+    widget: cobra-command
+    description: Output of `/parlay-sync`. Reports intent-dialog coverage, orphan dialogs, and content drift since the last build.
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: Feature
+          field: slug
+          from: command-argument
+      computed:
+        - name: report
+          from: "match intents to dialogs, detect drift"
+          type: CoverageReport
+
+    elements:
+      - name: covered-list
+        widget: bulleted-list
+        bind: report.covered-intents
+        format: "{intent} — matched by {dialog}"
+        visible-when: "len(report.covered-intents) > 0"
+      - name: uncovered-list
+        widget: bulleted-list
+        bind: report.uncovered-intents
+        format: "{intent} — no matching dialog found"
+        visible-when: "len(report.uncovered-intents) > 0"
+      - name: orphan-list
+        widget: bulleted-list
+        bind: report.orphan-dialogs
+        format: "{dialog} — doesn't trace to any intent"
+        visible-when: "len(report.orphan-dialogs) > 0"
+      - name: all-clear
+        widget: fmt.Println
+        bind: ""
+        format: "All intents are covered. No orphan dialogs."
+        visible-when: "len(report.uncovered-intents) == 0 and len(report.orphan-dialogs) == 0"
+
+    actions:
+      - name: generate-templates-prompt
+        widget: lettered-prompt
+        enabled-when: "len(report.uncovered-intents) > 0"
+        effect: call
+        target: generate-dialog-templates
+
+cross-cutting:
+  - id: scaffold-dialogs-skill-complete-generation
+    source: "@parlay-tool/authoring/generate-dialogs-from-intents, @parlay-tool/authoring/update-dialogs-from-changed-intents"
+    target-files:
+      - internal/embedded/skills/scaffold-dialogs.skill.md
+    transform: >
+      Rewrite the scaffold-dialogs skill from template scaffolding to complete dialog
+      generation. The skill reads each intent's Goal, Context, Action, Constraints,
+      and Verify items and produces full dialog flows — triggers, happy path user/system
+      turns, branches for every Constraint that implies user-visible behavior, and
+      branches for every Verify edge case. When ambiguities are detected in intents,
+      the skill asks the designer to resolve them BEFORE generating — not after. When
+      all intents already have dialogs, the skill compares each dialog against its
+      current intent and proposes complete updates (full branches with content, not
+      stubs) for meaningful changes. Cosmetic changes are silently skipped. The
+      designer approves each change before dialogs.md is modified.
+    backward-compatible: false

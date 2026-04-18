@@ -1,0 +1,46 @@
+generated-at: "2026-04-18T12:24:38Z"
+intents:
+    author-intents:
+        content-hash: 0eedf5f52d571df2
+        goal-hash: 13e5666bb7f625f1
+        constraints-hash: 9884f77f34910c34
+        verify-hash: 72bdaaeab6a02bdf
+        objects-hash: d63e6ece04ffdb84
+    generate-dialogs-from-intents:
+        content-hash: 8cf29b4f9f903359
+        goal-hash: ba9f15493a0852e3
+        constraints-hash: d3d88b72a147fa14
+        verify-hash: 8483feb7f366f0f0
+        objects-hash: b47296b2f54e9389
+    sync-intents-and-dialogs:
+        content-hash: b449c6d7211a6946
+        goal-hash: bf3caafa8461e921
+        constraints-hash: 0863bbe5c6afdc43
+        verify-hash: 17aa7a9b77310441
+        objects-hash: 6007e612dee7a6e9
+    update-dialogs-from-changed-intents:
+        content-hash: 1bd7d346f06f6cca
+        goal-hash: c23ed8cba7d3dea1
+        constraints-hash: 227a3283282d0fc2
+        verify-hash: c635ac9639797759
+        objects-hash: 4915c0a1339d335e
+sources:
+    intents:
+        author-intents: 24cd953e08cb91a0
+        generate-dialogs-from-intents: 3a2418b76c59842c
+        sync-intents-and-dialogs: ea4bcb0be341c6d8
+        update-dialogs-from-changed-intents: 412211cb962f17a8
+    dialogs:
+        add-feature: dbc22ed22021d9a6
+        generate-dialogs-from-intents: 1e27f46cab15338b
+        sync-intents-and-dialogs: 3aabb2434d70ea81
+        update-dialogs-from-changed-intents: 57d1ec0121826734
+    surface-fragments:
+        coverage-report: 796ec4cde7431dd5
+        dialog-generation-report: 7023f837ea65a202
+        dialog-update-proposals: 49286e6c893a9285
+        feature-scaffold-confirmation: 37d45000bfa61252
+buildfile-sections:
+    fixtures: ddc160700de6b96c
+    models: 7bbe64bd10b995a4
+    routes: dcf2b9e4832dce28

@@ -1,6 +1,6 @@
 # Authoring
 
-> The design authoring loop — capturing user goals as intents, scaffolding dialog templates, and checking coverage between intents and dialogs.
+> The design authoring loop — capturing user goals as intents, generating complete dialogs from intents, updating dialogs when intents change, and checking coverage.
 
 ---
 
@@ -30,28 +30,58 @@
 
 ---
 
-## Scaffold Dialogs from Intents
+## Generate Dialogs from Intents
 
-**Goal**: Generate dialog templates from authored intents so the designer has a starting point for writing user-system conversations.
+**Goal**: Generate complete, ready-to-review dialogs from authored intents — full dialog flows with triggers, user/system turns, and edge case branches derived from the intent's Constraints and Verify items — not empty templates.
 **Persona**: UX Designer
 **Priority**: P1
-**Context**: The designer has finished authoring intents for a feature and is ready to describe the user-system interactions.
-**Action**: Run a command that reads intents and generates one dialog template per intent, pre-filled from Goal and Action fields.
-**Objects**: intent, dialog, dialog-template, feature
+**Context**: The designer has finished authoring intents for a feature. Each intent contains enough information (Goal, Context, Action, Constraints, Verify, Objects) for the agent to produce complete dialog flows that the designer can review and refine — rather than empty templates that require writing from scratch.
+**Action**: Run `/parlay-scaffold-dialogs @feature`. The agent reads each intent, identifies ambiguities that would block dialog generation, asks the designer to resolve them first, then generates complete dialogs. For intents that already have dialogs, the agent compares the existing dialog against the current intent and proposes updates for meaningful changes.
+**Objects**: intent, dialog, feature
 
 **Constraints**:
-- Generated templates must follow the dialog schema and be immediately editable
-- Templates are a starting point — the designer owns and rewrites them
-- Must not overwrite existing dialogs if some have already been authored
+- Generated dialogs must be complete — full trigger, happy path with user/system turns, branches for edge cases (derived from Constraints and Verify items), and error handling flows. Not placeholder templates with `==fill in==` markers.
+- The agent reads each intent's Goal (what the user wants), Context (when this happens), Action (how it's done), Constraints (rules and edge cases), and Verify (expected outcomes) to produce the dialog content.
+- **Ambiguity-first**: if an intent has ambiguity that would affect the dialog (unclear Goal, contradictory Constraints, missing Context for a branching decision), the agent asks the designer to clarify BEFORE generating. The agent does not produce dialogs with gaps — it resolves gaps first, then generates.
+- Must not overwrite existing designer-authored dialogs. For intents that already have dialogs, the agent runs the update pass instead of regenerating.
+- Each Constraint that implies a user-visible behavior should produce a dialog branch or system turn. Each Verify item that describes an edge case should produce a dialog branch showing that edge case.
+- Generated dialogs follow the dialog schema: `### ` heading, `**Trigger**:` field, `User:`/`System:` turns, `#### Branch:` sections for alternatives and edge cases.
+- The designer reviews and can edit the generated dialogs — they are high-quality starting points, not final drafts. But they should be complete enough that most dialogs need only minor refinement, not rewriting.
 
 **Verify**:
-- Each generated template has a `### ` heading and `**Trigger**:` field
-- Existing dialogs in the file are preserved when new templates are appended
-- Templates pre-fill `User:` and `System:` turns from the intent's Goal and Action
+- Running scaffold-dialogs on a feature with 3 intents and no dialogs produces 3 complete dialog sections with triggers, happy paths, and branches — not 3 empty templates
+- Each generated dialog has branches derived from the intent's Constraints (e.g., a constraint about collision detection produces a "Branch: Scope collision" in the dialog)
+- Each generated dialog has branches derived from the intent's Verify items that describe edge cases
+- If an intent's Goal is ambiguous, the agent asks the designer before generating (not after)
+- Existing designer-authored dialogs are never overwritten — only updated via the update pass
+- The generated dialogs are complete enough that a designer can review and approve them with minor edits
 
-**Questions**:
-- Should the command generate one dialog per intent, or group related intents into a single dialog?
-- What if some intents are too abstract to produce a useful dialog template?
+---
+
+## Update Dialogs from Changed Intents
+
+**Goal**: When intents change after dialogs exist, detect the meaningful differences and generate complete dialog updates — new branches with full content, updated system turns, corrected triggers — presenting each for the designer's approval.
+**Persona**: UX Designer
+**Priority**: P1
+**Context**: The designer revised intents — added constraints, changed verify items, renamed an intent, added a new edge case. The corresponding dialogs need updating. The agent compares each dialog against its current intent, generates complete content for any new branches or turns needed, and presents the changes for approval.
+**Action**: The update pass runs automatically when `/parlay-scaffold-dialogs @feature` is invoked on a feature where all intents already have dialogs. For each meaningful intent change, the agent generates the complete dialog content (not just a flag or placeholder) and presents it for approval.
+**Objects**: intent, dialog, dialog-update, feature
+
+**Constraints**:
+- The update pass runs AFTER the generation pass — first generate dialogs for intents that lack them, then update existing dialogs for intents that changed
+- For new Constraints: generate a complete dialog branch with trigger, user turn, system response, and any sub-branches — not just "add a branch for X"
+- For new Verify edge cases: generate a complete `#### Branch:` section showing the edge case flow
+- For renamed intents: propose updating the dialog heading to match
+- Cosmetic changes (rewording that preserves meaning) are silently skipped
+- Each proposed update is presented with the triggering intent change and the complete proposed dialog content, so the designer can accept, reject, or edit
+- The designer's existing dialog prose is preserved — the agent proposes additions alongside existing content, never rewrites what the designer wrote
+- Dialogs.md is designer-authored. The agent asks permission before every modification.
+
+**Verify**:
+- After adding a new Constraint about error handling, the agent generates a complete dialog branch showing the error flow — user action, system error message, suggested resolution
+- After adding a new Verify edge case, the agent generates a complete branch (not just a stub)
+- The designer can accept, reject, or modify each proposed update independently
+- Running when nothing has changed reports "Dialogs are up to date"
 
 ---
 

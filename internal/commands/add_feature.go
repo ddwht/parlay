@@ -1,7 +1,7 @@
 package commands
 
-// parlay-feature: parlay-tool
-// parlay-component: feature-scaffold-confirmation
+// parlay-feature: parlay-tool/authoring
+// parlay-component: FeatureScaffoldConfirmation
 // parlay-extends: initiatives/FeatureCreationResult
 
 import (
