@@ -1,0 +1,46 @@
+generated-at: "2026-04-18T10:25:57Z"
+intents:
+    bridge-infrastructure-to-framework-specific-cross-cutting:
+        content-hash: b69fa47e5838c4db
+        goal-hash: 6bf4ddd2356819ed
+        constraints-hash: 5d65e5003be28d6d
+        verify-hash: dcbf752d7344528a
+        objects-hash: 5d6711475814066d
+    define-the-infrastructure-artifact:
+        content-hash: c58409f7919e7eca
+        goal-hash: 941116c8cde397fe
+        constraints-hash: 08bc6db5d17eec97
+        verify-hash: 408cc3e37a0d968f
+        objects-hash: d0b6f2e24bbd69b6
+    define-the-infrastructure-schema:
+        content-hash: a78e8403125024b3
+        goal-hash: c2c93d2ca120551c
+        constraints-hash: 6582f90657342c4e
+        verify-hash: 14fbdc79614d6abd
+        objects-hash: c3f8ad6016886c77
+    update-generate-code-to-process-infrastructure-sourced-entries:
+        content-hash: 6f916b32042c3556
+        goal-hash: bcf728e1cced6998
+        constraints-hash: 276d7274e237435e
+        verify-hash: ed54845e2504ebf6
+        objects-hash: f3275df5abca4017
+sources:
+    intents:
+        bridge-infrastructure-to-framework-specific-cross-cutting: 6f7f2a9196bc1876
+        define-the-infrastructure-artifact: 66c9950e55d57ca3
+        define-the-infrastructure-schema: 99d4dad2905db70d
+        update-generate-code-to-process-infrastructure-sourced-entries: d1fcf20fa31fb3a8
+    dialogs:
+        bridge-infrastructure-to-framework-specific-cross-cutting: 537adbb5d172f94a
+        define-the-infrastructure-artifact: 5d7daa54f480db46
+        define-the-infrastructure-schema: bb26d859e46c576c
+        update-generate-code-to-process-infrastructure-sourced-entries: debb6e5cc11a74f1
+    surface-fragments:
+        build-feature-infrastructure-report: 811c818a20701f11
+        check-readiness-infrastructure-support: 4d83a78137c7a726
+        cross-cutting-merge-review: 7eea389f3d02329f
+        infrastructure-validation-result: 8444c457587da22b
+buildfile-sections:
+    fixtures: 8815604fde10e1e4
+    models: e8a57be7e3438785
+    routes: 5ea3b81ce163ca3c

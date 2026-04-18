@@ -1,0 +1,307 @@
+feature: move-feature
+adapter: go-cli
+
+models:
+  MoveOperation:
+    properties:
+      feature-slug:
+        type: string
+        required: true
+        description: Leaf slug of the feature being moved (never changes during a move)
+      before-qualified:
+        type: string
+        required: true
+        description: Qualified identifier before the move (e.g., "password-reset" or "auth-overhaul/password-reset")
+      after-qualified:
+        type: string
+        required: true
+        description: Qualified identifier after the move
+      target-initiative:
+        type: string
+        required: false
+        description: Initiative slug for --to moves; empty for --out
+      initiative-created:
+        type: boolean
+        required: true
+        description: Whether the target initiative was auto-created during this move
+      outcome:
+        type: enum
+        enum: [moved, noop, scope-collision, namespace-collision, not-found, wrong-type, arg-error, rollback]
+        required: true
+      error-message:
+        type: string
+        required: false
+      conflicting-path:
+        type: string
+        required: false
+        description: Path of the conflicting entity for collision errors
+
+fixtures:
+  orphan-to-initiative:
+    description: Moving an orphan feature into an existing initiative.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: password-reset
+          after-qualified: auth-overhaul/password-reset
+          target-initiative: auth-overhaul
+          initiative-created: false
+          outcome: moved
+
+  orphan-to-new-initiative:
+    description: Moving an orphan feature into a non-existent initiative (auto-creates it).
+    data:
+      MoveOperation:
+        - feature-slug: sso-setup
+          before-qualified: sso-setup
+          after-qualified: auth-redesign/sso-setup
+          target-initiative: auth-redesign
+          initiative-created: true
+          outcome: moved
+
+  initiative-to-orphan:
+    description: Moving a nested feature back to top-level orphan state.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: auth-overhaul/password-reset
+          after-qualified: password-reset
+          initiative-created: false
+          outcome: moved
+
+  between-initiatives:
+    description: Moving a feature from one initiative to another.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: auth-overhaul/password-reset
+          after-qualified: billing/password-reset
+          target-initiative: billing
+          initiative-created: false
+          outcome: moved
+
+  scope-collision:
+    description: Target initiative already contains a feature with the same slug.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: auth-overhaul/password-reset
+          after-qualified: ""
+          target-initiative: billing
+          initiative-created: false
+          outcome: scope-collision
+          conflicting-path: spec/intents/billing/password-reset/
+
+  noop-same-location:
+    description: Feature already at target location.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: auth-overhaul/password-reset
+          after-qualified: auth-overhaul/password-reset
+          target-initiative: auth-overhaul
+          initiative-created: false
+          outcome: noop
+
+  not-found:
+    description: Qualified identifier doesn't resolve to any feature.
+    data:
+      MoveOperation:
+        - feature-slug: nonexistent
+          before-qualified: nonexistent
+          after-qualified: ""
+          outcome: not-found
+          error-message: "No directory exists at spec/intents/nonexistent/"
+
+  wrong-type:
+    description: Identifier resolves to an initiative, not a feature.
+    data:
+      MoveOperation:
+        - feature-slug: auth-overhaul
+          before-qualified: auth-overhaul
+          after-qualified: ""
+          outcome: wrong-type
+          error-message: "auth-overhaul is an initiative, not a feature"
+
+  rollback:
+    description: Third tree fails mid-move, first two are rolled back.
+    data:
+      MoveOperation:
+        - feature-slug: password-reset
+          before-qualified: password-reset
+          after-qualified: ""
+          target-initiative: auth-overhaul
+          initiative-created: false
+          outcome: rollback
+          error-message: "permission denied on .parlay/build/"
+
+routes:
+  - path: move-feature
+    page: move-feature
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [MoveResult]
+
+components:
+  MoveResult:
+    source: "@move-feature/move-result"
+    widget: cobra-command
+    description: Output of `parlay move-feature @feature --to <initiative>` or `--out`. Reports success with before/after paths, or error with conflicting path and resolution suggestion. Handles rollback reporting on partial failure.
+
+    data:
+      inputs:
+        - name: feature-ref
+          model: MoveOperation
+          field: feature-slug
+          from: command-argument
+        - name: to-flag
+          model: MoveOperation
+          field: target-initiative
+          from: command-argument
+        - name: out-flag
+          model: MoveOperation
+          field: ""
+          from: command-argument
+      computed:
+        - name: feature-slug
+          from: "parse qualified identifier, extract leaf slug"
+          type: string
+        - name: before-qualified
+          from: "resolve the @feature argument to its current qualified path"
+          type: string
+        - name: source-path
+          from: "config.FeaturePath(before-qualified)"
+          type: string
+        - name: target-initiative-slug
+          from: "Slugify(to-flag)"
+          type: string
+        - name: after-qualified
+          from: "target-initiative-slug/feature-slug for --to, or feature-slug for --out"
+          type: string
+        - name: dest-path
+          from: "config.FeaturePath(after-qualified)"
+          type: string
+        - name: is-noop
+          from: "before-qualified == after-qualified"
+          type: boolean
+        - name: initiative-created
+          from: "target initiative did not exist before this command and was just created"
+          type: boolean
+        - name: is-initiative
+          from: "resolved path classifies as initiative, not feature"
+          type: boolean
+        - name: scope-collision
+          from: "dest-path already exists"
+          type: boolean
+        - name: namespace-collision
+          from: "--to value matches an existing orphan feature at the top level"
+          type: boolean
+        - name: feature-exists
+          from: "source-path exists on disk"
+          type: boolean
+
+    elements:
+      - name: success-message
+        widget: fmt.Println
+        bind: ""
+        format: "Feature moved:"
+        visible-when: "outcome == moved"
+
+      - name: before-path
+        widget: fmt.Printf
+        bind: before-qualified
+        format: "  Before: @{before-qualified} ({source-path}/)"
+        visible-when: "outcome == moved"
+
+      - name: after-path
+        widget: fmt.Printf
+        bind: after-qualified
+        format: "  After:  @{after-qualified} ({dest-path}/)"
+        visible-when: "outcome == moved"
+
+      - name: lockstep-note
+        widget: fmt.Println
+        bind: ""
+        format: "All three trees updated in lockstep. Git history preserved via `git mv`."
+        visible-when: "outcome == moved"
+
+      - name: initiative-created-message
+        widget: fmt.Println
+        bind: target-initiative-slug
+        format: "Initiative {target-initiative-slug} created."
+        visible-when: "initiative-created"
+
+      - name: empty-initiative-note
+        widget: fmt.Println
+        bind: before-qualified
+        format: "Note: the source initiative is now empty (deferred classification). It remains on disk across all three trees."
+        visible-when: "outcome == moved and source initiative is now empty"
+
+      - name: noop-message
+        widget: fmt.Println
+        bind: before-qualified
+        format: "Feature @{before-qualified} is already at the target location — no change."
+        visible-when: "outcome == noop"
+
+      - name: scope-collision-error
+        widget: prefixed-message
+        bind: conflicting-path
+        format: "[ERR] Feature `{feature-slug}` already exists at {conflicting-path}. Rename one of the features before retrying the move."
+        visible-when: "outcome == scope-collision"
+
+      - name: namespace-collision-error
+        widget: prefixed-message
+        bind: target-initiative-slug
+        format: "[ERR] `{target-initiative-slug}` exists at the top level as a feature, not an initiative."
+        visible-when: "outcome == namespace-collision"
+
+      - name: not-found-error
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[ERR] Feature `{feature-slug}` not found."
+        visible-when: "outcome == not-found"
+
+      - name: wrong-type-error
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[ERR] `{feature-slug}` is an initiative, not a feature. Only features can be moved. To rename an initiative, use parlay rename-initiative."
+        visible-when: "outcome == wrong-type"
+
+      - name: arg-error
+        widget: prefixed-message
+        bind: ""
+        format: "[ERR] Missing or conflicting flags."
+        visible-when: "outcome == arg-error"
+
+      - name: rollback-error
+        widget: prefixed-message
+        bind: error-message
+        format: "[ERR] Move failed: {error-message}. Rolled back all trees — feature remains at @{before-qualified}."
+        visible-when: "outcome == rollback"
+
+    actions:
+      - name: invoke-move-feature
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: move-feature
+
+    operations:
+      - type: transform
+        source: feature-ref
+        using: "strip @ prefix, resolve qualified identifier"
+        bind: before-qualified
+
+      - type: transform
+        source: to-flag
+        using: slugify
+        bind: target-initiative-slug
+
+      - type: for-each
+        source: "[spec/intents, spec/handoff, .parlay/build]"
+        do:
+          - type: copy
+            from: "{tree}/{before-qualified-path}/"
+            to: "{tree}/{after-qualified-path}/"
+            recursive: true

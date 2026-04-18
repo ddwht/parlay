@@ -1,0 +1,35 @@
+generated-at: "2026-04-18T10:25:57Z"
+files:
+    internal/commands/add_feature.go:
+        component: feature-scaffold-confirmation
+        hash: 0d139fc50ad90884
+    internal/commands/check_readiness.go:
+        component: check-readiness
+        hash: 1bf592333df08061
+    internal/commands/create_artifacts.go:
+        component: ArtifactDecisionPrompt
+        hash: 58fad3d31c6c3f39
+    internal/commands/move_feature.go:
+        component: MoveResult
+        hash: cf2cf62f51d97438
+    internal/commands/move_feature_test.go:
+        component: MoveResult
+        hash: 674a4aeda0e7f8cc
+    internal/commands/new_initiative.go:
+        component: EmptyInitiativeCreationResult
+        hash: 8cedb6705593b24d
+    internal/commands/new_initiative_test.go:
+        component: EmptyInitiativeCreationResult
+        hash: 22ba1eb290edaa2c
+    internal/commands/repair.go:
+        component: RepairReport
+        hash: e849d1f3aa33601b
+    internal/commands/simplify.go:
+        component: DuplicationScanResults
+        hash: 2f1e5d5996ae1550
+    internal/commands/simplify_test.go:
+        component: a
+        hash: ff651376a5ee2fa6
+    internal/commands/validate.go:
+        component: validate
+        hash: 90a26d9075a5e142

@@ -111,10 +111,10 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       // parlay-extends: {extending-feature}/{extending-component}
       ```
       Multiple `parlay-extends:` lines may appear if more than one feature has extended the file. The primary owner is whichever component first claimed the file (or, in brownfield, the component that semantically matches the original user-authored implementation). Optional per-function markers may appear above each extending function for human-readability:
-      ```go
+      ```
       // parlay-feature: {extending-feature}
       // parlay-component: {extending-component}
-      func someExtensionFunction() { ... }
+      <function or class declaration for the extending behavior>
       ```
       These per-function markers are documentation only; the file-level marker block is what scan-generated reads.
 
@@ -163,8 +163,8 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
    4. **Tier 2 — Intelligent merge** (only if Tier 1 found 0 matches): determine whether the existing file is **the same surface** as the route's component before giving up.
 
       The file is the same surface if BOTH:
-      - **Naming match**: the file name corresponds to the route path under the adapter's `file-conventions.naming` and `component-pattern` rules (e.g., for go-cli with `naming: snake_case`, route `add-feature` maps to file `add_feature.go`).
-      - **Purpose match**: the file declares a primary entity whose identifier matches the route. For cobra, this is a `cobra.Command{Use: "{route.path}..."}` declaration; for React, an exported component named `{PageName}`; for Angular, a `@Component({selector: ...})` matching the route. The adapter MAY declare an optional `purpose-marker:` regex per file pattern to make this rigorous; without one, naming-match alone is the fallback signal.
+      - **Naming match**: the file name corresponds to the route path under the adapter's `file-conventions.naming` and `component-pattern` rules (e.g., with `naming: snake_case`, route `add-feature` maps to a file named `add_feature.*`).
+      - **Purpose match**: the file declares a primary entity whose identifier matches the route. The adapter MAY declare an optional `purpose-marker:` regex per file pattern to identify these declarations rigorously; without one, naming-match alone is the fallback signal.
 
       If the file is the same surface, perform an intelligent merge:
 
@@ -174,8 +174,8 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
       d. Generate a merge that:
          - **Preserves all existing user-owned code paths verbatim** (do not rewrite working code).
          - **Adds new behaviors as additional functions, branches, or flag declarations** rather than inline edits to existing functions. New entry-point logic typically takes the form of an early-return guard at the top of the existing function (e.g., `if newFlag != "" { return runExtendedBehavior(...) }`) followed by the original function body unchanged.
-         - **Wires new flags via the adapter's idiomatic mechanism** (cobra: `Flags().StringVar` in `init()`; etc.).
-         - **Renders error/status output via framework-idiomatic mechanisms**, not literal element-by-element translation. Buildfile elements like `[ERR]`-prefixed messages may not translate verbatim if the framework already has an error channel (e.g., Go cobra returns `error`, which cobra's main loop prints to stderr without needing an explicit `[ERR]` prefix).
+         - **Wires new inputs via the adapter's idiomatic mechanism** (flags, props, arguments — whatever the framework uses for parameterization).
+         - **Renders error/status output via framework-idiomatic mechanisms**, not literal element-by-element translation. Buildfile elements like `[ERR]`-prefixed messages may not translate verbatim if the framework already has its own error channel.
          - **Updates the file's marker block**: replace the original two-line marker (or add one if the file had only legacy comments) with the multi-component form documented in step 12: primary's `parlay-feature:` + `parlay-component:` lines, plus a `parlay-extends: {feature}/{component}` line for the new owner.
       e. Continue to step 6.
 
@@ -208,6 +208,33 @@ This isolation rule is the load-bearing test for whether the buildfile is doing 
    8. **Apply or skip**: on approval, write the modified file. On skip, continue to the next route. On edit, accept the user's modification and apply it.
 
    Tier 1 diffs are typically small (1-3 files, a few lines each — adding tabs, panels, section, route entries, menu items). Tier 2 diffs are typically larger (a new function plus a dispatch line plus flag declarations) but still additive — the agent does not rewrite existing logic, it layers new logic alongside.
+
+14.7. **Process cross-cutting entries** — If any feature's buildfile has a `cross-cutting:` section, process each entry here — AFTER component generation (step 12–14) and brownfield mount (step 14.5), but BEFORE tests (step 15). This ensures infrastructure changes are in place when tests exercise the components that depend on them.
+
+   For each `cross-cutting:` entry in the merged buildfile:
+
+   1. **Resolve targets**: if the entry has `target-files:`, use the explicit paths. If it has `target-pattern:`, grep the source tree under `file-conventions.source-root` to find matching files. If zero files match, warn but don't error (the pattern may be ahead of the codebase). If the entry has both, resolve both and take the union.
+
+   2. **For each resolved target file**:
+      - If the file doesn't exist AND the entry has `introduces:`: create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review.
+      - If the file doesn't exist AND the entry only has `target-files:` (no introduces): error — the target is missing.
+      - If the file exists: apply Tier 2 intelligent merge — read the file, read the entry's `transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
+
+   3. **Present diff for review**: same A/B/C menu as brownfield mount:
+      ```
+      Cross-cutting change: <entry-id> (source: <source-ref>)
+      Target: <file-path>
+
+      <unified diff>
+
+      A: Apply this change
+      B: Skip — I'll integrate manually
+      C: Edit the proposed change
+      ```
+
+   4. **Apply or skip**: on approval, write the modified file. On skip, continue.
+
+   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 

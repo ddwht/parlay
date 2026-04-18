@@ -1,0 +1,78 @@
+feature: artifact-decision
+framework: go-test
+
+suites:
+  - name: Artifact decision prompt determines correct artifact type
+    component: ArtifactDecisionPrompt
+    fixture: surface-only-feature
+    intent: "@artifact-decision/determine-required-artifacts-from-intents-and-dialogs"
+
+    cases:
+      - name: UX Designer intents with CLI output signals → surface
+        description: For initiatives (all UX Designer, user-facing objects, CLI output in dialogs), the agent decides surface.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: visible
+            target: decision-message
+            expected: true
+          - verify: text
+            target: decision-message
+            expected: "surface"
+          - verify: visible
+            target: status-certain
+            expected: true
+
+      - name: Parlay Developer intents with code construct signals → infrastructure
+        description: For qualified-identifier-resolver (all Parlay Developer, code objects, function references), the agent decides infrastructure.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: visible
+            target: decision-message
+            expected: true
+          - verify: text
+            target: decision-message
+            expected: "infrastructure"
+
+      - name: mixed personas → both
+        description: A feature with UX Designer and Parlay Developer intents gets both artifacts.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: text
+            target: decision-message
+            expected: "both"
+
+      - name: ambiguous signals → asks designer
+        description: When persona and constraints conflict, the agent presents ambiguous status and asks the designer to choose.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: visible
+            target: ambiguous-message
+            expected: true
+          - verify: visible
+            target: status-ambiguous
+            expected: true
+          - verify: enabled
+            target: choose-artifact-type
+            expected: true
+
+      - name: intent breakdown shows per-intent signals
+        description: The decision prompt lists each intent with its detected signals and artifact-type classification.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: visible
+            target: intent-breakdown-list
+            expected: true
+
+      - name: designer can override the decision
+        description: After seeing the agent's recommendation, the designer can choose a different artifact set.
+        steps:
+          - action: render
+            target: ArtifactDecisionPrompt
+          - verify: enabled
+            target: choose-artifact-type
+            expected: true

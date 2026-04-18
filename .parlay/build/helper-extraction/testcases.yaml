@@ -1,0 +1,200 @@
+feature: helper-extraction
+framework: go-test
+
+suites:
+  - name: DuplicationScanResults — duplicates found
+    component: DuplicationScanResults
+    fixture: project-with-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: scan reports the correct number of duplicate groups
+        description: When two duplicate groups exist, the summary shows "Found 2 duplicated helper(s)".
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: visible
+            target: scan-summary
+            expected: true
+          - verify: text
+            target: scan-summary
+            expected: "2 duplicated helper"
+
+      - name: duplicate list names each function and its locations
+        description: Each group shows the function name and which files contain it.
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: element
+            target: duplicate-list
+          - verify: text
+            target: duplicate-list
+            expected: "threeTreeRoots"
+          - verify: text
+            target: duplicate-list
+            expected: "isOrphanFeatureDir"
+
+      - name: near-identical matches show similarity type
+        description: Groups with near-identical matches indicate the similarity level.
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: text
+            target: duplicate-list
+            expected: "near-identical"
+
+  - name: DuplicationScanResults — no duplicates
+    component: DuplicationScanResults
+    fixture: project-no-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: empty state when no duplicates found
+        description: The scan completes cleanly with a "nothing to extract" message.
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: visible
+            target: no-duplicates
+            expected: true
+          - verify: hidden
+            target: scan-summary
+          - verify: hidden
+            target: duplicate-list
+
+  - name: ExtractionProposalReview — apply extraction
+    component: ExtractionProposalReview
+    fixture: project-with-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: applying extraction shows diff and reports success
+        description: The designer sees the unified diff, approves, and gets a confirmation with the target path and file count.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - verify: element
+            target: extraction-diff-display
+          - verify: text
+            target: target-path
+            expected: "internal/config/helpers.go"
+          - action: click
+            target: choose-action
+          - verify: visible
+            target: applied-status
+            expected: true
+
+      - name: near-identical extraction notes differences and chosen version
+        description: For near-identical groups, the note explains what differs and which version is canonical.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - verify: visible
+            target: near-identical-note
+            expected: true
+          - verify: text
+            target: near-identical-note
+            expected: "differs only in error message string"
+
+      - name: completion summary counts applied extractions
+        description: After all groups are processed, a summary reports the total.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - verify: visible
+            target: completion-summary
+            expected: true
+
+  - name: ExtractionProposalReview — skip extraction
+    component: ExtractionProposalReview
+    fixture: project-with-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: declining extraction leaves files unchanged
+        description: The designer skips an extraction and the files are not modified.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - action: click
+            target: choose-action
+          - verify: visible
+            target: skipped-status
+            expected: true
+
+      - name: all skipped shows appropriate summary
+        description: When every extraction is declined, the summary reflects no changes.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - verify: visible
+            target: all-skipped-summary
+            expected: true
+
+  - name: ExtractionProposalReview — override target package
+    component: ExtractionProposalReview
+    fixture: project-with-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: designer can override the proposed target path
+        description: Selecting "Change the target package" accepts free-form input and regenerates the diff.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - action: click
+            target: choose-action
+          - action: input
+            target: provide-override-path
+            value: "internal/initiative/paths.go"
+          - verify: text
+            target: target-path
+            expected: "internal/initiative/paths.go"
+
+  - name: ExtractionProposalReview — structural differences
+    component: ExtractionProposalReview
+    fixture: project-with-structural-differences
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: structurally different functions show differences clearly
+        description: When functions are similar but serve different purposes, the note explains the structural differences.
+        steps:
+          - action: render
+            target: ExtractionProposalReview
+          - verify: visible
+            target: near-identical-note
+            expected: true
+          - verify: text
+            target: near-identical-note
+            expected: "add_feature creates both initiative and feature subdirectories"
+
+  - name: DuplicationScanResults — user-owned files excluded
+    component: DuplicationScanResults
+    fixture: project-with-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: files without parlay markers are never scanned
+        description: User-owned files are excluded from the duplicate scan regardless of content.
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: count
+            target: duplicate-list
+            expected: 2
+
+  - name: DuplicationScanResults — idempotent re-run
+    component: DuplicationScanResults
+    fixture: project-no-duplicates
+    intent: "@helper-extraction/extract-duplicated-helpers-into-shared-packages"
+
+    cases:
+      - name: re-running after extraction finds nothing
+        description: A second run on a project where all duplicates have been extracted reports no duplicates.
+        steps:
+          - action: render
+            target: DuplicationScanResults
+          - verify: visible
+            target: no-duplicates
+            expected: true

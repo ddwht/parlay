@@ -159,3 +159,10 @@ func assembleRegions(fragments []parser.Fragment) ([]regionView, []conflict) {
 
 	return regions, conflicts
 }
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}

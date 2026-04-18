@@ -1,0 +1,465 @@
+feature: initiatives
+framework: go-test
+
+suites:
+  - name: InitiativeOrientation renders the concept and offers entry points
+    component: InitiativeOrientation
+    fixture: project-with-orphan-features
+    intent: "@initiatives/group-features-under-an-initiative"
+
+    cases:
+      - name: orientation surface renders all three explainer elements
+        description: When the orientation command runs, the designer sees the concept explanation, the example layout tree, and the rules list.
+        steps:
+          - action: render
+            target: InitiativeOrientation
+          - verify: element
+            target: concept-explanation
+          - verify: element
+            target: example-layout
+          - verify: element
+            target: rules-list
+          - verify: element
+            target: lockstep-note
+
+      - name: example layout names a hierarchy with one initiative and an orphan feature
+        description: The rendered example tree includes both initiative-nested features and an orphan feature, illustrating that orphans coexist alongside initiatives.
+        steps:
+          - action: render
+            target: InitiativeOrientation
+          - verify: text
+            target: example-layout
+            expected: "auth-overhaul"
+          - verify: text
+            target: example-layout
+            expected: "some-unrelated-feature"
+
+      - name: rules list states all three load-bearing rules
+        description: The rules list explicitly mentions per-scope uniqueness, flat hierarchy, and shared top-level namespace.
+        steps:
+          - action: render
+            target: InitiativeOrientation
+          - verify: text
+            target: rules-list
+            expected: "unique per parent"
+          - verify: text
+            target: rules-list
+            expected: "flat"
+          - verify: text
+            target: rules-list
+            expected: "share one namespace"
+
+      - name: orientation prompts the designer to choose a starting path
+        description: After explanation, a lettered prompt offers the three entry-point commands.
+        steps:
+          - action: render
+            target: InitiativeOrientation
+          - verify: element
+            target: starting-paths-prompt
+          - verify: enabled
+            target: choose-starting-path
+            expected: true
+
+  - name: FeatureCreationResult — auto-creates initiative on first add
+    component: FeatureCreationResult
+    fixture: empty-project
+    intent: "@initiatives/create-a-feature-inside-an-initiative"
+
+    cases:
+      - name: success path with new initiative reports both side effects
+        description: Adding a feature to a brand-new initiative reports "Initiative created" and "Feature added", and creates parallel directories on all three trees.
+        steps:
+          - action: input
+            target: feature-name
+            value: "password reset"
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: visible
+            target: initiative-created-message
+            expected: true
+          - verify: visible
+            target: feature-added-message
+            expected: true
+          - verify: visible
+            target: status-success
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/password-reset/
+          - verify: directory-exists
+            target: spec/handoff/auth-overhaul/password-reset/
+          - verify: directory-exists
+            target: .parlay/build/auth-overhaul/password-reset/
+          - verify: file-exists
+            target: spec/intents/auth-overhaul/password-reset/intents.md
+          - verify: file-exists
+            target: spec/intents/auth-overhaul/password-reset/dialogs.md
+
+      - name: next-step message uses the qualified identifier
+        description: The next-step output references the new feature by its qualified path so the designer learns the addressing convention.
+        steps:
+          - action: input
+            target: feature-name
+            value: "password reset"
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: text
+            target: next-step-message
+            expected: "@auth-overhaul/password-reset"
+
+  - name: FeatureCreationResult — initiative already exists
+    component: FeatureCreationResult
+    fixture: project-with-initiative
+    intent: "@initiatives/create-a-feature-inside-an-initiative"
+
+    cases:
+      - name: adding a second feature to an existing initiative does not re-create the initiative
+        description: When the initiative already exists, only the feature directories are created and only the "feature added" message appears.
+        steps:
+          - action: input
+            target: feature-name
+            value: "magic link"
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: hidden
+            target: initiative-created-message
+          - verify: visible
+            target: feature-added-message
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/magic-link/
+
+  - name: FeatureCreationResult — same slug allowed in a different initiative
+    component: FeatureCreationResult
+    fixture: project-with-initiative
+    intent: "@initiatives/create-a-feature-inside-an-initiative"
+
+    cases:
+      - name: per-scope uniqueness allows duplicate leaf slugs across initiatives
+        description: Adding a feature with the same leaf slug to a different initiative succeeds because the scope (target parent directory) is different.
+        steps:
+          - action: input
+            target: feature-name
+            value: "password reset"
+          - action: input
+            target: initiative-name
+            value: "billing"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: visible
+            target: status-success
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/billing/password-reset/
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/password-reset/
+
+  - name: FeatureCreationResult — scope-based collision
+    component: FeatureCreationResult
+    fixture: project-with-initiative
+    intent: "@initiatives/create-a-feature-inside-an-initiative"
+
+    cases:
+      - name: same slug inside the same initiative fails with scope collision
+        description: Re-adding a feature whose slug already exists in the target initiative fails with an error naming the existing path.
+        steps:
+          - action: input
+            target: feature-name
+            value: "password reset"
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: visible
+            target: status-error
+            expected: true
+          - verify: visible
+            target: scope-collision-message
+            expected: true
+          - verify: text
+            target: scope-collision-message
+            expected: "spec/intents/auth-overhaul/password-reset/"
+          - verify: error
+            target: invoke-add-feature-with-initiative
+            expected: "feature `password-reset` already exists inside initiative `auth-overhaul`"
+
+  - name: FeatureCreationResult — top-level collision
+    component: FeatureCreationResult
+    fixture: orphan-feature-blocks-initiative
+    intent: "@initiatives/create-a-feature-inside-an-initiative"
+
+    cases:
+      - name: --initiative slug taken by an orphan feature fails with top-level collision
+        description: Passing --initiative with a slug that already exists at the top level as an orphan feature fails. The orphan feature is not converted into an initiative.
+        steps:
+          - action: input
+            target: feature-name
+            value: "login"
+          - action: input
+            target: initiative-name
+            value: "password-reset"
+          - action: click
+            target: invoke-add-feature-with-initiative
+          - verify: visible
+            target: status-error
+            expected: true
+          - verify: visible
+            target: top-level-collision-message
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/password-reset/
+          - verify: file-exists
+            target: spec/intents/password-reset/intents.md
+
+  - name: EmptyInitiativeCreationResult — happy path
+    component: EmptyInitiativeCreationResult
+    fixture: empty-project
+    intent: "@initiatives/create-an-empty-initiative"
+
+    cases:
+      - name: new-initiative creates parallel directories on all three trees
+        description: Running parlay new-initiative creates the initiative directory under spec/intents/ AND matching empty directories under spec/handoff/ and .parlay/build/, all in lockstep.
+        steps:
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-new-initiative
+          - verify: visible
+            target: status-success
+            expected: true
+          - verify: visible
+            target: created-message
+            expected: true
+          - verify: visible
+            target: deferred-classification-note
+            expected: true
+          - verify: visible
+            target: next-steps-list
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/
+          - verify: directory-exists
+            target: spec/handoff/auth-overhaul/
+          - verify: directory-exists
+            target: .parlay/build/auth-overhaul/
+
+      - name: empty initiative starts in deferred classification
+        description: After new-initiative, the directory state is "deferred" — it has no features, and no README is auto-written.
+        steps:
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-new-initiative
+          - verify: state
+            target: Initiative.classification
+            expected: deferred
+          - verify: text
+            target: deferred-classification-note
+            expected: "deferred classification"
+
+  - name: EmptyInitiativeCreationResult — idempotent second run
+    component: EmptyInitiativeCreationResult
+    fixture: empty-initiative
+    intent: "@initiatives/create-an-empty-initiative"
+
+    cases:
+      - name: re-running new-initiative on the same name is a no-op, not an error
+        description: A second call with the same name reports "already exists" and makes no changes to any tree.
+        steps:
+          - action: input
+            target: initiative-name
+            value: "auth overhaul"
+          - action: click
+            target: invoke-new-initiative
+          - verify: visible
+            target: status-noop
+            expected: true
+          - verify: visible
+            target: already-exists-message
+            expected: true
+          - verify: hidden
+            target: created-message
+          - verify: hidden
+            target: collision-message
+
+  - name: EmptyInitiativeCreationResult — top-level collision
+    component: EmptyInitiativeCreationResult
+    fixture: orphan-feature-blocks-initiative
+    intent: "@initiatives/create-an-empty-initiative"
+
+    cases:
+      - name: new-initiative fails when the slug exists at the top level as an orphan feature
+        description: A top-level orphan feature blocks new-initiative for the same slug — they share one namespace.
+        steps:
+          - action: input
+            target: initiative-name
+            value: "password-reset"
+          - action: click
+            target: invoke-new-initiative
+          - verify: visible
+            target: status-error
+            expected: true
+          - verify: visible
+            target: collision-message
+            expected: true
+          - verify: error
+            target: invoke-new-initiative
+            expected: "exists at the top level as a feature"
+          - verify: file-exists
+            target: spec/intents/password-reset/intents.md
+
+      - name: same slug as a nested feature does not block new-initiative
+        description: Per-scope uniqueness — a nested feature in a different scope does not collide with a top-level initiative slug.
+        steps:
+          - action: render
+            target: EmptyInitiativeCreationResult
+          - action: input
+            target: initiative-name
+            value: "password-reset"
+          - action: click
+            target: invoke-new-initiative
+          - verify: visible
+            target: status-success
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/password-reset/
+
+  # --- Infrastructure: cross-cutting test suites ---
+
+  - name: classifyDir — feature classification
+    component: directory-classification-validation
+    fixture: project-with-initiative
+    intent: "@initiatives/group-features-under-an-initiative"
+
+    cases:
+      - name: directory with intents.md classifies as Feature
+        description: A directory containing intents.md directly is classified as a feature.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: state
+            target: DirClassification.classification
+            expected: feature
+
+      - name: directory with feature subdirectories classifies as Initiative
+        description: A directory containing direct-child subdirectories that each have intents.md is classified as an initiative.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: state
+            target: DirClassification.classification
+            expected: initiative
+
+      - name: empty directory classifies as Deferred
+        description: A directory with no intents.md and no qualifying subdirectories is in deferred classification — valid but invisible to listings.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: state
+            target: DirClassification.classification
+            expected: deferred
+
+      - name: hybrid directory triggers error naming the path
+        description: A directory containing both intents.md and subdirectories with intents.md is invalid. The error names the path and explains mutual exclusion.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: error
+            target: directory-classification-validation
+            expected: "Hybrid directory"
+
+      - name: sub-initiative at depth 2 triggers error citing flat-hierarchy rule
+        description: A directory at depth 2+ that would classify as an initiative is invalid. The error names the path and cites the flat-hierarchy constraint.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: error
+            target: directory-classification-validation
+            expected: "flat-hierarchy"
+
+      - name: classifyDir checks only direct children not recursive
+        description: A subdirectory whose intents.md is more than one level deep does not qualify as a feature child for classification purposes.
+        steps:
+          - action: render
+            target: directory-classification-validation
+          - verify: state
+            target: DirClassification.classification
+            expected: deferred
+
+  - name: checkSlugUniqueness — duplicate-slug detection
+    component: duplicate-slug-detection
+    fixture: project-with-initiative
+    intent: "@initiatives/group-features-under-an-initiative"
+
+    cases:
+      - name: no duplicates passes silently
+        description: When all sibling directories under a parent have unique slugified names, checkSlugUniqueness returns nil.
+        steps:
+          - action: render
+            target: duplicate-slug-detection
+          - verify: state
+            target: DirClassification.classification
+            expected: feature
+
+      - name: two directories slugifying to the same name triggers error listing both paths
+        description: If password-reset/ and password_reset/ both exist under the same parent, the error lists both conflicting paths.
+        steps:
+          - action: render
+            target: duplicate-slug-detection
+          - verify: error
+            target: duplicate-slug-detection
+            expected: "Duplicate slug"
+
+      - name: duplicate detection is per-parent not global
+        description: The same slug in different parent directories (different initiatives) does not trigger a duplicate error.
+        steps:
+          - action: render
+            target: duplicate-slug-detection
+          - verify: state
+            target: DirClassification.classification
+            expected: feature
+
+  - name: AllFeaturePaths — cross-tree traversal consistency
+    component: cross-tree-traversal-consistency
+    fixture: project-with-initiative
+    intent: "@initiatives/group-features-under-an-initiative"
+
+    cases:
+      - name: scanning spec/handoff/ uses spec/intents/ as authoritative classification source
+        description: AllFeaturePaths called with spec/handoff/ tree root classifies directories using spec/intents/, not the handoff tree itself.
+        steps:
+          - action: render
+            target: cross-tree-traversal-consistency
+          - verify: state
+            target: DirClassification.classification
+            expected: feature
+
+      - name: feature missing from handoff tree still appears in enumeration
+        description: A feature in spec/intents/ but absent from spec/handoff/ is included in results (flagged as out-of-sync) rather than silently dropped.
+        steps:
+          - action: render
+            target: cross-tree-traversal-consistency
+          - verify: element
+            target: cross-tree-traversal-consistency
+
+      - name: cached scan avoids repeated filesystem walks
+        description: Two consecutive AllFeaturePaths calls in the same process reuse the cached spec/intents/ scan result.
+        steps:
+          - action: render
+            target: cross-tree-traversal-consistency
+          - verify: state
+            target: DirClassification.classification
+            expected: feature

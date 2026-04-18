@@ -45,7 +45,7 @@ func TestSchemaNames_ReturnsAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(names) != 10 {
-		t.Errorf("expected 10 schemas, got %d: %v", len(names), names)
+	if len(names) != 11 {
+		t.Errorf("expected 11 schemas, got %d: %v", len(names), names)
 	}
 }

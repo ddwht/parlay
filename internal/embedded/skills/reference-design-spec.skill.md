@@ -12,7 +12,7 @@ This is an **optional** step between surface creation and build-feature. The pip
 ## Prerequisites
 
 - **Figma MCP** must be available. If not, inform the user and stop.
-- **Surface** must exist at `spec/intents/{feature}/surface.md`. If not, tell the user to run `/parlay-create-surface @{feature}` first.
+- **Surface** must exist at `spec/intents/{feature}/surface.md`. If not, tell the user to run `/parlay-create-artifacts @{feature}` first.
 
 ## Steps
 
@@ -92,7 +92,7 @@ This is an **optional** step between surface creation and build-feature. The pip
 ## Error Handling
 
 - `figma-mcp-unavailable`: Figma MCP tool is not available. Tell the user to configure Figma MCP and retry.
-- `no-surface`: surface.md does not exist. Tell user to run `/parlay-create-surface @{feature}` first.
+- `no-surface`: surface.md does not exist. Tell user to run `/parlay-create-artifacts @{feature}` first.
 - `no-adapter`: adapter file not found. Tell user to run `parlay init` or `/parlay-register-adapter`.
 - `figma-read-failed`: MCP could not read the Figma file. Check the link and permissions.
 - `no-fragments-mapped`: No Figma components could be mapped to surface fragments. Ask user if they want to proceed with manual annotation or cancel.

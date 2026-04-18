@@ -138,12 +138,22 @@ func ValidateBlueprint(path string, content []byte) error {
 
 // deepBuildfile is the parsed structure for deep validation.
 type deepBuildfile struct {
-	Feature    string                       `yaml:"feature"`
-	Adapter    string                       `yaml:"adapter"`
-	Models     map[string]interface{}       `yaml:"models"`
-	Fixtures   map[string]deepFixture       `yaml:"fixtures"`
-	Routes     []deepRoute                  `yaml:"routes"`
-	Components map[string]deepComponent     `yaml:"components"`
+	Feature      string                       `yaml:"feature"`
+	Adapter      string                       `yaml:"adapter"`
+	Models       map[string]interface{}       `yaml:"models"`
+	Fixtures     map[string]deepFixture       `yaml:"fixtures"`
+	Routes       []deepRoute                  `yaml:"routes"`
+	Components   map[string]deepComponent     `yaml:"components"`
+	CrossCutting []deepCrossCuttingEntry       `yaml:"cross-cutting"`
+}
+
+type deepCrossCuttingEntry struct {
+	ID             string   `yaml:"id"`
+	Source         string   `yaml:"source"`
+	TargetFiles    []string `yaml:"target-files"`
+	TargetPattern  string   `yaml:"target-pattern"`
+	Transform      string   `yaml:"transform"`
+	Introduces     []string `yaml:"introduces"`
 }
 
 type deepFixture struct {
@@ -294,6 +304,69 @@ func ValidateBuildfileDeepStructured(buildfilePath, adapterPath string) []Valida
 	if adapterPath != "" {
 		adapterErrors := validateAdapterVocabulary(bf, adapterPath)
 		errors = append(errors, adapterErrors...)
+	}
+
+	// 6. Cross-cutting entry validation
+	if len(bf.CrossCutting) > 0 {
+		ccErrors := validateCrossCuttingEntries(bf.CrossCutting)
+		errors = append(errors, ccErrors...)
+	}
+
+	return errors
+}
+
+func validateCrossCuttingEntries(entries []deepCrossCuttingEntry) []ValidationError {
+	var errors []ValidationError
+	seenIDs := make(map[string]bool)
+
+	for i, entry := range entries {
+		ctx := fmt.Sprintf("cross-cutting[%d]", i)
+
+		if entry.ID == "" {
+			errors = append(errors, ValidationError{
+				Code:    "missing-cross-cutting-id",
+				Message: fmt.Sprintf("cross-cutting entry at index %d has no id", i),
+				Context: ctx,
+				Fix:     "add a unique id: field to the cross-cutting entry",
+			})
+		} else {
+			if seenIDs[entry.ID] {
+				errors = append(errors, ValidationError{
+					Code:    "duplicate-cross-cutting-id",
+					Message: fmt.Sprintf("cross-cutting id %q appears more than once", entry.ID),
+					Context: ctx,
+					Fix:     "rename one of the duplicate entries to be unique",
+				})
+			}
+			seenIDs[entry.ID] = true
+		}
+
+		if entry.Source == "" {
+			errors = append(errors, ValidationError{
+				Code:    "missing-cross-cutting-source",
+				Message: fmt.Sprintf("cross-cutting entry %q has no source reference", entry.ID),
+				Context: ctx,
+				Fix:     "add source: @feature/intent-slug for traceability",
+			})
+		}
+
+		if entry.Transform == "" {
+			errors = append(errors, ValidationError{
+				Code:    "missing-cross-cutting-transform",
+				Message: fmt.Sprintf("cross-cutting entry %q has no transform description", entry.ID),
+				Context: ctx,
+				Fix:     "add transform: describing what the change does",
+			})
+		}
+
+		if len(entry.TargetFiles) == 0 && entry.TargetPattern == "" {
+			errors = append(errors, ValidationError{
+				Code:    "missing-cross-cutting-target",
+				Message: fmt.Sprintf("cross-cutting entry %q has neither target-files nor target-pattern", entry.ID),
+				Context: ctx,
+				Fix:     "add target-files: (explicit paths) or target-pattern: (grep pattern) or both",
+			})
+		}
 	}
 
 	return errors

@@ -1,0 +1,270 @@
+feature: repair-project-state
+adapter: go-cli
+
+models:
+  Mismatch:
+    properties:
+      category:
+        type: enum
+        enum: [initiative-rename, feature-move, ambiguous, missing-directory, extra-directory, unrecognized]
+        required: true
+        description: Classification of the detected inconsistency
+      paths:
+        type: string[]
+        required: true
+        description: Full paths on each tree involved in the mismatch
+      proposed-repair:
+        type: string
+        required: false
+        description: Human-readable description of the proposed fix (absent for unrecognized)
+      ambiguous-options:
+        type: string[]
+        required: false
+        description: Candidate pairings for ambiguous mismatches
+      file-count:
+        type: number
+        required: false
+        description: Number of files in a directory proposed for deletion
+      resolved:
+        type: boolean
+        required: true
+
+  RepairSummary:
+    properties:
+      total-detected:
+        type: number
+        required: true
+      applied:
+        type: number
+        required: true
+      failed:
+        type: number
+        required: true
+      unresolved:
+        type: number
+        required: true
+
+fixtures:
+  project-in-lockstep:
+    description: All three trees are consistent — no mismatches.
+    data:
+      Mismatch: []
+      RepairSummary:
+        - total-detected: 0
+          applied: 0
+          failed: 0
+          unresolved: 0
+
+  initiative-rename:
+    description: Designer renamed an initiative in spec/intents/ via IDE; other trees still use old name.
+    data:
+      Mismatch:
+        - category: initiative-rename
+          paths:
+            - "spec/intents/auth-redesign/ (new)"
+            - "spec/handoff/auth-overhaul/ (old)"
+            - ".parlay/build/auth-overhaul/ (old)"
+          proposed-repair: "Rename auth-overhaul → auth-redesign on spec/handoff/ and .parlay/build/"
+          resolved: false
+
+  feature-move:
+    description: Designer moved a feature into an initiative with plain mv.
+    data:
+      Mismatch:
+        - category: feature-move
+          paths:
+            - "spec/intents/auth-overhaul/password-reset/ (new location)"
+            - "spec/handoff/password-reset/ (old location)"
+            - ".parlay/build/password-reset/ (old location)"
+          proposed-repair: "Move password-reset into auth-overhaul/ on spec/handoff/ and .parlay/build/"
+          resolved: false
+
+  ambiguous-renames:
+    description: Two initiatives renamed simultaneously — multiple possible pairings.
+    data:
+      Mismatch:
+        - category: ambiguous
+          paths:
+            - "spec/intents/: auth-redesign/, payments/"
+            - "spec/handoff/: auth-overhaul/, billing/"
+          ambiguous-options:
+            - "auth-overhaul → auth-redesign AND billing → payments"
+            - "auth-overhaul → payments AND billing → auth-redesign"
+          resolved: false
+
+  missing-directory:
+    description: A feature exists in spec/intents/ but is missing from spec/handoff/.
+    data:
+      Mismatch:
+        - category: missing-directory
+          paths:
+            - "spec/intents/billing/password-reset/ (exists)"
+            - "spec/handoff/billing/password-reset/ (missing)"
+            - ".parlay/build/billing/password-reset/ (exists)"
+          proposed-repair: "Recreate spec/handoff/billing/password-reset/"
+          resolved: false
+
+  extra-directory:
+    description: A directory exists on spec/handoff/ with no matching source in spec/intents/.
+    data:
+      Mismatch:
+        - category: extra-directory
+          paths:
+            - "spec/handoff/old-feature/ (3 files, no source in spec/intents/)"
+          file-count: 3
+          resolved: false
+
+  unrecognized:
+    description: A mismatch that doesn't fit any known category.
+    data:
+      Mismatch:
+        - category: unrecognized
+          paths:
+            - "spec/intents/foo/ (feature)"
+            - "spec/handoff/foo/ (initiative — contains subdirs)"
+            - ".parlay/build/foo/ (missing)"
+          resolved: false
+
+routes:
+  - path: repair
+    page: repair
+    flow-pattern: sequential-prompts
+    regions:
+      main:
+        components: [RepairReport]
+
+components:
+  RepairReport:
+    source: "@repair-project-state/repair-report"
+    widget: cobra-command
+    description: Interactive three-tree reconciliation command. Scans spec/intents/, spec/handoff/, and .parlay/build/ for inconsistencies, classifies each mismatch, presents repairs for confirmation, and applies them atomically per-mismatch with rollback on failure.
+
+    data:
+      inputs:
+        - name: dry-run
+          model: RepairSummary
+          field: ""
+          from: command-argument
+        - name: yes-flag
+          model: RepairSummary
+          field: ""
+          from: command-argument
+      computed:
+        - name: mismatches
+          from: "scan three trees, compare directory sets, classify deviations"
+          type: Mismatch[]
+        - name: summary
+          from: "aggregate results after processing all mismatches"
+          type: RepairSummary
+
+    elements:
+      - name: lockstep-message
+        widget: fmt.Println
+        bind: ""
+        format: "Project is in lockstep. No repairs needed."
+        visible-when: "len(mismatches) == 0"
+
+      - name: mismatch-count
+        widget: headed-section
+        bind: mismatches
+        format: "Detected {len(mismatches)} inconsistencies:"
+        visible-when: "len(mismatches) > 0"
+
+      - name: rename-prompt
+        widget: yn-prompt
+        bind: mismatch
+        format: "{proposed-repair}? [Y/n]"
+        visible-when: "mismatch.category == initiative-rename or mismatch.category == feature-move"
+
+      - name: ambiguous-prompt
+        widget: lettered-prompt
+        bind: mismatch.ambiguous-options
+        format: "Which pairing is correct?"
+        visible-when: "mismatch.category == ambiguous"
+
+      - name: missing-prompt
+        widget: lettered-prompt
+        bind: mismatch
+        format: "Recreate or leave?"
+        visible-when: "mismatch.category == missing-directory"
+
+      - name: delete-prompt
+        widget: yn-prompt
+        bind: mismatch
+        format: "Delete {path} ({file-count} files)? [y/N]"
+        visible-when: "mismatch.category == extra-directory"
+
+      - name: unrecognized-message
+        widget: fmt.Println
+        bind: mismatch.paths
+        format: "Unresolved — doesn't fit any repair category. Please resolve manually."
+        visible-when: "mismatch.category == unrecognized"
+
+      - name: applied-status
+        widget: prefixed-message
+        bind: mismatch
+        format: "[OK] {proposed-repair}"
+        visible-when: "mismatch.resolved and not failed"
+
+      - name: failed-status
+        widget: prefixed-message
+        bind: mismatch
+        format: "[ERR] {error}. This repair was rolled back."
+        visible-when: "mismatch.failed"
+
+      - name: dry-run-prefix
+        widget: fmt.Printf
+        bind: mismatch
+        format: "[WOULD FIX] {proposed-repair}"
+        visible-when: "dry-run and mismatch.category != ambiguous"
+
+      - name: dry-run-ask-prefix
+        widget: fmt.Printf
+        bind: mismatch
+        format: "[WOULD ASK] {proposed-repair}"
+        visible-when: "dry-run and mismatch.category == ambiguous"
+
+      - name: completion-summary
+        widget: fmt.Println
+        bind: summary
+        format: "Repair complete. Applied {applied}, failed {failed}, unresolved {unresolved}."
+        visible-when: "len(mismatches) > 0 and not dry-run"
+
+    actions:
+      - name: invoke-repair
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: repair
+
+    operations:
+      - type: read-file
+        path: spec/intents/
+        bind: intents-tree
+      - type: read-file
+        path: spec/handoff/
+        bind: handoff-tree
+      - type: read-file
+        path: .parlay/build/
+        bind: build-tree
+
+cross-cutting:
+  - id: repair-skill-and-deployer-registration
+    source: "@repair-project-state/repair-project-state"
+    target-files:
+      - internal/embedded/skills/repair.skill.md
+      - internal/deployer/claude.go
+      - internal/deployer/generic.go
+      - internal/commands/root.go
+    transform: >
+      Register the repair command across the multi-agent deployer architecture.
+      Create a skill source file (repair.skill.md) describing the repair workflow:
+      scan three trees, detect mismatches, present interactive questions, apply
+      confirmed repairs. Add a "repair" entry to the skillTitle map in claude.go
+      with description "Validate and reconcile the three parallel trees". Add
+      "parlay repair [--dry-run] [--yes]" to the Generic deployer's CLI command
+      list. Register repairCmd in root.go init().
+    introduces:
+      - "repair.skill.md"
+      - 'skillTitle["repair"]'
+    backward-compatible: true

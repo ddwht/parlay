@@ -30,7 +30,7 @@ Analyze an existing codebase and draft a framework adapter with mount-strategies
      E: Other (describe)
      ```
 
-3. **Load base adapter template** — If the detected framework matches a bundled adapter (`react-antd`, `angular-clarity`, `angular-material`, `go-cli`), read the bundled adapter as a starting template. Its `shows:`, `actions:`, `flows:` mappings will be used as-is. If no match, start from a blank adapter structure and ask the user to fill in widget mappings later.
+3. **Load base adapter template** — If the detected framework matches a bundled adapter template, read it as a starting point. Its `shows:`, `actions:`, `flows:` mappings will be used as-is. If no bundled template matches, start from a blank adapter structure and ask the user to fill in widget mappings later.
 
 4. **Scan for file conventions** — Analyze the source tree structure:
    - `source-root`: already provided as argument

@@ -1,0 +1,639 @@
+feature: infrastructure-layer
+adapter: go-cli
+
+models:
+  InfrastructureFragment:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Fragment heading, unique within the feature's infrastructure.md
+      affects:
+        type: string
+        required: true
+        description: Abstract scope of the change — domain-level labels describing what area of the system this capability touches
+      behavior:
+        type: string
+        required: true
+        description: Human-readable, framework-agnostic description of what the capability does
+      invariants:
+        type: string[]
+        required: false
+        description: Testable properties that must hold after implementation — each a falsifiable statement
+      source:
+        type: string
+        required: true
+        description: "@feature/intent-slug traceability reference"
+      caching:
+        type: string
+        required: false
+        description: Abstract caching strategy (on-first-access, none, per-process)
+      backward-compatible:
+        type: boolean
+        required: false
+        description: Whether existing callers of affected code must continue working without changes
+      notes:
+        type: string[]
+        required: false
+        description: Additional constraints, design decisions, edge cases
+
+  ValidationError:
+    properties:
+      fragment:
+        type: string
+        required: true
+        description: Name of the fragment with the error
+      field:
+        type: string
+        required: true
+        description: Field name that failed validation
+      message:
+        type: string
+        required: true
+        description: Human-readable error description
+
+  PortabilityWarning:
+    properties:
+      fragment:
+        type: string
+        required: true
+        description: Name of the fragment with framework-specific content
+      field:
+        type: string
+        required: true
+        description: Field containing the framework-specific content (Behavior or Affects)
+      content:
+        type: string
+        required: true
+        description: The offending content that appears framework-specific
+      suggestion:
+        type: string
+        required: true
+        description: How to rephrase in domain terms
+
+  CrossCuttingEntry:
+    properties:
+      id:
+        type: string
+        required: true
+        description: Unique identifier for the entry
+      source:
+        type: string
+        required: true
+        description: Intent traceability reference
+      target-files:
+        type: string[]
+        required: false
+        description: Explicit file paths to modify (resolved from abstract Affects at build time)
+      target-pattern:
+        type: string
+        required: false
+        description: Grep pattern to resolve target files at generation time (generated at build time)
+      transform:
+        type: string
+        required: true
+        description: Human-readable change description for Tier 2 intelligent merge
+      introduces:
+        type: string[]
+        required: false
+        description: New functions/types to add (generated at build time with framework-specific signatures)
+      caching:
+        type: string
+        required: false
+        description: Caching strategy carried through from the infrastructure fragment
+      backward-compatible:
+        type: boolean
+        required: false
+        description: Whether existing callers of modified functions must continue working
+
+  FeatureReadiness:
+    properties:
+      feature:
+        type: string
+        required: true
+      stage:
+        type: string
+        required: true
+      ready:
+        type: boolean
+        required: true
+      has-surface:
+        type: boolean
+        required: true
+      has-infrastructure:
+        type: boolean
+        required: true
+
+fixtures:
+  valid-infrastructure-file:
+    description: A well-formed infrastructure.md with framework-agnostic fragments using Affects/Behavior/Invariants.
+    data:
+      InfrastructureFragment:
+        - name: Directory Classification
+          affects: "feature resolution, directory traversal"
+          behavior: "Classify each directory under the intents tree as feature, initiative, or deferred"
+          invariants:
+            - "A directory with intents.md at its root is always classified as Feature"
+            - "A directory with child subdirectories containing intents.md is always classified as Initiative"
+          source: "@initiatives/group-features-under-an-initiative"
+          caching: on-first-access
+          backward-compatible: true
+        - name: Slug Uniqueness Guard
+          affects: "slug validation"
+          behavior: "Detect when two sibling directories slugify to the same identifier"
+          invariants:
+            - "Two directories under the same parent that slugify identically produce an error listing both paths"
+          source: "@initiatives/group-features-under-an-initiative"
+
+  invalid-infrastructure-missing-behavior:
+    description: An infrastructure.md with a fragment missing the required Behavior field.
+    data:
+      InfrastructureFragment:
+        - name: Bad Fragment
+          affects: "feature resolution"
+          source: "@some-feature/some-intent"
+
+  invalid-infrastructure-missing-affects:
+    description: An infrastructure.md with a fragment missing the required Affects field.
+    data:
+      InfrastructureFragment:
+        - name: Bad Fragment
+          behavior: "Do something"
+          source: "@some-feature/some-intent"
+
+  infrastructure-with-portability-warnings:
+    description: An infrastructure.md with framework-specific content that triggers portability warnings but not errors.
+    data:
+      InfrastructureFragment:
+        - name: Leaky Fragment
+          affects: "feature resolution"
+          behavior: "Modify AllFeaturePaths in internal/config/config.go to add classifyDir(path string) (DirClass, error)"
+          source: "@some-feature/some-intent"
+      PortabilityWarning:
+        - fragment: Leaky Fragment
+          field: Behavior
+          content: "classifyDir(path string) (DirClass, error)"
+          suggestion: "Describe the classification capability without naming the function or its signature"
+
+  feature-with-only-infrastructure:
+    description: A feature directory containing intents.md and infrastructure.md but no surface.md.
+    data:
+      FeatureReadiness:
+        - feature: qualified-identifier-resolver
+          stage: build-feature
+          ready: true
+          has-surface: false
+          has-infrastructure: true
+
+  feature-with-both:
+    description: A feature directory containing intents.md, surface.md, and infrastructure.md.
+    data:
+      FeatureReadiness:
+        - feature: initiatives
+          stage: build-feature
+          ready: true
+          has-surface: true
+          has-infrastructure: true
+
+  feature-with-neither:
+    description: A feature directory containing only intents.md.
+    data:
+      FeatureReadiness:
+        - feature: incomplete-feature
+          stage: build-feature
+          ready: false
+          has-surface: false
+          has-infrastructure: false
+
+  buildfile-with-cross-cutting:
+    description: A buildfile with cross-cutting entries generated from framework-agnostic infrastructure fragments via the adapter bridge.
+    data:
+      CrossCuttingEntry:
+        - id: directory-classification
+          source: "@initiatives/group-features-under-an-initiative"
+          target-files: [internal/config/config.go]
+          transform: "Add directory classification capability — feature, initiative, or deferred"
+          introduces: ["classifyDir(path string) (DirClass, error)", "DirClass (type DirClass int)"]
+
+routes:
+  - path: check-readiness
+    page: check-readiness
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [CheckReadinessInfraSupport]
+
+  - path: validate
+    page: validate
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [InfrastructureValidationResult]
+
+  - path: build-feature
+    page: build-feature
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [BuildFeatureInfraReport]
+
+  - path: generate-code
+    page: generate-code
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [CrossCuttingMergeReview]
+
+components:
+  CheckReadinessInfraSupport:
+    source: "@infrastructure-layer/check-readiness-infrastructure-support"
+    widget: cobra-command
+    description: Updated check-readiness that accepts "at least one of surface.md or infrastructure.md" and validates infrastructure.md conforms to the framework-agnostic schema (Affects/Behavior/Invariants, not the old Modifies/Introduces/Detection).
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: FeatureReadiness
+          field: feature
+          from: command-argument
+        - name: stage
+          model: FeatureReadiness
+          field: stage
+          from: command-argument
+      computed:
+        - name: has-surface
+          from: "os.Stat(spec/intents/{feature-slug}/surface.md) succeeds"
+          type: boolean
+        - name: has-infrastructure
+          from: "os.Stat(spec/intents/{feature-slug}/infrastructure.md) succeeds"
+          type: boolean
+        - name: infra-uses-new-schema
+          from: "infrastructure.md contains **Affects**: fields (not old **Modifies**: fields)"
+          type: boolean
+        - name: ready
+          from: "(has-surface or has-infrastructure) and (not has-infrastructure or infra-uses-new-schema)"
+          type: boolean
+
+    elements:
+      - name: status-ready
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[OK]"
+        visible-when: ready
+
+      - name: status-not-ready
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[ERR]"
+        visible-when: not ready
+
+      - name: no-surface-no-infra-error
+        widget: fmt.Println
+        bind: feature-slug
+        format: "No surface.md or infrastructure.md found for @{feature-slug}. Create at least one: run /parlay-create-artifacts for the decision flow, or author infrastructure.md directly for behind-the-scenes features."
+        visible-when: not has-surface and not has-infrastructure
+
+      - name: old-schema-error
+        widget: fmt.Println
+        bind: feature-slug
+        format: "infrastructure.md uses old-format fields (Modifies/Introduces/Detection). Migrate to the framework-agnostic format (Affects/Behavior/Invariants). The old fields now belong in the buildfile cross-cutting section, generated at build time."
+        visible-when: has-infrastructure and not infra-uses-new-schema
+
+    actions:
+      - name: invoke-check-readiness
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: check-readiness
+
+    operations:
+      - type: read-file
+        path: spec/intents/{feature-slug}/surface.md
+        bind: surface-exists
+      - type: read-file
+        path: spec/intents/{feature-slug}/infrastructure.md
+        bind: infra-exists
+
+  InfrastructureValidationResult:
+    source: "@infrastructure-layer/infrastructure-validation-result"
+    widget: cobra-command
+    description: Output of `parlay validate --type infrastructure`. Validates infrastructure.md against the framework-agnostic schema — checks required fields (Affects, Behavior, Source), fragment name uniqueness, and runs portability lint for framework-specific content.
+
+    data:
+      inputs:
+        - name: file-path
+          model: InfrastructureFragment
+          field: ""
+          from: command-argument
+      computed:
+        - name: fragments
+          from: "parse infrastructure.md into InfrastructureFragment list"
+          type: InfrastructureFragment[]
+        - name: errors
+          from: "validate each fragment: Affects required, Behavior required, Source required, names unique"
+          type: ValidationError[]
+        - name: portability-warnings
+          from: "lint each fragment's Behavior and Affects for framework-specific content"
+          type: PortabilityWarning[]
+        - name: is-valid
+          from: "len(errors) == 0"
+          type: boolean
+
+    elements:
+      - name: status-pass
+        widget: prefixed-message
+        bind: file-path
+        format: "[OK]"
+        visible-when: is-valid
+
+      - name: status-fail
+        widget: prefixed-message
+        bind: file-path
+        format: "[ERR]"
+        visible-when: not is-valid
+
+      - name: pass-message
+        widget: fmt.Println
+        bind: fragments
+        format: "Infrastructure file is valid — {len(fragments)} fragments, all with required fields and valid Source references."
+        visible-when: is-valid and len(portability-warnings) == 0
+
+      - name: pass-with-warnings-message
+        widget: fmt.Println
+        bind: fragments
+        format: "Infrastructure file is valid — {len(fragments)} fragments. {len(portability-warnings)} portability warning(s)."
+        visible-when: is-valid and len(portability-warnings) > 0
+
+      - name: error-list
+        widget: bulleted-list
+        bind: errors
+        format: "Fragment \"{fragment}\": {field} — {message}"
+        visible-when: not is-valid
+
+      - name: portability-warning-list
+        widget: bulleted-list
+        bind: portability-warnings
+        format: "[WARN] Portability: Fragment \"{fragment}\" {field} contains \"{content}\" — {suggestion}"
+        visible-when: len(portability-warnings) > 0
+
+    actions:
+      - name: invoke-validate
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: validate-infrastructure
+
+    operations:
+      - type: read-file
+        path: "{file-path}"
+        parse: infrastructure-schema
+        bind: fragments
+      - type: filter
+        source: fragments
+        where: "missing-required-fields or invalid-source"
+        bind: errors
+
+  BuildFeatureInfraReport:
+    source: "@infrastructure-layer/build-feature-infrastructure-report"
+    widget: cobra-command
+    description: Extended build-feature output when processing a feature with infrastructure.md. Reports the adapter bridge resolution — how abstract Affects/Behavior were translated to framework-specific cross-cutting entries using the adapter's conventions and source tree scan.
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: FeatureReadiness
+          field: feature
+          from: command-argument
+      computed:
+        - name: infra-fragments
+          from: "parse infrastructure.md into fragment list"
+          type: InfrastructureFragment[]
+        - name: cross-cutting-entries
+          from: "resolve each fragment's Affects via adapter + source tree scan → framework-specific cross-cutting entry"
+          type: CrossCuttingEntry[]
+        - name: component-count
+          from: "number of components from surface.md (0 if no surface)"
+          type: number
+        - name: cross-cutting-count
+          from: "len(cross-cutting-entries)"
+          type: number
+        - name: is-pure-infrastructure
+          from: "component-count == 0"
+          type: boolean
+        - name: manual-resolution-count
+          from: "number of fragments that required designer input during Affects resolution"
+          type: number
+
+    elements:
+      - name: status-success
+        widget: prefixed-message
+        bind: feature-slug
+        format: "[OK]"
+        visible-when: always
+
+      - name: build-summary
+        widget: fmt.Println
+        bind: feature-slug
+        format: "Build specification ready. Internal artifacts saved to .parlay/build/{feature-slug}/."
+        visible-when: always
+
+      - name: mixed-report
+        widget: fmt.Println
+        bind: feature-slug
+        format: "Buildfile contains {component-count} components (from surface) and {cross-cutting-count} cross-cutting entries (from infrastructure)."
+        visible-when: not is-pure-infrastructure
+
+      - name: pure-infra-report
+        widget: fmt.Println
+        bind: feature-slug
+        format: "Buildfile contains {cross-cutting-count} cross-cutting entries (no components — this is a pure infrastructure feature)."
+        visible-when: is-pure-infrastructure
+
+      - name: resolution-note
+        widget: fmt.Println
+        bind: manual-resolution-count
+        format: "{manual-resolution-count} fragment(s) required manual guidance during Affects resolution."
+        visible-when: manual-resolution-count > 0
+
+      - name: next-step
+        widget: fmt.Println
+        bind: feature-slug
+        format: "Next: run /parlay-generate-code to apply the infrastructure changes via Tier 2 intelligent merge."
+        visible-when: always
+
+    actions:
+      - name: invoke-build-feature
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: build-feature
+
+    operations:
+      - type: read-file
+        path: spec/intents/{feature-slug}/infrastructure.md
+        parse: infrastructure-schema
+        bind: infra-fragments
+      - type: transform
+        source: infra-fragments
+        using: adapter-bridge-resolution
+        bind: cross-cutting-entries
+
+  CrossCuttingMergeReview:
+    source: "@infrastructure-layer/cross-cutting-merge-review"
+    widget: cobra-command
+    description: Generate-code output when processing cross-cutting entries. At this stage all entries are framework-specific (build-feature already resolved abstract infrastructure to concrete targets). Generate-code never reads infrastructure.md — the buildfile is the boundary.
+
+    data:
+      inputs:
+        - name: cross-cutting-entries
+          model: CrossCuttingEntry
+          field: ""
+          from: file-read
+      computed:
+        - name: resolved-targets
+          from: "for each entry, resolve target-files directly or grep target-pattern to find matching files"
+          type: string[]
+        - name: match-count
+          from: "number of files matched by target-pattern entries"
+          type: number
+        - name: merge-diffs
+          from: "for each resolved target, produce Tier 2 intelligent merge diff"
+          type: string[]
+        - name: zero-match-entries
+          from: "entries whose target-pattern matched zero files"
+          type: CrossCuttingEntry[]
+        - name: missing-target-entries
+          from: "entries whose target-files don't exist and entry only modifies (no introduces)"
+          type: CrossCuttingEntry[]
+
+    elements:
+      - name: entry-summary
+        widget: fmt.Println
+        bind: cross-cutting-entries
+        format: "Applying {len(cross-cutting-entries)} cross-cutting changes:"
+        visible-when: always
+
+      - name: pattern-match-report
+        widget: bulleted-list
+        bind: resolved-targets
+        format: "Pattern matched {match-count} files: {file-list}"
+        visible-when: "entry has target-pattern and match-count > 0"
+
+      - name: merge-diff-display
+        widget: diff-output
+        bind: merge-diffs
+        format: "Proposed change to {target-file}:"
+        visible-when: always
+
+      - name: zero-match-warning
+        widget: prefixed-message
+        bind: zero-match-entries
+        format: "[WARN] Pattern matched 0 files in the source tree. Skipping."
+        visible-when: "len(zero-match-entries) > 0"
+
+      - name: missing-target-error
+        widget: prefixed-message
+        bind: missing-target-entries
+        format: "[ERR] Target file does not exist. The cross-cutting entry targets this file but it's missing."
+        visible-when: "len(missing-target-entries) > 0"
+
+      - name: new-file-created
+        widget: fmt.Println
+        bind: resolved-targets
+        format: "Created {target-file} with parlay-section: cross-cutting marker (new file from introduces: block)."
+        visible-when: "target-file does not exist and entry has introduces"
+
+      - name: completion-summary
+        widget: fmt.Println
+        bind: cross-cutting-entries
+        format: "[OK] Applied {applied-count} cross-cutting changes across {file-count} files. Infrastructure is in place."
+        visible-when: "all entries processed successfully"
+
+    actions:
+      - name: review-diff
+        widget: lettered-prompt
+        enabled-when: "merge-diff is pending review"
+        effect: call
+        target: apply-or-skip-diff
+
+      - name: invoke-generate-code
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: generate-code
+
+cross-cutting:
+  - id: schema-framework-agnostic-fields
+    source: "@infrastructure-layer/define-the-infrastructure-schema"
+    target-files:
+      - internal/embedded/schemas/infrastructure.schema.md
+      - internal/parser/infrastructure.go
+    transform: >
+      Replace the infrastructure schema and parser to use framework-agnostic fields.
+      In the schema file: replace Modifies/Introduces/Detection field definitions with
+      Affects (required, abstract scope), Behavior (required, unchanged), Invariants
+      (optional, testable properties list), Source (required, unchanged), Caching (optional,
+      abstract: on-first-access/none/per-process), Backward-Compatible (optional, unchanged),
+      Notes (optional, unchanged). Update the template, fields table, constraints, validation
+      rules, and parsing rules. Remove the "Buildfile mapping" section — the mapping is now
+      agent-mediated at build time, not a direct field copy. In the parser: update the
+      InfraFragment struct to replace Modifies/Introduces/Detection fields with Affects
+      (string) and Invariants ([]string). Update ParseInfrastructureFile to parse the new
+      fields.
+    introduces:
+      - "InfraFragment.Affects string"
+      - "InfraFragment.Invariants []string"
+    backward-compatible: false
+
+  - id: portability-lint
+    source: "@infrastructure-layer/define-the-infrastructure-schema"
+    target-files:
+      - internal/agent/validate_infrastructure.go
+    transform: >
+      Add portability lint to ValidateInfrastructureDeep. After checking required fields
+      and name uniqueness, scan each fragment's Behavior and Affects text for patterns that
+      indicate framework-specific content: function signatures with parenthesized type
+      annotations (e.g., matches pattern `\w+\([^)]*\s+\w+`), file paths with language
+      extensions (.go, .py, .ts, .rs, .java), language keywords (func, def, class, interface,
+      struct as standalone words), and qualified import paths containing / and . (e.g.,
+      github.com/..., from ... import). Emit each match as a PortabilityWarning with the
+      fragment name, field name, offending content, and a suggestion to rephrase. Portability
+      warnings are returned separately from validation errors — they do not cause validation
+      to fail.
+    introduces:
+      - "PortabilityWarning struct { Fragment, Field, Content, Suggestion string }"
+      - "lintPortability(fragments []parser.InfraFragment) []PortabilityWarning"
+    backward-compatible: true
+
+  - id: adapter-bridge-resolution
+    source: "@infrastructure-layer/bridge-infrastructure-to-framework-specific-cross-cutting"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+    transform: >
+      Update the build-feature skill's step 8 infrastructure handling. Replace the direct
+      field mapping (Modifies → target-files, Introduces → introduces, Detection →
+      target-pattern) with an agent-mediated resolution process: (1) read the fragment's
+      Affects field to determine what area of the codebase to scan, (2) read the Behavior
+      field to understand the capability, (3) consult the adapter's file-conventions and
+      conventions sections for framework-specific patterns, (4) scan the source tree under
+      file-conventions.source-root for files matching the abstract scope, (5) generate a
+      cross-cutting entry with framework-specific target-files, target-pattern, introduces,
+      and transform fields. When Affects cannot be resolved, use AskUserQuestion. Use
+      fragment Invariants to generate testcases for the cross-cutting entry.
+    backward-compatible: false
+
+  - id: readiness-new-schema-validation
+    source: "@infrastructure-layer/define-the-infrastructure-artifact"
+    target-files:
+      - internal/commands/check_readiness.go
+    target-pattern: "infrastructure"
+    transform: >
+      Update the check-readiness command's infrastructure detection to validate that the
+      file conforms to the new framework-agnostic schema. After confirming infrastructure.md
+      exists, check that it contains **Affects**: fields (new schema) rather than
+      **Modifies**: fields (old schema). If old-format fields are detected, return a
+      readiness error with code "old-infrastructure-schema" and a fix message directing
+      the developer to migrate to Affects/Behavior/Invariants format.
+    introduces:
+      - "isNewSchemaFormat(path string) bool"
+    backward-compatible: true

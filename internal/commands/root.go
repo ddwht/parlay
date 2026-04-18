@@ -39,7 +39,6 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(addFeatureCmd)
 	rootCmd.AddCommand(createDialogsCmd)
-	rootCmd.AddCommand(createSurfaceCmdImpl)
 	rootCmd.AddCommand(viewPageCmdImpl)
 	rootCmd.AddCommand(lockPageCmdImpl)
 	rootCmd.AddCommand(syncCmdImpl)
@@ -49,6 +48,11 @@ func init() {
 	rootCmd.AddCommand(generateEnggspecCmdImpl)
 	rootCmd.AddCommand(extractDomainModelCmdImpl)
 	rootCmd.AddCommand(loadDomainModelCmdImpl)
+	rootCmd.AddCommand(createArtifactsCmdImpl)
+	rootCmd.AddCommand(newInitiativeCmd)
+	rootCmd.AddCommand(simplifyCmd)
+	rootCmd.AddCommand(moveFeatureCmd)
+	rootCmd.AddCommand(repairCmd)
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)

@@ -1,3 +1,7 @@
+// parlay-feature: parlay-tool
+// parlay-component: check-readiness
+// parlay-extends: infrastructure-layer/CheckReadinessInfraSupport
+
 package commands
 
 import (
@@ -144,15 +148,33 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	// Build-feature requires everything create-surface requires
 	issues = append(issues, checkCreateSurfaceReadiness(featurePath)...)
 
-	// Surface must exist with fragments that have Source and Page/Region targets
+	// At least one of surface.md or infrastructure.md must exist.
 	surfacePath := filepath.Join(featurePath, "surface.md")
-	if !fileExists(surfacePath) {
+	infraPath := filepath.Join(featurePath, "infrastructure.md")
+	hasSurface := fileExists(surfacePath)
+	hasInfra := fileExists(infraPath)
+
+	if !hasSurface && !hasInfra {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
-			Code:     "no-surface",
-			Message:  "surface.md does not exist",
-			Fix:      "run /parlay-create-surface @{feature} to generate it",
+			Code:     "no-surface-no-infrastructure",
+			Message:  "neither surface.md nor infrastructure.md exists",
+			Fix:      "run /parlay-create-artifacts for the decision flow, or author infrastructure.md directly for behind-the-scenes features",
 		})
+		return issues
+	}
+
+	if hasInfra && !isNewSchemaFormat(infraPath) {
+		issues = append(issues, readinessIssue{
+			Severity: "error",
+			Code:     "old-infrastructure-schema",
+			Message:  "infrastructure.md uses old-format fields (Modifies/Introduces/Detection)",
+			Fix:      "migrate to the framework-agnostic format: replace Modifies with **Affects**: (abstract scope), remove Introduces and Detection (these are now generated at build time), and add **Invariants**: for testable properties",
+		})
+	}
+
+	if !hasSurface {
+		// Pure infrastructure feature — skip surface validation, proceed.
 		return issues
 	}
 
@@ -234,4 +256,20 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	}
 
 	return issues
+}
+
+// parlay-feature: infrastructure-layer
+// parlay-component: readiness-new-schema-validation
+func isNewSchemaFormat(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	content := string(data)
+	hasOldModifies := strings.Contains(content, "**Modifies**:")
+	hasOldIntroduces := strings.Contains(content, "**Introduces**:")
+	if hasOldModifies || hasOldIntroduces {
+		return false
+	}
+	return strings.Contains(content, "**Affects**:")
 }

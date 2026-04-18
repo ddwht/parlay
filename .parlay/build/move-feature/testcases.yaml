@@ -1,0 +1,186 @@
+feature: move-feature
+framework: go-test
+
+suites:
+  - name: MoveResult — orphan to initiative
+    component: MoveResult
+    fixture: orphan-to-initiative
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: moves feature across all three trees
+        description: The feature directory is moved under the initiative in spec/intents/, spec/handoff/, and .parlay/build/.
+        steps:
+          - action: input
+            target: feature-ref
+            value: "password-reset"
+          - action: input
+            target: to-flag
+            value: "auth-overhaul"
+          - action: click
+            target: invoke-move-feature
+          - verify: directory-exists
+            target: spec/intents/auth-overhaul/password-reset/
+          - verify: directory-exists
+            target: spec/handoff/auth-overhaul/password-reset/
+          - verify: directory-exists
+            target: .parlay/build/auth-overhaul/password-reset/
+
+      - name: reports before and after qualified paths
+        description: Output shows both the old and new qualified identifiers.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: success-message
+            expected: true
+          - verify: text
+            target: before-path
+            expected: "@password-reset"
+          - verify: text
+            target: after-path
+            expected: "@auth-overhaul/password-reset"
+
+  - name: MoveResult — auto-create initiative
+    component: MoveResult
+    fixture: orphan-to-new-initiative
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: creates initiative directories and moves feature
+        description: When the target initiative doesn't exist, it's auto-created on all three trees before moving.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: initiative-created-message
+            expected: true
+          - verify: visible
+            target: success-message
+            expected: true
+          - verify: directory-exists
+            target: spec/intents/auth-redesign/sso-setup/
+
+  - name: MoveResult — move out to orphan
+    component: MoveResult
+    fixture: initiative-to-orphan
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: moves nested feature to top level
+        description: The feature moves from inside the initiative to the top level on all three trees.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: text
+            target: before-path
+            expected: "@auth-overhaul/password-reset"
+          - verify: text
+            target: after-path
+            expected: "@password-reset"
+          - verify: directory-exists
+            target: spec/intents/password-reset/
+
+  - name: MoveResult — between initiatives
+    component: MoveResult
+    fixture: between-initiatives
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: moves feature from one initiative to another
+        description: The feature relocates between initiatives, updating all three trees.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: text
+            target: before-path
+            expected: "@auth-overhaul/password-reset"
+          - verify: text
+            target: after-path
+            expected: "@billing/password-reset"
+
+  - name: MoveResult — scope collision
+    component: MoveResult
+    fixture: scope-collision
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: fails when target already has same slug
+        description: Moving to an initiative that already contains a feature with the same leaf slug produces a collision error naming the conflicting path.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: scope-collision-error
+            expected: true
+          - verify: text
+            target: scope-collision-error
+            expected: "spec/intents/billing/password-reset/"
+
+  - name: MoveResult — no-op same location
+    component: MoveResult
+    fixture: noop-same-location
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: moving to current location is a silent no-op
+        description: The command succeeds and reports "no change" without modifying any files.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: noop-message
+            expected: true
+          - verify: hidden
+            target: success-message
+
+  - name: MoveResult — non-existent feature
+    component: MoveResult
+    fixture: not-found
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: unresolvable identifier fails with error
+        description: A qualified identifier that doesn't match any directory produces a not-found error.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: not-found-error
+            expected: true
+
+  - name: MoveResult — wrong type (initiative not feature)
+    component: MoveResult
+    fixture: wrong-type
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: moving an initiative fails with type error
+        description: If the identifier resolves to an initiative instead of a feature, the error directs to rename-initiative.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: wrong-type-error
+            expected: true
+          - verify: text
+            target: wrong-type-error
+            expected: "rename-initiative"
+
+  - name: MoveResult — rollback on partial failure
+    component: MoveResult
+    fixture: rollback
+    intent: "@move-feature/move-a-feature-between-locations"
+
+    cases:
+      - name: partial failure rolls back and reports original location
+        description: If a tree fails mid-move, successful renames are rolled back and the feature stays at its original location.
+        steps:
+          - action: render
+            target: MoveResult
+          - verify: visible
+            target: rollback-error
+            expected: true
+          - verify: text
+            target: rollback-error
+            expected: "Rolled back"

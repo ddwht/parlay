@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -46,19 +45,15 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 		return printJSON(output)
 	}
 
-	// No argument: scan all features
-	intentsDir := filepath.Join(config.SpecDir, config.IntentsDir)
-	entries, err := os.ReadDir(intentsDir)
+	// No argument: scan all features (including initiative-nested)
+	featureIDs, err := config.AllFeatures()
 	if err != nil {
-		return fmt.Errorf("cannot read intents directory: %w", err)
+		return fmt.Errorf("cannot enumerate features: %w", err)
 	}
 
 	var all allQuestionsOutput
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		output, err := collectForFeature(entry.Name())
+	for _, featureID := range featureIDs {
+		output, err := collectForFeature(featureID)
 		if err != nil {
 			continue // feature may not have intents yet
 		}

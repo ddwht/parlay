@@ -1,0 +1,20 @@
+generated-at: "2026-04-18T10:25:57Z"
+intents:
+    extract-duplicated-helpers-into-shared-packages:
+        content-hash: d0e808fbd68b8cd1
+        goal-hash: e91872231120f945
+        constraints-hash: b2763bbbc5d8d5c3
+        verify-hash: a0800ebec5ffdb27
+        objects-hash: 212a65f3d6b3caa3
+sources:
+    intents:
+        extract-duplicated-helpers-into-shared-packages: 177ae46fc04a37e8
+    dialogs:
+        extract-duplicated-helpers-into-shared-packages: bcd1d3f0cf468c28
+    surface-fragments:
+        duplication-scan-results: 580ef68ada55290a
+        extraction-proposal-review: 23aa829ea3002b48
+buildfile-sections:
+    fixtures: c7770da92b99cbb8
+    models: 6b7760f42db4dee0
+    routes: ef0879d79fef3f02

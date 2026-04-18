@@ -1,0 +1,19 @@
+generated-at: "2026-04-18T10:25:57Z"
+intents:
+    repair-project-state:
+        content-hash: eb81cf58d3c88ec5
+        goal-hash: 6746ae2f4c08d165
+        constraints-hash: 2e40e9deb4492929
+        verify-hash: 488ce7b693b60971
+        objects-hash: ae5445ee75837b59
+sources:
+    intents:
+        repair-project-state: 35772524a26c5cad
+    dialogs:
+        repair-project-state: 51f6fd44f194bdf3
+    surface-fragments:
+        repair-report: e5a6506be8ffe4cf
+buildfile-sections:
+    fixtures: 4e26004f82ef8736
+    models: 70c6d0c473ccc5e4
+    routes: 060db07c0dedb98b
