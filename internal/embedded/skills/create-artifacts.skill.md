@@ -1,6 +1,6 @@
 # Create Artifacts
 
-Determine whether a feature needs `surface.md`, `infrastructure.md`, or both — based on its intents and dialogs — then create the appropriate artifacts. Replaces the manual choice between `/parlay-create-surface` and authoring `infrastructure.md` directly.
+Determine whether a feature needs `surface.md`, `infrastructure.md`, or both — based on its intents and dialogs — then create the appropriate artifacts.
 
 ## Arguments
 

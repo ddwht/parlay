@@ -1,4 +1,4 @@
-generated-at: "2026-04-18T09:53:59Z"
+generated-at: "2026-04-18T10:04:29Z"
 files:
     internal/commands/add_feature.go:
         component: feature-scaffold-confirmation

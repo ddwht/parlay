@@ -1,0 +1,220 @@
+feature: artifact-decision
+adapter: go-cli
+
+models:
+  ArtifactDecision:
+    properties:
+      feature:
+        type: string
+        required: true
+        description: Feature slug being analyzed
+      needs-surface:
+        type: boolean
+        required: true
+        description: Whether the feature needs surface.md
+      needs-infrastructure:
+        type: boolean
+        required: true
+        description: Whether the feature needs infrastructure.md
+      confidence:
+        type: enum
+        enum: [certain, ambiguous]
+        required: true
+        description: Whether the agent is confident in its decision or needs designer input
+      reasoning:
+        type: string
+        required: true
+        description: One-line explanation of the decision signals
+
+  IntentSignal:
+    properties:
+      intent-title:
+        type: string
+        required: true
+      persona:
+        type: string
+        required: true
+      artifact-type:
+        type: enum
+        enum: [surface, infrastructure]
+        required: true
+        description: Which artifact this intent contributes to
+      signals:
+        type: string[]
+        required: true
+        description: The specific signals found (persona value, object names, constraint references)
+
+fixtures:
+  surface-only-feature:
+    description: A feature where all intents have Persona UX Designer and describe user-facing output.
+    data:
+      ArtifactDecision:
+        - feature: initiatives
+          needs-surface: true
+          needs-infrastructure: false
+          confidence: certain
+          reasoning: "All intents have Persona: UX Designer; dialogs show CLI output; Objects are user-facing concepts"
+      IntentSignal:
+        - intent-title: "Group Features under an Initiative"
+          persona: "UX Designer"
+          artifact-type: surface
+          signals: ["Persona: UX Designer", "Objects: initiative, feature, project", "Dialog shows [OK] messages and created paths"]
+
+  infrastructure-only-feature:
+    description: A feature where all intents have Persona Parlay Developer and reference code constructs.
+    data:
+      ArtifactDecision:
+        - feature: qualified-identifier-resolver
+          needs-surface: false
+          needs-infrastructure: true
+          confidence: certain
+          reasoning: "All intents have Persona: Parlay Developer; Constraints name specific functions; Objects are code constructs"
+      IntentSignal:
+        - intent-title: "Support Qualified Identifiers in Path Resolvers"
+          persona: "Parlay Developer"
+          artifact-type: infrastructure
+          signals: ["Persona: Parlay Developer", "Objects: config, resolver", "Constraints name FeaturePath, BuildPath"]
+
+  mixed-feature:
+    description: A feature with both UX Designer and Parlay Developer intents.
+    data:
+      ArtifactDecision:
+        - feature: mixed-example
+          needs-surface: true
+          needs-infrastructure: true
+          confidence: certain
+          reasoning: "2 intents are UX Designer (CLI output); 1 intent is Parlay Developer (resolver change)"
+
+  ambiguous-feature:
+    description: A feature where signals conflict — UX Designer persona but Constraints reference code constructs.
+    data:
+      ArtifactDecision:
+        - feature: ambiguous-example
+          needs-surface: false
+          needs-infrastructure: false
+          confidence: ambiguous
+          reasoning: "Persona is UX Designer but Constraints reference internal function names — cannot determine without designer input"
+
+routes:
+  - path: create-artifacts
+    page: create-artifacts
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components: [ArtifactDecisionPrompt]
+
+components:
+  ArtifactDecisionPrompt:
+    source: "@artifact-decision/artifact-decision-prompt"
+    widget: cobra-command
+    description: Agent-delivered decision prompt that analyzes intents and dialogs to determine whether a feature needs surface.md, infrastructure.md, or both. Presents the decision with reasoning and override options.
+
+    data:
+      inputs:
+        - name: feature-slug
+          model: ArtifactDecision
+          field: feature
+          from: command-argument
+      computed:
+        - name: intents
+          from: "parse spec/intents/{feature-slug}/intents.md"
+          type: IntentSignal[]
+        - name: dialogs
+          from: "parse spec/intents/{feature-slug}/dialogs.md"
+          type: string
+        - name: decision
+          from: "analyze intents and dialogs for surface/infrastructure signals"
+          type: ArtifactDecision
+        - name: intent-breakdown
+          from: "group intents by artifact type with their signals"
+          type: IntentSignal[]
+
+    elements:
+      - name: decision-message
+        widget: fmt.Println
+        bind: decision
+        format: "This feature needs {artifact-type} — {reasoning}."
+        visible-when: "decision.confidence == certain"
+
+      - name: intent-breakdown-list
+        widget: bulleted-list
+        bind: intent-breakdown
+        format: "{artifact-type}: {intent-title} ({signals})"
+        visible-when: always
+
+      - name: ambiguous-message
+        widget: fmt.Println
+        bind: decision
+        format: "I'm not sure whether this feature needs surface.md, infrastructure.md, or both. {reasoning}"
+        visible-when: "decision.confidence == ambiguous"
+
+      - name: status-certain
+        widget: prefixed-message
+        bind: decision
+        format: "[OK]"
+        visible-when: "decision.confidence == certain"
+
+      - name: status-ambiguous
+        widget: prefixed-message
+        bind: decision
+        format: "[?]"
+        visible-when: "decision.confidence == ambiguous"
+
+    actions:
+      - name: choose-artifact-type
+        widget: lettered-prompt
+        enabled-when: always
+        effect: call
+        target: proceed-with-artifacts
+
+    operations:
+      - type: read-file
+        path: spec/intents/{feature-slug}/intents.md
+        parse: intent-schema
+        bind: intents
+      - type: read-file
+        path: spec/intents/{feature-slug}/dialogs.md
+        parse: dialog-schema
+        bind: dialogs
+
+cross-cutting:
+  - id: remove-deprecated-create-surface-skill
+    source: "@artifact-decision/determine-required-artifacts-from-intents-and-dialogs"
+    target-files:
+      - internal/embedded/skills/create-surface.skill.md
+      - .claude/skills/parlay-create-surface/SKILL.md
+    transform: >
+      Delete the create-surface skill source and deployed copy. The create-artifacts
+      skill fully replaces it — it handles the "surface only" case by analyzing intents
+      and proceeding to surface generation when appropriate.
+
+  - id: remove-create-surface-command-registration
+    source: "@artifact-decision/determine-required-artifacts-from-intents-and-dialogs"
+    target-files:
+      - internal/commands/root.go
+    transform: >
+      Remove the createSurfaceCmdImpl registration from root.go init(). The create-surface
+      CLI command is no longer needed — create-artifacts subsumes it.
+
+  - id: remove-create-surface-deployer-title
+    source: "@artifact-decision/determine-required-artifacts-from-intents-and-dialogs"
+    target-files:
+      - internal/deployer/claude.go
+    transform: >
+      Remove the "create-surface" entry from the skillTitle map. The skill no longer
+      exists, so the deployer should not generate a title for it.
+
+  - id: update-skill-references-to-create-artifacts
+    source: "@artifact-decision/determine-required-artifacts-from-intents-and-dialogs"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+      - internal/embedded/skills/create-artifacts.skill.md
+      - internal/embedded/skills/reference-design-spec.skill.md
+    transform: >
+      Replace all references to /parlay-create-surface with /parlay-create-artifacts
+      in skill instructions. In build-feature.skill.md error handling, change the
+      "no-surface" fix suggestion from "/parlay-create-surface" to "/parlay-create-artifacts".
+      In create-artifacts.skill.md, remove the "Replaces the manual choice between
+      /parlay-create-surface" phrasing — create-artifacts is now the only entry point,
+      not a replacement. In reference-design-spec.skill.md, update the prerequisite
+      message to reference /parlay-create-artifacts.

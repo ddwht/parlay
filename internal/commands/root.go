@@ -39,7 +39,6 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(addFeatureCmd)
 	rootCmd.AddCommand(createDialogsCmd)
-	rootCmd.AddCommand(createSurfaceCmdImpl)
 	rootCmd.AddCommand(viewPageCmdImpl)
 	rootCmd.AddCommand(lockPageCmdImpl)
 	rootCmd.AddCommand(syncCmdImpl)

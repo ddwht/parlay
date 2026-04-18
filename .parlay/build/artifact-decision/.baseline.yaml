@@ -1,0 +1,19 @@
+generated-at: "2026-04-18T10:04:29Z"
+intents:
+    determine-required-artifacts-from-intents-and-dialogs:
+        content-hash: 2b1ad41f1533949b
+        goal-hash: 0cc918c6e1eb0161
+        constraints-hash: d38c54ffac3453c2
+        verify-hash: 4b46371b4647a469
+        objects-hash: 2084caa5d8c830b4
+sources:
+    intents:
+        determine-required-artifacts-from-intents-and-dialogs: b812578376616efb
+    dialogs:
+        determine-required-artifacts-from-intents-and-dialogs: 3c0760f908a2de6a
+    surface-fragments:
+        artifact-decision-prompt: a39db5ab94b820f6
+buildfile-sections:
+    fixtures: d0c8fa175dcd8b61
+    models: ac0993b628ae9891
+    routes: fec45cf9f903e46c

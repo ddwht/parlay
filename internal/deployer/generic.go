@@ -29,13 +29,17 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "The skill requires the user's answer to decide what to do next.\n\n"
 	content += "---\n\n## CLI Utility Commands\n\n"
 	content += "- `parlay init` — Bootstrap project\n"
-	content += "- `parlay add-feature <name>` — Create feature folder\n"
+	content += "- `parlay add-feature <name> [--initiative <name>]` — Create feature folder\n"
+	content += "- `parlay new-initiative <name>` — Create empty initiative directory\n"
+	content += "- `parlay move-feature @<feature> --to <initiative> | --out` — Relocate a feature\n"
 	content += "- `parlay create-dialogs @<feature>` — Scaffold dialog templates\n"
+	content += "- `parlay simplify` — Detect duplicated helpers and propose extractions\n"
 	content += "- `parlay validate --type <type> <path>` — Validate a file\n"
 	content += "- `parlay parse --type <type> <path>` — Parse to JSON\n"
 	content += "- `parlay check-coverage @<feature>` — Coverage check (JSON)\n"
 	content += "- `parlay view-page <page>` — Assemble page view\n"
 	content += "- `parlay lock-page <page>` — Lock page layout\n"
+	content += "- `parlay upgrade` — Redeploy skills and schemas from the binary\n"
 
 	return os.WriteFile(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content), 0644)
 }

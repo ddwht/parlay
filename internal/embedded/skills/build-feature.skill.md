@@ -111,7 +111,7 @@ Code generation is a separate skill (`/parlay-generate-code`) so that the buildf
 When `parlay check-readiness` returns errors:
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
 - `missing-goal` / `missing-persona` — required field missing. Show which intent and ask user to fill it in.
-- `no-surface` — surface.md doesn't exist. Suggest running `/parlay-create-surface @{feature}` first.
+- `no-surface` — surface.md doesn't exist. Suggest running `/parlay-create-artifacts @{feature}` first.
 - `fragment-missing-page` — surface fragment has no Page target. Show which fragment and ask user to add it.
 - `fragment-missing-source` — surface fragment has no Source. Likely a bug in surface generation; regenerate the surface.
 - `no-config` / `no-prototype-framework` — project not initialized. Suggest running `parlay init`.

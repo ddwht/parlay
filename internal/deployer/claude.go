@@ -109,7 +109,6 @@ func skillTitle(name string) string {
 		"add-feature":          "Create a new feature",
 		"scaffold-dialogs":     "Scaffold dialog templates from intents",
 		"create-artifacts":     "Determine and create surface.md, infrastructure.md, or both",
-		"create-surface":       "Generate surface from intents and dialogs (deprecated — use create-artifacts)",
 		"build-feature":        "Generate buildfile and testcases",
 		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",

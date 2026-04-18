@@ -1,0 +1,48 @@
+app: parlay
+
+navigation:
+  strategy: cli-subcommands
+
+# --- Deployer architecture ---
+# Parlay supports multiple AI agents through a deployer registry.
+# Each deployer packages the same embedded skills into agent-specific format.
+# Changes to skills, skill titles, or CLAUDE.md template affect ALL deployers.
+
+deployers:
+  registry: internal/deployer/deployer.go
+  shared:
+    - skill-sources: internal/embedded/skills/*.skill.md
+    - skill-titles: internal/deployer/claude.go:skillTitle()
+    - schemas: internal/embedded/schemas/*.schema.md
+  agents:
+    claude-code:
+      deployer: internal/deployer/claude.go
+      output:
+        - skills: .claude/skills/parlay-*/SKILL.md
+        - project-config: CLAUDE.md (with parlay:begin/end markers)
+      features:
+        - YAML frontmatter on each skill (name, description)
+        - CLAUDE.md section preservation via HTML comment markers
+        - AskUserQuestion tool for interactive prompts
+    cursor:
+      deployer: internal/deployer/cursor.go
+      output:
+        - skills: .cursor/skills/parlay-*/SKILL.md
+        - project-config: .cursor/rules/parlay.mdc (alwaysApply rule)
+      features:
+        - YAML frontmatter on each skill (name, description)
+        - MDC format with alwaysApply flag
+    generic:
+      deployer: internal/deployer/generic.go
+      output:
+        - instructions: AGENT_INSTRUCTIONS.md (single file, all skills concatenated)
+      features:
+        - No per-skill files — everything in one markdown document
+        - Hardcoded CLI command list (must be updated when commands change)
+
+  # Cross-cutting rules for deployer changes:
+  # - Adding/removing a skill: affects all deployers via embedded skills list
+  # - Adding/removing a skill title: update skillTitle() in claude.go (shared by Claude + Cursor)
+  # - Adding/removing a CLI command: update generic.go hardcoded list AND root.go registration
+  # - Changing CLAUDE.md template: edit writeCLAUDEmd in claude.go
+  # - Changing Cursor rule template: edit writeCursorProjectRule in cursor.go
