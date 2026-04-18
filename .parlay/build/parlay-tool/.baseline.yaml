@@ -1,0 +1,171 @@
+generated-at: "2026-04-18T10:25:57Z"
+intents:
+    author-intents:
+        content-hash: 0eedf5f52d571df2
+        goal-hash: 13e5666bb7f625f1
+        constraints-hash: 9884f77f34910c34
+        verify-hash: 72bdaaeab6a02bdf
+        objects-hash: d63e6ece04ffdb84
+    build-feature-specification:
+        content-hash: e2bf73bfd2f2441b
+        goal-hash: f5da27fe39da0667
+        constraints-hash: 0a53158eb2ce11fb
+        verify-hash: bb970a511160072a
+        objects-hash: f3c8a2495f4843c0
+    configure-project-tools:
+        content-hash: b9dd04727b28bd8e
+        goal-hash: f9b785c5474febd2
+        constraints-hash: df53e628eb5610ec
+        verify-hash: 451bf762dcd00324
+        objects-hash: c0625a8d1afeb466
+    define-application-blueprint:
+        content-hash: 861f98a7f95437a1
+        goal-hash: b80e6cfce130f334
+        constraints-hash: 0b81701ca3d5e405
+        verify-hash: 8fa895d07c9c9101
+        objects-hash: c33fea8165018397
+    extract-and-share-domain-models:
+        content-hash: 2e694e9c21810f07
+        goal-hash: f935a976d408fd98
+        constraints-hash: 2e90929575f6c2a2
+        verify-hash: 24de3606d755725d
+        objects-hash: e7f2e96efd4aead8
+    generate-engineering-specification:
+        content-hash: d7f2e9775f71e67d
+        goal-hash: 63e0bba31b80eb04
+        constraints-hash: 9a2b7db966158beb
+        verify-hash: f8f8d0e594efd472
+        objects-hash: 4ee1a4352d3bb484
+    generate-prototype-code:
+        content-hash: 0a1ee04be1df9611
+        goal-hash: ee0be792c6f49a65
+        constraints-hash: fb6dd0036efe5cdb
+        verify-hash: c855e9a5f8498826
+        objects-hash: 2124910099974dbf
+    generate-surface-from-intents-and-dialogs:
+        content-hash: 826526a756edfaa1
+        goal-hash: bbd2ca5e87573a93
+        constraints-hash: 6047d0d5b5343dc9
+        verify-hash: 9a2cf4667379fa73
+        objects-hash: 87ddbedf5f5b3278
+    integrate-with-ai-agent-via-skills:
+        content-hash: 9a54898fc49b89b9
+        goal-hash: 83d76afd4d7828f5
+        constraints-hash: a53c0d2abd6b41fe
+        verify-hash: 57154fd9fba13d2d
+        objects-hash: dd5f23920dedb5ea
+    lock-page-layout:
+        content-hash: 3aea150309ac238e
+        goal-hash: 044d360592252848
+        constraints-hash: f314bf0610733b12
+        verify-hash: 3b16ea7da47f747b
+        objects-hash: b94127e17665ff91
+    mount-generated-feature-into-existing-pages:
+        content-hash: a9eba2f6a407e078
+        goal-hash: db7e07478b35d9f9
+        constraints-hash: 201f4db3604c52ca
+        verify-hash: 512065af39ce2906
+        objects-hash: 4a2ec22ecfa29b99
+    onboard-existing-codebase:
+        content-hash: a773518a2f898fcd
+        goal-hash: d31641c58a33b007
+        constraints-hash: ae3d1ffef234fa53
+        verify-hash: e856780fbd6f4487
+        objects-hash: 0dbb526397f1c803
+    reference-design-spec-from-figma:
+        content-hash: 86b8451f34c8aaaf
+        goal-hash: 994a1c305851c59a
+        constraints-hash: 60afa12f2301cdbc
+        verify-hash: 13416808b8374194
+        objects-hash: 417b5d17204cd1bc
+    register-framework-adapter:
+        content-hash: c10c6560f7a79e85
+        goal-hash: 95b774a8df46be76
+        constraints-hash: 4d80c9f513e7e8b6
+        verify-hash: ee03aab6e916dc10
+        objects-hash: 9c8f22b543dcc5d1
+    resolve-ambiguities-through-ai-dialogue:
+        content-hash: a160e12e7ac09236
+        goal-hash: 916f54ec1f761d56
+        constraints-hash: ba0504dc2b733d0e
+        verify-hash: 99ac5459cb0f1917
+        objects-hash: 8df7cff66fbd979f
+    resolve-external-types-during-code-generation:
+        content-hash: 222eeee4d92cdd7c
+        goal-hash: bb8dbd8e71fbf6fe
+        constraints-hash: 011ac61d773ea0c4
+        verify-hash: b852b2bf4facf640
+        objects-hash: 54811ce5f059cff3
+    scaffold-dialogs-from-intents:
+        content-hash: 319056741dc12512
+        goal-hash: 004b8400d6d6a776
+        constraints-hash: 7c2f4b850cea2757
+        verify-hash: 728f92be90dd76f7
+        objects-hash: 1e4606304bd4fe7f
+    sync-intents-and-dialogs:
+        content-hash: b449c6d7211a6946
+        goal-hash: bf3caafa8461e921
+        constraints-hash: 0863bbe5c6afdc43
+        verify-hash: 17aa7a9b77310441
+        objects-hash: 6007e612dee7a6e9
+    view-assembled-page:
+        content-hash: 275153fdefaaa558
+        goal-hash: 9513dcd863e84324
+        constraints-hash: cc1fe204f42a7abe
+        verify-hash: eb74fac5cc0d18ac
+        objects-hash: 0d89fe1ed483b8ee
+sources:
+    intents:
+        author-intents: 24cd953e08cb91a0
+        build-feature-specification: 5088c90e64d88f94
+        configure-project-tools: 0903574fec489f28
+        define-application-blueprint: 6147a4c3e1eab6cc
+        extract-and-share-domain-models: 52bcf6101930d6a0
+        generate-engineering-specification: 126e688a3521f7f7
+        generate-prototype-code: ff402a113717ed8c
+        generate-surface-from-intents-and-dialogs: 554f7ea647311ffe
+        integrate-with-ai-agent-via-skills: 45e57a16a776f8fa
+        lock-page-layout: d7686d877d816b80
+        mount-generated-feature-into-existing-pages: d6b2317c724f8f2e
+        onboard-existing-codebase: 2142035d6728caa8
+        reference-design-spec-from-figma: ba5624830afb78e6
+        register-framework-adapter: 0d60e17c3c5d66e0
+        resolve-ambiguities-through-ai-dialogue: 1343ddca531f9e5c
+        resolve-external-types-during-code-generation: 55e0742f0ef355ed
+        scaffold-dialogs-from-intents: 9a01b7033483fa0e
+        sync-intents-and-dialogs: 19018ce2ed53172c
+        view-assembled-page: 4f883124636b008a
+    dialogs:
+        add-feature: dbc22ed22021d9a6
+        bootstrap-project: cfe6f41db887a71f
+        build-feature: 889a3e394b5a2eee
+        define-application-blueprint: 618e5ace6ab0be3b
+        external-type-disambiguation: 7b8f76b6293f46ce
+        extract-domain-model: 8e5bd6c392a63723
+        generate-engineering-specification: 335b80e39d615792
+        generate-prototype-code: 4d67dcc2ff94c0fe
+        generate-surface-from-intents-and-dialogs: 1121047a64409410
+        load-domain-model: 30ce8736743c3c10
+        lock-page-layout: 08f332582264b4e2
+        mount-feature-into-existing-page: 208022e723f43546
+        onboard-existing-codebase: dd93af78348cc730
+        reference-design-spec-from-figma: f2161100b358b557
+        register-framework-adapter: dec87645d7f6f372
+        scaffold-dialogs-from-intents: 55f6155c8dd9c5b4
+        sync-intents-and-dialogs: 47d04567ec253cb1
+        view-assembled-page: 681ec49994189880
+    surface-fragments:
+        adapter-registration-confirmation: 3e19317b12ea32a2
+        build-progress-report: cc928c25fd4048a5
+        coverage-report: bd048d435fcee510
+        dialog-template-report: b22e2e1fbecc6df3
+        disambiguation-prompt: 7fba59685ea7b907
+        domain-model-export: 76a5bab8e52e38a2
+        domain-model-integration: b210c42cfb0cc58b
+        engineering-spec-output: de7028cc2195659d
+        feature-scaffold-confirmation: 0d834c1042eca5e5
+        figma-import-split: 6e27c328a4010348
+        page-assembly-view: 8790a58f70d72c55
+        page-lock-confirmation: 10908c16b1818d3a
+        project-setup-wizard: be699505da69f1fb
+        surface-fragment-list: 9be6adbca0c00f01
