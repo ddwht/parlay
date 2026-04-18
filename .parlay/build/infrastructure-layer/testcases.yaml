@@ -1,0 +1,323 @@
+feature: infrastructure-layer
+framework: go-test
+
+suites:
+  - name: CheckReadinessInfraSupport — infrastructure-only feature passes
+    component: CheckReadinessInfraSupport
+    fixture: feature-with-only-infrastructure
+    intent: "@infrastructure-layer/define-the-infrastructure-artifact"
+
+    cases:
+      - name: feature with only infrastructure.md passes readiness
+        description: A feature with infrastructure.md but no surface.md passes the "at least one" rule.
+        steps:
+          - action: render
+            target: CheckReadinessInfraSupport
+          - verify: visible
+            target: status-ready
+            expected: true
+
+      - name: feature with both surface.md and infrastructure.md passes readiness
+        description: A feature with both files is accepted.
+        steps:
+          - action: render
+            target: CheckReadinessInfraSupport
+          - verify: visible
+            target: status-ready
+            expected: true
+
+      - name: feature with neither fails readiness
+        description: A feature with no surface.md and no infrastructure.md fails with an error naming both files.
+        steps:
+          - action: render
+            target: CheckReadinessInfraSupport
+          - verify: visible
+            target: status-not-ready
+            expected: true
+          - verify: visible
+            target: no-surface-no-infra-error
+            expected: true
+
+      - name: infrastructure.md with old-format fields fails readiness
+        description: An infrastructure.md using Modifies/Introduces instead of Affects/Behavior triggers a migration error.
+        steps:
+          - action: render
+            target: CheckReadinessInfraSupport
+          - verify: visible
+            target: old-schema-error
+            expected: true
+
+  - name: InfrastructureValidationResult — valid file
+    component: InfrastructureValidationResult
+    fixture: valid-infrastructure-file
+    intent: "@infrastructure-layer/define-the-infrastructure-schema"
+
+    cases:
+      - name: well-formed infrastructure.md passes validation
+        description: A file with Affects, Behavior, Source on every fragment passes cleanly.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: visible
+            target: status-pass
+            expected: true
+          - verify: visible
+            target: pass-message
+            expected: true
+
+      - name: fragment count is reported on success
+        description: The pass message includes the number of valid fragments.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: text
+            target: pass-message
+            expected: "2 fragments"
+
+  - name: InfrastructureValidationResult — missing required fields
+    component: InfrastructureValidationResult
+    fixture: invalid-infrastructure-missing-behavior
+    intent: "@infrastructure-layer/define-the-infrastructure-schema"
+
+    cases:
+      - name: missing Behavior fails validation
+        description: A fragment without Behavior triggers a validation error.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: visible
+            target: status-fail
+            expected: true
+          - verify: visible
+            target: error-list
+            expected: true
+
+      - name: missing Affects fails validation
+        description: A fragment without Affects triggers a validation error.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: visible
+            target: status-fail
+            expected: true
+
+  - name: InfrastructureValidationResult — portability warnings
+    component: InfrastructureValidationResult
+    fixture: infrastructure-with-portability-warnings
+    intent: "@infrastructure-layer/define-the-infrastructure-schema"
+
+    cases:
+      - name: framework-specific content in Behavior triggers portability warning
+        description: Behavior containing function signatures triggers a warning but not an error.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: visible
+            target: status-pass
+            expected: true
+          - verify: visible
+            target: portability-warning-list
+            expected: true
+          - verify: text
+            target: portability-warning-list
+            expected: "classifyDir(path string)"
+
+      - name: portability warnings do not cause validation failure
+        description: File is valid even with portability warnings — they are separate from errors.
+        steps:
+          - action: render
+            target: InfrastructureValidationResult
+          - verify: visible
+            target: pass-with-warnings-message
+            expected: true
+          - verify: hidden
+            target: status-fail
+
+  - name: BuildFeatureInfraReport — pure infrastructure feature
+    component: BuildFeatureInfraReport
+    fixture: feature-with-only-infrastructure
+    intent: "@infrastructure-layer/bridge-infrastructure-to-framework-specific-cross-cutting"
+
+    cases:
+      - name: pure infrastructure feature produces cross-cutting entries and no components
+        description: Build-feature on a feature with only infrastructure.md produces only cross-cutting entries.
+        steps:
+          - action: render
+            target: BuildFeatureInfraReport
+          - verify: visible
+            target: pure-infra-report
+            expected: true
+          - verify: hidden
+            target: mixed-report
+
+      - name: adapter bridge resolves abstract Affects to concrete targets
+        description: The generated cross-cutting entries contain framework-specific file paths even though infrastructure.md had none.
+        steps:
+          - action: render
+            target: BuildFeatureInfraReport
+          - verify: visible
+            target: status-success
+            expected: true
+
+  - name: BuildFeatureInfraReport — mixed feature
+    component: BuildFeatureInfraReport
+    fixture: feature-with-both
+    intent: "@infrastructure-layer/bridge-infrastructure-to-framework-specific-cross-cutting"
+
+    cases:
+      - name: mixed feature reports both components and cross-cutting entries
+        description: A feature with both surface.md and infrastructure.md gets components from surface and cross-cutting from infrastructure.
+        steps:
+          - action: render
+            target: BuildFeatureInfraReport
+          - verify: visible
+            target: mixed-report
+            expected: true
+          - verify: hidden
+            target: pure-infra-report
+
+  - name: CrossCuttingMergeReview — apply diffs
+    component: CrossCuttingMergeReview
+    fixture: buildfile-with-cross-cutting
+    intent: "@infrastructure-layer/update-generate-code-to-process-infrastructure-sourced-entries"
+
+    cases:
+      - name: each cross-cutting entry produces a Tier 2 merge diff for review
+        description: Generate-code presents a unified diff with A/B/C menu for each target file.
+        steps:
+          - action: render
+            target: CrossCuttingMergeReview
+          - verify: element
+            target: merge-diff-display
+          - verify: element
+            target: review-diff
+
+      - name: completion summary reports applied count and file count
+        description: After all diffs are applied, a summary shows how many changes were applied across how many files.
+        steps:
+          - action: render
+            target: CrossCuttingMergeReview
+          - verify: element
+            target: completion-summary
+
+  - name: CrossCuttingMergeReview — target-pattern zero matches
+    component: CrossCuttingMergeReview
+    fixture: buildfile-with-cross-cutting
+    intent: "@infrastructure-layer/update-generate-code-to-process-infrastructure-sourced-entries"
+
+    cases:
+      - name: zero-match pattern produces warning not error
+        description: A target-pattern that matches no files warns but does not block.
+        steps:
+          - action: render
+            target: CrossCuttingMergeReview
+          - verify: visible
+            target: zero-match-warning
+            expected: true
+
+  - name: CrossCuttingMergeReview — missing target file
+    component: CrossCuttingMergeReview
+    fixture: buildfile-with-cross-cutting
+    intent: "@infrastructure-layer/update-generate-code-to-process-infrastructure-sourced-entries"
+
+    cases:
+      - name: missing target file on modify-only entry produces error
+        description: A target-files entry where the file doesn't exist and the entry only modifies is an error.
+        steps:
+          - action: render
+            target: CrossCuttingMergeReview
+          - verify: visible
+            target: missing-target-error
+            expected: true
+
+  # --- Infrastructure: cross-cutting test suites ---
+
+  - name: schema-framework-agnostic-fields — parser update
+    component: schema-framework-agnostic-fields
+    fixture: valid-infrastructure-file
+    intent: "@infrastructure-layer/define-the-infrastructure-schema"
+
+    cases:
+      - name: parser reads Affects field from infrastructure.md
+        description: ParseInfrastructureFile populates InfraFragment.Affects from **Affects** lines.
+        steps:
+          - action: render
+            target: schema-framework-agnostic-fields
+          - verify: state
+            target: InfrastructureFragment.affects
+            expected: "feature resolution, directory traversal"
+
+      - name: parser reads Invariants field from infrastructure.md
+        description: ParseInfrastructureFile populates InfraFragment.Invariants from Invariants list items.
+        steps:
+          - action: render
+            target: schema-framework-agnostic-fields
+          - verify: count
+            target: InfrastructureFragment.invariants
+            expected: 2
+
+      - name: old Modifies field is not recognized by updated parser
+        description: A fragment with Modifies is not parsed into the Affects field.
+        steps:
+          - action: render
+            target: schema-framework-agnostic-fields
+          - verify: state
+            target: InfrastructureFragment.affects
+            expected: ""
+
+  - name: portability-lint — detects framework-specific content
+    component: portability-lint
+    fixture: infrastructure-with-portability-warnings
+    intent: "@infrastructure-layer/define-the-infrastructure-schema"
+
+    cases:
+      - name: function signature in Behavior triggers warning
+        description: Behavior containing "classifyDir(path string)" is detected as framework-specific.
+        steps:
+          - action: render
+            target: portability-lint
+          - verify: state
+            target: PortabilityWarning.content
+            expected: "classifyDir(path string)"
+
+      - name: file path in Affects triggers warning
+        description: Affects containing "internal/config/config.go" is detected as framework-specific.
+        steps:
+          - action: render
+            target: portability-lint
+          - verify: state
+            target: PortabilityWarning.field
+            expected: "Affects"
+
+      - name: domain terms do not trigger warnings
+        description: Affects containing "feature resolution" and Behavior containing "classify directories" are clean.
+        steps:
+          - action: render
+            target: portability-lint
+          - verify: count
+            target: PortabilityWarning
+            expected: 0
+
+  - name: readiness-new-schema-validation — old schema detection
+    component: readiness-new-schema-validation
+    fixture: feature-with-only-infrastructure
+    intent: "@infrastructure-layer/define-the-infrastructure-artifact"
+
+    cases:
+      - name: infrastructure.md with Affects fields passes new-schema check
+        description: A file using the new framework-agnostic format is accepted.
+        steps:
+          - action: render
+            target: readiness-new-schema-validation
+          - verify: state
+            target: FeatureReadiness.ready
+            expected: true
+
+      - name: infrastructure.md with Modifies fields fails new-schema check
+        description: A file using the old framework-specific format triggers a migration error.
+        steps:
+          - action: render
+            target: readiness-new-schema-validation
+          - verify: error
+            target: readiness-new-schema-validation
+            expected: "old-infrastructure-schema"

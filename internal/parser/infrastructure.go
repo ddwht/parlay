@@ -1,5 +1,6 @@
 // parlay-feature: infrastructure-layer
 // parlay-component: InfrastructureValidationResult
+// parlay-extends: infrastructure-layer/schema-framework-agnostic-fields
 
 package parser
 
@@ -11,10 +12,9 @@ import (
 
 type InfraFragment struct {
 	Name               string
-	Modifies           []string
-	Introduces         []string
-	Detection          string
+	Affects            string
 	Behavior           string
+	Invariants         []string
 	Source             string
 	Caching            string
 	BackwardCompatible string
@@ -51,18 +51,14 @@ func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "**Modifies**:") {
-			current.Modifies = splitCSV(extractField(line, "**Modifies**:"))
-			currentList = nil
-		} else if strings.HasPrefix(line, "**Introduces**:") {
-			current.Introduces = splitCSV(extractField(line, "**Introduces**:"))
-			currentList = nil
-		} else if strings.HasPrefix(line, "**Detection**:") {
-			current.Detection = extractField(line, "**Detection**:")
+		if strings.HasPrefix(line, "**Affects**:") {
+			current.Affects = extractField(line, "**Affects**:")
 			currentList = nil
 		} else if strings.HasPrefix(line, "**Behavior**:") {
 			current.Behavior = extractField(line, "**Behavior**:")
 			currentList = nil
+		} else if strings.HasPrefix(line, "**Invariants**:") {
+			currentList = &current.Invariants
 		} else if strings.HasPrefix(line, "**Source**:") {
 			current.Source = extractField(line, "**Source**:")
 			currentList = nil

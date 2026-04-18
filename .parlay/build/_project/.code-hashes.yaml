@@ -1,11 +1,11 @@
-generated-at: "2026-04-18T08:09:31Z"
+generated-at: "2026-04-18T08:58:51Z"
 files:
     internal/commands/add_feature.go:
         component: feature-scaffold-confirmation
         hash: 0d139fc50ad90884
     internal/commands/check_readiness.go:
         component: check-readiness
-        hash: 792d2cf1402bbb56
+        hash: 1bf592333df08061
     internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
         hash: 58fad3d31c6c3f39

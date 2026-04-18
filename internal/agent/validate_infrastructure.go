@@ -1,14 +1,23 @@
 // parlay-feature: infrastructure-layer
 // parlay-component: InfrastructureValidationResult
+// parlay-extends: infrastructure-layer/portability-lint
 
 package agent
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ddwht/parlay/internal/parser"
 )
+
+type PortabilityWarning struct {
+	Fragment   string `json:"fragment"`
+	Field      string `json:"field"`
+	Content    string `json:"content"`
+	Suggestion string `json:"suggestion"`
+}
 
 // ValidateInfrastructure checks infrastructure.md has valid fragment structure.
 func ValidateInfrastructure(path string, content []byte) error {
@@ -22,7 +31,7 @@ func ValidateInfrastructure(path string, content []byte) error {
 }
 
 // ValidateInfrastructureDeep performs full schema validation on an infrastructure.md file.
-func ValidateInfrastructureDeep(path string) []ValidationError {
+func ValidateInfrastructureDeep(path string) ([]ValidationError, []PortabilityWarning) {
 	var errors []ValidationError
 
 	fragments, err := parser.ParseInfrastructureFile(path)
@@ -32,7 +41,7 @@ func ValidateInfrastructureDeep(path string) []ValidationError {
 			Message: fmt.Sprintf("cannot parse infrastructure.md: %s", err),
 			Context: path,
 			Fix:     "ensure the file exists and is valid markdown with ## fragment headings",
-		}}
+		}}, nil
 	}
 
 	if len(fragments) == 0 {
@@ -40,8 +49,8 @@ func ValidateInfrastructureDeep(path string) []ValidationError {
 			Code:    "no-fragments",
 			Message: "infrastructure.md has no fragment blocks",
 			Context: path,
-			Fix:     "add at least one ## fragment with Behavior, Source, and Modifies or Introduces",
-		}}
+			Fix:     "add at least one ## fragment with Affects, Behavior, and Source",
+		}}, nil
 	}
 
 	seen := make(map[string]bool)
@@ -56,12 +65,21 @@ func ValidateInfrastructureDeep(path string) []ValidationError {
 		}
 		seen[frag.Name] = true
 
+		if frag.Affects == "" {
+			errors = append(errors, ValidationError{
+				Code:    "missing-affects",
+				Message: fmt.Sprintf("fragment %q has no Affects field", frag.Name),
+				Context: fmt.Sprintf("infrastructure.md ## %s", frag.Name),
+				Fix:     "add **Affects**: describing what area of the system this capability touches",
+			})
+		}
+
 		if frag.Behavior == "" {
 			errors = append(errors, ValidationError{
 				Code:    "missing-behavior",
 				Message: fmt.Sprintf("fragment %q has no Behavior field", frag.Name),
 				Context: fmt.Sprintf("infrastructure.md ## %s", frag.Name),
-				Fix:     "add **Behavior**: describing what the change does",
+				Fix:     "add **Behavior**: describing what the capability does",
 			})
 		}
 
@@ -71,15 +89,6 @@ func ValidateInfrastructureDeep(path string) []ValidationError {
 				Message: fmt.Sprintf("fragment %q has no Source reference", frag.Name),
 				Context: fmt.Sprintf("infrastructure.md ## %s", frag.Name),
 				Fix:     "add **Source**: @feature/intent-slug to trace back to the source intent",
-			})
-		}
-
-		if len(frag.Modifies) == 0 && len(frag.Introduces) == 0 {
-			errors = append(errors, ValidationError{
-				Code:    "no-modifies-or-introduces",
-				Message: fmt.Sprintf("fragment %q has neither Modifies nor Introduces", frag.Name),
-				Context: fmt.Sprintf("infrastructure.md ## %s", frag.Name),
-				Fix:     "add **Modifies**: (existing code to change) or **Introduces**: (new code to add), or both",
 			})
 		}
 
@@ -95,5 +104,57 @@ func ValidateInfrastructureDeep(path string) []ValidationError {
 		}
 	}
 
-	return errors
+	warnings := lintPortability(fragments)
+	return errors, warnings
+}
+
+var (
+	funcSigPattern  = regexp.MustCompile(`\w+\([^)]*\s+\w+`)
+	fileExtPattern  = regexp.MustCompile(`\b\w+\.(go|py|ts|js|rs|java|rb|swift|kt)\b`)
+	langKeywords    = regexp.MustCompile(`\b(func|def|class|interface|struct|impl|enum|trait|module)\b`)
+	importPathPattern = regexp.MustCompile(`\w+/\w+\.\w+`)
+)
+
+func lintPortability(fragments []parser.InfraFragment) []PortabilityWarning {
+	var warnings []PortabilityWarning
+
+	for _, frag := range fragments {
+		warnings = append(warnings, lintField(frag.Name, "Affects", frag.Affects)...)
+		warnings = append(warnings, lintField(frag.Name, "Behavior", frag.Behavior)...)
+	}
+
+	return warnings
+}
+
+func lintField(fragName, fieldName, content string) []PortabilityWarning {
+	var warnings []PortabilityWarning
+
+	if m := funcSigPattern.FindString(content); m != "" {
+		warnings = append(warnings, PortabilityWarning{
+			Fragment:   fragName,
+			Field:      fieldName,
+			Content:    m,
+			Suggestion: "describe the capability without naming the function or its signature",
+		})
+	}
+
+	if m := fileExtPattern.FindString(content); m != "" {
+		warnings = append(warnings, PortabilityWarning{
+			Fragment:   fragName,
+			Field:      fieldName,
+			Content:    m,
+			Suggestion: "use an abstract scope label instead of a file path",
+		})
+	}
+
+	if m := langKeywords.FindString(content); m != "" {
+		warnings = append(warnings, PortabilityWarning{
+			Fragment:   fragName,
+			Field:      fieldName,
+			Content:    m,
+			Suggestion: fmt.Sprintf("'%s' is a language keyword — describe the behavior, not the implementation", m),
+		})
+	}
+
+	return warnings
 }

@@ -159,9 +159,18 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 			Severity: "error",
 			Code:     "no-surface-no-infrastructure",
 			Message:  "neither surface.md nor infrastructure.md exists",
-			Fix:      "run /parlay-create-surface for user-facing features, or author infrastructure.md directly for behind-the-scenes features",
+			Fix:      "run /parlay-create-artifacts for the decision flow, or author infrastructure.md directly for behind-the-scenes features",
 		})
 		return issues
+	}
+
+	if hasInfra && !isNewSchemaFormat(infraPath) {
+		issues = append(issues, readinessIssue{
+			Severity: "error",
+			Code:     "old-infrastructure-schema",
+			Message:  "infrastructure.md uses old-format fields (Modifies/Introduces/Detection)",
+			Fix:      "migrate to the framework-agnostic format: replace Modifies with **Affects**: (abstract scope), remove Introduces and Detection (these are now generated at build time), and add **Invariants**: for testable properties",
+		})
 	}
 
 	if !hasSurface {
@@ -247,4 +256,20 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	}
 
 	return issues
+}
+
+// parlay-feature: infrastructure-layer
+// parlay-component: readiness-new-schema-validation
+func isNewSchemaFormat(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	content := string(data)
+	hasOldModifies := strings.Contains(content, "**Modifies**:")
+	hasOldIntroduces := strings.Contains(content, "**Introduces**:")
+	if hasOldModifies || hasOldIntroduces {
+		return false
+	}
+	return strings.Contains(content, "**Affects**:")
 }
