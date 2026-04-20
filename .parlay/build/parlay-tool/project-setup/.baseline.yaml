@@ -1,0 +1,29 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    configure-project-tools:
+        content-hash: 635c7a384aacacdb
+        goal-hash: f9b785c5474febd2
+        constraints-hash: dc01d9ebd34e67b0
+        verify-hash: 451bf762dcd00324
+        objects-hash: c0625a8d1afeb466
+    define-application-blueprint:
+        content-hash: cc6e3106f3bc5d24
+        goal-hash: b80e6cfce130f334
+        constraints-hash: b32c6c0e99356bad
+        verify-hash: a165ecf5d79dc7bc
+        objects-hash: c33fea8165018397
+    register-framework-adapter:
+        content-hash: 77930504f8d35e1a
+        goal-hash: 95b774a8df46be76
+        constraints-hash: 4d80c9f513e7e8b6
+        verify-hash: ee03aab6e916dc10
+        objects-hash: 9c8f22b543dcc5d1
+sources:
+    intents:
+        configure-project-tools: 9cf81511cafac63f
+        define-application-blueprint: 147d227ab4ece9b0
+        register-framework-adapter: cbfa75a6de9ab777
+    dialogs:
+        bootstrap-project: 2ba7c74ee0f289c4
+        define-application-blueprint: 3f627e5c7072a827
+        register-framework-adapter: dfd9e281a011b806

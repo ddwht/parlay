@@ -1,0 +1,14 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    extract-and-share-domain-models:
+        content-hash: 2e694e9c21810f07
+        goal-hash: f935a976d408fd98
+        constraints-hash: 2e90929575f6c2a2
+        verify-hash: 24de3606d755725d
+        objects-hash: e7f2e96efd4aead8
+sources:
+    intents:
+        extract-and-share-domain-models: 4480049584552c4e
+    dialogs:
+        extract-domain-model: a4cfd8261a0f54f4
+        load-domain-model: cd697c908a574f3c

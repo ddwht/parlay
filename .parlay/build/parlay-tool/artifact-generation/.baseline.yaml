@@ -1,0 +1,37 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    determine-required-artifacts-from-intents-and-dialogs:
+        content-hash: 42b937c41132dc09
+        goal-hash: eab76a3dc0c3885f
+        constraints-hash: ff38ad914c4da625
+        verify-hash: 41a756b23c0aec29
+        objects-hash: 2084caa5d8c830b4
+    lock-page-layout:
+        content-hash: 3aea150309ac238e
+        goal-hash: 044d360592252848
+        constraints-hash: f314bf0610733b12
+        verify-hash: 3b16ea7da47f747b
+        objects-hash: b94127e17665ff91
+    reference-design-spec-from-figma:
+        content-hash: b83c8e2c4d4690a6
+        goal-hash: 994a1c305851c59a
+        constraints-hash: eba86c7b311a418e
+        verify-hash: 382648e0c00093aa
+        objects-hash: 417b5d17204cd1bc
+    view-assembled-page:
+        content-hash: 275153fdefaaa558
+        goal-hash: 9513dcd863e84324
+        constraints-hash: cc1fe204f42a7abe
+        verify-hash: eb74fac5cc0d18ac
+        objects-hash: 0d89fe1ed483b8ee
+sources:
+    intents:
+        determine-required-artifacts-from-intents-and-dialogs: 2e4132aa94b70e86
+        lock-page-layout: d7686d877d816b80
+        reference-design-spec-from-figma: cadca2747965604d
+        view-assembled-page: ada5506c8223fdd2
+    dialogs:
+        determine-required-artifacts: d448af3a042cdcd7
+        lock-page-layout: 2598a505146801d6
+        reference-design-spec-from-figma: 9f8ec872787f8f09
+        view-assembled-page: dd9088b1074fd02e

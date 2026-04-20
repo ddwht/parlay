@@ -1,0 +1,13 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    onboard-existing-codebase:
+        content-hash: aab37ff300f28e10
+        goal-hash: d31641c58a33b007
+        constraints-hash: 8970403bbb43b04d
+        verify-hash: e856780fbd6f4487
+        objects-hash: 0dbb526397f1c803
+sources:
+    intents:
+        onboard-existing-codebase: c315e16bdba10837
+    dialogs:
+        onboard-existing-codebase: b2ee9c2ad39e496c

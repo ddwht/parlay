@@ -1,0 +1,20 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    integrate-with-ai-agent-via-skills:
+        content-hash: 14947a5271a8335d
+        goal-hash: 83d76afd4d7828f5
+        constraints-hash: 2180d0d9ce8829bf
+        verify-hash: e7cf76fd3e577e79
+        objects-hash: dd5f23920dedb5ea
+    resolve-ambiguities-through-ai-dialogue:
+        content-hash: 79b5b18788d37445
+        goal-hash: 916f54ec1f761d56
+        constraints-hash: ada4fbc000fd53d1
+        verify-hash: 99ac5459cb0f1917
+        objects-hash: 8df7cff66fbd979f
+sources:
+    intents:
+        integrate-with-ai-agent-via-skills: 027e303c8d3d4d8e
+        resolve-ambiguities-through-ai-dialogue: d1f6cbbea5392c0a
+    dialogs:
+        resolve-ambiguities: 76f1f47666b06b56

@@ -1,0 +1,13 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    generate-engineering-specification:
+        content-hash: 0157b3a391bffe8a
+        goal-hash: 63e0bba31b80eb04
+        constraints-hash: f8ddc8f228f31a4a
+        verify-hash: f8f8d0e594efd472
+        objects-hash: 4ee1a4352d3bb484
+sources:
+    intents:
+        generate-engineering-specification: 9730e19197638bab
+    dialogs:
+        generate-engineering-specification: 75d8dfc910c8a018

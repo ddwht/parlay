@@ -1,0 +1,37 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    build-feature-specification:
+        content-hash: 1d51db342e8f72a6
+        goal-hash: f5da27fe39da0667
+        constraints-hash: 0dfbd6d40b2520d6
+        verify-hash: 23a7c142935a9423
+        objects-hash: f3c8a2495f4843c0
+    generate-prototype-code:
+        content-hash: f51eaa20da00a2f7
+        goal-hash: ee0be792c6f49a65
+        constraints-hash: 3395b447a475d7fe
+        verify-hash: a57948c4030d4bb0
+        objects-hash: 2124910099974dbf
+    mount-generated-feature-into-existing-pages:
+        content-hash: df275a05c1050b16
+        goal-hash: db7e07478b35d9f9
+        constraints-hash: 64ed75044e9b23aa
+        verify-hash: ed65106c85a3fb4e
+        objects-hash: 4a2ec22ecfa29b99
+    resolve-external-types-during-code-generation:
+        content-hash: e436b84788dda67b
+        goal-hash: bb8dbd8e71fbf6fe
+        constraints-hash: 0b9a806ec32766d3
+        verify-hash: 368cdb8e153f6f93
+        objects-hash: 54811ce5f059cff3
+sources:
+    intents:
+        build-feature-specification: 8aa3ae8aef9addce
+        generate-prototype-code: 5ba1843a6926fd2e
+        mount-generated-feature-into-existing-pages: c8b3b05528e7a6da
+        resolve-external-types-during-code-generation: a5f4fe95dee56bd4
+    dialogs:
+        build-feature: ae9acedc80dbb397
+        external-type-disambiguation: bc2a83698b9ae2f8
+        generate-prototype-code: 120b3a16c3c3773a
+        mount-feature-into-existing-page: 8cd2496b7f561ea2
