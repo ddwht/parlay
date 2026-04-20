@@ -1,0 +1,5 @@
+# macOS folder metadata
+.DS_Store
+
+# Compiled binary produced by `make build`
+/parlay
