@@ -3,18 +3,21 @@
 An intent-driven specification framework that turns user goals into working prototypes through a deterministic pipeline. Describe what users need, not how to code it.
 
 ```
-intent → dialog → surface → [design-spec] → buildfile → code
-                                ↑ optional
-                             (from Figma)
+intent → dialog → artifacts (surface and/or infrastructure) → [design-spec] → buildfile → code
+                                                                   ↑ optional
+                                                                (from Figma)
 ```
 
 Parlay bridges the gap between design and code generation by providing:
 
-- A **closed interaction vocabulary** (15 Shows, 31 Actions, 10 Flows) that describes UI without naming any framework
+- A **closed interaction vocabulary** (Shows, Actions, Flows) that describes UI without naming any framework
 - A **framework adapter** that translates that vocabulary into specific widgets (React + Ant Design, Go CLI, Angular + Clarity, etc.)
+- **Infrastructure fragments** for behind-the-scenes changes (helpers, resolvers, cross-cutting patterns) that coexist with user-facing surfaces
 - An **application blueprint** that captures per-app architectural decisions (shells, routing, auth, data strategy, error handling)
 - A **deterministic buildfile** that two independent AI agents must honor identically — the contract is observable behavior, not byte-equivalent code
+- **Initiatives** for grouping related features and treating them as a cohesive unit
 - **Incremental regeneration** at the component level — stable components are preserved verbatim, only dirty ones are rebuilt
+- An **end-to-end orchestrator** (`/parlay-loop`) that walks a feature through the whole pipeline with phase-group subagents and confirmation checkpoints
 
 ## Quick Start
 
@@ -37,7 +40,7 @@ go install github.com/ddwht/parlay/cmd/parlay@latest
 parlay init
 ```
 
-This is the only CLI command you run directly. It prompts for your AI agent (Claude Code, Cursor, etc.), SDD framework (GitHub SpecKit, Kiro, etc.), and prototype framework (React + Ant Design, Go CLI, etc.). It creates:
+This is the only CLI command you run directly for project setup. It prompts for your AI agent (Claude Code, Cursor, or Generic), SDD framework (GitHub SpecKit, Kiro, etc.), and prototype framework (React + Ant Design, Go CLI, etc.). It creates:
 
 ```
 .parlay/
@@ -51,7 +54,30 @@ spec/
   handoff/                 # engineering handoff output
 ```
 
-Skills are deployed for your chosen AI agent (e.g., `.claude/skills/parlay-*/` for Claude Code). From this point on, everything happens through skills in your AI agent.
+Skills AND subagents are deployed for your chosen AI agent:
+- Claude Code: `.claude/skills/parlay-*/` + `.claude/agents/parlay-*.md`
+- Cursor: `.cursor/skills/parlay-*/` + `.cursor/agents/parlay-*.md`
+- Generic: `AGENT_INSTRUCTIONS.md` (a single concatenated file)
+
+From this point on, everything happens through skills in your AI agent.
+
+### Already have a project? Onboard instead of init
+
+```
+/parlay-onboard
+```
+
+Analyzes an existing codebase, drafts an adapter that matches its conventions, and plugs parlay in without requiring a greenfield rewrite.
+
+### The end-to-end path: `/parlay-loop`
+
+If you want to walk a new feature through the whole pipeline in one continuous session:
+
+```
+/parlay-loop task-list
+```
+
+`parlay-loop` orchestrates every downstream skill — intents → dialogs → artifacts → build → code — with mandatory confirmations at each phase boundary, gap analysis at the intents and dialogs stages, and a fresh phase-group subagent between the designer, build, and code phases. Pass `--from <phase>` to start mid-pipeline after editing an upstream artifact by hand. See the [skill cheat sheet](#skills-reference) for the individual skills you can also invoke manually.
 
 ### Add a Feature
 
@@ -59,7 +85,13 @@ Skills are deployed for your chosen AI agent (e.g., `.claude/skills/parlay-*/` f
 /parlay-add-feature task list
 ```
 
-Creates `spec/intents/task-list/` with empty `intents.md` and `dialogs.md`.
+Creates `spec/intents/task-list/` with empty `intents.md` and `dialogs.md`. Pass `--initiative <name>` to nest the new feature inside an initiative:
+
+```
+/parlay-add-feature reset password --initiative auth-overhaul
+```
+
+creates `spec/intents/auth-overhaul/reset-password/`.
 
 ### Author Intents
 
@@ -94,28 +126,6 @@ Edit `spec/intents/task-list/intents.md`:
 - `task-list add "ship release" --priority high` creates a high-priority task
 - `task-list add ""` rejects with an error
 - `task-list add "x" --priority urgent` rejects with unknown-priority error
-
----
-
-## List Tasks
-
-**Goal**: See all current tasks ordered by priority so the user knows what to work on next.
-**Persona**: CLI User
-**Priority**: P0
-**Context**: The user has added tasks and wants an overview with urgent items at the top.
-**Action**: Run `task-list list` to print tasks sorted by priority.
-**Objects**: task, priority
-
-**Constraints**:
-- Tasks sorted by priority: high first, then medium, then low
-- Within same priority, preserve insertion order
-- Each line shows task ID, priority, and text
-- An empty list shows a friendly message
-
-**Verify**:
-- Three tasks (high, medium, low) listed in that order
-- Same-priority tasks retain insertion order
-- Empty list prints a single message and exits zero
 ```
 
 Each intent needs only **Goal** and **Persona** — everything else is optional. Write one in under 5 minutes.
@@ -126,55 +136,21 @@ Each intent needs only **Goal** and **Persona** — everything else is optional.
 /parlay-scaffold-dialogs @task-list
 ```
 
-This generates dialog templates from your intents. Edit them to capture the real user-system conversation:
+This generates complete dialog flows from your intents — triggers, happy paths with user/system turns, and branches for each constraint or verify edge case. The agent asks about any ambiguities in your intents before generating, then presents the result for review. On re-runs against intents that have changed, it proposes complete update diffs for meaningful changes (new constraints → new branches, new verify items → new flows) and skips cosmetic rewrites.
 
-```markdown
-### Add Task
-
-**Trigger**: `task-list add "<text>" [--priority <high|medium|low>]`
-
-User: task-list add "buy milk"
-System (background): Loads tasks from local store.
-System (background): Validates task text is non-empty and within 200-char limit.
-System (background): Assigns the next available task ID and uses default priority (medium).
-System (background): Appends the task to the store and persists.
-System: [OK] Task #3 added (medium): buy milk
-
-#### Branch: Empty Text
-
-User: task-list add ""
-System: [ERR] Task text cannot be empty.
-
-#### Branch: Unknown Priority
-
-User: task-list add "x" --priority urgent
-System: [ERR] Unknown priority "urgent". Use one of: high, medium, low.
-
----
-
-### List Tasks
-
-**Trigger**: `task-list list`
-
-User: task-list list
-System (background): Loads tasks from local store.
-System (background): Sorts tasks by priority (high, medium, low), preserving insertion order within each bucket.
-System (condition: empty list): Nothing to do! Add a task with `task-list add "<text>"`.
-System (condition: tasks exist): Tasks:
-System:   #2 [high  ] ship release
-System:   #1 [medium] buy milk
-System:   #3 [low   ] read book
-```
-
-### Generate Surface
-
-Use the AI skill:
+### Decide and Create Artifacts
 
 ```
-/parlay-create-surface @task-list
+/parlay-create-artifacts @task-list
 ```
 
-This reads your intents and dialogs, resolves ambiguities conversationally, and generates `surface.md` — a framework-agnostic description of what the UI shows and what the user can do:
+Parlay classifies each intent as **surface** (user-visible output), **infrastructure** (internal code changes with no visible output), or **ambiguous**, and creates the right artifacts:
+
+- **surface.md** — framework-agnostic UI fragments (Shows, Actions, Flows)
+- **infrastructure.md** — cross-cutting code changes (affected scope, behavior, invariants)
+- **both** when a feature has visible output plus plumbing
+
+You review the per-intent classification before any file is written. Generated surfaces look like:
 
 ```markdown
 ## Add Task Command
@@ -187,26 +163,25 @@ This reads your intents and dialogs, resolves ambiguities conversationally, and 
 **Order**: 1
 
 **Notes**:
-- Errors (empty text, too long, unknown priority) use status with [ERR] prefix
+- Errors use status with [ERR] prefix
 - Success uses status with [OK] prefix
-
----
-
-## List Tasks Command
-
-**Shows**: data-list, empty-state, message
-**Actions**: invoke
-**Source**: @task-list/list-tasks
-**Page**: cli
-**Region**: command
-**Order**: 2
-
-**Notes**:
-- data-list renders sorted tasks with ID, priority label, and text
-- empty-state shows a friendly message when no tasks exist
 ```
 
-The vocabulary is closed — `data-list`, `status`, `provide-text`, `empty-state`, `invoke` are defined terms, not free text.
+The surface vocabulary is closed — `data-list`, `status`, `provide-text`, `empty-state`, `invoke` are defined terms, not free text.
+
+Generated infrastructure fragments look like:
+
+```markdown
+## Duplicate-Slug Detection
+
+**Affects**: path resolution, feature enumeration
+**Behavior**: Add a defensive check during path resolution and feature enumeration that detects when two or more directories under the same parent slugify to the same identifier. When a collision is detected, fail loudly rather than silently picking one.
+**Invariants**:
+- Duplicate-slug errors list all conflicting paths.
+- The check is per-parent-directory, not whole-tree.
+**Source**: @initiatives/group-features-under-an-initiative
+**Backward-Compatible**: yes
+```
 
 ### Enrich with Figma (Optional)
 
@@ -216,7 +191,7 @@ If a Figma design exists for the feature, enrich the surface with visual details
 /parlay-reference-design-spec @task-list <figma-link>
 ```
 
-This reads Figma via MCP, maps Figma components to surface fragments, and generates `.parlay/build/task-list/design-spec.yaml` with per-fragment widget specifics, layout, tokens, variants, spacing, and colors. Build-feature uses it automatically when present. Skip this step if you don't have a Figma design — adapter defaults apply.
+This reads Figma via MCP, maps Figma components to surface fragments, and generates `.parlay/build/task-list/design-spec.yaml` with per-fragment widget specifics, layout, tokens, variants, spacing, and colors. Build-feature uses it automatically when present.
 
 ### Define the Blueprint
 
@@ -261,9 +236,6 @@ navigation:
       shell: main
       guard: require-auth
       lazy: true
-    - path: /settings
-      shell: main
-      guard: require-auth
     - path: /login
       shell: public
   not-found: render-404
@@ -272,9 +244,7 @@ authorization:
   strategy: role-based
   roles:
     - name: user
-      description: Standard authenticated user
     - name: admin
-      description: Can manage users and settings
   guards:
     require-auth:
       requires: user
@@ -287,38 +257,19 @@ data:
     invalidation:
       - trigger: mutation on Task
         scope: task-list, dashboard-metrics
-
-errors:
-  boundaries:
-    - scope: app
-      fallback: error page
-    - scope: route
-      fallback: inline retry
-  http:
-    "401": redirect:/login
-    "5xx": error-boundary with retry
-
-state:
-  global:
-    - name: currentUser
-      type: User
-      source: auth-flow
-  propagation: context
 ```
 
-Every section is optional. The blueprint is validated automatically during `/parlay-build-feature` and `/parlay-generate-code`.
+Every section is optional. Cross-reference checks (shell refs, guard refs, duplicate routes, strategy validation) run automatically when skills load the blueprint.
 
 ### Build the Feature Specification
-
-Use the AI skill:
 
 ```
 /parlay-build-feature @task-list
 ```
 
-This loads your intents, dialogs, surface, adapter, and blueprint, then generates:
+Loads your intents, dialogs, surface, infrastructure (if present), adapter, and blueprint, then generates:
 
-- `.parlay/build/task-list/buildfile.yaml` — deterministic intermediate representation with framework-specific widgets
+- `.parlay/build/task-list/buildfile.yaml` — deterministic intermediate representation with framework-specific widgets. Surface fragments become `components:`; infrastructure fragments become `cross-cutting:`.
 - `.parlay/build/task-list/testcases.yaml` — property-based tests
 
 The buildfile is tool-internal — you never edit it. It's the contract between design and code.
@@ -335,10 +286,12 @@ This operates at the project level (all features). It:
 2. Merges models and routes across features
 3. Generates shell components from the blueprint
 4. Generates per-feature component code
-5. Runs tests — must pass before state is committed
-6. Saves build state atomically
+5. Processes `cross-cutting:` entries — modifies existing files via Tier 2 intelligent merge, creates new ones as needed
+6. Mounts components into existing pages where applicable (brownfield integration)
+7. Runs tests — must pass before state is committed
+8. Saves build state atomically via `parlay save-build-state`
 
-On subsequent runs, only dirty components are regenerated. Stable components are preserved verbatim.
+On subsequent runs, only dirty components (and cross-cutting entries) are regenerated. Stable ones are preserved verbatim. Hand-edits to generated files are detected and surfaced before overwriting.
 
 ### Hand Off to Engineering
 
@@ -348,15 +301,53 @@ On subsequent runs, only dirty components are regenerated. Stable components are
 
 Generates `spec/handoff/task-list/specification.md` in your configured SDD format (GitHub SpecKit, Kiro, etc.).
 
+## Initiatives
+
+An initiative groups related features and gives them a shared folder. Example layout:
+
+```
+spec/intents/auth-overhaul/
+  login/
+    intents.md
+    dialogs.md
+  reset-password/
+    intents.md
+    dialogs.md
+  session-management/
+    intents.md
+```
+
+Create one with:
+
+```
+/parlay-new-initiative auth overhaul
+```
+
+and then add features inside it:
+
+```
+/parlay-add-feature login --initiative auth-overhaul
+```
+
+Features inside initiatives are referenced as `@auth-overhaul/login` throughout parlay skills and CLI commands. An initiative is a folder that contains feature folders — no more, no less. Tools that walk the three parallel trees (`spec/intents/`, `spec/handoff/`, `.parlay/build/`) keep initiatives in lockstep; `/parlay-repair` reconciles if they drift.
+
+Move a feature between initiatives (or in/out of orphan state) with `parlay move-feature`:
+
+```
+parlay move-feature @login --to auth-overhaul
+parlay move-feature @auth-overhaul/login --out
+```
+
 ## Project Layout
 
 ```
 spec/
   intents/                    Designer-authored (per feature)
-    <feature>/
+    <feature>/                  (or) <initiative>/<feature>/
       intents.md                Human-authored goals
       dialogs.md                Human-authored conversations
       surface.md                Generated, human-reviewed UI fragments
+      infrastructure.md         Generated, human-reviewed cross-cutting changes
       domain-model.md           Generated, human-reviewed entities
   handoff/                    Engineering output (per feature)
     <feature>/
@@ -370,7 +361,7 @@ spec/
   schemas/                      Schema definitions
   adapters/                     Framework adapters
   build/
-    <feature>/
+    <feature>/                  (or) <initiative>/<feature>/
       buildfile.yaml              Deterministic build spec
       testcases.yaml              Property-based tests
       design-spec.yaml            Visual details from Figma (optional)
@@ -390,20 +381,21 @@ Three zones with strict ownership:
 
 ## Schemas
 
-Parlay has 10 schemas defining every artifact:
+Parlay has 11 schemas defining every artifact:
 
 | Schema | What it defines |
 |---|---|
-| `intent.schema.md` | Goal, Persona, Priority, Context, Action, Objects, Constraints, Verify |
+| `intent.schema.md` | Goal, Persona, Priority, Context, Action, Objects, Constraints, Verify, Questions |
 | `dialog.schema.md` | User/System/Background/Conditional turns, Options, Branches |
-| `surface.schema.md` | 15 Shows, 31 Actions, 10 Flows — closed interaction vocabulary |
+| `surface.schema.md` | Shows, Actions, Flows — closed interaction vocabulary |
+| `infrastructure.schema.md` | Affects, Behavior, Invariants, Source — framework-agnostic cross-cutting changes |
 | `adapter.schema.md` | Widget mappings, design system, compositions, conventions, patterns |
 | `blueprint.schema.md` | Shells, navigation, authorization, data, errors, state, platform |
 | `design-spec.schema.md` | Per-fragment visual details from Figma (widget, layout, tokens, variants) |
-| `buildfile.schema.md` | Models, fixtures, routes, components (elements, actions, operations) |
-| `testcases.schema.md` | Suites, cases, steps (render/click/input/select), 15 verification types |
+| `buildfile.schema.md` | Models, fixtures, routes, components, cross-cutting entries |
+| `testcases.schema.md` | Suites, cases, steps, verification types |
 | `page.schema.md` | Cross-feature page manifests with region ordering |
-| `feature-structure.schema.md` | Three-zone project layout and ownership rules |
+| `feature-structure.schema.md` | Three-zone project layout, initiative nesting, ownership rules |
 
 Schemas are loaded on-demand by the AI agent per command — never kept in agent context permanently.
 
@@ -413,149 +405,91 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 
 | Skill | Description |
 |---|---|
-| `/parlay-add-feature <name>` | Create a feature folder with intents.md and dialogs.md |
-| `/parlay-scaffold-dialogs @<feature>` | Generate dialog templates from authored intents |
-| `/parlay-create-surface @<feature>` | Generate surface.md with ambiguity resolution |
-| `/parlay-reference-design-spec @<feature> <figma-link>` | Extract visual details from Figma into design-spec.yaml (optional) |
+| `/parlay-loop <feature> [--from <phase>]` | Walk a feature end-to-end through intents → dialogs → artifacts → build → code with phase-group subagents and confirmations |
+| `/parlay-add-feature <name> [--initiative <name>]` | Create a feature folder with intents.md and dialogs.md |
+| `/parlay-new-initiative <name>` | Create an empty initiative directory across the three trees |
+| `/parlay-onboard` | Onboard an existing codebase and draft a matching adapter |
+| `/parlay-scaffold-dialogs @<feature>` | Generate complete dialog flows from authored intents |
+| `/parlay-create-artifacts @<feature>` | Decide between surface, infrastructure, or both — then generate |
+| `/parlay-reference-design-spec @<feature> <figma-link>` | Extract visual details from Figma into design-spec.yaml |
 | `/parlay-build-feature @<feature>` | Generate buildfile.yaml + testcases.yaml |
 | `/parlay-generate-code` | Generate prototype code (project-level, all features) |
 | `/parlay-generate-enggspec @<feature>` | Generate engineering specification for handoff |
 | `/parlay-extract-domain-model` | Extract domain model from all features |
-| `/parlay-load-domain-model <path>` | Load and merge external domain model |
+| `/parlay-load-domain-model <path>` | Load and integrate an external domain model |
 | `/parlay-sync @<feature>` | Check coverage, traceability, and drift |
 | `/parlay-collect-questions @<feature>` | Collect unresolved design questions |
+| `/parlay-repair` | Validate and reconcile the three parallel trees (spec/intents, spec/handoff, .parlay/build) |
 | `/parlay-register-adapter <path>` | Register a framework adapter |
 | `/parlay-view-page <page>` | Assemble cross-feature page view |
 | `/parlay-lock-page <page>` | Lock page layout into a manifest |
 
 ## CLI Reference
 
-The `parlay` binary is a helper that skills call internally for parsing, validation, diffing, and state management. You only run `parlay init` directly — everything else is invoked by the agent through skills.
+The `parlay` binary is a helper that skills call internally for parsing, validation, diffing, and state management. You only run `parlay init` (and a handful of bookkeeping commands) directly — the rest are invoked by the agent through skills.
 
 | Command | Description |
 |---|---|
-| `parlay init` | Bootstrap a new project (the only user-facing CLI command) |
-| `parlay add-feature <name>` | Create a feature folder |
+| `parlay init` | Bootstrap a new project (user-facing) |
+| `parlay upgrade` | Re-deploy schemas, skills, subagents, and agent config from the binary (user-facing) |
+| `parlay loop <@feature> [--from <phase>]` | Skill-pointer for the end-to-end orchestrator |
+| `parlay add-feature <name> [--initiative <name>]` | Create a feature folder |
+| `parlay new-initiative <name>` | Create an empty initiative directory |
+| `parlay move-feature @<feature> --to <initiative> \| --out` | Move a feature between initiatives |
 | `parlay create-dialogs @<feature>` | Scaffold dialog templates |
-| `parlay create-surface @<feature>` | Generate surface (basic mode) |
+| `parlay create-artifacts @<feature>` | Skill-pointer for artifact decision |
+| `parlay build-feature @<feature>` | Skill-pointer for buildfile generation |
+| `parlay generate-code` | Skill-pointer for code generation |
+| `parlay generate-enggspec @<feature>` | Skill-pointer for handoff spec |
+| `parlay extract-domain-model` | Skill-pointer for domain-model extraction |
+| `parlay load-domain-model <path>` | Skill-pointer for external domain-model load |
+| `parlay repair [--dry-run] [--yes]` | Validate and reconcile the three parallel trees |
+| `parlay simplify` | Detect duplicated helpers across generated files and propose extractions |
 | `parlay register-adapter <path>` | Register a framework adapter |
 | `parlay view-page <page>` | Assemble cross-feature page view |
 | `parlay lock-page <page>` | Lock page layout into a manifest |
-| `parlay validate --type <type> <path>` | Validate file (surface, buildfile, blueprint, yaml) |
-| `parlay parse --type <type> <path>` | Parse file to JSON (intents, dialogs, surface) |
-| `parlay check-coverage @<feature>` | Check intent-dialog coverage |
-| `parlay check-readiness @<feature> --stage <stage>` | Pre-flight checks before generation |
-| `parlay diff [@<feature>]` | Show what changed since last build |
-| `parlay scan-generated <source-root>` | Map generated files to their owners |
-| `parlay verify-generated [@<feature>]` | Detect hand-edits to generated files |
-| `parlay save-build-state --source-root <root>` | Atomically commit build state |
+| `parlay validate --type <type> <path>` | Validate file against its schema |
+| `parlay parse --type <type> <path>` | Parse file to JSON |
+| `parlay check-coverage @<feature>` | Check intent-dialog coverage (JSON) |
+| `parlay check-drift @<feature>` | Check if intents changed since last build (JSON) |
+| `parlay check-readiness @<feature> --stage <stage>` | Pre-flight checks before generation (JSON) |
+| `parlay collect-questions @<feature>` | Collect open questions from intents (JSON) |
+| `parlay diff [@<feature>]` | Show what changed since last build (JSON) |
+| `parlay scan-generated <source-root>` | Map generated files to their owners (JSON) |
+| `parlay verify-generated [@<feature>]` | Detect hand-edits to generated files (JSON) |
+| `parlay save-build-state --source-root <root>` | Atomically commit build state (called by generate-code) |
+
+JSON-output commands are for agent consumption; human-facing commands print plain text.
 
 ## Adapters
 
-The adapter is the bridge between framework-agnostic surface vocabulary and framework-specific code. Parlay ships templates; teams customize to match their codebase.
+The adapter is the bridge between framework-agnostic surface vocabulary and framework-specific code. Parlay ships four templates; teams customize to match their codebase.
 
 ### What an Adapter Contains
 
 | Section | Purpose | Customized by |
 |---|---|---|
-| `shows:` | Maps 15 Show types to framework widgets | Rarely (framework upgrade) |
-| `actions:` | Maps 31 Action types to framework widgets | Rarely |
-| `flows:` | Maps 10 Flow patterns to composite patterns | Rarely |
+| `shows:` | Maps each Show type to framework widgets | Rarely (framework upgrade) |
+| `actions:` | Maps each Action type to framework widgets | Rarely |
+| `flows:` | Maps Flow patterns to composite patterns | Rarely |
 | `design-system:` | Inventories design tokens per category (colors, spacing, typography, etc.) with `source: framework / figma / not-defined` | Team |
 | `compositions:` | Runtime recipes (e.g., crud-table-with-drawer) | Team |
 | `conventions:` | Structured rules (state management, naming, error handling) | Team |
 | `file-conventions:` | Source root, component pattern, naming, entry point | Team |
+| `mount-strategies:` | Templates for mounting into existing files (brownfield) | Team |
 | `patterns:` | Interaction style, info density, error placement | Team |
+| `agent:` | How the same vocabulary renders in an AI agent session | Rarely |
 
 ### Bundled Adapters
 
-- **go-cli** — Go + Cobra CLI (commands, prompts, tabwriter tables)
+- **go-cli** — Go + Cobra CLI (commands, prompts, tabwriter tables). Used by this repo itself.
 - **react-antd** — React + Ant Design (Table, Modal, Form, Steps, etc.)
 - **angular-material** — Angular + Material (MatTable, MatDialog, MatStepper, M3 tokens)
 - **angular-clarity** — Angular + Clarity (ClrDatagrid, ClrWizard, ClrSidePanel, CDS tokens)
 
 ### Creating an Adapter
 
-```yaml
-name: react-antd
-framework: React + Ant Design
-version: "1.0"
-
-shows:
-  data-value:
-    widget: Statistic
-    description: Single metric display
-  data-list:
-    widget: List
-    description: Vertical list with List.Item
-  data-table:
-    widget: Table
-    description: Ant Design Table with sorting, filtering, pagination
-  # ... all 15 Show types
-
-actions:
-  provide-text:
-    widget: Input
-    description: Single-line text input
-  confirm:
-    widget: Modal.confirm
-    description: Confirmation dialog
-  invoke-destructive:
-    widget: Button.danger+Popconfirm
-    description: Danger button with confirmation
-    requires-confirmation: true
-  # ... all 31 Action types
-
-flows:
-  crud-collection:
-    pattern: Table+Modal+Form+Popconfirm
-    description: CRUD table with modal form for create/edit
-    regions: [toolbar, main, modal]
-  # ... all 10 Flow types
-
-compositions:
-  crud-table-with-drawer:
-    trigger: "component has data-table + navigate-drill + inspect"
-    state: [selectedItem, drawerOpen]
-    wiring: "row-click sets selectedItem and opens drawer"
-
-design-system:
-  colors:
-    source: framework
-    format: "ConfigProvider theme.token — colorPrimary, colorSuccess, colorError, etc."
-    usage: "Use token names. Never hardcode hex values."
-  spacing:
-    source: framework
-    format: "theme.token — padding, paddingSM, paddingLG, margin, marginSM, marginLG"
-    usage: "Use token names. Base unit is 4px."
-  typography:
-    source: framework
-    format: "Typography components (Title, Text, Paragraph). Tokens: fontSize, fontSizeLG"
-  icons:
-    source: framework
-    format: "@ant-design/icons — named imports (PlusOutlined, DeleteOutlined)"
-  motion:
-    source: not-defined
-    format: "No motion token system."
-  # ... all 8 standard categories
-
-conventions:
-  state-management:
-    rule: "useState for local, React Context for shared. No Redux."
-    applies-to: all components
-
-file-conventions:
-  source-root: "src/"
-  component-pattern: feature-modules
-  naming: PascalCase
-  entry-point: "src/App.tsx"
-```
-
-Register with:
-
-```
-/parlay-register-adapter ./adapters/react-antd.adapter.yaml
-```
+Use `/parlay-register-adapter <path>` to plug in a custom adapter. Onboarding an existing codebase? `/parlay-onboard` drafts one by analyzing your source tree and conventions.
 
 ## Blueprint
 
@@ -570,33 +504,42 @@ The blueprint captures per-app architectural decisions that are too app-specific
 | `errors` | Error boundary scopes, HTTP error handling, retry strategy |
 | `state` | Global state slices, propagation pattern, URL-driven state |
 | `platform` | Native only: push notifications, background tasks, widgets |
+| `deployers` | Internal: which project-owned systems cross multiple features |
 
 Every section is optional. Cross-reference checks (shell refs, guard refs, duplicate routes, strategy validation) run automatically when skills load the blueprint.
 
 ## Agent Support
 
-Parlay is agent-agnostic. Skills are plain markdown instructions any AI can follow. Agent-specific deployers package them into the right format:
+Parlay is agent-agnostic. Skills are plain markdown instructions any AI can follow. Agent-specific deployers package them into the right format alongside any subagent definitions.
 
-| Agent | Deployer | Skills Location | Config File |
-|---|---|---|---|
-| Claude Code | ClaudeDeployer | `.claude/skills/parlay-*/SKILL.md` | `CLAUDE.md` |
-| Cursor | CursorDeployer | `.cursor/rules/parlay-*.mdc` | `.cursor/rules/parlay-project.mdc` |
-| Other | GenericDeployer | `AGENT_INSTRUCTIONS.md` | — |
+| Agent | Deployer | Skills Location | Subagents Location | Project Config |
+|---|---|---|---|---|
+| Claude Code | `ClaudeDeployer` | `.claude/skills/parlay-*/SKILL.md` | `.claude/agents/parlay-*.md` | `CLAUDE.md` (marker-preserved region) |
+| Cursor | `CursorDeployer` | `.cursor/skills/parlay-*/SKILL.md` | `.cursor/agents/parlay-*.md` | `.cursor/rules/parlay.mdc` (always-apply) |
+| Generic | `GenericDeployer` | `AGENT_INSTRUCTIONS.md` (concatenated) | Embedded in the same file | — |
 
-Adding a new agent requires only a new deployer — zero changes to skills or schemas.
+Adding a new agent requires only a new deployer — zero changes to skills, subagents, or schemas.
+
+Subagents (`parlay-designer`, `parlay-build`, `parlay-code`) are pre-defined phase-group agents used by `/parlay-loop` to hold intents/dialogs/artifacts in one context, then switch to a fresh context for build and again for code generation. The Generic adapter has no native subagent primitive; `/parlay-loop` falls back to a fresh-session handoff (printing `/parlay-loop <feature> --from <phase>` for the user to re-invoke in a new session).
 
 ## Key Design Principles
 
-**Intent-first**: User goals are the atomic unit. Everything derives from them.
+**Intent-first.** User goals are the atomic unit. Everything derives from them.
 
-**Closed vocabulary**: The surface interaction vocabulary (Shows, Actions, Flows) is a finite, defined set — not free text. This makes adapter mapping exhaustive and validatable.
+**Closed vocabulary.** The surface interaction vocabulary (Shows, Actions, Flows) is a finite, defined set — not free text. This makes adapter mapping exhaustive and validatable.
 
-**Deterministic contract**: Same buildfile + adapter + blueprint → same testcases pass. The contract is observable behavior, not code structure. Two agents have latitude on naming and style.
+**Surface and infrastructure coexist.** Not all feature work is user-visible. Infrastructure fragments capture internal code changes (helpers, resolvers, cross-cutting patterns) alongside surface fragments in the same feature. Both feed the buildfile.
 
-**Strict codegen boundary**: Code generation reads only from `.parlay/` (buildfile, adapter, blueprint). It never reads `spec/intents/`. If it needs to, the buildfile schema is leaking detail.
+**Deterministic contract.** Same buildfile + adapter + blueprint → same testcases pass. The contract is observable behavior, not code structure. Two agents have latitude on naming and style.
 
-**Three-zone ownership**: Designer-authored input, engineering handoff, and tool internals are strictly separated. Cross-zone writes are errors.
+**Strict codegen boundary.** Code generation reads only from `.parlay/` (buildfile, adapter, blueprint). It never reads `spec/intents/`. If it needs to, the buildfile schema is leaking detail.
 
-**Incremental by default**: Stable components are preserved verbatim. Only dirty components (with changed upstream sources) are regenerated. Hand-edits to stable files are detected and surfaced.
+**Three-zone ownership.** Designer-authored input, engineering handoff, and tool internals are strictly separated. Cross-zone writes are errors.
 
-**Agent-agnostic**: Skills are plain English markdown. The helper binary handles parsing, validation, and state management. Adding a new AI agent requires only a deployer, not skill rewrites.
+**Initiatives group, never block.** Features inside an initiative are still driven independently through the pipeline. Initiatives are folders for organization and naming, not collective-processing units.
+
+**Incremental by default.** Stable components are preserved verbatim. Only dirty components (with changed upstream sources) are regenerated. Hand-edits to stable files are detected and surfaced before overwriting.
+
+**Agent-agnostic.** Skills are plain English markdown. The helper binary handles parsing, validation, and state management. Adding a new AI agent requires only a deployer, not skill rewrites.
+
+**One continuous loop, many checkpoints.** `/parlay-loop` lets you walk a feature end-to-end, but you confirm at every phase boundary. No auto-advance. Mid-loop edits and resumption via `--from` are first-class.
