@@ -1,0 +1,219 @@
+feature: qualified-identifier-resolver
+framework: go-test
+
+suites:
+  - name: Qualified path resolver handles bare slugs and qualified identifiers
+    component: qualified-path-resolver
+    fixture: project-with-initiatives
+    intent: "@qualified-identifier-resolver/support-qualified-identifiers-in-path-resolvers"
+
+    cases:
+      - name: bare slug resolves to orphan path
+        description: FeaturePath with a bare slug returns the top-level orphan path.
+        steps:
+          - action: input
+            target: identifier
+            value: "password-reset"
+          - verify: text
+            target: resolved-path
+            expected: "spec/intents/password-reset/"
+
+      - name: qualified identifier resolves to nested path
+        description: FeaturePath with initiative/feature returns the nested path.
+        steps:
+          - action: input
+            target: identifier
+            value: "auth-overhaul/sso-setup"
+          - verify: text
+            target: resolved-path
+            expected: "spec/intents/auth-overhaul/sso-setup/"
+
+      - name: BuildPath resolves qualified identifier on build tree
+        description: BuildPath with a qualified identifier returns the .parlay/build path.
+        steps:
+          - action: input
+            target: identifier
+            value: "auth-overhaul/sso-setup"
+          - verify: text
+            target: resolved-path
+            expected: ".parlay/build/auth-overhaul/sso-setup/"
+
+      - name: HandoffPath resolves qualified identifier on handoff tree
+        description: HandoffPath with a qualified identifier returns the spec/handoff path.
+        steps:
+          - action: input
+            target: identifier
+            value: "auth-overhaul/sso-setup"
+          - verify: text
+            target: resolved-path
+            expected: "spec/handoff/auth-overhaul/sso-setup/"
+
+      - name: existing callers with bare slugs continue to work
+        description: Backward compatibility — bare slugs produce the same paths as before.
+        steps:
+          - action: input
+            target: identifier
+            value: "standalone"
+          - verify: text
+            target: resolved-path
+            expected: "spec/intents/standalone/"
+
+  - name: Resolver detects ambiguous bare slugs
+    component: qualified-path-resolver
+    fixture: project-with-ambiguous-slug
+    intent: "@qualified-identifier-resolver/support-qualified-identifiers-in-path-resolvers"
+
+    cases:
+      - name: ambiguous bare slug returns error listing all matches
+        description: When the same slug exists as orphan and nested, the resolver errors rather than guessing.
+        steps:
+          - action: input
+            target: identifier
+            value: "password-reset"
+          - verify: error
+            target: resolve
+            expected: "spec/intents/password-reset/"
+          - verify: error
+            target: resolve
+            expected: "spec/intents/auth-overhaul/password-reset/"
+
+  - name: Feature enumeration returns qualified identifiers
+    component: feature-enumeration-helper
+    fixture: project-with-initiatives
+    intent: "@qualified-identifier-resolver/centralize-feature-enumeration-for-bulk-walker-commands"
+
+    cases:
+      - name: returns both orphan and nested features
+        description: AllFeatures returns bare slugs for orphans and initiative/feature for nested.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: count
+            target: feature-list
+            expected: 4
+          - verify: text
+            target: feature-list
+            expected: "password-reset"
+          - verify: text
+            target: feature-list
+            expected: "auth-overhaul/sso-setup"
+          - verify: text
+            target: feature-list
+            expected: "auth-overhaul/login-flow"
+
+      - name: backward compatible with no initiatives
+        description: With only orphan features, returns the same bare slugs as the old scan.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: count
+            target: feature-list
+            expected: 2
+          - verify: text
+            target: feature-list
+            expected: "password-reset"
+          - verify: text
+            target: feature-list
+            expected: "standalone"
+
+      - name: empty initiatives produce no entries
+        description: Deferred-classification directories are skipped.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: count
+            target: feature-list
+            expected: 1
+
+      - name: depth-2+ structure triggers error
+        description: A nested initiative-like structure at depth 2+ violates the flat-hierarchy rule.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: error
+            target: enumeration
+            expected: "flat-hierarchy"
+
+  - name: Bulk-walker commands use AllFeatures after update
+    component: feature-enumeration-helper
+    fixture: project-with-initiatives
+    intent: "@qualified-identifier-resolver/centralize-feature-enumeration-for-bulk-walker-commands"
+
+    cases:
+      - name: collect-questions finds nested features
+        description: After the bulk-walker update, collect-questions returns questions from both orphan and nested features.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: text
+            target: collect-questions-output
+            expected: "auth-overhaul/sso-setup"
+
+      - name: moving a feature into an initiative does not hide it
+        description: After a move, collect-questions still finds the feature without additional action.
+        steps:
+          - action: render
+            target: feature-enumeration-helper
+          - verify: count
+            target: feature-list
+            expected: 4
+
+  - name: Cross-cutting buildfile schema validates entries
+    component: cross-cutting-buildfile-schema
+    fixture: project-with-initiatives
+    intent: "@qualified-identifier-resolver/add-cross-cutting-section-to-the-buildfile-schema"
+
+    cases:
+      - name: buildfile with valid cross-cutting section passes deep validation
+        description: A buildfile with properly formed cross-cutting entries passes parlay validate --type buildfile --deep.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: text
+            target: validation-result
+            expected: "ok"
+
+      - name: buildfile without cross-cutting section still passes
+        description: The section is optional — omitting it does not cause validation failure.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: text
+            target: validation-result
+            expected: "ok"
+
+      - name: missing source reference fails deep validation
+        description: A cross-cutting entry without a source reference is caught by the validator.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: error
+            target: validation
+            expected: "source"
+
+      - name: missing transform fails deep validation
+        description: A cross-cutting entry without a transform description is caught by the validator.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: error
+            target: validation
+            expected: "transform"
+
+      - name: missing both target-files and target-pattern fails
+        description: A cross-cutting entry must name at least one target.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: error
+            target: validation
+            expected: "target"
+
+      - name: cross-cutting entries appear in parlay diff output
+        description: The diff lifecycle includes cross-cutting entries as stable/dirty/removed.
+        steps:
+          - action: render
+            target: cross-cutting-buildfile-schema
+          - verify: text
+            target: diff-output
+            expected: "cross-cutting"

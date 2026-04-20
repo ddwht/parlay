@@ -1,0 +1,32 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    add-cross-cutting-section-to-the-buildfile-schema:
+        content-hash: 94de9d004e6b7c48
+        goal-hash: d949fffa67536036
+        constraints-hash: 436da30344ceebe0
+        verify-hash: ec9249e9ccb5bb79
+        objects-hash: e56f31f53e49e762
+    centralize-feature-enumeration-for-bulk-walker-commands:
+        content-hash: bed81773891ee10e
+        goal-hash: d311c4b96da03103
+        constraints-hash: b22bf4daa5e351d3
+        verify-hash: 838d8eecf49b296a
+        objects-hash: d6a90db95aa985db
+    support-qualified-identifiers-in-path-resolvers:
+        content-hash: 98a0a433a3003dc5
+        goal-hash: d6ef46c63fdf4370
+        constraints-hash: aa4351afa550a0a7
+        verify-hash: c78bea224971bd00
+        objects-hash: 7722823519851bcc
+sources:
+    intents:
+        add-cross-cutting-section-to-the-buildfile-schema: 9d7de9a835db6b40
+        centralize-feature-enumeration-for-bulk-walker-commands: 950b04330fd64413
+        support-qualified-identifiers-in-path-resolvers: 22914f126c9e6d78
+    dialogs:
+        add-cross-cutting-section-to-the-buildfile-schema: 61bec53e0a65c156
+        centralize-feature-enumeration-for-bulk-walker-commands: ddb674bb38c80af9
+        support-qualified-identifiers-in-path-resolvers: 17dff264818335a6
+buildfile-sections:
+    fixtures: 34167923659a98fd
+    models: 871edab8dc3e8036

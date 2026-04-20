@@ -1,0 +1,148 @@
+feature: qualified-identifier-resolver
+adapter: go-cli
+
+models:
+  QualifiedIdentifier:
+    properties:
+      raw:
+        type: string
+        required: true
+        description: "The input string — either a bare slug ('password-reset') or qualified ('auth-overhaul/password-reset')"
+      initiative:
+        type: string
+        required: false
+        description: "Initiative slug parsed from the identifier (empty for orphan features)"
+      feature:
+        type: string
+        required: true
+        description: "Feature slug — the leaf component of the identifier"
+      is-qualified:
+        type: boolean
+        required: true
+        description: "True if the identifier contains a '/', false for bare slugs"
+
+  FeatureEntry:
+    properties:
+      qualified-id:
+        type: string
+        required: true
+        description: "Qualified identifier — bare slug for orphans, initiative/feature for nested"
+      path:
+        type: string
+        required: true
+        description: "Resolved filesystem path (e.g., spec/intents/auth-overhaul/password-reset/)"
+      classification:
+        type: enum
+        enum: [feature, initiative, deferred]
+        required: true
+
+  CrossCuttingSchema:
+    properties:
+      id:
+        type: string
+        required: true
+      source:
+        type: string
+        required: true
+      target-files:
+        type: string[]
+        required: false
+      target-pattern:
+        type: string
+        required: false
+      transform:
+        type: string
+        required: true
+      introduces:
+        type: string[]
+        required: false
+
+fixtures:
+  project-with-initiatives:
+    description: A project with orphan features and initiative-nested features for testing resolver and enumeration behavior.
+    data:
+      FeatureEntry:
+        - qualified-id: password-reset
+          path: spec/intents/password-reset/
+          classification: feature
+        - qualified-id: standalone
+          path: spec/intents/standalone/
+          classification: feature
+        - qualified-id: auth-overhaul/sso-setup
+          path: spec/intents/auth-overhaul/sso-setup/
+          classification: feature
+        - qualified-id: auth-overhaul/login-flow
+          path: spec/intents/auth-overhaul/login-flow/
+          classification: feature
+
+  project-with-ambiguous-slug:
+    description: A project where the same slug exists as an orphan and inside an initiative — the ambiguity case.
+    data:
+      FeatureEntry:
+        - qualified-id: password-reset
+          path: spec/intents/password-reset/
+          classification: feature
+        - qualified-id: auth-overhaul/password-reset
+          path: spec/intents/auth-overhaul/password-reset/
+          classification: feature
+
+  project-without-initiatives:
+    description: A project with only orphan features — backward-compatibility case.
+    data:
+      FeatureEntry:
+        - qualified-id: password-reset
+          path: spec/intents/password-reset/
+          classification: feature
+        - qualified-id: standalone
+          path: spec/intents/standalone/
+          classification: feature
+
+  project-with-empty-initiative:
+    description: A project with an empty initiative directory (deferred classification).
+    data:
+      FeatureEntry:
+        - qualified-id: password-reset
+          path: spec/intents/password-reset/
+          classification: feature
+
+  project-with-depth-violation:
+    description: A project with a depth-2+ initiative-like structure that should trigger an error.
+    data:
+      FeatureEntry:
+        - qualified-id: a/b
+          path: spec/intents/a/b/
+          classification: feature
+
+cross-cutting:
+  - id: qualified-path-resolver
+    source: "@qualified-identifier-resolver/support-qualified-identifiers-in-path-resolvers"
+    target-files:
+      - internal/config/config.go
+    transform: |
+      Modify FeaturePath, BuildPath, and HandoffPath to accept either a bare slug or a qualified identifier containing '/'. If '/' is present, split into initiative and feature components and construct path as <tree-root>/<initiative>/<feature>/. If no '/', resolve as today (orphan). If a bare slug is ambiguous (exists both as orphan and inside initiatives), return an error listing all matching paths. Factor the parsing logic once — the three helpers differ only in tree root. Cache the tree structure on first access via sync.Once — no per-call os.ReadDir. The change must be backward-compatible: every existing caller passes a bare slug and must continue working.
+    introduces:
+      - "resolveQualifiedPath(identifier string, treeRoot string) (string, error)"
+    caching: tree-scan-on-first-access
+    backward-compatible: true
+
+  - id: feature-enumeration-helper
+    source: "@qualified-identifier-resolver/centralize-feature-enumeration-for-bulk-walker-commands"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "os.ReadDir(filepath.Join(config.SpecDir, config.IntentsDir))"
+    transform: |
+      Add AllFeatures() and AllFeaturePaths(treeRoot string) functions. AllFeatures() is a convenience wrapper calling AllFeaturePaths with spec/intents/. The helper walks at depth 1 and 2, classifies directories (feature: has intents.md; initiative: depth-1 with direct-child features; deferred: skip), returns qualified identifiers (bare for orphans, initiative/feature for nested). Errors on depth-2+ initiative-like structures. Shares cached tree with the resolver. Then update every file matching the detection pattern to replace the inline os.ReadDir scan with an AllFeatures() call. Backward-compatible: with no initiatives, returns the same bare slugs as the old scan.
+    introduces:
+      - "AllFeatures() ([]string, error)"
+      - "AllFeaturePaths(treeRoot string) ([]string, error)"
+    backward-compatible: true
+
+  - id: cross-cutting-buildfile-schema
+    source: "@qualified-identifier-resolver/add-cross-cutting-section-to-the-buildfile-schema"
+    target-files:
+      - internal/embedded/schemas/buildfile.schema.md
+      - internal/agent/validate.go
+    transform: |
+      Add a cross-cutting: section definition to buildfile.schema.md documenting fields (id, source, target-files, target-pattern, transform, introduces, caching, backward-compatible), validation rules, and the relationship to infrastructure.md fragments. Follow the same structure as models:, fixtures:, routes:, and components:. Update the deep validator in validate.go to parse cross-cutting entries and check: id uniqueness, source reference validity, at least one of target-files or target-pattern present, transform required. The section is optional — buildfiles without it continue to pass validation.
+    introduces:
+      - "ValidateBuildfileCrossCutting(buildfilePath string) []ValidationError"
