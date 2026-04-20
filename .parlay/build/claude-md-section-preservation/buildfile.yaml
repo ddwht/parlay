@@ -1,0 +1,78 @@
+feature: claude-md-section-preservation
+adapter: go-cli
+
+models:
+  CLAUDEmdState:
+    properties:
+      has-markers:
+        type: boolean
+        required: true
+        description: Whether the existing CLAUDE.md contains parlay begin/end markers
+      content-above:
+        type: string
+        required: false
+        description: User content above the opening marker (preserved on upgrade)
+      parlay-section:
+        type: string
+        required: true
+        description: The parlay-generated content between markers
+      content-below:
+        type: string
+        required: false
+        description: User content below the closing marker (preserved on upgrade)
+      file-exists:
+        type: boolean
+        required: true
+        description: Whether CLAUDE.md exists at all
+
+fixtures:
+  new-project-no-claudemd:
+    description: Fresh project, no CLAUDE.md exists yet.
+    data:
+      CLAUDEmdState:
+        - has-markers: false
+          parlay-section: ""
+          file-exists: false
+
+  existing-with-markers:
+    description: CLAUDE.md with markers and user content below.
+    data:
+      CLAUDEmdState:
+        - has-markers: true
+          content-above: ""
+          parlay-section: "# Parlay Project\n..."
+          content-below: "## Dogfooding Rule\n..."
+          file-exists: true
+
+  existing-with-markers-and-content-above:
+    description: CLAUDE.md with user content both above and below markers.
+    data:
+      CLAUDEmdState:
+        - has-markers: true
+          content-above: "# My Project\n\nIMPORTANT: Read this first.\n"
+          parlay-section: "# Parlay Project\n..."
+          content-below: "## Team Conventions\n..."
+          file-exists: true
+
+  existing-without-markers:
+    description: CLAUDE.md exists but has no parlay markers — either user-authored or from a pre-marker version of parlay.
+    data:
+      CLAUDEmdState:
+        - has-markers: false
+          parlay-section: ""
+          content-below: "# My Project\n\n## Coding Standards\n..."
+          file-exists: true
+
+cross-cutting:
+  - id: claudemd-marker-preservation
+    source: "@claude-md-section-preservation/preserve-user-sections-in-claudemd-during-upgrade"
+    target-files:
+      - internal/deployer/claude.go
+    transform: |
+      Update writeCLAUDEmd to use <!-- parlay:begin --> / <!-- parlay:end --> HTML comment markers around parlay-generated content. The function should:
+      1. If CLAUDE.md does not exist: write the full template with markers wrapping the generated content.
+      2. If CLAUDE.md exists and contains markers: read the file, split on markers, replace only the content between them with the new generated content, preserve everything above the opening marker and below the closing marker verbatim, write the result.
+      3. If CLAUDE.md exists without markers: the deployer cannot mechanically determine which parts are parlay-generated vs user-authored. Return an error or signal that triggers the agent to perform an intelligent merge — the agent reads the existing content, identifies parlay vs user sections, produces a merged result with markers added, and presents a diff for review.
+      The marker format is stable: <!-- parlay:begin --> and <!-- parlay:end --> on their own lines. The markers are HTML comments, invisible in markdown rendering.
+      Backward-compatible: the change only affects writeCLAUDEmd; all other deployer behavior is unchanged.
+    backward-compatible: true

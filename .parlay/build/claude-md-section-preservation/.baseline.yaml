@@ -1,0 +1,16 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    preserve-user-sections-in-claudemd-during-upgrade:
+        content-hash: fffb317ade384a90
+        goal-hash: d509da8a80b671a5
+        constraints-hash: 7843d8288bf51364
+        verify-hash: 1332629e59b30c02
+        objects-hash: 61a41b4c3b5b077c
+sources:
+    intents:
+        preserve-user-sections-in-claudemd-during-upgrade: 4ad6f121dc56329e
+    dialogs:
+        preserve-user-sections-in-claudemd-during-upgrade: 576c91d7b11def14
+buildfile-sections:
+    fixtures: a17fba24b03d7a2e
+    models: 201a860c5a1087f3

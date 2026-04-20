@@ -1,0 +1,100 @@
+feature: claude-md-section-preservation
+framework: go-test
+
+suites:
+  - name: CLAUDE.md marker-based section preservation
+    component: claudemd-marker-preservation
+    fixture: new-project-no-claudemd
+    intent: "@claude-md-section-preservation/preserve-user-sections-in-claudemd-during-upgrade"
+
+    cases:
+      - name: new project creates CLAUDE.md with markers
+        description: When no CLAUDE.md exists, writeCLAUDEmd creates a new file with markers wrapping the generated content.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-exists
+            target: CLAUDE.md
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:begin -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:end -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "# Parlay Project"
+
+      - name: upgrade with markers preserves user content below
+        description: When CLAUDE.md has markers and user content below the closing marker, upgrade replaces between markers and preserves content below.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:begin -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:end -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "Dogfooding Rule"
+
+      - name: upgrade with markers preserves user content above
+        description: When CLAUDE.md has user content above the opening marker, it is preserved verbatim.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "IMPORTANT: Read this first"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:begin -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "Team Conventions"
+
+      - name: user content between markers is replaced
+        description: Content between markers is parlay-owned and replaced on every upgrade.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:begin -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "Available Commands"
+
+      - name: upgrade without markers falls back to agent merge
+        description: When CLAUDE.md exists without markers, the deployer signals for agent-assisted intelligent merge rather than overwriting.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "Coding Standards"
+
+      - name: double upgrade is idempotent
+        description: Running upgrade twice produces the same CLAUDE.md — parlay section regenerated identically, user sections untouched.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!-- parlay:begin -->"
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "Dogfooding Rule"
+
+      - name: markers are invisible in markdown
+        description: The HTML comment markers do not render as visible text when Claude Code reads the file.
+        steps:
+          - action: render
+            target: claudemd-marker-preservation
+          - verify: file-content
+            target: CLAUDE.md
+            expected: "<!--"
