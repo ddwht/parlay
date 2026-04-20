@@ -1,0 +1,993 @@
+feature: parlay-tool/parlay-loop
+adapter: go-cli
+
+models:
+  Feature:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Display name of the feature
+      slug:
+        type: string
+        required: true
+        description: Slugified feature folder name
+      path:
+        type: string
+        required: true
+        description: "spec/intents/{...}/{slug}/ — full path including initiative prefix when nested"
+      initiative:
+        type: string
+        required: false
+        description: Initiative slug when the feature is nested; empty for top-level features
+      exists:
+        type: boolean
+        required: true
+        description: Whether the feature folder exists on disk
+
+  Phase:
+    properties:
+      name:
+        type: enum
+        enum: [intents, dialogs, artifacts, build, code]
+        required: true
+      group:
+        type: enum
+        enum: [designer, build, code]
+        required: true
+        description: Phase-group the phase belongs to
+
+  LoopSession:
+    properties:
+      feature:
+        type: Feature
+        required: true
+      starting-phase:
+        type: Phase
+        required: true
+      current-phase:
+        type: Phase
+        required: true
+      completed-phases:
+        type: string[]
+        required: true
+        description: Names of phases completed so far in this session
+
+  Gap:
+    properties:
+      severity:
+        type: enum
+        enum: [critical, minor]
+        required: true
+      location:
+        type: string
+        required: true
+        description: Which intent or dialog the gap is found in
+      message:
+        type: string
+        required: true
+
+  ReadinessResult:
+    properties:
+      stage:
+        type: enum
+        enum: [create-surface, build-feature]
+        required: true
+      ready:
+        type: boolean
+        required: true
+      errors:
+        type: string[]
+        required: true
+        description: Blocking error codes
+      warnings:
+        type: string[]
+        required: true
+        description: Non-blocking warning codes
+
+  AdapterCapability:
+    properties:
+      adapter-name:
+        type: enum
+        enum: [Claude, Cursor, Generic]
+        required: true
+      spawn-sub-agent:
+        type: boolean
+        required: true
+        description: Whether the adapter supports sub-agent spawning
+      invoke-skill:
+        type: boolean
+        required: true
+        description: Whether the adapter can invoke named parlay skills
+
+  SubSkillResult:
+    properties:
+      skill-name:
+        type: string
+        required: true
+      success:
+        type: boolean
+        required: true
+      error-code:
+        type: string
+        required: false
+      error-detail:
+        type: string
+        required: false
+
+fixtures:
+  brand-new-feature:
+    description: A feature name that does not yet exist anywhere — loop must confirm creation before any filesystem changes.
+    data:
+      Feature:
+        - name: "brand-new-feature"
+          slug: "brand-new-feature"
+          path: ""
+          initiative: ""
+          exists: false
+
+  unambiguous-top-level-feature:
+    description: A feature that exists at the top level with no name collision anywhere.
+    data:
+      Feature:
+        - name: "upgrade-plan"
+          slug: "upgrade-plan"
+          path: "spec/intents/upgrade-plan/"
+          initiative: ""
+          exists: true
+
+  unambiguous-nested-feature:
+    description: A feature nested inside an initiative; the bare name resolves uniquely because no top-level sibling exists.
+    data:
+      Feature:
+        - name: "reset-password"
+          slug: "reset-password"
+          path: "spec/intents/auth-overhaul/reset-password/"
+          initiative: "auth-overhaul"
+          exists: true
+
+  ambiguous-feature-name:
+    description: A bare feature name that matches both a top-level feature and a feature inside an initiative — loop must disambiguate.
+    data:
+      Feature:
+        - name: "login"
+          slug: "login"
+          path: "spec/intents/login/"
+          initiative: ""
+          exists: true
+        - name: "login"
+          slug: "login"
+          path: "spec/intents/auth-overhaul/login/"
+          initiative: "auth-overhaul"
+          exists: true
+
+  default-start-session:
+    description: A loop session launched with no --from flag — starts at intents.
+    data:
+      LoopSession:
+        - feature:
+            name: "upgrade-plan"
+            slug: "upgrade-plan"
+            path: "spec/intents/upgrade-plan/"
+            initiative: ""
+            exists: true
+          starting-phase:
+            name: intents
+            group: designer
+          current-phase:
+            name: intents
+            group: designer
+          completed-phases: []
+
+  from-artifacts-session:
+    description: A loop session launched with --from artifacts — intents.md and dialogs.md must pre-load from disk.
+    data:
+      LoopSession:
+        - feature:
+            name: "upgrade-plan"
+            slug: "upgrade-plan"
+            path: "spec/intents/upgrade-plan/"
+            initiative: ""
+            exists: true
+          starting-phase:
+            name: artifacts
+            group: designer
+          current-phase:
+            name: artifacts
+            group: designer
+          completed-phases: []
+
+  from-build-missing-prereq:
+    description: A session launched with --from build on a feature that has no surface.md — loop must offer to back up.
+    data:
+      LoopSession:
+        - feature:
+            name: "new-feature"
+            slug: "new-feature"
+            path: "spec/intents/new-feature/"
+            initiative: ""
+            exists: true
+          starting-phase:
+            name: build
+            group: build
+          current-phase:
+            name: artifacts
+            group: designer
+          completed-phases: []
+
+  mid-loop-at-artifacts-to-build-boundary:
+    description: A loop session that has completed the designer phase-group and is about to enter build — triggers phase-group boundary announcement and readiness check.
+    data:
+      LoopSession:
+        - feature:
+            name: "upgrade-plan"
+            slug: "upgrade-plan"
+            path: "spec/intents/upgrade-plan/"
+            initiative: ""
+            exists: true
+          starting-phase:
+            name: intents
+            group: designer
+          current-phase:
+            name: artifacts
+            group: designer
+          completed-phases: [intents, dialogs, artifacts]
+
+  completed-loop:
+    description: A session that has run all five phases to natural completion — drives the Exit Summary component.
+    data:
+      LoopSession:
+        - feature:
+            name: "login"
+            slug: "login"
+            path: "spec/intents/auth-overhaul/login/"
+            initiative: "auth-overhaul"
+            exists: true
+          starting-phase:
+            name: intents
+            group: designer
+          current-phase:
+            name: code
+            group: code
+          completed-phases: [intents, dialogs, artifacts, build, code]
+
+  critical-gaps-present:
+    description: Gap-analysis output with two critical gaps and one minor, at the end of the intents phase.
+    data:
+      Gap:
+        - severity: critical
+          location: "intent 4"
+          message: "has unresolved Questions: section"
+        - severity: critical
+          location: "intent 5"
+          message: "missing required field Goal"
+        - severity: minor
+          location: "intent 3"
+          message: "Verify items could be more specific"
+
+  no-critical-gaps:
+    description: Clean gap analysis — no critical items, only informational observations.
+    data:
+      Gap:
+        - severity: minor
+          location: "intent 1"
+          message: "Verify list is short but complete"
+
+  readiness-error-fragment-missing-source:
+    description: Build-phase readiness check with a hard-blocking fragment-missing-source error.
+    data:
+      ReadinessResult:
+        - stage: build-feature
+          ready: false
+          errors: [fragment-missing-source]
+          warnings: []
+
+  readiness-warnings-only:
+    description: Build-phase readiness check with warnings but no blocking errors — user may proceed with acknowledgement.
+    data:
+      ReadinessResult:
+        - stage: build-feature
+          ready: true
+          errors: []
+          warnings: [open-questions, intents-without-surface]
+
+  claude-adapter:
+    description: Claude Code adapter — both primitives available.
+    data:
+      AdapterCapability:
+        - adapter-name: Claude
+          spawn-sub-agent: true
+          invoke-skill: true
+
+  cursor-adapter:
+    description: Cursor adapter — both primitives available via Cursor Agents and slash commands.
+    data:
+      AdapterCapability:
+        - adapter-name: Cursor
+          spawn-sub-agent: true
+          invoke-skill: true
+
+  generic-adapter-no-sub-agents:
+    description: Generic CLI adapter — sub-agent unavailable, triggers fresh-session handoff.
+    data:
+      AdapterCapability:
+        - adapter-name: Generic
+          spawn-sub-agent: false
+          invoke-skill: true
+
+  sub-skill-failure:
+    description: A sub-skill (parlay-build-feature) failed with a validation error mid-phase.
+    data:
+      SubSkillResult:
+        - skill-name: parlay-build-feature
+          success: false
+          error-code: missing-model-reference
+          error-detail: "component upgrade-prompt references model UpgradePlan which is not declared"
+
+routes:
+  - path: loop
+    page: parlay-loop
+    flow-pattern: sequential-prompts
+    regions:
+      header:
+        components:
+          - LoopInvocationAndFeatureResolution
+          - FeatureDisambiguation
+          - NewFeatureConfirmation
+          - InputValidationFeedback
+      main:
+        components:
+          - PhaseProgressAnnouncement
+          - PhaseConfirmationPrompt
+          - GapAnalysisReport
+          - ReadinessCheckResult
+          - SubSkillFailurePrompt
+          - PhaseGroupHandoffFreshSession
+      footer:
+        components:
+          - ExitSummary
+
+components:
+  LoopInvocationAndFeatureResolution:
+    source: "@parlay-tool/parlay-loop/loop-invocation-and-feature-resolution"
+    widget: cobra-command
+    description: The entry point for every `/parlay-loop` invocation. Resolves the feature reference, prints the planned path forward (starting phase, total phases ahead, confirmations), and transitions either to Phase Progress Announcement (unambiguous match) or to one of the disambiguation/creation fragments.
+
+    data:
+      inputs:
+        - name: feature-arg
+          model: Feature
+          field: name
+          from: command-argument
+        - name: from-phase
+          model: Phase
+          field: name
+          from: command-flag
+          description: Optional `--from` flag value; defaults to intents.
+      computed:
+        - name: resolved-feature
+          from: "search spec/intents/ and spec/intents/*/ for a folder matching the slug"
+          type: Feature
+        - name: starting-phase
+          from: "from-phase when provided, otherwise intents"
+          type: Phase
+
+    elements:
+      - name: resolution-status
+        widget: prefixed-message
+        bind: resolved-feature
+        format: "[OK] Resolving {feature-arg}… found 1 feature at {resolved-feature.path}."
+        visible-when: "resolved-feature.exists"
+      - name: plan-message
+        widget: fmt.Println
+        bind: starting-phase
+        format: "Starting the design loop. Entering phase {starting-phase.name}. Confirmations will occur at every phase boundary."
+        visible-when: "resolved-feature.exists"
+
+    actions:
+      - name: invoke-loop
+        widget: cobra-command
+        enabled-when: always
+        effect: call
+        target: loop
+
+  FeatureDisambiguation:
+    source: "@parlay-tool/parlay-loop/feature-disambiguation"
+    widget: lettered-prompt
+    description: Shown only when the feature search returns more than one match. Enumerates candidates with full paths and prompts the user to select one.
+
+    data:
+      inputs:
+        - name: feature-arg
+          model: Feature
+          field: name
+          from: command-argument
+      computed:
+        - name: candidates
+          from: "all Feature folders whose slug matches feature-arg, across top-level and every initiative"
+          type: Feature[]
+        - name: selected-candidate
+          from: "user's lettered choice from the prompt"
+          type: Feature
+
+    elements:
+      - name: candidate-list
+        widget: bulleted-list
+        bind: candidates
+        format: "{letter}. {candidate.path} ({initiative-or-top-level-label})"
+        visible-when: "len(candidates) > 1"
+      - name: prompt-message
+        widget: fmt.Println
+        bind: ""
+        format: "Which one did you mean?"
+        visible-when: "len(candidates) > 1"
+
+    actions:
+      - name: select-candidate
+        widget: lettered-prompt
+        enabled-when: "len(candidates) > 1"
+        effect: set
+        target: selected-candidate
+
+  NewFeatureConfirmation:
+    source: "@parlay-tool/parlay-loop/new-feature-confirmation"
+    widget: lettered-prompt
+    description: Shown only when the feature search returns zero matches. Asks whether to create a new feature and captures the target location (top-level or named initiative). Invokes `parlay-add-feature` only after explicit confirmation — declining exits the loop without creating anything.
+
+    data:
+      inputs:
+        - name: feature-arg
+          model: Feature
+          field: name
+          from: command-argument
+      computed:
+        - name: chosen-location
+          from: "user's location choice — top-level or a specific initiative slug"
+          type: string
+        - name: confirmed
+          from: "user's confirm/dismiss answer"
+          type: boolean
+
+    elements:
+      - name: no-match-message
+        widget: fmt.Println
+        bind: feature-arg
+        format: "No feature named {feature-arg} found."
+        visible-when: always
+      - name: confirm-prompt
+        widget: fmt.Println
+        bind: feature-arg
+        format: "Create a new feature named {feature-arg}?"
+        visible-when: always
+      - name: location-options
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Yes, top-level  (2) Yes, inside an initiative (name it)  (3) No — I mistyped"
+        visible-when: always
+
+    actions:
+      - name: choose-action
+        widget: lettered-prompt
+        enabled-when: always
+        effect: call
+        target: parlay-add-feature
+      - name: exit-on-decline
+        widget: os.Exit
+        enabled-when: "confirmed == false"
+        effect: exit
+        target: ""
+
+  PhaseProgressAnnouncement:
+    source: "@parlay-tool/parlay-loop/phase-progress-announcement"
+    widget: prefixed-message
+    description: Printed at the start of each phase inside a sub-agent. Names the current phase and the skill about to run; lists pre-loaded artifacts when `--from` lands mid-group. No interactive action — pure informational output that precedes the skill invocation.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: current-phase
+          from: loop-state
+      computed:
+        - name: skill-name
+          from: "map current-phase to underlying /parlay-* skill (intents→parlay-add-feature, dialogs→parlay-scaffold-dialogs, artifacts→parlay-create-artifacts, build→parlay-build-feature, code→parlay-generate-code)"
+          type: string
+        - name: preloaded-artifacts
+          from: "on-disk upstream artifacts required as context when --from skipped phases in this group"
+          type: string[]
+
+    elements:
+      - name: phase-status
+        widget: prefixed-message
+        bind: session
+        format: "[OK] Entering the {session.current-phase.name} phase."
+        visible-when: always
+      - name: skill-message
+        widget: fmt.Println
+        bind: skill-name
+        format: "Running {skill-name}…"
+        visible-when: always
+      - name: preload-list
+        widget: bulleted-list
+        bind: preloaded-artifacts
+        format: "Pre-loaded from disk: {preloaded-artifacts}"
+        visible-when: "len(preloaded-artifacts) > 0"
+
+    actions: []
+
+  PhaseConfirmationPrompt:
+    source: "@parlay-tool/parlay-loop/phase-confirmation-prompt"
+    widget: lettered-prompt
+    description: Mandatory confirmation at every phase boundary. Offers proceed, stay-and-revise, or exit. At phase-group boundaries (designer→build, build→code) an extra warning is shown about the fresh sub-agent that will lose the current conversation context.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: current-phase
+          from: loop-state
+      computed:
+        - name: completed-phase
+          from: "session.current-phase"
+          type: Phase
+        - name: next-phase
+          from: "next phase in forward order after completed-phase, or null if completed-phase is code"
+          type: Phase
+        - name: is-group-boundary
+          from: "true when completed-phase.group != next-phase.group"
+          type: boolean
+
+    elements:
+      - name: completion-status
+        widget: prefixed-message
+        bind: completed-phase
+        format: "[OK] The {completed-phase.name} phase is complete."
+        visible-when: always
+      - name: advance-message
+        widget: fmt.Println
+        bind: next-phase
+        format: "Ready to advance to {next-phase.name}?"
+        visible-when: "next-phase != null"
+      - name: group-boundary-warning
+        widget: fmt.Println
+        bind: ""
+        format: "Note: advancing starts a fresh sub-agent — the current conversation context will be cleared. All artifacts are on disk."
+        visible-when: "is-group-boundary"
+      - name: options-list
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Proceed  (2) Stay and revise  (3) Exit"
+        visible-when: "next-phase != null"
+
+    actions:
+      - name: choose-next-step
+        widget: lettered-prompt
+        enabled-when: "next-phase != null"
+        effect: call
+        target: phase-transition
+
+  GapAnalysisReport:
+    source: "@parlay-tool/parlay-loop/gap-analysis-report"
+    widget: headed-section
+    description: Runs only at the end of the intents and dialogs phases. Lists critical and minor gaps; recommends staying until critical gaps are resolved but allows the user to advance anyway. Severity classification is a fixed agent-applied policy with no user configuration.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: current-phase
+          from: loop-state
+      computed:
+        - name: gaps
+          from: "scan intents.md or dialogs.md (depending on current phase) for critical and minor gaps"
+          type: Gap[]
+        - name: critical-count
+          from: "count of gaps where severity == critical"
+          type: number
+        - name: minor-count
+          from: "count of gaps where severity == minor"
+          type: number
+
+    elements:
+      - name: summary-header
+        widget: headed-section
+        bind: session
+        format: "Gap analysis at the end of the {session.current-phase.name} phase: Critical: {critical-count}, Minor: {minor-count}"
+        visible-when: always
+      - name: gap-list
+        widget: bulleted-list
+        bind: gaps
+        format: "[{gap.severity}] {gap.location}: {gap.message}"
+        visible-when: "len(gaps) > 0"
+      - name: no-critical-message
+        widget: prefixed-message
+        bind: ""
+        format: "[OK] No critical gaps found."
+        visible-when: "critical-count == 0"
+      - name: recommendation-message
+        widget: fmt.Println
+        bind: ""
+        format: "Recommend resolving the critical gaps before advancing."
+        visible-when: "critical-count > 0"
+      - name: options-message
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Stay and resolve  (2) Advance anyway  (3) Exit"
+        visible-when: "critical-count > 0"
+
+    actions:
+      - name: choose-response
+        widget: lettered-prompt
+        enabled-when: "critical-count > 0"
+        effect: call
+        target: phase-transition
+
+  ReadinessCheckResult:
+    source: "@parlay-tool/parlay-loop/readiness-check-result"
+    widget: headed-section
+    description: Shown at the boundary entering the build phase. Output of `parlay check-readiness --stage build-feature`. Errors are hard blocks that cannot be acknowledged away (the user must go back to artifacts to fix); warnings are informational.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: feature
+          from: loop-state
+      computed:
+        - name: result
+          from: "invoke parlay check-readiness --stage build-feature for session.feature"
+          type: ReadinessResult
+        - name: has-errors
+          from: "len(result.errors) > 0"
+          type: boolean
+        - name: has-warnings
+          from: "len(result.warnings) > 0"
+          type: boolean
+
+    elements:
+      - name: pass-status
+        widget: prefixed-message
+        bind: result
+        format: "[OK] Readiness check passed."
+        visible-when: "has-errors == false and has-warnings == false"
+      - name: error-status
+        widget: prefixed-message
+        bind: result
+        format: "[ERR] Readiness check failed with {len(result.errors)} error(s)."
+        visible-when: "has-errors"
+      - name: warning-status
+        widget: prefixed-message
+        bind: result
+        format: "[WARN] Readiness check passed with {len(result.warnings)} warning(s)."
+        visible-when: "has-warnings and has-errors == false"
+      - name: error-list
+        widget: bulleted-list
+        bind: result.errors
+        format: "{error-code}"
+        visible-when: "has-errors"
+      - name: warning-list
+        widget: bulleted-list
+        bind: result.warnings
+        format: "{warning-code}"
+        visible-when: "has-warnings"
+      - name: error-options
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Go back to artifacts to fix  (2) Exit"
+        visible-when: "has-errors"
+      - name: warning-options
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Proceed to build  (2) Stay in artifacts  (3) Exit"
+        visible-when: "has-warnings and has-errors == false"
+
+    actions:
+      - name: choose-response-errors
+        widget: lettered-prompt
+        enabled-when: "has-errors"
+        effect: call
+        target: phase-transition
+      - name: choose-response-warnings
+        widget: lettered-prompt
+        enabled-when: "has-warnings and has-errors == false"
+        effect: call
+        target: phase-transition
+
+  SubSkillFailurePrompt:
+    source: "@parlay-tool/parlay-loop/sub-skill-failure-prompt"
+    widget: lettered-prompt
+    description: Shown when an underlying `/parlay-*` skill invocation returns an error. Offers retry, stay-in-phase-to-debug, or exit-with-resume-hint. "Proceed" is not an option — a failed skill has no output to proceed with.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: current-phase
+          from: loop-state
+        - name: failure
+          model: SubSkillResult
+          field: error-detail
+          from: skill-invocation-error
+      computed:
+        - name: resume-hint
+          from: "format the --from command to resume at session.current-phase"
+          type: string
+
+    elements:
+      - name: failure-status
+        widget: prefixed-message
+        bind: failure
+        format: "[ERR] {failure.skill-name} failed: {failure.error-code}"
+        visible-when: always
+      - name: error-detail-block
+        widget: indented-block
+        bind: failure
+        format: "{failure.error-detail}"
+        visible-when: "failure.error-detail != \"\""
+      - name: options-list
+        widget: bulleted-list
+        bind: ""
+        format: "(1) Retry  (2) Stay in this phase to debug  (3) Exit with resume hint"
+        visible-when: always
+
+    actions:
+      - name: choose-recovery
+        widget: lettered-prompt
+        enabled-when: always
+        effect: call
+        target: skill-recovery
+
+  PhaseGroupHandoffFreshSession:
+    source: "@parlay-tool/parlay-loop/phase-group-handoff-fresh-session"
+    widget: enter-to-continue
+    description: Replaces sub-agent transitions when the current adapter lacks sub-agent spawning (e.g., Generic CLI). Prints the exact resume command and exits the session; the user continues by invoking the loop with --from in a fresh session.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: current-phase
+          from: loop-state
+        - name: adapter
+          model: AdapterCapability
+          field: adapter-name
+          from: adapter-state
+      computed:
+        - name: next-phase
+          from: "first phase of the next phase-group after session.current-phase.group"
+          type: Phase
+        - name: resume-command
+          from: "format /parlay-loop {session.feature.slug-or-qualified-ref} --from {next-phase.name}"
+          type: string
+
+    elements:
+      - name: handoff-status
+        widget: prefixed-message
+        bind: session
+        format: "[OK] {session.current-phase.group} phase-group complete."
+        visible-when: "adapter.spawn-sub-agent == false"
+      - name: handoff-message
+        widget: fmt.Println
+        bind: adapter
+        format: "Adapter {adapter.adapter-name} does not support sub-agent spawning. Start a fresh session to continue with the {next-phase.name} phase:"
+        visible-when: "adapter.spawn-sub-agent == false"
+      - name: resume-command-block
+        widget: indented-block
+        bind: resume-command
+        format: "{resume-command}"
+        visible-when: "adapter.spawn-sub-agent == false"
+      - name: exit-notice
+        widget: fmt.Println
+        bind: ""
+        format: "Exiting this session. All artifacts are on disk."
+        visible-when: "adapter.spawn-sub-agent == false"
+
+    actions:
+      - name: close-session
+        widget: enter-to-continue
+        enabled-when: "adapter.spawn-sub-agent == false"
+        effect: exit
+        target: ""
+
+  ExitSummary:
+    source: "@parlay-tool/parlay-loop/exit-summary"
+    widget: headed-section
+    description: Printed at every loop exit — natural completion after code, user-chosen exit at a confirmation prompt, or recovered session interruption. Lists completed phases and produced artifacts. Resume hint is included only for partial exits.
+
+    data:
+      inputs:
+        - name: session
+          model: LoopSession
+          field: completed-phases
+          from: loop-state
+      computed:
+        - name: is-natural-completion
+          from: "last completed-phase is code"
+          type: boolean
+        - name: produced-artifacts
+          from: "list paths of spec/intents/.../intents.md, dialogs.md, surface.md, infrastructure.md, .parlay/build/.../buildfile.yaml, testcases.yaml, and generated code files for session.feature"
+          type: string[]
+        - name: resume-hint
+          from: "format /parlay-loop {session.feature.slug-or-qualified-ref} --from {first-uncompleted-phase}"
+          type: string
+
+    elements:
+      - name: summary-header
+        widget: headed-section
+        bind: session
+        format: "Loop summary — feature: {session.feature.path}"
+        visible-when: always
+      - name: completed-phases-list
+        widget: bulleted-list
+        bind: session.completed-phases
+        format: "{phase}"
+        visible-when: "len(session.completed-phases) > 0"
+      - name: artifacts-list
+        widget: bulleted-list
+        bind: produced-artifacts
+        format: "{artifact-path}"
+        visible-when: "len(produced-artifacts) > 0"
+      - name: natural-completion-message
+        widget: fmt.Println
+        bind: ""
+        format: "Loop complete."
+        visible-when: "is-natural-completion"
+      - name: partial-exit-message
+        widget: fmt.Println
+        bind: resume-hint
+        format: "To resume: {resume-hint}"
+        visible-when: "is-natural-completion == false"
+
+    actions: []
+
+  InputValidationFeedback:
+    source: "@parlay-tool/parlay-loop/input-validation-feedback"
+    widget: fmt.Println
+    description: Shown when the invocation is malformed — invalid `--from` value, use of unsupported `--to`, use of unsupported `--resume`, or the adapter lacks a required primitive entirely. Names the problem and enumerates valid alternatives; the loop exits immediately.
+
+    data:
+      inputs:
+        - name: bad-flag
+          model: Phase
+          field: name
+          from: command-flag
+          description: The specific flag or value that failed validation.
+      computed:
+        - name: error-kind
+          from: "classify the failure — invalid-phase, unsupported-to, unsupported-resume, missing-primitive"
+          type: string
+        - name: valid-alternatives
+          from: "for invalid-phase: the five canonical names; for unsupported-resume: the --from form; for missing-primitive: the missing primitive name"
+          type: string[]
+
+    elements:
+      - name: error-message
+        widget: fmt.Println
+        bind: error-kind
+        format: "Input error: {error-kind} ({bad-flag})."
+        visible-when: always
+      - name: alternatives-list
+        widget: bulleted-list
+        bind: valid-alternatives
+        format: "{alternative}"
+        visible-when: "len(valid-alternatives) > 0"
+
+    actions: []
+
+cross-cutting:
+  - id: subagent-definition-bundle
+    source: "@parlay-tool/parlay-loop/manage-context-across-phases-via-phase-group-sub-agents, @parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+    target-files:
+      - internal/embedded/agents/designer.agent.md
+      - internal/embedded/agents/build.agent.md
+      - internal/embedded/agents/code.agent.md
+    introduces:
+      - internal/embedded/agents/designer.agent.md
+      - internal/embedded/agents/build.agent.md
+      - internal/embedded/agents/code.agent.md
+    transform: >
+      Ship three source-of-truth subagent definition files in a new
+      internal/embedded/agents/ directory. Each is a markdown file with YAML
+      frontmatter (name, description, optional tools/model) and a prompt body
+      describing one phase-group's responsibilities. File format targets the
+      Claude Code and Cursor subagent schema; a single file per subagent works
+      for both adapters. These artifacts are a prerequisite for the loop skill:
+      without them, agents cannot spawn the named phase-group subagents. Files
+      are deployed by each adapter (see per-deployer entries) to the
+      agent-specific location — Claude to .claude/agents/, Cursor to
+      .cursor/agents/, Generic embeds guidance in AGENT_INSTRUCTIONS.md.
+    backward-compatible: true
+
+  - id: embedded-subagent-loader
+    source: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents, @parlay-tool/parlay-loop/manage-context-across-phases-via-phase-group-sub-agents"
+    target-files:
+      - internal/embedded/embedded.go
+    transform: >
+      Extend the internal/embedded package to expose subagent definitions
+      parallel to the existing skills bundle. Add a new //go:embed directive
+      for internal/embedded/agents/*.agent.md and a function (e.g., Agents())
+      that returns a slice of agent entries (name + raw content), mirroring
+      the shape of SkillEntry + Skills(). Deployers iterate this new slice in
+      their Deploy() methods alongside the skills slice.
+    backward-compatible: true
+
+  - id: claude-adapter-subagent-deployment
+    source: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+    target-files:
+      - internal/deployer/claude.go
+    transform: >
+      Extend ClaudeDeployer.Deploy() to write each embedded subagent to
+      .claude/agents/parlay-{name}.md after writing skills. Reuse the existing
+      skill-writing pattern — create the directory, write each file with any
+      minimal YAML-frontmatter wrapping needed for Claude Code's subagent
+      schema. Existing skill deployment (.claude/skills/parlay-*/SKILL.md) and
+      CLAUDE.md section preservation are unaffected.
+    backward-compatible: true
+
+  - id: cursor-adapter-subagent-deployment
+    source: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+    target-files:
+      - internal/deployer/cursor.go
+    transform: >
+      Extend CursorDeployer.Deploy() to write each embedded subagent to
+      .cursor/agents/parlay-{name}.md after writing skills. Same pattern as
+      the Claude deployer — iterate the embedded subagent bundle, ensure the
+      directory exists, write each file with Cursor-compatible frontmatter.
+      Existing Cursor deployment (.cursor/skills/* and
+      .cursor/rules/parlay.mdc) is unaffected.
+    backward-compatible: true
+
+  - id: generic-adapter-subagent-fallback
+    source: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+    target-files:
+      - internal/deployer/generic.go
+    transform: >
+      Extend GenericDeployer.Deploy() to append a "Phase-Groups" section to
+      AGENT_INSTRUCTIONS.md describing the three subagent roles
+      (designer / build / code) as embedded guidance text. The Generic adapter
+      has no native subagent mechanism, so it cannot create invokable agents —
+      the guidance text lets a reader follow the loop phases manually across
+      fresh sessions. The loop skill detects this adapter at runtime (by the
+      absence of any native agent-spawning mechanism) and uses the
+      fresh-session handoff flow.
+    backward-compatible: true
+
+  - id: parlay-loop-skill-source-file
+    source: "@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command, @parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+    target-files:
+      - internal/embedded/skills/loop.skill.md
+    introduces:
+      - internal/embedded/skills/loop.skill.md
+    transform: >
+      Create a new source-of-truth skill file describing parlay-loop's
+      orchestration behavior. The file is consumed by the embedded skills
+      bundle via the existing //go:embed directive, so no code change is
+      needed to register it. All three deployers pick it up automatically
+      during parlay init and parlay upgrade. The skill references the three
+      pre-defined subagents by name (parlay-designer, parlay-build,
+      parlay-code) and invokes them via each agent's native mechanism —
+      Claude Code's Agent tool, Cursor's slash command — not via any Go
+      interface. No runtime primitive extension is required.
+    backward-compatible: true
+
+  - id: parlay-loop-cli-command-registration
+    source: "@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command"
+    target-files:
+      - internal/commands/loop.go
+      - internal/commands/root.go
+      - internal/deployer/claude.go
+      - internal/deployer/generic.go
+    introduces:
+      - internal/commands/loop.go
+    transform: >
+      Register parlay loop as a new cobra subcommand. Three touch points per
+      the blueprint's cross-cutting rule for CLI commands: (1) create the
+      thin cobra entrypoint internal/commands/loop.go and register it in
+      internal/commands/root.go's init(); (2) add an entry for "loop" to
+      skillTitle() in internal/deployer/claude.go (shared dispatch with
+      Cursor); (3) add "/parlay-loop" to the hardcoded command list in
+      internal/deployer/generic.go. The cobra command is thin — it prints a
+      pointer message directing the user to invoke /parlay-loop through
+      their agent; actual orchestration lives in the skill content, which
+      invokes the pre-defined subagents by name.
+    backward-compatible: true

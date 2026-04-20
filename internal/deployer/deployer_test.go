@@ -144,6 +144,105 @@ func TestSkillTitle_OnboardSkill(t *testing.T) {
 	}
 }
 
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-component: ClaudeAdapterSubagentDeployment
+// parlay-artifact: test
+func TestClaudeDeployer_DeploysSubagents(t *testing.T) {
+	root := t.TempDir()
+	d := &ClaudeDeployer{}
+	if err := d.Deploy(root, testSkills()); err != nil {
+		t.Fatalf("Deploy failed: %v", err)
+	}
+
+	wantAgents := []string{"parlay-designer", "parlay-build", "parlay-code"}
+	for _, name := range wantAgents {
+		path := filepath.Join(root, ".claude", "agents", name+".md")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("expected agent file at %s: %v", path, err)
+		}
+		if !strings.Contains(string(data), "name: "+name) {
+			t.Errorf("agent %s missing name frontmatter", name)
+		}
+	}
+
+	// Pre-existing skill and CLAUDE.md deployment must still work.
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "parlay-add-feature", "SKILL.md")); err != nil {
+		t.Errorf("skill file missing after agent deployment: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err != nil {
+		t.Errorf("CLAUDE.md missing after agent deployment: %v", err)
+	}
+}
+
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-component: CursorAdapterSubagentDeployment
+// parlay-artifact: test
+func TestCursorDeployer_DeploysSubagents(t *testing.T) {
+	root := t.TempDir()
+	d := &CursorDeployer{}
+	if err := d.Deploy(root, testSkills()); err != nil {
+		t.Fatalf("Deploy failed: %v", err)
+	}
+
+	wantAgents := []string{"parlay-designer", "parlay-build", "parlay-code"}
+	for _, name := range wantAgents {
+		path := filepath.Join(root, ".cursor", "agents", name+".md")
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected agent file at %s: %v", path, err)
+		}
+	}
+
+	// Existing Cursor layout must still be intact.
+	if _, err := os.Stat(filepath.Join(root, ".cursor", "skills", "parlay-add-feature", "SKILL.md")); err != nil {
+		t.Errorf("skill file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".cursor", "rules", "parlay.mdc")); err != nil {
+		t.Errorf("parlay.mdc missing: %v", err)
+	}
+}
+
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-component: GenericAdapterSubagentFallback
+// parlay-artifact: test
+func TestGenericDeployer_EmbedsPhaseGroups(t *testing.T) {
+	root := t.TempDir()
+	d := &GenericDeployer{}
+	if err := d.Deploy(root, testSkills()); err != nil {
+		t.Fatalf("Deploy failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "AGENT_INSTRUCTIONS.md"))
+	if err != nil {
+		t.Fatalf("AGENT_INSTRUCTIONS.md missing: %v", err)
+	}
+	content := string(data)
+
+	wantSections := []string{
+		"## Phase-Groups (parlay-loop)",
+		"### parlay-designer",
+		"### parlay-build",
+		"### parlay-code",
+		"parlay loop <@feature>",
+	}
+	for _, want := range wantSections {
+		if !strings.Contains(content, want) {
+			t.Errorf("AGENT_INSTRUCTIONS.md missing expected section/text: %q", want)
+		}
+	}
+}
+
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-component: ClaudeAdapterSubagentDeployment
+// parlay-artifact: test
+func TestSkillTitle_Loop(t *testing.T) {
+	got := skillTitle("loop")
+	want := "Walk a feature end-to-end through the parlay design pipeline"
+	if got != want {
+		t.Errorf("skillTitle(loop) = %q, want %q", got, want)
+	}
+}
+
 func TestRegistry(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -1,0 +1,93 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    adapt-between-new-and-existing-features:
+        content-hash: d0c02572d381f5e5
+        goal-hash: aecfbfb556cec693
+        constraints-hash: e1db1e04bd2109b5
+        verify-hash: 6e08b9b926b1b72c
+        objects-hash: cf711c34bdfc3ed5
+    analyze-gaps-and-hold-the-user-in-intentsdialogs-until-resolved:
+        content-hash: 021d04acb2ffe033
+        goal-hash: a0305ac182003422
+        constraints-hash: 6f8de4b1f8018890
+        verify-hash: db156477c7bd41a5
+        objects-hash: a6627eb7b1277323
+    confirm-before-advancing-to-the-next-phase:
+        content-hash: 45fa2c6f339c8d8c
+        goal-hash: 21cc2552692f7b2a
+        constraints-hash: 6d2f9aff5dca780f
+        verify-hash: 1cbb6ceaf719a2f9
+        objects-hash: 30a888eb219f376e
+    end-the-loop-cleanly:
+        content-hash: 99cadd64c57cb994
+        goal-hash: 72ea0d7fa67284b3
+        constraints-hash: fe93debde55ba3a3
+        verify-hash: ccc9c5c10c81fa93
+        objects-hash: a0a1b6ba5cefd6a7
+    manage-context-across-phases-via-phase-group-sub-agents:
+        content-hash: 7cf32073f8aeb39a
+        goal-hash: b09211553110b870
+        constraints-hash: 9037a09ea1484af0
+        verify-hash: 6f89677596931ac7
+        objects-hash: a413a8895b1f3057
+    resolve-features-inside-initiatives:
+        content-hash: 93a55e4dcf10dab4
+        goal-hash: 3ac5dac9d183e026
+        constraints-hash: 92323d4204c968fc
+        verify-hash: 73a7626fb1af8215
+        objects-hash: be2f5627ceac79fc
+    run-the-full-design-loop-from-one-command:
+        content-hash: c672c54a527d35e2
+        goal-hash: 52700da89d4ed8b9
+        constraints-hash: 1b09186d1a70450d
+        verify-hash: 9a4c882640261480
+        objects-hash: 81f98cc201639371
+    start-from-a-specific-phase:
+        content-hash: a6a251ebb5d580f9
+        goal-hash: 114be974919b7278
+        constraints-hash: 8f0fa44a75f6da40
+        verify-hash: 670c73041f58f10b
+        objects-hash: a9e43435092c2ea1
+    support-all-parlay-supported-agents:
+        content-hash: c556198a1c0e7096
+        goal-hash: 0d651693da367790
+        constraints-hash: c6dbd686b8cd9a29
+        verify-hash: 6a7154930a26d040
+        objects-hash: def4fa741cde4950
+sources:
+    intents:
+        adapt-between-new-and-existing-features: 0257b9a17355a2a5
+        analyze-gaps-and-hold-the-user-in-intentsdialogs-until-resolved: d1601b61203a5f4f
+        confirm-before-advancing-to-the-next-phase: c8b612b3d4aa8274
+        end-the-loop-cleanly: 891f48f30f2e44b0
+        manage-context-across-phases-via-phase-group-sub-agents: 761e71fa754ae5ca
+        resolve-features-inside-initiatives: 06af79ee3b2be495
+        run-the-full-design-loop-from-one-command: 50fcce9ac18b5274
+        start-from-a-specific-phase: 4762235496d6ad23
+        support-all-parlay-supported-agents: 96ba4af9a066b34d
+    dialogs:
+        adapt-between-new-and-existing-features: d57d962744621b6f
+        analyze-gaps-and-hold-the-user-in-intentsdialogs-until-resolved: e058da2fd2aa20f0
+        confirm-before-advancing-to-the-next-phase: 87c63234eb666b32
+        end-the-loop-cleanly: b33886c817411b82
+        manage-context-across-phases-via-phase-group-sub-agents: 26dcfe5a496f28f2
+        resolve-features-inside-initiatives: f8f3b6924ea71a79
+        run-the-full-design-loop-from-one-command: 579ac8f9760344cd
+        start-from-a-specific-phase: 4b25addfb75ae408
+        support-all-parlay-supported-agents: 353fcb24e97114d8
+    surface-fragments:
+        exit-summary: 83b66b8dacabf1ed
+        feature-disambiguation: e8f3a83af1180baa
+        gap-analysis-report: 3c78fef79dd6d741
+        input-validation-feedback: 324f20d61ef10199
+        loop-invocation-and-feature-resolution: b369bbd04a3c551d
+        new-feature-confirmation: b6da4d12cf745ca5
+        phase-confirmation-prompt: 8e7ef3d803af22e6
+        phase-group-handoff-fresh-session: 10eb5f6db76e4412
+        phase-progress-announcement: c6eba2aad2a02fca
+        readiness-check-result: 7924dbb1e6d8684e
+        sub-skill-failure-prompt: 6f3b88918eca9a87
+buildfile-sections:
+    fixtures: 45b06d98733ec4d4
+    models: 9b9a62ee5d604484
+    routes: cc6b3e5ba4a30ea6

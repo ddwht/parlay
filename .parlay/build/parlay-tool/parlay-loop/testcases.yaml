@@ -1,0 +1,198 @@
+feature: parlay-tool/parlay-loop
+framework: go-test
+
+# Testability note — parlay-loop has two layers of behavior:
+#   1. Go-testable infrastructure (deployer integration, embedded bundle,
+#      cobra registration) — covered by the suites below.
+#   2. Agent-interpreted skill prose (the 11 UI components in surface.md) —
+#      NOT unit-testable; they describe how the skill should behave when
+#      loaded into an AI agent. These serve as acceptance specs for anyone
+#      maintaining loop.skill.md and the three subagent definitions.
+#
+# The suites below exercise the real Go code produced by the cross-cutting
+# entries in buildfile.yaml.
+
+suites:
+  - name: EmbeddedAgentBundle — exposes three subagent definitions
+    component: SubagentDefinitionBundle
+    fixture: ""
+    intent: "@parlay-tool/parlay-loop/manage-context-across-phases-via-phase-group-sub-agents"
+
+    cases:
+      - name: ReadAllAgents returns designer build code
+        description: The embedded bundle must expose exactly three agents by name, each with non-empty content.
+        steps:
+          - action: call
+            target: "embedded.ReadAllAgents"
+          - verify: length
+            target: result
+            expected: 3
+          - verify: contains-names
+            target: result
+            expected: [designer, build, code]
+          - verify: non-empty-content
+            target: result
+
+  - name: ClaudeDeployer — writes subagents to .claude/agents/
+    component: ClaudeAdapterSubagentDeployment
+    fixture: claude-adapter
+    intent: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+
+    cases:
+      - name: deploys all three subagent files
+        description: After ClaudeDeployer.Deploy(), the three parlay-*.md files exist under .claude/agents/ with their source content.
+        steps:
+          - action: call
+            target: "ClaudeDeployer.Deploy"
+            with:
+              projectRoot: tmpdir
+              skills: test-skills
+          - verify: file-exists
+            target: ".claude/agents/parlay-designer.md"
+          - verify: file-exists
+            target: ".claude/agents/parlay-build.md"
+          - verify: file-exists
+            target: ".claude/agents/parlay-code.md"
+          - verify: file-contains
+            target: ".claude/agents/parlay-designer.md"
+            expected: "name: parlay-designer"
+
+      - name: does not break existing skill deployment
+        description: Writing agents must not interfere with .claude/skills/ writes or CLAUDE.md generation.
+        steps:
+          - action: call
+            target: "ClaudeDeployer.Deploy"
+          - verify: file-exists
+            target: ".claude/skills/parlay-add-feature/SKILL.md"
+          - verify: file-exists
+            target: "CLAUDE.md"
+
+      - name: skillTitle for loop returns the pipeline description
+        description: The skill-title lookup adds loop alongside existing entries.
+        steps:
+          - action: call
+            target: "skillTitle"
+            with:
+              name: "loop"
+          - verify: equals
+            target: result
+            expected: "Walk a feature end-to-end through the parlay design pipeline"
+
+  - name: CursorDeployer — writes subagents to .cursor/agents/
+    component: CursorAdapterSubagentDeployment
+    fixture: cursor-adapter
+    intent: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+
+    cases:
+      - name: deploys all three subagent files
+        description: After CursorDeployer.Deploy(), the three parlay-*.md files exist under .cursor/agents/.
+        steps:
+          - action: call
+            target: "CursorDeployer.Deploy"
+            with:
+              projectRoot: tmpdir
+              skills: test-skills
+          - verify: file-exists
+            target: ".cursor/agents/parlay-designer.md"
+          - verify: file-exists
+            target: ".cursor/agents/parlay-build.md"
+          - verify: file-exists
+            target: ".cursor/agents/parlay-code.md"
+
+      - name: preserves existing Cursor skill layout
+        description: Agent deployment must not disturb .cursor/skills/ or .cursor/rules/parlay.mdc.
+        steps:
+          - action: call
+            target: "CursorDeployer.Deploy"
+          - verify: file-exists
+            target: ".cursor/skills/parlay-add-feature/SKILL.md"
+          - verify: file-exists
+            target: ".cursor/rules/parlay.mdc"
+
+  - name: GenericDeployer — embeds phase-group guidance
+    component: GenericAdapterSubagentFallback
+    fixture: generic-adapter-no-sub-agents
+    intent: "@parlay-tool/parlay-loop/support-all-parlay-supported-agents"
+
+    cases:
+      - name: AGENT_INSTRUCTIONS.md contains the Phase-Groups section
+        description: The Generic adapter embeds the three agent definitions as reference text since it has no native subagents.
+        steps:
+          - action: call
+            target: "GenericDeployer.Deploy"
+            with:
+              projectRoot: tmpdir
+              skills: test-skills
+          - verify: file-contains
+            target: "AGENT_INSTRUCTIONS.md"
+            expected: "## Phase-Groups (parlay-loop)"
+          - verify: file-contains
+            target: "AGENT_INSTRUCTIONS.md"
+            expected: "### parlay-designer"
+          - verify: file-contains
+            target: "AGENT_INSTRUCTIONS.md"
+            expected: "### parlay-build"
+          - verify: file-contains
+            target: "AGENT_INSTRUCTIONS.md"
+            expected: "### parlay-code"
+
+      - name: CLI command list includes parlay loop
+        description: The hardcoded CLI utility list in AGENT_INSTRUCTIONS.md must include the new loop command.
+        steps:
+          - action: call
+            target: "GenericDeployer.Deploy"
+          - verify: file-contains
+            target: "AGENT_INSTRUCTIONS.md"
+            expected: "parlay loop <@feature>"
+
+  - name: LoopCobraPointer — thin CLI entry point
+    component: LoopInvocationAndFeatureResolution
+    fixture: unambiguous-top-level-feature
+    intent: "@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command"
+
+    cases:
+      - name: loop command is registered in the root command
+        description: After Execute, parlay --help must list the loop subcommand.
+        steps:
+          - action: inspect
+            target: "rootCmd.Commands"
+          - verify: contains-command
+            target: result
+            expected: "loop"
+
+      - name: loop command prints the skill pointer message
+        description: Running parlay loop with a feature argument prints the two-line "use the skill" pointer and returns nil.
+        steps:
+          - action: execute
+            target: "loopCmd"
+            args: ["@upgrade-plan"]
+          - verify: stdout-contains
+            expected: "loop requires an AI agent"
+          - verify: stdout-contains
+            expected: "/parlay-loop"
+          - verify: exit-code
+            expected: 0
+
+  - name: ParlayLoopSkillBundle — skill is in the embedded list
+    component: ParlayLoopSkillSourceFile
+    fixture: ""
+    intent: "@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command"
+
+    cases:
+      - name: loop skill is deployed by all adapters
+        description: ReadAllSkills must include an entry named loop, with content referencing the three subagents by name.
+        steps:
+          - action: call
+            target: "embedded.ReadAllSkills"
+          - verify: contains-name
+            target: result
+            expected: "loop"
+          - verify: content-contains
+            target: "result[loop]"
+            expected: "parlay-designer"
+          - verify: content-contains
+            target: "result[loop]"
+            expected: "parlay-build"
+          - verify: content-contains
+            target: "result[loop]"
+            expected: "parlay-code"

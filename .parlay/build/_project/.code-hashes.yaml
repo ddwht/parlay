@@ -1,4 +1,4 @@
-generated-at: "2026-04-18T12:24:38Z"
+generated-at: "2026-04-20T20:11:01Z"
 files:
     internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
@@ -15,6 +15,12 @@ files:
     internal/commands/create_dialogs.go:
         component: DialogGenerationReport
         hash: 70a462f4074fd98d
+    internal/commands/loop.go:
+        component: LoopInvocationAndFeatureResolution
+        hash: 9cdd314f595dfd89
+    internal/commands/loop_test.go:
+        component: LoopInvocationAndFeatureResolution
+        hash: a0fd4c3cfda9f7e3
     internal/commands/move_feature.go:
         component: MoveResult
         hash: cf2cf62f51d97438

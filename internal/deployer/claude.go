@@ -1,4 +1,6 @@
 // parlay-extends: claude-md-section-preservation/claudemd-marker-preservation
+// parlay-extends: parlay-tool/parlay-loop/claude-adapter-subagent-deployment
+// parlay-extends: parlay-tool/parlay-loop/parlay-loop-cli-command-registration
 
 package deployer
 
@@ -42,8 +44,31 @@ description: "Parlay: %s"
 		}
 	}
 
+	// Deploy subagents to .claude/agents/parlay-<name>.md
+	if err := writeClaudeAgents(projectRoot); err != nil {
+		return err
+	}
+
 	// Write CLAUDE.md
 	return writeCLAUDEmd(projectRoot, skills)
+}
+
+func writeClaudeAgents(projectRoot string) error {
+	agents, err := embedded.ReadAllAgents()
+	if err != nil {
+		return fmt.Errorf("failed to read embedded agents: %w", err)
+	}
+	agentsDir := filepath.Join(projectRoot, ".claude", "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude/agents/: %w", err)
+	}
+	for _, a := range agents {
+		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
+		if err := os.WriteFile(path, a.Content, 0644); err != nil {
+			return fmt.Errorf("failed to write agent %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
@@ -123,6 +148,7 @@ func skillTitle(name string) string {
 		"onboard":              "Onboard existing codebase and draft adapter",
 		"new-initiative":       "Create an empty initiative directory",
 		"repair":              "Validate and reconcile the three parallel trees",
+		"loop":                "Walk a feature end-to-end through the parlay design pipeline",
 	}
 	if t, ok := titles[name]; ok {
 		return t

@@ -8,6 +8,9 @@ import (
 	"github.com/ddwht/parlay/internal/embedded"
 )
 
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-section: cross-cutting
+//
 // CursorDeployer deploys skills as .cursor/skills/parlay-*/SKILL.md
 // and a single always-apply rule in .cursor/rules/parlay.mdc.
 type CursorDeployer struct{}
@@ -35,8 +38,31 @@ description: "Parlay: %s"
 		}
 	}
 
+	// Deploy subagents to .cursor/agents/parlay-<name>.md
+	if err := writeCursorAgents(projectRoot); err != nil {
+		return err
+	}
+
 	// Write a single always-apply rule for project context
 	return writeCursorProjectRule(projectRoot, skills)
+}
+
+func writeCursorAgents(projectRoot string) error {
+	agents, err := embedded.ReadAllAgents()
+	if err != nil {
+		return fmt.Errorf("failed to read embedded agents: %w", err)
+	}
+	agentsDir := filepath.Join(projectRoot, ".cursor", "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .cursor/agents/: %w", err)
+	}
+	for _, a := range agents {
+		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
+		if err := os.WriteFile(path, a.Content, 0644); err != nil {
+			return fmt.Errorf("failed to write agent %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) error {
