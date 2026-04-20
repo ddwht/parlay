@@ -1,0 +1,11 @@
+generated-at: "2026-04-20T20:11:01Z"
+intents:
+    rename-an-initiative:
+        content-hash: e605c3936ac726a9
+        goal-hash: 7d3364752978e99e
+        constraints-hash: 1a53d7a0decf94bb
+        verify-hash: be84a1ec2be842f1
+        objects-hash: 84a6a73eb7f92322
+sources:
+    intents:
+        rename-an-initiative: f4d8aeb5b9788a1e

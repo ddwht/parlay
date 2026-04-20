@@ -1,0 +1,534 @@
+name: go-cli
+framework: "Go CLI + AI Agent"
+version: "3.0"
+
+shows:
+  data-value:
+    widget: fmt.Printf
+    description: Single value printed to stdout with optional label
+  data-list:
+    widget: bulleted-list
+    description: Lines prefixed with "  - " or "  N. " for ordered lists
+  data-table:
+    widget: tabwriter
+    description: Aligned columns using text/tabwriter
+    import: text/tabwriter
+  data-tree:
+    widget: indented-tree
+    description: Nested items rendered with increasing indentation (2 spaces per level)
+  data-chart:
+    widget: not-applicable
+    description: CLI cannot display graphical charts; use data-table or summary as fallback
+  status:
+    widget: prefixed-message
+    description: Status prefix in brackets — "[OK]", "[WARN]", "[ERR]", "[SKIP]"
+  progress:
+    widget: progress-line
+    description: Text-based progress — "[####----] 40%" or "Step 3/7"
+  message:
+    widget: fmt.Println
+    description: Single line or paragraph to stdout
+  media:
+    widget: not-applicable
+    description: CLI cannot display rich media; describe or link instead
+  empty-state:
+    widget: fmt.Println
+    description: A friendly message explaining absence and suggesting a next action
+  summary:
+    widget: headed-section
+    description: "Bold heading followed by key-value lines — Total: 42, Active: 38"
+  diff:
+    widget: diff-output
+    description: Additions prefixed with "+", removals with "-", context lines unprefixed
+    requires: custom-implementation
+  timeline:
+    widget: timestamped-list
+    description: Lines prefixed with a timestamp or relative time — "2m ago  deployed v3.1"
+  code:
+    widget: indented-block
+    description: Content indented with 4 spaces or fenced with backticks for terminal rendering
+
+actions:
+  provide-text:
+    widget: text-prompt
+    description: Print label, read line with bufio.NewReader
+    import: bufio
+  provide-rich-text:
+    widget: not-applicable
+    description: CLI cannot support rich text editing; fall back to provide-text with markdown input
+  provide-value:
+    widget: text-prompt
+    description: Print label, read line, parse and validate the typed value
+    import: bufio
+  provide-file:
+    widget: path-argument
+    description: Accept a file path as a positional argument or --file flag
+  provide-structured-input:
+    widget: sequential-prompts
+    description: Series of bufio prompts in sequence, building up a struct
+    import: bufio
+  select-one:
+    widget: lettered-prompt
+    description: Print lettered options (A/B/C), read single letter with bufio
+    import: bufio
+  select-many:
+    widget: checkbox-prompt
+    description: Print numbered options, user enters comma-separated numbers
+    import: bufio
+    requires: custom-implementation
+  select-toggle:
+    widget: yn-prompt
+    description: Print question, read Y/N with bufio
+    import: bufio
+  select-range:
+    widget: text-prompt
+    description: Print range bounds, read a number within range
+    import: bufio
+  confirm:
+    widget: yn-prompt
+    description: Print question, read Y/N with bufio
+    import: bufio
+  dismiss:
+    widget: os.Exit
+    description: Exit the process — CLI dismissal is process termination
+  acknowledge:
+    widget: enter-to-continue
+    description: Print message, wait for Enter key press
+    import: bufio
+  navigate:
+    widget: not-applicable
+    description: CLI commands are entry points — no in-app navigation; use separate commands instead
+  navigate-back:
+    widget: not-applicable
+    description: CLI has no navigation history; user runs the previous command again
+  navigate-drill:
+    widget: subcommand
+    description: Implemented as a cobra subcommand — "parlay inspect @feature"
+  navigate-tab:
+    widget: not-applicable
+    description: CLI has no tab metaphor; use separate commands or --view flag
+  navigate-search:
+    widget: flag-filter
+    description: Implemented as a --query or --search flag that filters output
+  reorder:
+    widget: not-applicable
+    description: CLI cannot support drag-and-drop reordering; use explicit move commands
+  move:
+    widget: not-applicable
+    description: Not applicable as a direct interaction; use invoke with source/target arguments
+  edit-inline:
+    widget: text-prompt
+    description: Print current value, prompt for replacement with bufio
+    import: bufio
+  invoke:
+    widget: cobra-command
+    description: Cobra command handler that performs the operation and prints results
+    import: github.com/spf13/cobra
+  invoke-destructive:
+    widget: cobra-command
+    description: Cobra command handler with mandatory Y/N confirmation before execution
+    import: github.com/spf13/cobra
+    requires-confirmation: true
+  invoke-batch:
+    widget: cobra-command
+    description: Cobra command that accepts multiple targets via repeated args or glob
+    import: github.com/spf13/cobra
+  undo:
+    widget: not-applicable
+    description: CLI commands are one-shot; undo is not natively supported
+  redo:
+    widget: not-applicable
+    description: CLI commands are one-shot; redo is not natively supported
+  export:
+    widget: file-write
+    description: Write output to a file path specified via --output flag or stdout redirection
+  hand-off:
+    widget: not-applicable
+    description: CLI has no built-in delegation; implement as invoke with a target argument
+  expand:
+    widget: not-applicable
+    description: CLI output is linear; use --verbose flag as the expand metaphor
+  collapse:
+    widget: not-applicable
+    description: CLI output is linear; default output is the collapsed view
+  filter:
+    widget: flag-filter
+    description: Implemented as --filter or --type flags that narrow the output set
+  sort:
+    widget: flag-sort
+    description: Implemented as --sort flag with column name and optional --desc
+  inspect:
+    widget: subcommand
+    description: Implemented as a show/describe/inspect subcommand that prints extended detail
+
+flows:
+  guided-flow:
+    pattern: sequential-prompts
+    description: One prompt after another, accumulating answers into a config struct. After all prompts, perform operations and print summary.
+    regions: [prompts, output]
+  crud-collection:
+    pattern: cobra-subcommands
+    description: Each CRUD operation is a separate subcommand — add, list, show, edit, delete. The parent command prints help listing available subcommands.
+    regions: [command, output]
+  search-and-act:
+    pattern: flag-filter-then-command
+    description: First command lists/searches with filter flags, second command acts on a found item by ID or name.
+    regions: [search, action]
+  review-and-approve:
+    pattern: display-then-confirm
+    description: Print the proposed change or request, then prompt for Y/N approval. Optionally accept a comment via --comment flag.
+    regions: [preview, confirmation, result]
+  bulk-operation:
+    pattern: multi-arg-command
+    description: Accept multiple targets as repeated arguments or via stdin piping. Confirm before executing.
+    regions: [selection, confirmation, result]
+  configure:
+    pattern: sequential-prompts
+    description: Present each setting as a prompt with the current value shown. After all prompts, write the config file and confirm.
+    regions: [prompts, output]
+  monitor:
+    pattern: watch-loop
+    description: Periodic refresh of output — poll and reprint, or stream with timestamps. Exit with Ctrl+C.
+    regions: [header, output]
+    requires: custom-implementation
+  import-export:
+    pattern: file-ops
+    description: Read from an input file (--input flag), optionally preview, confirm, then write to output (--output flag or stdout).
+    regions: [preview, confirmation, output]
+  onboarding:
+    pattern: sequential-prompts
+    description: Same as guided-flow but with explanatory messages between prompts. Produces initial config and prints a "you're ready" summary.
+    regions: [prompts, output]
+  compare:
+    pattern: side-by-side-output
+    description: Print two alternatives in columns using tabwriter, or sequentially with clear separation. Optionally prompt for selection.
+    regions: [comparison, selection]
+    requires: custom-implementation
+
+design-system:
+  colors:
+    source: not-defined
+    format: "ANSI escape codes for terminal color (optional)"
+    usage: "Do not use color by default. If color is needed, use only standard ANSI codes and respect NO_COLOR environment variable."
+  spacing:
+    source: not-defined
+    format: "Indentation (2 spaces per level), blank lines between sections"
+    usage: "Use consistent indentation. Separate logical sections with a blank line. Keep output within 80 columns."
+  border-radius:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  typography:
+    source: not-defined
+    format: "Terminal monospace font. Emphasis via UPPERCASE, [brackets], or *asterisks*."
+    usage: "Use [OK], [ERR], [WARN] prefixes for status. Use UPPERCASE sparingly for emphasis."
+  shadows:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  icons:
+    source: not-defined
+    format: "Not applicable. Use text prefixes ([OK], [ERR], >, -) instead."
+  motion:
+    source: not-defined
+    format: "Not applicable to CLI output."
+  layout:
+    source: not-defined
+    format: "text/tabwriter for aligned columns. Bulleted lists with - prefix. Numbered lists with N. prefix."
+    usage: "Use tabwriter for any tabular data. Keep output scannable — one item per line."
+
+file-conventions:
+  source-root: "internal/commands/"
+  component-pattern: one-file-per-command
+  naming: snake_case
+  entry-point: "cmd/parlay/main.go"
+
+conventions:
+  error-wrapping:
+    rule: "Wrap returned errors with fmt.Errorf(\"<verb-phrase>: %w\", err). Never return a bare err from an I/O or parse operation; always add a verb-phrase prefix that identifies the failed step."
+    applies-to: all error returns in internal/commands and internal/*
+  feature-arg-parsing:
+    rule: "Commands that accept a feature slug as an argument must strip a leading '@' via strings.TrimPrefix(args[0], \"@\") before using it. Users reference features as @feature."
+    applies-to: cobra commands with a feature argument
+  config-path-helpers:
+    rule: "Resolve project paths through internal/config helpers (config.FeaturePath, config.AdaptersPath, config.BuildPath, config.HandoffPath, config.PagesPath, etc.), not raw filepath.Join calls with hard-coded \"spec\"/\".parlay\" segments."
+    applies-to: any file I/O in internal/commands or internal/*
+  agent-json-output:
+    rule: "Commands designed for AI-agent consumption emit JSON via json.MarshalIndent(v, \"\", \"  \") + fmt.Println. User-facing commands use plain fmt.Println/Printf. Do not mix the two in a single command."
+    applies-to: agent-facing utility commands (validate, parse, check-*, diff, scan-generated, verify-generated, baseline, collect-questions)
+  run-function-naming:
+    rule: "Cobra RunE handlers for non-trivial commands are top-level functions named run<CommandName> (e.g. runAddFeature), wired via RunE: runAddFeature. Avoid inline closures for anything past a few lines."
+    applies-to: cobra command definitions in internal/commands
+  yaml-io:
+    rule: "Read and write YAML with gopkg.in/yaml.v3 (yaml.Marshal / yaml.Unmarshal). Do not import gopkg.in/yaml.v2 or alternative yaml libraries."
+    applies-to: files that read or write .yaml
+  generated-marker-comment:
+    rule: "Files emitted by parlay code-gen start with a two-line provenance header:\n// Generated from buildfile component: <component-id>\n// Type: <type> | Widget: <widget> | Layout: <layout>\nThis header is how downstream tooling (diff, scan-generated, verify-generated) recognizes generated files."
+    applies-to: parlay-generated command files in internal/commands
+  tests-alongside:
+    rule: "Unit tests live in sibling <name>_test.go files in the same package, using stdlib testing. Shared setup goes through a setupTestDir(t) helper."
+    applies-to: all non-trivial packages
+
+patterns:
+  interaction:
+    prefer: [single-purpose-commands, explicit-flags, terse-prompts]
+    avoid: [hidden-state, magic-defaults, interactive-modes-without-escape]
+  information-density:
+    default: medium
+    rationale: CLI users want compact output but with enough context to understand state
+  error-placement:
+    default: console
+    rationale: Errors print to stderr with a clear prefix; CLI users read terminal output linearly
+  confirmation:
+    required-for: [invoke-destructive]
+    style: prompt
+  content:
+    timestamps: relative
+    empty-states: message
+
+# --- Section 7: Mount strategies ---
+
+mount-strategies:
+  cobra-subcommand:
+    detection: "AddCommand("
+    template: |
+      rootCmd.AddCommand({{varName}}Cmd)
+    description: "Register a new cobra subcommand in the root command (see internal/commands/root.go init())"
+  sequential-prompts:
+    detection: "promptChoice("
+    template: |
+      {{varName}}, err := promptChoice(reader, "{{question}}", {{optionsSlice}})
+      if err != nil {
+          return err
+      }
+    description: "Add another step to a configure-style guided flow using the existing promptChoice helper (see internal/commands/init.go). Requires bufio.NewReader(os.Stdin) in scope."
+
+# --- Section 8: Agent layer ---
+# Maps the same surface vocabulary to AI agent primitives (Claude Code).
+# The CLI sections above describe what `parlay <command>` produces in a terminal.
+# This section describes how the same interactions render when invoked via
+# /parlay-* skills in an AI agent session. Both channels coexist: the CLI
+# binary does the work; the agent layer wraps it with richer interaction.
+
+agent:
+  runtime: Claude Code
+  entry-points:
+    skill:
+      description: "Each /parlay-* slash command is a skill — a markdown file under .claude/skills/ that the agent loads and executes step-by-step. Skills are the primary way designers interact with parlay through the agent."
+      location: ".claude/skills/parlay-{command}/SKILL.md"
+    hook:
+      description: "Pre/post automation triggered by tool calls. Configured in settings.json. Used for automated behaviors like running verify-skills after a build."
+      location: ".claude/settings.json → hooks"
+    subagent:
+      description: "Background agents spawned via the Agent tool for parallel or isolated work — e.g., running a build in a worktree while continuing a conversation."
+      tool: Agent
+
+  shows:
+    data-value:
+      widget: inline-text
+      description: "Single value rendered inline in the conversation. No special formatting."
+    data-list:
+      widget: markdown-list
+      description: "Bulleted or numbered list in conversation using markdown syntax."
+    data-table:
+      widget: markdown-table
+      description: "Markdown table in conversation. Columns align automatically."
+    data-tree:
+      widget: markdown-indented
+      description: "Indented tree rendered as a markdown code block or indented plain text in conversation."
+    data-chart:
+      widget: not-applicable
+      description: "Agent conversation cannot render graphical charts. Fall back to data-table or summary."
+    status:
+      widget: prefixed-text
+      description: "Status prefix in conversation — [OK], [WARN], [ERR], [SKIP]. Same rendering as CLI."
+    progress:
+      widget: progress-text
+      description: "Text-based progress in conversation — 'Step 3/7' or percentage. Updated via successive messages."
+    message:
+      widget: conversation-text
+      description: "Plain text or markdown paragraph in the conversation. The agent's primary output mode."
+    media:
+      widget: not-applicable
+      description: "Agent conversation supports images via Read tool on image files, but not inline media generation."
+    empty-state:
+      widget: conversation-text
+      description: "A friendly message explaining absence and suggesting a next action. Same as message."
+    summary:
+      widget: markdown-section
+      description: "Headed section in conversation with key-value pairs. Uses markdown headers and bold labels."
+    diff:
+      widget: markdown-diff
+      description: "Unified diff rendered as a markdown code block with diff syntax highlighting."
+    timeline:
+      widget: markdown-list
+      description: "Chronological entries as a bulleted list with timestamps or relative times."
+    code:
+      widget: markdown-code-block
+      description: "Code rendered in a fenced markdown code block with language tag for syntax highlighting."
+
+  actions:
+    provide-text:
+      widget: user-message
+      description: "User types free-form text in the conversation. No special prompt — the agent waits for the next message."
+    provide-rich-text:
+      widget: not-applicable
+      description: "Agent conversation does not support rich-text editing. Fall back to provide-text with markdown."
+    provide-value:
+      widget: user-message
+      description: "User types a value in the conversation. Agent validates after receipt."
+    provide-file:
+      widget: file-path
+      description: "User provides a file path in the conversation. Agent reads it via Read tool."
+    provide-structured-input:
+      widget: sequential-questions
+      description: "Agent asks a series of AskUserQuestion calls, one per field, building up a struct from answers."
+      tool: AskUserQuestion
+    select-one:
+      widget: AskUserQuestion
+      description: "Present lettered options via AskUserQuestion tool. User selects one. Always includes an implicit 'Other' option for free-form input."
+      tool: AskUserQuestion
+    select-many:
+      widget: AskUserQuestion-multi
+      description: "Present options via AskUserQuestion with multiSelect: true. User selects zero or more."
+      tool: AskUserQuestion
+    select-toggle:
+      widget: AskUserQuestion
+      description: "Binary Y/N choice via AskUserQuestion with two options."
+      tool: AskUserQuestion
+    select-range:
+      widget: user-message
+      description: "Agent states the range bounds in conversation; user types a value. Agent validates."
+    confirm:
+      widget: AskUserQuestion
+      description: "Approval prompt via AskUserQuestion with Yes/No options. Used before destructive or irreversible operations."
+      tool: AskUserQuestion
+    dismiss:
+      widget: user-message
+      description: "User says 'cancel', 'stop', or 'never mind' in conversation. Agent interprets and stops the current flow."
+    acknowledge:
+      widget: implicit
+      description: "No explicit widget. Agent presents information; user's next message implicitly acknowledges."
+    navigate:
+      widget: skill-invocation
+      description: "Agent suggests a skill to run next: 'Run /parlay-scaffold-dialogs @feature'. User invokes it."
+    navigate-back:
+      widget: not-applicable
+      description: "Agent conversations are linear. 'Go back' means re-running a previous skill or undoing via conversation."
+    navigate-drill:
+      widget: skill-invocation
+      description: "Agent suggests a deeper skill or reads a specific file for detail. Implemented as a follow-up skill or Read tool call."
+    navigate-tab:
+      widget: not-applicable
+      description: "No tab metaphor in conversation. Use separate skill invocations for parallel views."
+    navigate-search:
+      widget: Grep
+      description: "Agent uses Grep or Glob tools to find items matching the user's query."
+      tool: Grep
+    reorder:
+      widget: not-applicable
+      description: "No drag-and-drop in conversation. User describes the desired order; agent applies it."
+    move:
+      widget: Bash
+      description: "Agent executes mv or git mv via Bash tool. Used for moving features between initiatives."
+      tool: Bash
+    edit-inline:
+      widget: Edit
+      description: "Agent uses the Edit tool to modify a value in place within a file."
+      tool: Edit
+    invoke:
+      widget: Bash
+      description: "Agent executes the parlay CLI command via Bash tool and presents the output in conversation."
+      tool: Bash
+    invoke-destructive:
+      widget: AskUserQuestion-then-Bash
+      description: "Agent asks for confirmation via AskUserQuestion, then executes the destructive parlay CLI command via Bash. Never skips confirmation."
+      tool: AskUserQuestion, Bash
+    invoke-batch:
+      widget: Bash-loop
+      description: "Agent executes the command for each target in sequence via Bash, reporting progress between invocations."
+      tool: Bash
+    undo:
+      widget: not-applicable
+      description: "No automatic undo in agent conversation. Agent can suggest git revert or manual rollback."
+    redo:
+      widget: not-applicable
+      description: "No automatic redo. Agent re-runs the previous skill or command."
+    export:
+      widget: Write
+      description: "Agent writes output to a file via Write tool."
+      tool: Write
+    hand-off:
+      widget: conversation-text
+      description: "Agent presents the handoff summary in conversation and names the recipient or next step."
+    expand:
+      widget: Read
+      description: "Agent reads additional detail from a file via Read tool and presents it in conversation."
+      tool: Read
+    collapse:
+      widget: implicit
+      description: "Agent omits detail by default. Expansion is on-demand via Read."
+    filter:
+      widget: Grep
+      description: "Agent uses Grep tool to narrow results by the user's criteria."
+      tool: Grep
+    sort:
+      widget: agent-logic
+      description: "Agent sorts results in memory before presenting. No external tool needed."
+    inspect:
+      widget: Read
+      description: "Agent reads the target file or runs a parlay command to fetch detail, then presents in conversation."
+      tool: Read, Bash
+
+  flows:
+    guided-flow:
+      pattern: multi-turn-conversation
+      description: "Multi-step sequential conversation. Each step is an AskUserQuestion call or a Bash tool invocation. Agent accumulates answers and proceeds to the next step."
+      tools: [AskUserQuestion, Bash]
+    crud-collection:
+      pattern: skill-per-operation
+      description: "Each CRUD operation is a separate skill invocation. The agent suggests the next skill based on context."
+    search-and-act:
+      pattern: grep-then-invoke
+      description: "Agent greps for the target, presents matches, user picks one, agent invokes the action on it."
+      tools: [Grep, Bash]
+    review-and-approve:
+      pattern: present-then-confirm
+      description: "Agent presents the proposed change (often a diff or summary), then asks for confirmation via AskUserQuestion before applying."
+      tools: [Read, AskUserQuestion, Bash]
+    bulk-operation:
+      pattern: select-then-loop
+      description: "Agent presents candidates via AskUserQuestion (multiSelect), then executes the operation on each selected item in sequence."
+      tools: [AskUserQuestion, Bash]
+    configure:
+      pattern: sequential-questions
+      description: "Agent asks one AskUserQuestion per setting, accumulates answers, then applies all at once."
+      tools: [AskUserQuestion, Write]
+    monitor:
+      pattern: loop-skill
+      description: "Agent uses /loop to periodically re-run a check command and report changes. Or uses Monitor tool for streaming."
+      tools: [Bash, Monitor]
+    import-export:
+      pattern: read-confirm-write
+      description: "Agent reads the input file, presents a preview, asks for confirmation, then writes the output."
+      tools: [Read, AskUserQuestion, Write]
+    onboarding:
+      pattern: conversational-orientation
+      description: "Agent explains the concept in conversation, offers choices via AskUserQuestion, and guides the user through first-time setup. No CLI command needed — the conversation IS the onboarding."
+      tools: [AskUserQuestion]
+    compare:
+      pattern: side-by-side-text
+      description: "Agent presents two alternatives in conversation (often as a markdown table or sequential code blocks), then asks the user to choose via AskUserQuestion."
+      tools: [AskUserQuestion]
+
+  compositions:
+    skill-calls-cli:
+      description: "A skill step runs a parlay CLI command via Bash tool and parses the output. This is the primary bridge between the agent layer and the CLI layer — the skill orchestrates, the CLI executes."
+      example: "System (background): Runs `parlay add-feature 'password reset' --initiative 'auth overhaul'`."
+    skill-calls-skill:
+      description: "A skill step suggests the user invoke another skill as a follow-up. Skills don't call each other directly — the agent presents the suggestion and the user triggers it."
+      example: "System: Next, run /parlay-scaffold-dialogs @auth-overhaul/password-reset"
+    subagent-for-parallel:
+      description: "A skill step spawns a subagent (via Agent tool) for work that can run in parallel — e.g., building multiple features simultaneously, or running a build in a worktree while continuing conversation."
+      tool: Agent
+    hook-for-automation:
+      description: "A hook configured in settings.json triggers automatically on specific tool calls — e.g., running make verify-skills after any Edit to a skill file. Hooks are the 'always do X when Y happens' mechanism."
+      location: ".claude/settings.json → hooks"
