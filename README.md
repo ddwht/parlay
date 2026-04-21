@@ -1,6 +1,6 @@
 # Parlay
 
-An intent-driven specification framework that turns user goals into working prototypes through a deterministic pipeline. Describe what users need, not how to code it.
+An intent-driven specification framework that turns user goals into working prototypes through a structured pipeline. Describe what users need, not how to code it.
 
 ```
 intent → dialog → artifacts (surface and/or infrastructure) → [design-spec] → buildfile → code
@@ -14,9 +14,9 @@ Parlay bridges the gap between design and code generation by providing:
 - A **framework adapter** that translates that vocabulary into specific widgets (React + Ant Design, Go CLI, Angular + Clarity, etc.)
 - **Infrastructure fragments** for behind-the-scenes changes (helpers, resolvers, cross-cutting patterns) that coexist with user-facing surfaces
 - An **application blueprint** that captures per-app architectural decisions (shells, routing, auth, data strategy, error handling)
-- A **deterministic buildfile** that two independent AI agents must honor identically — the contract is observable behavior, not byte-equivalent code
+- A **structured buildfile** that agents read at codegen time rather than re-inferring everything from design — the goal is repeatable, behavior-level output, not byte-identical code
 - **Initiatives** for grouping related features and treating them as a cohesive unit
-- **Incremental regeneration** at the component level — stable components are preserved verbatim, only dirty ones are rebuilt
+- **Incremental regeneration** at the component level — stable component files are preserved verbatim; cross-cutting entries and brownfield merges are re-applied on each run
 - An **end-to-end orchestrator** (`/parlay-loop`) that walks a feature through the whole pipeline with phase-group subagents and confirmation checkpoints
 
 ## Quick Start
@@ -40,7 +40,7 @@ go install github.com/ddwht/parlay/cmd/parlay@latest
 parlay init
 ```
 
-This is the only CLI command you run directly for project setup. It prompts for your AI agent (Claude Code, Cursor, or Generic), SDD framework (GitHub SpecKit, Kiro, etc.), and prototype framework (React + Ant Design, Go CLI, etc.). It creates:
+`parlay init` and `parlay upgrade` are the main CLI commands humans run directly (init for a new project, upgrade after the binary version changes). A few repair/inspection utilities are also human-facing; everything else is invoked by skills. The init prompt asks for your AI agent (Claude Code, Cursor, or Generic), SDD framework (GitHub SpecKit, Kiro, etc.), and prototype framework (React + Ant Design, Go CLI, etc.). It creates:
 
 ```
 .parlay/
@@ -269,8 +269,8 @@ Every section is optional. Cross-reference checks (shell refs, guard refs, dupli
 
 Loads your intents, dialogs, surface, infrastructure (if present), adapter, and blueprint, then generates:
 
-- `.parlay/build/task-list/buildfile.yaml` — deterministic intermediate representation with framework-specific widgets. Surface fragments become `components:`; infrastructure fragments become `cross-cutting:`.
-- `.parlay/build/task-list/testcases.yaml` — property-based tests
+- `.parlay/build/task-list/buildfile.yaml` — structured intermediate representation with framework-specific widgets. Surface fragments become `components:`; infrastructure fragments become `cross-cutting:`.
+- `.parlay/build/task-list/testcases.yaml` — verification tests (element-visibility and action-enabled assertions)
 
 The buildfile is tool-internal — you never edit it. It's the contract between design and code.
 
@@ -291,7 +291,7 @@ This operates at the project level (all features). It:
 7. Runs tests — must pass before state is committed
 8. Saves build state atomically via `parlay save-build-state`
 
-On subsequent runs, only dirty components (and cross-cutting entries) are regenerated. Stable ones are preserved verbatim. Hand-edits to generated files are detected and surfaced before overwriting.
+On subsequent runs, only dirty components (and cross-cutting entries) are regenerated. Stable component files are preserved byte-for-byte; cross-cutting merges into shared files are re-applied on each run. Hand-edits to any tracked file are detected and surfaced before overwriting.
 
 ### Hand Off to Engineering
 
@@ -362,8 +362,8 @@ spec/
   adapters/                     Framework adapters
   build/
     <feature>/                  (or) <initiative>/<feature>/
-      buildfile.yaml              Deterministic build spec
-      testcases.yaml              Property-based tests
+      buildfile.yaml              Structured build spec
+      testcases.yaml              Verification tests
       design-spec.yaml            Visual details from Figma (optional)
       .baseline.yaml              Source hash baseline
     _project/
@@ -463,7 +463,7 @@ JSON-output commands are for agent consumption; human-facing commands print plai
 
 ## Adapters
 
-The adapter is the bridge between framework-agnostic surface vocabulary and framework-specific code. Parlay ships four templates; teams customize to match their codebase.
+The adapter is the bridge between framework-agnostic surface vocabulary and framework-specific code. Parlay ships four starter adapters; teams are expected to customize them to match their codebase conventions.
 
 ### What an Adapter Contains
 
@@ -482,7 +482,7 @@ The adapter is the bridge between framework-agnostic surface vocabulary and fram
 
 ### Bundled Adapters
 
-- **go-cli** — Go + Cobra CLI (commands, prompts, tabwriter tables). Used by this repo itself.
+- **go-cli** — Go + Cobra CLI (commands, prompts, tabwriter tables)
 - **react-antd** — React + Ant Design (Table, Modal, Form, Steps, etc.)
 - **angular-material** — Angular + Material (MatTable, MatDialog, MatStepper, M3 tokens)
 - **angular-clarity** — Angular + Clarity (ClrDatagrid, ClrWizard, ClrSidePanel, CDS tokens)
@@ -510,7 +510,7 @@ Every section is optional. Cross-reference checks (shell refs, guard refs, dupli
 
 ## Agent Support
 
-Parlay is agent-agnostic. Skills are plain markdown instructions any AI can follow. Agent-specific deployers package them into the right format alongside any subagent definitions.
+Parlay is designed to be portable across AI agents. Skills are plain markdown instructions; they expect the host agent to support slash-command dispatch and interactive prompting (AskUserQuestion or an equivalent). Agent-specific deployers package them into the right on-disk layout alongside any subagent definitions.
 
 | Agent | Deployer | Skills Location | Subagents Location | Project Config |
 |---|---|---|---|---|
@@ -530,16 +530,16 @@ Subagents (`parlay-designer`, `parlay-build`, `parlay-code`) are pre-defined pha
 
 **Surface and infrastructure coexist.** Not all feature work is user-visible. Infrastructure fragments capture internal code changes (helpers, resolvers, cross-cutting patterns) alongside surface fragments in the same feature. Both feed the buildfile.
 
-**Deterministic contract.** Same buildfile + adapter + blueprint → same testcases pass. The contract is observable behavior, not code structure. Two agents have latitude on naming and style.
+**Behavior-level contract (aspirational).** The buildfile + adapter + blueprint are structured enough that an agent can regenerate code without re-reading design. The goal is that two agents following the same spec produce functionally equivalent output — observable behavior, not byte-identical code — with latitude on naming and style. This is a design target, not a verified invariant; treat it as an expectation the tool is built around rather than something it proves automatically.
 
-**Strict codegen boundary.** Code generation reads only from `.parlay/` (buildfile, adapter, blueprint). It never reads `spec/intents/`. If it needs to, the buildfile schema is leaking detail.
+**Strict codegen boundary.** By convention, `/parlay-generate-code` reads only from `.parlay/` (buildfile, adapter, blueprint) and never from `spec/intents/`. The skill enforces this rule; if the agent finds it needs design-level detail, that's a signal the buildfile schema is leaking information.
 
 **Three-zone ownership.** Designer-authored input, engineering handoff, and tool internals are strictly separated. Cross-zone writes are errors.
 
 **Initiatives group, never block.** Features inside an initiative are still driven independently through the pipeline. Initiatives are folders for organization and naming, not collective-processing units.
 
-**Incremental by default.** Stable components are preserved verbatim. Only dirty components (with changed upstream sources) are regenerated. Hand-edits to stable files are detected and surfaced before overwriting.
+**Incremental by default.** Stable component files are preserved byte-for-byte; only components with changed upstream sources are regenerated. Cross-cutting entries and brownfield merges are re-applied on every run. Hand-edits to any tracked file are detected and surfaced before overwriting.
 
-**Agent-agnostic.** Skills are plain English markdown. The helper binary handles parsing, validation, and state management. Adding a new AI agent requires only a deployer, not skill rewrites.
+**Portable across agents.** Skills are plain English markdown. The helper binary handles parsing, validation, and state management. Adding support for a new AI agent requires only a deployer, not skill rewrites — provided the agent supports slash-command dispatch and interactive prompts. `/parlay-loop` additionally needs native subagent support; without it the loop degrades to fresh-session handoff.
 
 **One continuous loop, many checkpoints.** `/parlay-loop` lets you walk a feature end-to-end, but you confirm at every phase boundary. No auto-advance. Mid-loop edits and resumption via `--from` are first-class.
