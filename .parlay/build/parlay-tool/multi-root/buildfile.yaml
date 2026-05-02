@@ -1,0 +1,1373 @@
+feature: parlay-tool/multi-root
+adapter: go-cli
+
+models:
+  Root:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Short slug identifying the root within its parent's roots index
+      path:
+        type: string
+        required: true
+        description: Absolute path to the root directory (the directory containing .parlay/)
+      parent-path:
+        type: string
+        required: false
+        description: Absolute path to the parent root, or empty if this root is top-level
+      relative-path:
+        type: string
+        required: false
+        description: Path of this root relative to the repo-level root, when applicable
+      kind:
+        type: enum
+        enum: [parent, child, standalone]
+        required: true
+        description: Whether this root is a parent (has children), a child (has a parent pointer), or standalone (no parent, no children)
+      description:
+        type: string
+        required: false
+        description: One-line description copied into the agent-rules multi-root section
+
+  RootsIndex:
+    properties:
+      parent-path:
+        type: string
+        required: true
+        description: Path of the parent root that owns this index
+      children:
+        type: Root[]
+        required: true
+        description: Registered child roots, addressable by short name
+    states:
+      values: [empty, populated]
+      transitions:
+        empty: [populated]
+        populated: [empty, populated]
+
+  ResolutionResult:
+    properties:
+      active-root:
+        type: Root
+        required: true
+        description: The root the command will operate against
+      source:
+        type: enum
+        enum: [cwd-walk-up, parlay-root-env, root-flag, prefix, disambiguation, auto-resolved-only-match]
+        required: true
+        description: How the active root was determined
+      announcement-required:
+        type: boolean
+        required: true
+        description: True when source is not cwd-walk-up — drives the cross-root targeting announcement
+
+  FeatureReference:
+    properties:
+      raw:
+        type: string
+        required: true
+        description: The literal user-typed reference, e.g. "web:@parlay-tool/multi-root"
+      root-prefix:
+        type: string
+        required: false
+        description: The short root name if a prefix was used, else empty
+      feature-slug:
+        type: string
+        required: true
+        description: The feature slug after stripping any leading @ and any prefix
+      kind:
+        type: enum
+        enum: [bare, prefixed]
+        required: true
+        description: Whether the reference includes a root prefix
+
+  ResourceLoad:
+    properties:
+      resource-type:
+        type: enum
+        enum: [schemas, adapter, deployed-skills, domain-model, intents, dialogs, surface]
+        required: true
+        description: Category of resource being loaded
+      provided-by:
+        type: enum
+        enum: [parent-root, child-root, repo-level-root, root-only]
+        required: true
+        description: Which root resolved this resource
+      override-status:
+        type: enum
+        enum: [override, fallback, root-only]
+        required: true
+        description: Whether the child overrode the parent, fell back to the parent, or the resource is repo-only
+
+  CandidateRoot:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Short slug
+      relative-path:
+        type: string
+        required: true
+        description: Path relative to the repo-level root
+      reason:
+        type: enum
+        enum: [discovered-below-cwd, in-parents-roots-index, contains-feature]
+        required: true
+        description: Why this root is a candidate in the current disambiguation context
+
+  DisambiguationCase:
+    properties:
+      kind:
+        type: enum
+        enum: [ambiguous-active-root, ambiguous-feature-reference]
+        required: true
+        description: Whether the prompt selects an active root or routes a feature reference
+      candidates:
+        type: CandidateRoot[]
+        required: true
+        description: Roots the user must choose between
+      feature-ref:
+        type: string
+        required: false
+        description: For ambiguous-feature-reference, the original reference the user typed
+      interactive:
+        type: boolean
+        required: true
+        description: True when the run has a TTY and may prompt; false otherwise
+    states:
+      values: [pending, prompting, resolved, cancelled, errored-non-interactive]
+      transitions:
+        pending: [prompting, errored-non-interactive]
+        prompting: [resolved, cancelled]
+
+  ForbiddenDirectoryViolation:
+    properties:
+      child-root-path:
+        type: string
+        required: true
+        description: Path of the child root where the forbidden directory was found
+      directory:
+        type: string
+        required: true
+        description: Path of the offending directory (e.g. apps/web/.parlay/schemas/)
+      rule:
+        type: enum
+        enum: [schemas-parent-only, agent-surface-parent-only]
+        required: true
+        description: Which root-only rule was violated
+
+  AddRootResult:
+    properties:
+      child-path:
+        type: string
+        required: true
+        description: Path of the newly created child root, relative to the parent
+      child-name:
+        type: string
+        required: true
+        description: Short slug under which the new child was registered
+      agent-surface-refreshed:
+        type: boolean
+        required: true
+        description: Whether the auto-refresh hook successfully updated the agent-rules file
+      refusal-reason:
+        type: enum
+        enum: [none, subdir-already-has-parlay, cwd-not-a-root, nested-inside-child]
+        required: true
+        description: When the command refused, why
+
+  UpgradeResult:
+    properties:
+      target-root-path:
+        type: string
+        required: true
+        description: Repo-level root the upgrade ran against
+      skills-deployed:
+        type: number
+        required: true
+        description: Number of skill files written
+      schemas-updated:
+        type: number
+        required: true
+        description: Number of schema files written
+      roots-listed:
+        type: Root[]
+        required: true
+        description: Roots written into the agent-rules multi-root section
+
+  Announcement:
+    properties:
+      root-name:
+        type: string
+        required: true
+        description: Name of the chosen root
+      source:
+        type: enum
+        enum: [prefix, root-flag, auto-resolved-only-match, disambiguated]
+        required: true
+        description: Why the announcement is being shown
+
+fixtures:
+  single-root-at-repo:
+    description: Legacy single-root project — repo root has .parlay/, no children
+    data:
+      Root:
+        - name: ""
+          path: /repo
+          parent-path: ""
+          relative-path: ""
+          kind: standalone
+          description: ""
+      RootsIndex:
+        - parent-path: /repo
+          children: []
+
+  bare-parent-with-two-children:
+    description: Parent root with empty spec/intents/ and two registered children (web, api)
+    data:
+      Root:
+        - name: parent
+          path: /repo
+          parent-path: ""
+          relative-path: ""
+          kind: parent
+          description: Repo-level root hosting schemas, adapters, and the agent surface
+        - name: web
+          path: /repo/apps/web
+          parent-path: /repo
+          relative-path: apps/web
+          kind: child
+          description: Web app child root
+        - name: api
+          path: /repo/apps/api
+          parent-path: /repo
+          relative-path: apps/api
+          kind: child
+          description: Backend API child root
+      RootsIndex:
+        - parent-path: /repo
+          children:
+            - name: web
+              path: /repo/apps/web
+              relative-path: apps/web
+              parent-path: /repo
+              kind: child
+              description: Web app child root
+            - name: api
+              path: /repo/apps/api
+              relative-path: apps/api
+              parent-path: /repo
+              kind: child
+              description: Backend API child root
+
+  ambiguous-active-root-from-cwd:
+    description: User cwd is at the repo root with no .parlay/, but child roots are registered below
+    data:
+      DisambiguationCase:
+        - kind: ambiguous-active-root
+          candidates:
+            - name: web
+              relative-path: apps/web
+              reason: in-parents-roots-index
+            - name: api
+              relative-path: apps/api
+              reason: in-parents-roots-index
+          feature-ref: ""
+          interactive: true
+
+  ambiguous-feature-ref-multi-match:
+    description: Bare reference @intent/A matches in two child roots; user must pick one
+    data:
+      DisambiguationCase:
+        - kind: ambiguous-feature-reference
+          candidates:
+            - name: web
+              relative-path: apps/web
+              reason: contains-feature
+            - name: api
+              relative-path: apps/api
+              reason: contains-feature
+          feature-ref: "@intent/A"
+          interactive: true
+
+  ambiguous-feature-ref-non-interactive:
+    description: Same multi-match case but in a non-interactive (CI) context — must error rather than prompt
+    data:
+      DisambiguationCase:
+        - kind: ambiguous-feature-reference
+          candidates:
+            - name: web
+              relative-path: apps/web
+              reason: contains-feature
+            - name: api
+              relative-path: apps/api
+              reason: contains-feature
+          feature-ref: "@intent/A"
+          interactive: false
+
+  single-match-in-other-root:
+    description: Bare reference, exactly one match in a child root; auto-resolves with announcement
+    data:
+      Root:
+        - name: parent
+          path: /repo
+          parent-path: ""
+          kind: parent
+          description: Repo-level root
+        - name: web
+          path: /repo/apps/web
+          parent-path: /repo
+          relative-path: apps/web
+          kind: child
+          description: Web app child root
+      ResolutionResult:
+        - active-root:
+            name: web
+            path: /repo/apps/web
+            parent-path: /repo
+            relative-path: apps/web
+            kind: child
+            description: Web app child root
+          source: auto-resolved-only-match
+          announcement-required: true
+
+  child-with-forbidden-schemas:
+    description: Child root incorrectly contains its own .parlay/schemas/ — must error at command entry
+    data:
+      ForbiddenDirectoryViolation:
+        - child-root-path: /repo/apps/web
+          directory: /repo/apps/web/.parlay/schemas/
+          rule: schemas-parent-only
+
+  child-with-forbidden-agent-surface:
+    description: Child root incorrectly contains its own .claude/ — must error
+    data:
+      ForbiddenDirectoryViolation:
+        - child-root-path: /repo/apps/web
+          directory: /repo/apps/web/.claude/
+          rule: agent-surface-parent-only
+
+  parlay-root-env-set:
+    description: PARLAY_ROOT environment variable set to a valid absolute path; resolution skips walk-up
+    data:
+      ResolutionResult:
+        - active-root:
+            name: parent
+            path: /repo
+            kind: parent
+            description: Repo-level root
+          source: parlay-root-env
+          announcement-required: false
+
+  parlay-root-env-invalid:
+    description: PARLAY_ROOT set to a path with no .parlay/ directory; must error rather than fall back
+    data:
+      Root:
+        - name: ""
+          path: /nonexistent
+          kind: standalone
+          description: Invalid path provided via PARLAY_ROOT
+
+  no-root-at-git-boundary:
+    description: User runs a command inside a git repo with no .parlay/; walk-up stops at .git boundary
+    data:
+      Root: []
+
+  add-root-success:
+    description: parlay add-root apps/web from parent root — succeeds and refreshes agent surface
+    data:
+      AddRootResult:
+        - child-path: apps/web
+          child-name: web
+          agent-surface-refreshed: true
+          refusal-reason: none
+
+  add-root-already-exists:
+    description: Repeat invocation of parlay add-root apps/web — refused
+    data:
+      AddRootResult:
+        - child-path: apps/web
+          child-name: web
+          agent-surface-refreshed: false
+          refusal-reason: subdir-already-has-parlay
+
+  add-root-not-from-root:
+    description: parlay add-root from a directory that is not itself a parlay root — refused
+    data:
+      AddRootResult:
+        - child-path: apps/web
+          child-name: web
+          agent-surface-refreshed: false
+          refusal-reason: cwd-not-a-root
+
+  resource-load-mixed:
+    description: Verbose run inside a child root with a react-adapter override and parent-only schemas
+    data:
+      ResourceLoad:
+        - resource-type: schemas
+          provided-by: parent-root
+          override-status: root-only
+        - resource-type: adapter
+          provided-by: child-root
+          override-status: override
+        - resource-type: adapter
+          provided-by: parent-root
+          override-status: fallback
+        - resource-type: deployed-skills
+          provided-by: parent-root
+          override-status: root-only
+
+  upgrade-success:
+    description: parlay upgrade at the repo-level root — refreshes skills, schemas, and agent-rules multi-root section
+    data:
+      UpgradeResult:
+        - target-root-path: /repo
+          skills-deployed: 18
+          schemas-updated: 12
+          roots-listed:
+            - name: parent
+              path: /repo
+              kind: parent
+              description: Repo-level root
+            - name: web
+              path: /repo/apps/web
+              kind: child
+              relative-path: apps/web
+              description: Web app child root
+            - name: api
+              path: /repo/apps/api
+              kind: child
+              relative-path: apps/api
+              description: Backend API child root
+
+  upgrade-from-child-refused:
+    description: parlay upgrade run inside a child root — must error
+    data:
+      UpgradeResult:
+        - target-root-path: /repo/apps/web
+          skills-deployed: 0
+          schemas-updated: 0
+          roots-listed: []
+
+  prefix-targeting-web:
+    description: Cross-root prefix on a feature reference — operates on web regardless of cwd
+    data:
+      FeatureReference:
+        - raw: "web:@parlay-tool/multi-root"
+          root-prefix: web
+          feature-slug: parlay-tool/multi-root
+          kind: prefixed
+      Announcement:
+        - root-name: web
+          source: prefix
+
+  unknown-root-name:
+    description: Prefix names a root not in the parent's roots index — must error with the list of known roots
+    data:
+      FeatureReference:
+        - raw: "unknown:@feat"
+          root-prefix: unknown
+          feature-slug: feat
+          kind: prefixed
+
+  cross-root-reference-in-intent-body:
+    description: An intent file contains a root-prefixed reference like web:@some-feature — validation must reject
+    data:
+      FeatureReference:
+        - raw: "web:@some-feature/some-intent"
+          root-prefix: web
+          feature-slug: some-feature/some-intent
+          kind: prefixed
+
+  conflicting-root-and-prefix:
+    description: --root api passed alongside web:@feat — must error rather than silently picking
+    data:
+      FeatureReference:
+        - raw: "web:@feat"
+          root-prefix: web
+          feature-slug: feat
+          kind: prefixed
+
+routes:
+  - path: parlay-cli
+    page: parlay-cli
+    flow-pattern: cobra-subcommands
+    regions:
+      header:
+        components: [root-resolution-verbose-output, cross-root-targeting-announcement]
+      main:
+        components:
+          - root-disambiguation-prompt
+          - no-root-found-error
+          - add-child-root-result
+          - resource-source-listing
+          - forbidden-directory-error
+          - ambiguous-reference-disambiguation-prompt
+          - cross-root-reference-validation-error
+          - upgrade-refresh-confirmation
+          - status-with-bare-parent
+
+  - path: parlay-skill
+    page: parlay-skill
+    flow-pattern: sequential-prompts
+    regions:
+      header:
+        components: [skill-side-operating-root-announcement]
+      main:
+        components:
+          - skill-side-root-disambiguation-prompt
+          - skill-side-forbidden-directory-guidance
+
+components:
+
+  root-resolution-verbose-output:
+    source: "@parlay-tool/multi-root/root-resolution-verbose-output"
+    widget: subcommand
+    description: Verbose-mode header line printed before any other output, naming the resolved root path and resolution source
+    data:
+      inputs:
+        - name: result
+          model: ResolutionResult
+          field: active-root.path
+          from: computed
+        - name: source
+          model: ResolutionResult
+          field: source
+          from: computed
+    elements:
+      - name: resolved-root-path
+        widget: fmt.Printf
+        bind: result
+        format: "resolved root: %s"
+        visible-when: "verbose-mode-on"
+      - name: resolution-source
+        widget: fmt.Println
+        bind: source
+        format: "(source: %s)"
+        visible-when: "verbose-mode-on"
+    actions:
+      - name: print-verbose-header
+        widget: subcommand
+        enabled-when: "--verbose flag is set"
+        effect: "call:print-verbose-header"
+        target: print-verbose-header
+
+  root-disambiguation-prompt:
+    source: "@parlay-tool/multi-root/root-disambiguation-prompt"
+    widget: lettered-prompt
+    description: Interactive prompt shown when walk-up finds no .parlay/ at cwd but candidate roots exist; user picks the active root or cancels
+    data:
+      inputs:
+        - name: case
+          model: DisambiguationCase
+          field: kind
+          from: computed
+        - name: candidates
+          model: DisambiguationCase
+          field: candidates
+          from: computed
+    elements:
+      - name: prompt-header
+        widget: fmt.Println
+        bind: case
+        format: "No active root at the current location, but found candidate roots:"
+        visible-when: "case == ambiguous-active-root and interactive"
+      - name: candidate-list
+        widget: bulleted-list
+        bind: candidates
+        format: "  %s: %s (%s)"
+        visible-when: "case == ambiguous-active-root and interactive"
+    actions:
+      - name: select-root
+        widget: lettered-prompt
+        enabled-when: "interactive context (TTY present) and candidates not empty"
+        effect: "mutate:DisambiguationCase.state=resolved"
+        target: ResolutionResult.active-root
+      - name: cancel
+        widget: os.Exit
+        enabled-when: "always"
+        effect: "navigate:exit"
+        target: exit
+
+  no-root-found-error:
+    source: "@parlay-tool/multi-root/no-root-found-error"
+    widget: prefixed-message
+    description: Error printed when walk-up reaches .git or filesystem boundary, or PARLAY_ROOT is invalid, with no candidates available for disambiguation
+    data:
+      inputs:
+        - name: failure-mode
+          model: ResolutionResult
+          field: source
+          from: computed
+    elements:
+      - name: error-prefix
+        widget: prefixed-message
+        bind: failure-mode
+        format: "[ERR] no parlay root found"
+        visible-when: "always"
+      - name: failure-detail
+        widget: fmt.Println
+        bind: failure-mode
+        format: "%s"
+        visible-when: "always"
+      - name: hint
+        widget: fmt.Println
+        bind: failure-mode
+        format: "Run `parlay init` to create one, or `parlay add-root <subdir>` if you have a parent root elsewhere."
+        visible-when: "failure-mode == git-boundary"
+      - name: non-interactive-hint
+        widget: fmt.Println
+        bind: failure-mode
+        format: "specify --root <name> or set PARLAY_ROOT=<abs-path> for non-interactive runs."
+        visible-when: "non-interactive-context and candidate-roots-discoverable"
+    actions:
+      - name: emit-error
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  add-child-root-result:
+    source: "@parlay-tool/multi-root/add-child-root-result"
+    widget: cobra-command
+    description: Result output of `parlay add-root <subdir>` — success path with status, message, and a data-list of created paths and refresh result; refusal path with status and reason
+    data:
+      inputs:
+        - name: result
+          model: AddRootResult
+          field: refusal-reason
+          from: computed
+        - name: child-path
+          model: AddRootResult
+          field: child-path
+          from: command-argument
+        - name: child-name
+          model: AddRootResult
+          field: child-name
+          from: computed
+        - name: refreshed
+          model: AddRootResult
+          field: agent-surface-refreshed
+          from: computed
+      computed:
+        - name: success
+          from: "result == none"
+          type: boolean
+    elements:
+      - name: success-status
+        widget: prefixed-message
+        bind: success
+        format: "[OK] Created child root at %s/."
+        visible-when: "success"
+      - name: registered-name
+        widget: fmt.Println
+        bind: child-name
+        format: "Registered in parent's roots index as %s."
+        visible-when: "success"
+      - name: refresh-line
+        widget: fmt.Println
+        bind: refreshed
+        format: "Agent surface refreshed (CLAUDE.md now lists %s)."
+        visible-when: "success and refreshed"
+      - name: refusal-status
+        widget: prefixed-message
+        bind: result
+        format: "[ERR] %s"
+        visible-when: "not success"
+      - name: orphan-parent-message
+        widget: fmt.Println
+        bind: result
+        format: "parent root not found at <path>; restore it or run `parlay promote-root` to make this child standalone."
+        visible-when: "result == orphan-parent"
+    actions:
+      - name: invoke-add-root
+        widget: cobra-command
+        enabled-when: "cwd is itself a parlay root and subdir is valid"
+        effect: "call:add-root"
+        target: add-root
+      - name: invoke-promote-root
+        widget: cobra-command
+        enabled-when: "cwd is an orphaned child root"
+        effect: "call:promote-root"
+        target: promote-root
+
+  resource-source-listing:
+    source: "@parlay-tool/multi-root/resource-source-listing"
+    widget: tabwriter
+    description: Verbose-mode table listing each loaded resource (schemas, adapter, deployed skills, domain model) and which root provided it
+    data:
+      inputs:
+        - name: loads
+          model: ResourceLoad
+          field: provided-by
+          from: computed
+    elements:
+      - name: table-header
+        widget: tabwriter
+        bind: loads
+        format: "RESOURCE\tSOURCE\tOVERRIDE-STATUS"
+        visible-when: "verbose-mode-on and at-least-one-load-recorded"
+      - name: load-rows
+        widget: tabwriter
+        bind: loads
+        format: "%s\t%s\t%s"
+        visible-when: "verbose-mode-on"
+    actions:
+      - name: inspect-resources
+        widget: subcommand
+        enabled-when: "--verbose flag is set"
+        effect: "call:print-resource-source-listing"
+        target: print-resource-source-listing
+
+  forbidden-directory-error:
+    source: "@parlay-tool/multi-root/forbidden-directory-error"
+    widget: prefixed-message
+    description: Startup-time error refusing to run when a child root contains a forbidden directory (.parlay/schemas/ or a deployed-agent-surface directory)
+    data:
+      inputs:
+        - name: violation
+          model: ForbiddenDirectoryViolation
+          field: rule
+          from: computed
+        - name: directory
+          model: ForbiddenDirectoryViolation
+          field: directory
+          from: computed
+    elements:
+      - name: error-status
+        widget: prefixed-message
+        bind: violation
+        format: "[ERR] %s lives at the parent root only. Found %s."
+        visible-when: "always"
+      - name: remediation-hint
+        widget: fmt.Println
+        bind: directory
+        format: "Remove this directory; %s are loaded from the parent automatically."
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always (non-interactive refusal)"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  cross-root-targeting-announcement:
+    source: "@parlay-tool/multi-root/cross-root-targeting-announcement"
+    widget: fmt.Println
+    description: One-line announcement printed in normal output before command work whenever the active root differs from the cwd-default; covers prefix, --root, auto-resolved single match, and disambiguation choice
+    data:
+      inputs:
+        - name: announcement
+          model: Announcement
+          field: root-name
+          from: computed
+        - name: source
+          model: Announcement
+          field: source
+          from: computed
+    elements:
+      - name: announcement-line
+        widget: fmt.Println
+        bind: announcement
+        format: "operating on root: %s (%s)"
+        visible-when: "announcement-required == true"
+    actions:
+      - name: print-announcement
+        widget: subcommand
+        enabled-when: "active root differs from cwd-default"
+        effect: "call:print-targeting-announcement"
+        target: print-targeting-announcement
+
+  ambiguous-reference-disambiguation-prompt:
+    source: "@parlay-tool/multi-root/ambiguous-reference-disambiguation-prompt"
+    widget: lettered-prompt
+    description: Interactive prompt shown when a bare feature reference does not match the active root and matches in multiple child roots; user picks one or cancels
+    data:
+      inputs:
+        - name: case
+          model: DisambiguationCase
+          field: kind
+          from: computed
+        - name: feature-ref
+          model: DisambiguationCase
+          field: feature-ref
+          from: computed
+        - name: candidates
+          model: DisambiguationCase
+          field: candidates
+          from: computed
+    elements:
+      - name: prompt-header
+        widget: fmt.Println
+        bind: feature-ref
+        format: "%s matches in multiple roots. Which one?"
+        visible-when: "case == ambiguous-feature-reference and interactive"
+      - name: candidate-list
+        widget: bulleted-list
+        bind: candidates
+        format: "  %s: %s (%s)"
+        visible-when: "case == ambiguous-feature-reference and interactive"
+      - name: non-interactive-error
+        widget: prefixed-message
+        bind: feature-ref
+        format: "[ERR] ambiguous: %s matches roots [%s]; use prefix or --root <name> for non-interactive runs."
+        visible-when: "case == ambiguous-feature-reference and not interactive"
+    actions:
+      - name: select-root
+        widget: lettered-prompt
+        enabled-when: "interactive context and candidates not empty"
+        effect: "mutate:DisambiguationCase.state=resolved"
+        target: ResolutionResult.active-root
+      - name: cancel
+        widget: os.Exit
+        enabled-when: "interactive context"
+        effect: "navigate:exit"
+        target: exit
+
+  cross-root-reference-validation-error:
+    source: "@parlay-tool/multi-root/cross-root-reference-validation-error"
+    widget: prefixed-message
+    description: Validation error printed when authored content (an intent file or dialog file) contains a root-prefixed feature reference; refuses with file path and line number
+    data:
+      inputs:
+        - name: ref
+          model: FeatureReference
+          field: raw
+          from: file-read
+      computed:
+        - name: location
+          from: "file path and line number where the prefix was found"
+          type: string
+    elements:
+      - name: error-status
+        widget: prefixed-message
+        bind: ref
+        format: "[ERR] cross-root references in intent content are not supported in v1"
+        visible-when: "always"
+      - name: location-line
+        widget: fmt.Println
+        bind: location
+        format: "  at %s"
+        visible-when: "always"
+    actions:
+      - name: emit-validation-error
+        widget: cobra-command
+        enabled-when: "always (validation triggered by parlay validate)"
+        effect: "emit:validation-error"
+        target: exit-non-zero
+    operations:
+      - type: read-file
+        path: "{file-arg}"
+        parse: intent-schema
+        bind: parsed-intents
+      - type: filter
+        source: parsed-intents
+        where: "raw contains ':@'"
+        bind: cross-root-refs
+      - type: for-each
+        source: cross-root-refs
+        do:
+          - type: write-file
+            path: stderr
+            template: cross-root-reference-validation-error
+            for-each: cross-root-refs
+
+  upgrade-refresh-confirmation:
+    source: "@parlay-tool/multi-root/upgrade-refresh-confirmation"
+    widget: cobra-command
+    description: Output of `parlay upgrade` (or the auto-trigger from add-root/remove-root) — success status with summary counts and a data-list of registered roots; refusal when invoked from inside a child root
+    data:
+      inputs:
+        - name: result
+          model: UpgradeResult
+          field: target-root-path
+          from: computed
+        - name: skills
+          model: UpgradeResult
+          field: skills-deployed
+          from: computed
+        - name: schemas
+          model: UpgradeResult
+          field: schemas-updated
+          from: computed
+        - name: roots
+          model: UpgradeResult
+          field: roots-listed
+          from: computed
+      computed:
+        - name: refused-from-child
+          from: "active root is a child root"
+          type: boolean
+    elements:
+      - name: success-status
+        widget: prefixed-message
+        bind: result
+        format: "[OK] Agent surface refreshed at %s."
+        visible-when: "not refused-from-child"
+      - name: summary-counts
+        widget: headed-section
+        bind: skills
+        format: "Skills deployed: %d  Schemas updated: %d"
+        visible-when: "not refused-from-child"
+      - name: roots-list
+        widget: bulleted-list
+        bind: roots
+        format: "  - %s (%s)"
+        visible-when: "not refused-from-child and roots not empty"
+      - name: refusal-status
+        widget: prefixed-message
+        bind: result
+        format: "[ERR] run upgrade from the repo-level root, not from a child root."
+        visible-when: "refused-from-child"
+      - name: refusal-hint
+        widget: fmt.Println
+        bind: result
+        format: "cd to the repo-level root and try again."
+        visible-when: "refused-from-child"
+    actions:
+      - name: invoke-upgrade
+        widget: cobra-command
+        enabled-when: "cwd is the repo-level root"
+        effect: "call:upgrade"
+        target: upgrade
+    operations:
+      - type: write-file
+        path: "{repo-root}/.claude/skills/parlay-{name}/SKILL.md"
+        template: deployer-skill-template
+        for-each: registered-skills
+      - type: write-file
+        path: "{repo-root}/.parlay/schemas/{name}.schema.md"
+        template: deployer-schema-template
+        for-each: registered-schemas
+      - type: write-file
+        path: "{repo-root}/CLAUDE.md"
+        template: agent-rules-with-multi-root-section
+
+  status-with-bare-parent:
+    source: "@parlay-tool/multi-root/status-with-bare-parent"
+    widget: indented-tree
+    description: Output of `parlay status` at any root — tree of active root, its features, and registered child roots; bare-parent topology (zero parent features + children) renders without warnings
+    data:
+      inputs:
+        - name: active-root
+          model: Root
+          field: name
+          from: computed
+        - name: feature-count
+          model: Root
+          field: name
+          from: computed
+        - name: children
+          model: RootsIndex
+          field: children
+          from: computed
+      computed:
+        - name: is-bare-parent
+          from: "active root has zero features and at least one registered child"
+          type: boolean
+    elements:
+      - name: root-node
+        widget: indented-tree
+        bind: active-root
+        format: "root: %s (%s)"
+        visible-when: "always"
+      - name: features-line
+        widget: fmt.Println
+        bind: feature-count
+        format: "  features: %d"
+        visible-when: "feature-count > 0"
+      - name: empty-features-line
+        widget: fmt.Println
+        bind: feature-count
+        format: "  features: (none)"
+        visible-when: "feature-count == 0"
+      - name: children-header
+        widget: fmt.Println
+        bind: children
+        format: "  child roots:"
+        visible-when: "children not empty"
+      - name: children-list
+        widget: bulleted-list
+        bind: children
+        format: "    - %s (%s)"
+        visible-when: "children not empty"
+      - name: total-summary
+        widget: headed-section
+        bind: feature-count
+        format: "Total features in this root: %d"
+        visible-when: "always"
+    actions:
+      - name: inspect-status
+        widget: subcommand
+        enabled-when: "always"
+        effect: "call:print-status-tree"
+        target: print-status-tree
+
+  skill-side-operating-root-announcement:
+    source: "@parlay-tool/multi-root/skill-side-operating-root-announcement"
+    widget: fmt.Println
+    description: Skill-side counterpart to the CLI cross-root targeting announcement — visible response prefix written by the skill whenever the resolved root differs from the cwd-default. Maps to the agent-layer `conversation-text` widget when the skill renders this through Claude Code (or equivalent on Cursor/Generic); the CLI-side widget falls back to `fmt.Println` for parity.
+    data:
+      inputs:
+        - name: announcement
+          model: Announcement
+          field: root-name
+          from: computed
+        - name: source
+          model: Announcement
+          field: source
+          from: computed
+    elements:
+      - name: announcement-line
+        widget: conversation-text
+        bind: announcement
+        format: "operating on root: %s (%s)"
+        visible-when: "announcement-required == true"
+    actions:
+      - name: render-announcement
+        widget: skill-invocation
+        enabled-when: "active root differs from cwd-default"
+        effect: "call:render-skill-announcement"
+        target: render-skill-announcement
+
+  skill-side-root-disambiguation-prompt:
+    source: "@parlay-tool/multi-root/skill-side-root-disambiguation-prompt"
+    widget: lettered-prompt
+    description: Skill-side counterpart to the CLI disambiguation prompts — when the wrapped CLI returns a structured ambiguity signal, the skill re-renders the prompt through the agent's native question mechanism (AskUserQuestion on Claude Code, equivalent on Cursor/Generic) and re-invokes the CLI with the chosen prefix. The CLI-side widget for parity with the validator is `lettered-prompt`; agent-layer rendering uses AskUserQuestion.
+    data:
+      inputs:
+        - name: case
+          model: DisambiguationCase
+          field: kind
+          from: computed
+        - name: feature-ref
+          model: DisambiguationCase
+          field: feature-ref
+          from: computed
+        - name: candidates
+          model: DisambiguationCase
+          field: candidates
+          from: computed
+    elements:
+      - name: prompt-header
+        widget: conversation-text
+        bind: feature-ref
+        format: "%s matches in multiple roots. Which one?"
+        visible-when: "case == ambiguous-feature-reference"
+      - name: active-root-prompt-header
+        widget: conversation-text
+        bind: candidates
+        format: "No active root at the current location, but found candidate roots:"
+        visible-when: "case == ambiguous-active-root"
+      - name: candidate-list
+        widget: markdown-list
+        bind: candidates
+        format: "- %s (%s)"
+        visible-when: "candidates not empty"
+    actions:
+      - name: select-root
+        widget: AskUserQuestion
+        enabled-when: "candidates not empty"
+        effect: "mutate:DisambiguationCase.state=resolved"
+        target: ResolutionResult.active-root
+      - name: dismiss
+        widget: user-message
+        enabled-when: "always"
+        effect: "navigate:cancel-skill"
+        target: cancel-skill
+
+  skill-side-forbidden-directory-guidance:
+    source: "@parlay-tool/multi-root/skill-side-forbidden-directory-guidance"
+    widget: prefixed-message
+    description: Skill-side translation of the CLI forbidden-directory error into actionable guidance with the exact remediation path; on agents that support tool execution the skill MAY offer to run the cleanup. CLI-side widget for validator parity is `prefixed-message`; agent-layer rendering uses `conversation-text`.
+    data:
+      inputs:
+        - name: violation
+          model: ForbiddenDirectoryViolation
+          field: rule
+          from: computed
+        - name: directory
+          model: ForbiddenDirectoryViolation
+          field: directory
+          from: computed
+    elements:
+      - name: error-status
+        widget: prefixed-text
+        bind: violation
+        format: "[ERR] This child root has a %s directory, but %s live at the repo-level root."
+        visible-when: "always"
+      - name: remediation-hint
+        widget: conversation-text
+        bind: directory
+        format: "Run `rm -rf %s` to remove it; the parent's resources are shared by all roots."
+        visible-when: "always"
+    actions:
+      - name: confirm-cleanup
+        widget: AskUserQuestion
+        enabled-when: "agent supports tool execution (Bash available)"
+        effect: "call:remove-forbidden-directory"
+        target: remove-forbidden-directory
+      - name: dismiss
+        widget: user-message
+        enabled-when: "always"
+        effect: "navigate:cancel-skill"
+        target: cancel-skill
+
+cross-cutting:
+
+  - id: active-root-resolver
+    source: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
+    target-files:
+      - internal/config/config.go
+      - internal/config/paths.go
+    target-pattern: "filepath\\.Join\\(.*\\\".parlay\\\""
+    transform: |
+      Replace today's cwd-relative path constants with a per-invocation `ActiveRoot` resolver. Resolution order: (1) PARLAY_ROOT env var (must be absolute and contain .parlay/, else error); (2) walk upward from cwd to first .parlay/, stopping at .git/ boundary or filesystem root; (3) on walk-up failure with discoverable candidates, invoke disambiguation in interactive contexts or return the structured ambiguous-active-root signal in non-interactive contexts. Resolution happens once at command entry and threads the chosen root through subsequent path lookups. Every path helper becomes "given a root, compute paths" instead of operating on cwd directly. parlay --verbose prints the resolved root and source before any other work.
+    introduces:
+      - "func ResolveActiveRoot(ctx context.Context) (*ActiveRoot, error)"
+      - "type ActiveRoot struct { Path string; Source ResolutionSource; ParentPath string }"
+      - "type ResolutionSource int (cwd-walk-up | parlay-root-env | root-flag | prefix | disambiguation | auto-resolved-only-match)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: roots-index-and-parent-pointer
+    source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    target-files:
+      - internal/config/config.go
+      - internal/config/roots.go
+    target-pattern: "type Config struct"
+    transform: |
+      Introduce on-disk parent-children link. Parent root's .parlay/roots.yaml lists registered children by short name and relative path. Child root's .parlay/config.yaml gains a `parent:` field with a relative path back to its parent. Child names are slugs (not directory paths). A parent with no children has no roots.yaml file. Parent pointer resolves relative to the child's .parlay/ directory so the repo can be moved on disk without breaking links. Loading a parent root reads roots.yaml lazily; loading a child root resolves its parent pointer eagerly so subsequent resource lookups have it.
+    introduces:
+      - "type RootsIndex struct { Children []ChildRootEntry }"
+      - "type ChildRootEntry struct { Name string; RelativePath string; Description string }"
+      - "func LoadRootsIndex(parentRoot string) (*RootsIndex, error)"
+      - "func WriteRootsIndex(parentRoot string, idx *RootsIndex) error"
+      - "Config.Parent string (relative path to parent root, empty for top-level)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: parlay-add-root-command
+    source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    target-files:
+      - internal/commands/root.go
+      - internal/commands/add_root.go
+    target-pattern: "rootCmd.AddCommand\\("
+    transform: |
+      New cobra subcommand `parlay add-root <subdir>`. Refuses if cwd is not itself a parlay root, if <subdir> already contains a .parlay/, or if <subdir> is nested inside another registered child root. On success: creates <subdir>/.parlay/config.yaml with the parent pointer, creates <subdir>/spec/, appends an entry to the parent's roots.yaml under a unique short name (slug), and triggers the deployer auto-refresh so the agent-rules file lists the new child immediately. The command-args parser strips a leading @ from the subdir argument (consistent with feature-arg-parsing convention) only when the user typed @<subdir>; raw paths are passed through. Wired via runAddRoot per the run-function-naming convention.
+    introduces:
+      - "func runAddRoot(cmd *cobra.Command, args []string) error"
+      - "var addRootCmd *cobra.Command"
+      - "func validateAddRootPreconditions(cwd, subdir string) error"
+      - "func registerChildInParent(parent, childPath, name string) error"
+    caching: none
+    backward-compatible: true
+
+  - id: parlay-promote-root-command
+    source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    target-files:
+      - internal/commands/root.go
+      - internal/commands/promote_root.go
+    target-pattern: "rootCmd.AddCommand\\("
+    transform: |
+      New cobra subcommand `parlay promote-root` run inside an orphaned child root. Removes the parent: pointer from the child's .parlay/config.yaml; the child becomes its own top-level root from that point forward. Refuses if the parent path still resolves — orphan recovery only. The promoted root does not automatically gain schemas or a deployed agent surface (those must be added separately). Wired via runPromoteRoot per the run-function-naming convention.
+    introduces:
+      - "func runPromoteRoot(cmd *cobra.Command, args []string) error"
+      - "var promoteRootCmd *cobra.Command"
+      - "func parentResolves(childRoot string) (bool, error)"
+    caching: none
+    backward-compatible: true
+
+  - id: resource-resolution-strategy
+    source: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    target-files:
+      - internal/config/config.go
+      - internal/embedded/loader.go
+    target-pattern: "func.*Schema|func.*Adapter|AdaptersPath|SchemasPath"
+    transform: |
+      Single resolution layer for shared resources keyed off the active root. Schemas resolve unconditionally to the repo-level root (the root reachable by walking parent pointers until we hit a root with no parent). Deployed agent surface (skills, agent-rules) likewise resolves to the repo-level root only. Adapters resolve child-first: <activeRoot>/.parlay/adapters/<name>.adapter.yaml replaces the parent's same-named file as-is (no key-by-key merge); on miss, fall back to the parent's. Domain models are NOT inherited — each root reads its own spec/intents/domain-model.md. Every resolution decision is recorded for verbose-mode reporting.
+    introduces:
+      - "func RepoLevelRoot(active *ActiveRoot) (*ActiveRoot, error)"
+      - "func ResolveSchema(active *ActiveRoot, name string) (path string, providedBy *ActiveRoot, err error)"
+      - "func ResolveAdapter(active *ActiveRoot, name string) (path string, providedBy *ActiveRoot, err error)"
+      - "func RecordResourceLoad(rl ResourceLoad)"
+      - "func ListResourceLoads() []ResourceLoad"
+    caching: per-process
+    backward-compatible: true
+
+  - id: forbidden-directory-startup-validation
+    source: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    target-files:
+      - internal/config/config.go
+      - internal/commands/root.go
+    target-pattern: "PersistentPreRunE|RunE|cobra.Command\\{"
+    transform: |
+      When the resolver picks a child root (one with a parent pointer), validate at command entry that the child does not contain repo-level-only directories — .parlay/schemas/ or any deployed agent-surface directory for the active adapter (.claude/skills/parlay-*, .cursor/skills/parlay-*, AGENT_INSTRUCTIONS.md). The list of forbidden directories per adapter comes from the deployer registry (not hardcoded). On violation, emit the forbidden-directory error and refuse to run. Single-root and parent roots skip the check.
+    introduces:
+      - "func ValidateChildRootForbiddenDirectories(child *ActiveRoot) error"
+      - "func ForbiddenDirectoriesForAdapter(adapterName string) []string"
+    caching: per-process
+    backward-compatible: true
+
+  - id: feature-reference-parser-extension
+    source: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    target-files:
+      - internal/refs/parser.go
+    target-pattern: "func ParseFeatureRef|TrimPrefix.*\\\"@\\\""
+    transform: |
+      Extend the feature-reference parser to accept an optional root prefix: <root-name>:@<feature> or <root-name>:@<initiative>/<feature>. The prefix is a slug followed by a single colon, matching the same slug rules as feature/initiative names. A bare reference (no prefix) preserves existing semantics. The parser returns parsed components; resolution against the roots index happens in the resolver, not the parser. Cross-root references inside intent or dialog content are detected here and surfaced as a validation error (out of scope for v1).
+    introduces:
+      - "type FeatureRef struct { Raw string; RootPrefix string; FeatureSlug string; Kind FeatureRefKind }"
+      - "func ParseFeatureRef(s string) (*FeatureRef, error)"
+      - "func ValidateNoCrossRootRefsInContent(filePath string, body []byte) []ValidationError"
+    caching: none
+    backward-compatible: true
+
+  - id: root-flag-plumbing
+    source: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    target-files:
+      - internal/commands/root.go
+    target-pattern: "PersistentFlags\\(\\)"
+    transform: |
+      Add a persistent --root <name> flag at the root command level. When set, override cwd walk-up with the named root from the parent's roots index. If the same invocation also has a prefixed feature reference, the two must agree — disagreement errors. --root is most useful for project-level commands that don't take a feature reference. An unknown root name errors with the list of registered roots. The flag is inherited by every subcommand so per-command plumbing is minimal.
+    introduces:
+      - "var rootFlag string (PersistentFlags binding)"
+      - "func ApplyRootFlagToResolution(flag string, parsed *FeatureRef) (*ActiveRoot, error)"
+    caching: none
+    backward-compatible: true
+
+  - id: ambiguous-reference-resolver
+    source: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    target-files:
+      - internal/config/resolver.go
+    target-pattern: "func.*ResolveFeature|FeaturePath"
+    transform: |
+      When a bare feature reference is parsed (no prefix, no --root), look up the feature in the active root first; if found, that wins. If not found, search every registered child root. Single match → auto-select that child and announce the chosen root in normal output. Multiple matches → in interactive contexts, invoke the disambiguation prompt; in non-interactive contexts, error with the candidate list and a hint to use the prefix or --root. The auto-select case prints the chosen root in normal (not just verbose) output. Disambiguation prompt and ambiguous-error message share the same candidate-rendering format. The active-root disambiguation case (no .parlay/ at cwd, multiple candidate roots elsewhere) shares the same prompt UX.
+    introduces:
+      - "func ResolveBareFeatureRef(parsed *FeatureRef, active *ActiveRoot) (*ActiveRoot, error)"
+      - "func SearchChildrenForFeature(parent *ActiveRoot, slug string) []ActiveRoot"
+      - "func PromptForRootChoice(candidates []ActiveRoot, kind DisambiguationKind) (*ActiveRoot, error)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: deployer-multi-root-awareness
+    source: "@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots"
+    target-files:
+      - internal/deployer/claude.go
+      - internal/deployer/cursor.go
+      - internal/deployer/generic.go
+      - internal/deployer/deployer.go
+    target-pattern: "writeCLAUDEmd|writeCursorProjectRule|AGENT_INSTRUCTIONS"
+    transform: |
+      Each deployer's agent-rules generation includes a multi-root section listing the parent root and every registered child by name, relative path, and one-line description from the child's config. The section sits between adapter-specific markers (parlay:begin/end for Claude, alwaysApply rule scope for Cursor, single-doc section for Generic) and is replaced wholesale on every refresh. User-authored content outside the markers is preserved per existing claude-md-section-preservation rules. A project with no child roots produces no multi-root section. Each deployer additionally exposes its agent-surface directory list so the forbidden-directory validation can reference it without hardcoding.
+    introduces:
+      - "func (d *ClaudeDeployer) WriteMultiRootSection(repoRoot string, roots []Root) error"
+      - "func (d *CursorDeployer) WriteMultiRootSection(repoRoot string, roots []Root) error"
+      - "func (d *GenericDeployer) WriteMultiRootSection(repoRoot string, roots []Root) error"
+      - "func (d Deployer) AgentSurfaceDirectories() []string"
+    caching: none
+    backward-compatible: true
+
+  - id: auto-refresh-hook-on-add-and-remove-root
+    source: "@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots"
+    target-files:
+      - internal/commands/add_root.go
+      - internal/commands/upgrade.go
+    target-pattern: "runAddRoot|runUpgrade"
+    transform: |
+      After parlay add-root (and parlay remove-root, when introduced) succeeds, automatically run the in-process equivalent of parlay upgrade at the parent (repo-level) root. The user does not need a separate `parlay upgrade` invocation. A refresh failure does NOT roll back the root change (the on-disk root is created); the command emits a warning, exits non-zero, and the user can re-run `parlay upgrade` manually. The refresh runs in-process — not via an external `parlay upgrade` subprocess — so failure modes surface precisely.
+    introduces:
+      - "func RunUpgradeInProcess(repoRoot string) (*UpgradeResult, error)"
+      - "func RunAddRootWithRefresh(parent, subdir string) (*AddRootResult, error)"
+    caching: none
+    backward-compatible: true
+
+  - id: parent-pointer-validation
+    source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "func LoadConfig|Config.Parent"
+    transform: |
+      When the resolver loads a child root, verify the parent path resolves to a valid parlay root (a directory with a readable .parlay/config.yaml and no parent: field of its own). If the parent path is missing, moved, or itself orphaned, every command run against the child errors with "parent root not found at <path>; restore it or run `parlay promote-root` to make this child standalone" and refuses to fall through to a different ancestor via walk-up. Validation happens once per invocation, after resolver selection and before any command work. The error message names the recorded parent path so the user knows what to restore.
+    introduces:
+      - "func ValidateParentPointer(child *ActiveRoot) error"
+      - "var ErrParentRootNotFound = errors.New(\"parent root not found\")"
+    caching: per-process
+    backward-compatible: true
+
+  - id: bare-parent-empty-spec-handling
+    source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    target-files:
+      - internal/commands/status.go
+      - internal/commands/extract_domain_model.go
+    target-pattern: "no features found|len\\(features\\) == 0"
+    transform: |
+      Every command that enumerates features at a root must treat an empty spec/intents/ (no feature subdirectories) as a valid state — return an empty list, not an error. parlay status at a parent root with empty spec lists zero parent features and the registered children. parlay extract-domain-model at such a root produces an empty-but-valid domain model. Commands that target a specific feature reference still error with "no such feature" when the slug doesn't match — that error path is unchanged.
+    introduces:
+      - "func EnumerateFeatures(root *ActiveRoot) ([]Feature, error) // never returns an error for an empty spec/intents/"
+    caching: none
+    backward-compatible: true
+
+  - id: structured-disambiguation-signal
+    source: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    target-files:
+      - internal/commands/root.go
+      - internal/config/resolver.go
+    target-pattern: "PromptForRootChoice|os.Stdin.IsTerminal"
+    transform: |
+      The CLI emits a structured signal — JSON to stderr, a distinct exit code, and a parseable error envelope — when it would otherwise prompt for disambiguation interactively. The signal contains the candidate root list, the trigger (ambiguous-active-root vs. ambiguous-feature-reference), and a re-invocation hint (typically a root prefix to add to the original feature reference). Interactive CLI runs continue to prompt at stdin; non-interactive runs (no TTY, the --ambiguity-as-signal flag set, or skill wrapper invocation) return the signal in a callable form. The exit code on ambiguity is distinct from generic "command failed" so callers can detect the case.
+    introduces:
+      - "type AmbiguitySignal struct { Kind DisambiguationKind; Candidates []CandidateRoot; FeatureRef string; ReinvokeHint string }"
+      - "func EmitAmbiguitySignalToStderr(sig AmbiguitySignal) error"
+      - "var ExitCodeAmbiguous = 78 // distinct from generic failure"
+      - "var ambiguityAsSignalFlag bool (PersistentFlags binding)"
+    caching: none
+    backward-compatible: true
+
+  - id: skill-side-multi-root-wrapper
+    source: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    target-files:
+      - internal/embedded/skills/sync.skill.md
+      - internal/embedded/skills/build-feature.skill.md
+      - internal/embedded/skills/generate-code.skill.md
+      - internal/embedded/skills/add-feature.skill.md
+      - internal/embedded/skills/extract-domain-model.skill.md
+      - internal/embedded/skills/scaffold-dialogs.skill.md
+      - internal/embedded/skills/create-artifacts.skill.md
+      - internal/embedded/skills/collect-questions.skill.md
+      - internal/embedded/skills/lock-page.skill.md
+      - internal/embedded/skills/view-page.skill.md
+      - internal/embedded/skills/load-domain-model.skill.md
+      - internal/embedded/skills/repair.skill.md
+      - internal/embedded/skills/generate-enggspec.skill.md
+      - internal/embedded/skills/reference-design-spec.skill.md
+      - internal/embedded/skills/loop.skill.md
+      - internal/embedded/skills/new-initiative.skill.md
+      - internal/embedded/skills/onboard.skill.md
+      - internal/embedded/skills/register-adapter.skill.md
+    target-pattern: "\\.parlay/|spec/intents/"
+    transform: |
+      Every embedded skill that operates on a feature reference or root-scoped resource follows a uniform invocation pattern: (1) invoke the underlying parlay CLI with --ambiguity-as-signal set; (2) on success, render the CLI output, prefixing with the operating-root announcement when the resolved root differs from cwd-default; (3) on a structured ambiguity signal, render the candidate root list through the agent's native question mechanism (AskUserQuestion on Claude Code, equivalent on Cursor and Generic), capture the user's choice, and re-invoke the CLI with the appropriate root prefix; (4) on a forbidden-directory error, translate to skill-side guidance with the exact remediation path. No skill text contains a hardcoded .parlay/ path; every path reference is described as "the active root's <thing>" or wrapped in a runtime placeholder. Every skill that takes a feature reference accepts the <root-name>:@feat prefix as well as the bare reference. --root <name> is accepted as a skill argument and passed through verbatim. Skills do NOT cache "the active root for this conversation" — every invocation re-resolves from scratch.
+    introduces:
+      - "Standard skill preamble describing active-root-aware invocation"
+      - "Standard ambiguity-handling step that re-prompts via AskUserQuestion"
+      - "Standard operating-root announcement step"
+      - "Standard forbidden-directory translation step"
+    caching: none
+    backward-compatible: true
+
+  - id: skill-source-audit-for-hardcoded-paths
+    source: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    target-files:
+      - internal/embedded/audit_test.go
+      - Makefile
+    target-pattern: "verify-skills|go test"
+    transform: |
+      Build-time validation that scans every embedded skill file for hardcoded path references that would break under multi-root — strings like `.parlay/schemas/`, `spec/intents/`, etc. that are not phrased as "active root's ..." or wrapped in a placeholder the skill resolves at runtime. Failures fail the build with the offending file and line. Approved hardcoded references (e.g. references in skill prose that explain parent-root-only resources) are explicitly allowlisted via marker comments. Runs as part of `make verify-skills` and CI so multi-root regressions are caught before release.
+    introduces:
+      - "func TestSkillsHaveNoHardcodedPaths(t *testing.T)"
+      - "var allowlistedHardcodedPathLines map[string][]int (per-file approved exceptions)"
+      - "Makefile target: verify-skills depends on audit-skill-paths"
+    caching: none
+    backward-compatible: true

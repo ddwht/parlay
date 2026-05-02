@@ -215,6 +215,14 @@ func AllFeatures() ([]string, error) {
 	return AllFeaturePaths(filepath.Join(SpecDir, IntentsDir))
 }
 
+// ScanFeatureTree walks the given tree root and returns qualified
+// feature identifiers, NOT using the package-global cache. Multi-root-
+// aware callers should use this instead of AllFeaturePaths, since the
+// cache assumes a single cwd-relative tree.
+func ScanFeatureTree(treeRoot string) ([]string, error) {
+	return scanFeatureTree(treeRoot)
+}
+
 // AllFeaturePaths walks the given tree root and returns qualified identifiers
 // for all features. When treeRoot differs from spec/intents/, classification
 // is performed against spec/intents/ (the authoritative source) so that

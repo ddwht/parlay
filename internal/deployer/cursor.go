@@ -17,6 +17,16 @@ type CursorDeployer struct{}
 
 func (d *CursorDeployer) Name() string { return "Cursor" }
 
+// AgentSurfacePaths returns paths Cursor's deployer writes at the
+// repo-level root. Used by the multi-root forbidden-directory check.
+func (d *CursorDeployer) AgentSurfacePaths() []string {
+	return []string{
+		".cursor/skills",
+		".cursor/agents",
+		".cursor/rules",
+	}
+}
+
 func (d *CursorDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
 	// Deploy each skill as .cursor/skills/parlay-<name>/SKILL.md
 	for _, skill := range skills {
@@ -99,7 +109,7 @@ Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
-`, commands)
+%s`, commands, renderMultiRootSection(projectRoot))
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {

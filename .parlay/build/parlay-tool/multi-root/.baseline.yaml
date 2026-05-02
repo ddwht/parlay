@@ -1,0 +1,72 @@
+generated-at: "2026-05-01T16:33:33Z"
+intents:
+    add-a-child-root-to-an-existing-project:
+        content-hash: 1eda7ae138e860be
+        goal-hash: c6b72b754d1eb2e7
+        constraints-hash: 201c9620b7a9f6f5
+        verify-hash: 60e6db2abf1febbc
+        objects-hash: e85ac9c82ff20d9b
+    discover-active-root-via-cwd-walk-up:
+        content-hash: 23cdf68b09830c77
+        goal-hash: 990b32589d645355
+        constraints-hash: b787c35e1104c302
+        verify-hash: 3ee136f78ce03c9b
+        objects-hash: 6fa2bd14dd5870ba
+    inherit-resources-from-parent-root:
+        content-hash: 329d2fe9ff87d5a9
+        goal-hash: 481ce375d2dde64e
+        constraints-hash: ce9e5d5475ca72b9
+        verify-hash: 00b14e095a88367d
+        objects-hash: 60e137fb0791e364
+    single-repo-level-agent-surface-drives-all-roots:
+        content-hash: a4a0199508b74354
+        goal-hash: 19d105c3853c092c
+        constraints-hash: 051ba04b3947d1d5
+        verify-hash: 74074abefc1a09a0
+        objects-hash: 4182036729e1ffa4
+    skill-invocation-in-a-multi-root-project:
+        content-hash: 75cc42543c78a4f4
+        goal-hash: 6feb81da8954999d
+        constraints-hash: 6fff5bd9f0dde604
+        verify-hash: 0a449bd3d2e0d761
+        objects-hash: a5ec1be300362c56
+    target-a-non-active-root-from-any-cwd:
+        content-hash: 1fbff6c953b204c1
+        goal-hash: 45fe5e8114e40238
+        constraints-hash: 7df47426a6748bbf
+        verify-hash: 26c2cd24422162e2
+        objects-hash: a9059feb043a1e81
+sources:
+    intents:
+        add-a-child-root-to-an-existing-project: cf48b5c4b5184d9c
+        discover-active-root-via-cwd-walk-up: a7c78c20e7889afb
+        inherit-resources-from-parent-root: 745a2f1795d4a29e
+        single-repo-level-agent-surface-drives-all-roots: 505527f27af300b2
+        skill-invocation-in-a-multi-root-project: 48269fede40745d6
+        target-a-non-active-root-from-any-cwd: c6603e9cfef69859
+    dialogs:
+        add-a-child-root-to-an-existing-project: 437e0781c09cbe5d
+        discover-active-root-via-cwd-walk-up: a313cae313b55fe2
+        inherit-resources-from-parent-root: 5828fb427872ea3c
+        single-repo-level-agent-surface-drives-all-roots: 2676dafce915eee6
+        skill-invocation-in-a-multi-root-project: b03a8ff3be4b27da
+        target-a-non-active-root-from-any-cwd: b39535345b6bc1a8
+    surface-fragments:
+        add-child-root-result: d96192776d074ba8
+        ambiguous-reference-disambiguation-prompt: bd615cbf488c670e
+        cross-root-reference-validation-error: 483e144e978e3a9e
+        cross-root-targeting-announcement: d88feb895654fa1e
+        forbidden-directory-error: 86bc7620316f3d41
+        no-root-found-error: 9b4c41e025cb490d
+        resource-source-listing: be355b6294b6160c
+        root-disambiguation-prompt: a3f55f25dcc1cb11
+        root-resolution-verbose-output: d18a3aa2cc572f00
+        skill-side-forbidden-directory-guidance: 559c0ba4e799ae6f
+        skill-side-operating-root-announcement: 4548515c24d7be52
+        skill-side-root-disambiguation-prompt: e818475ddc5a661c
+        status-with-bare-parent: 6054ccd393243550
+        upgrade-refresh-confirmation: 9d87cb70cd4a6913
+buildfile-sections:
+    fixtures: 42df61e86acd683e
+    models: 6aca2d5d45f58022
+    routes: 6e016673346d2517

@@ -38,7 +38,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("missing destination. Use `--to <initiative>` to move into an initiative, or `--out` to move to the top level")
 	}
 
-	identifier := strings.TrimPrefix(args[0], "@")
+	identifier := parser.FeatureSlug(args[0])
 
 	intentsRoot := filepath.Join(config.SpecDir, config.IntentsDir)
 	sourcePath := config.FeaturePath(identifier)

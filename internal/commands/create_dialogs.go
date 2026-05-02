@@ -23,7 +23,7 @@ var createDialogsCmd = &cobra.Command{
 
 func runCreateDialogs(cmd *cobra.Command, args []string) error {
 	// Data input: feature-ref from command-argument (strip @ prefix)
-	slug := strings.TrimPrefix(args[0], "@")
+	slug := parser.FeatureSlug(args[0])
 	featurePath := config.FeaturePath(slug)
 
 	// Operation: read-file intents.md, parse using intent-schema

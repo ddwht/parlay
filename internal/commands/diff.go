@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
@@ -71,7 +70,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return runProjectDiff(cmd)
 	}
-	slug := strings.TrimPrefix(args[0], "@")
+	slug := parser.FeatureSlug(args[0])
 	featurePath := config.FeaturePath(slug)
 
 	output := diffOutput{Feature: slug}

@@ -45,7 +45,7 @@ type readinessOutput struct {
 }
 
 func runCheckReadiness(cmd *cobra.Command, args []string) error {
-	slug := strings.TrimPrefix(args[0], "@")
+	slug := parser.FeatureSlug(args[0])
 	featurePath := config.FeaturePath(slug)
 
 	output := readinessOutput{

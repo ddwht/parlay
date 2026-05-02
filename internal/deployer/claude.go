@@ -23,6 +23,16 @@ type ClaudeDeployer struct{}
 
 func (d *ClaudeDeployer) Name() string { return "Claude Code" }
 
+// AgentSurfacePaths returns paths Claude Code's deployer writes at the
+// repo-level root. Used by the multi-root forbidden-directory check.
+func (d *ClaudeDeployer) AgentSurfacePaths() []string {
+	return []string{
+		".claude/skills",
+		".claude/agents",
+		"CLAUDE.md",
+	}
+}
+
 func (d *ClaudeDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
 	for _, skill := range skills {
 		skillDir := filepath.Join(projectRoot, ".claude", "skills", "parlay-"+skill.Name)
@@ -77,6 +87,8 @@ func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
 		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skillTitle(skill.Name))
 	}
 
+	multiRootBlock := renderMultiRootSection(projectRoot)
+
 	parlaySection := fmt.Sprintf(`%s
 # Parlay Project
 
@@ -101,7 +113,7 @@ Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
-%s`, parlayMarkerBegin, commands, parlayMarkerEnd)
+%s%s`, parlayMarkerBegin, commands, multiRootBlock, parlayMarkerEnd)
 
 	claudePath := filepath.Join(projectRoot, "CLAUDE.md")
 

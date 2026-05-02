@@ -50,7 +50,7 @@ type chainCoverage struct {
 }
 
 func runCheckCoverage(cmd *cobra.Command, args []string) error {
-	slug := strings.TrimPrefix(args[0], "@")
+	slug := parser.FeatureSlug(args[0])
 	featurePath := config.FeaturePath(slug)
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))

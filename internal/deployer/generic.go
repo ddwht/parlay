@@ -15,6 +15,12 @@ type GenericDeployer struct{}
 
 func (d *GenericDeployer) Name() string { return "Generic" }
 
+// AgentSurfacePaths returns paths Generic's deployer writes at the
+// repo-level root. Used by the multi-root forbidden-directory check.
+func (d *GenericDeployer) AgentSurfacePaths() []string {
+	return []string{"AGENT_INSTRUCTIONS.md"}
+}
+
 func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
 	var content string
 	content += "# Parlay Agent Instructions\n\n"
@@ -59,6 +65,13 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "- `parlay repair [--dry-run] [--yes]` — Validate and reconcile the three parallel trees\n"
 	content += "- `parlay loop <@feature> [--from <phase>]` — Walk a feature end-to-end through the design pipeline\n"
 	content += "- `parlay upgrade` — Redeploy skills and schemas from the binary\n"
+	content += "- `parlay add-root <subdir>` — Register a child parlay root (multi-root projects)\n"
+	content += "- `parlay status` — Show active root, features, and child roots\n"
+	content += "- `parlay promote-root` — Promote an orphaned child to standalone\n"
+
+	if section := renderMultiRootSection(projectRoot); section != "" {
+		content += section
+	}
 
 	return os.WriteFile(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content), 0644)
 }

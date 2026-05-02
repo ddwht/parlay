@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 
+	"github.com/ddwht/parlay/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +46,7 @@ func runVerifyGenerated(cmd *cobra.Command, args []string) error {
 		}
 		return emitVerifyJSON(output)
 	}
-	slug := strings.TrimPrefix(args[0], "@")
+	slug := parser.FeatureSlug(args[0])
 	output, err := computeVerifyOutput(slug)
 	if err != nil {
 		return err

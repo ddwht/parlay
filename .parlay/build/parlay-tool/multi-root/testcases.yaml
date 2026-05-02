@@ -1,0 +1,618 @@
+feature: parlay-tool/multi-root
+framework: Go stdlib testing
+
+suites:
+
+  - name: Verbose mode prints resolved root path and source before any other work
+    component: root-resolution-verbose-output
+    fixture: parlay-root-env-set
+    intent: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
+    cases:
+      - name: prints resolved root path
+        description: With --verbose set, the verbose header line shows the absolute root path
+        steps:
+          - action: render
+            target: root-resolution-verbose-output
+          - verify: element
+            target: resolved-root-path
+          - verify: text
+            target: resolved-root-path
+            expected: "resolved root: /repo"
+      - name: prints resolution source as PARLAY_ROOT
+        description: When PARLAY_ROOT supplies the path, the source line names parlay-root-env
+        steps:
+          - action: render
+            target: root-resolution-verbose-output
+          - verify: text
+            target: resolution-source
+            expected: "(source: parlay-root-env)"
+      - name: hides verbose output when --verbose absent
+        description: Ordinary invocations do not show the resolution header
+        steps:
+          - action: render
+            target: root-resolution-verbose-output
+          - verify: hidden
+            target: resolved-root-path
+            expected: true
+
+  - name: Walk-up disambiguation prompt picks active root from candidates
+    component: root-disambiguation-prompt
+    fixture: ambiguous-active-root-from-cwd
+    intent: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
+    cases:
+      - name: shows lettered candidate list
+        description: The prompt enumerates each discovered candidate root as a lettered option
+        steps:
+          - action: render
+            target: root-disambiguation-prompt
+          - verify: element
+            target: prompt-header
+          - verify: count
+            target: candidate-list
+            expected: 2
+          - verify: visible
+            target: candidate-list
+            expected: true
+      - name: select-one chooses active root
+        description: Selecting option A resolves the active root to web
+        steps:
+          - action: select
+            target: select-root
+            value: A
+          - verify: state
+            target: ResolutionResult.active-root.name
+            expected: web
+          - verify: state
+            target: ResolutionResult.source
+            expected: disambiguation
+      - name: cancel exits cleanly
+        description: Selecting Cancel calls os.Exit without partial state
+        steps:
+          - action: click
+            target: cancel
+          - verify: state
+            target: ResolutionResult.active-root.name
+            expected: ""
+
+  - name: No-root error at git boundary suggests parlay init
+    component: no-root-found-error
+    fixture: no-root-at-git-boundary
+    intent: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
+    cases:
+      - name: prints [ERR] prefix and root-not-found message
+        description: Walk-up that hits .git emits the [ERR]-prefixed error
+        steps:
+          - action: render
+            target: no-root-found-error
+          - verify: element
+            target: error-prefix
+          - verify: text
+            target: error-prefix
+            expected: "[ERR] no parlay root found"
+      - name: hint suggests parlay init when failure was git boundary
+        description: The git-boundary failure mode adds a hint about parlay init / parlay add-root
+        steps:
+          - action: render
+            target: no-root-found-error
+          - verify: visible
+            target: hint
+            expected: true
+      - name: command exits non-zero
+        description: emit-error action results in a non-zero exit so callers detect the failure
+        steps:
+          - action: click
+            target: emit-error
+          - verify: error
+            target: emit-error
+            expected: "no parlay root found"
+
+  - name: PARLAY_ROOT invalid path errors instead of falling back to walk-up
+    component: no-root-found-error
+    fixture: parlay-root-env-invalid
+    intent: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
+    cases:
+      - name: invalid PARLAY_ROOT errors loudly
+        description: An invalid PARLAY_ROOT does not silently fall through to walk-up
+        steps:
+          - action: render
+            target: no-root-found-error
+          - verify: element
+            target: error-prefix
+          - verify: visible
+            target: failure-detail
+            expected: true
+
+  - name: Add-root happy path creates child and refreshes agent surface
+    component: add-child-root-result
+    fixture: add-root-success
+    intent: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    cases:
+      - name: success status confirms child created
+        description: On success, output shows [OK] with the created path
+        steps:
+          - action: render
+            target: add-child-root-result
+          - verify: text
+            target: success-status
+            expected: "[OK] Created child root at apps/web/."
+      - name: registered-name line names the slug
+        description: The output names the slug under which the child was registered in roots.yaml
+        steps:
+          - action: render
+            target: add-child-root-result
+          - verify: text
+            target: registered-name
+            expected: "Registered in parent's roots index as web."
+      - name: refresh confirms agent surface updated
+        description: The auto-refresh hook line confirms the agent-rules file lists the new root
+        steps:
+          - action: render
+            target: add-child-root-result
+          - verify: visible
+            target: refresh-line
+            expected: true
+      - name: child .parlay/ directory exists on disk after invoke
+        description: The on-disk state matches — child has its own .parlay/ and spec/
+        steps:
+          - action: click
+            target: invoke-add-root
+          - verify: directory-exists
+            target: apps/web/.parlay
+          - verify: directory-exists
+            target: apps/web/spec
+          - verify: file-exists
+            target: apps/web/.parlay/config.yaml
+      - name: parent roots.yaml lists the new child
+        description: The parent's roots index records the new child by short name and relative path
+        steps:
+          - action: click
+            target: invoke-add-root
+          - verify: file-content
+            target: .parlay/roots.yaml
+            expected:
+              children:
+                - name: web
+                  relative-path: apps/web
+
+  - name: Add-root refuses when subdir already has a .parlay directory
+    component: add-child-root-result
+    fixture: add-root-already-exists
+    intent: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    cases:
+      - name: refusal status hides success elements
+        description: The refusal path renders [ERR] and hides the success lines
+        steps:
+          - action: render
+            target: add-child-root-result
+          - verify: element
+            target: refusal-status
+          - verify: hidden
+            target: success-status
+            expected: true
+          - verify: hidden
+            target: refresh-line
+            expected: true
+      - name: refusal lists subdir-already-has-parlay reason
+        description: The refusal status names the reason
+        steps:
+          - action: render
+            target: add-child-root-result
+          - verify: text
+            target: refusal-status
+            expected: "[ERR] subdir-already-has-parlay"
+
+  - name: Add-root refuses when cwd is not itself a parlay root
+    component: add-child-root-result
+    fixture: add-root-not-from-root
+    intent: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
+    cases:
+      - name: refusal blocks creation
+        description: When invoked from outside any root, no .parlay/ is created
+        steps:
+          - action: click
+            target: invoke-add-root
+          - verify: error
+            target: invoke-add-root
+            expected: "must be run from inside an existing parlay root"
+
+  - name: Resource-source listing in verbose mode reports each loaded resource
+    component: resource-source-listing
+    fixture: resource-load-mixed
+    intent: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    cases:
+      - name: header row labels the columns
+        description: Tabwriter table prints a header row with RESOURCE, SOURCE, OVERRIDE-STATUS
+        steps:
+          - action: render
+            target: resource-source-listing
+          - verify: text
+            target: table-header
+            expected: "RESOURCE\tSOURCE\tOVERRIDE-STATUS"
+      - name: schemas always sourced from parent
+        description: Schemas line shows parent-root with override-status root-only
+        steps:
+          - action: render
+            target: resource-source-listing
+          - verify: text
+            target: load-rows
+            expected: "schemas\tparent-root\troot-only"
+      - name: child adapter override is recorded
+        description: The override row shows child-root with override-status override
+        steps:
+          - action: render
+            target: resource-source-listing
+          - verify: count
+            target: load-rows
+            expected: 4
+
+  - name: Forbidden directory in child root errors at command entry
+    component: forbidden-directory-error
+    fixture: child-with-forbidden-schemas
+    intent: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    cases:
+      - name: error names the offending directory and rule
+        description: The error message names the offending path and which root-only rule was violated
+        steps:
+          - action: render
+            target: forbidden-directory-error
+          - verify: text
+            target: error-status
+            expected: "[ERR] schemas-parent-only lives at the parent root only. Found /repo/apps/web/.parlay/schemas/."
+      - name: remediation hint suggests removing the directory
+        description: The remediation hint instructs the user to remove the directory
+        steps:
+          - action: render
+            target: forbidden-directory-error
+          - verify: visible
+            target: remediation-hint
+            expected: true
+      - name: command refuses to run after error
+        description: The command exits non-zero before doing any other work
+        steps:
+          - action: click
+            target: refuse-and-exit
+          - verify: error
+            target: refuse-and-exit
+            expected: "schemas-parent-only"
+
+  - name: Forbidden agent-surface directory in child root errors at startup
+    component: forbidden-directory-error
+    fixture: child-with-forbidden-agent-surface
+    intent: "@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots"
+    cases:
+      - name: agent-surface rule violation triggers same error path
+        description: A child with .claude/ triggers the agent-surface-parent-only rule
+        steps:
+          - action: render
+            target: forbidden-directory-error
+          - verify: text
+            target: error-status
+            expected: "[ERR] agent-surface-parent-only lives at the parent root only. Found /repo/apps/web/.claude/."
+
+  - name: Cross-root targeting announcement prints when active root differs from cwd-default
+    component: cross-root-targeting-announcement
+    fixture: prefix-targeting-web
+    intent: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    cases:
+      - name: announcement line contains chosen root and source
+        description: The line names the chosen root and the resolution source
+        steps:
+          - action: render
+            target: cross-root-targeting-announcement
+          - verify: text
+            target: announcement-line
+            expected: "operating on root: web (prefix)"
+      - name: announcement does not print when active root equals cwd-default
+        description: When announcement-required is false the line is hidden
+        steps:
+          - action: render
+            target: cross-root-targeting-announcement
+          - verify: hidden
+            target: announcement-line
+            expected: true
+
+  - name: Auto-resolved single match prints announcement in normal output
+    component: cross-root-targeting-announcement
+    fixture: single-match-in-other-root
+    intent: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    cases:
+      - name: auto-resolved announcement prints in normal mode
+        description: A single-match auto-resolution prints the announcement even without --verbose
+        steps:
+          - action: render
+            target: cross-root-targeting-announcement
+          - verify: visible
+            target: announcement-line
+            expected: true
+          - verify: text
+            target: announcement-line
+            expected: "operating on root: web (auto-resolved-only-match)"
+
+  - name: Ambiguous feature reference shows disambiguation prompt in interactive context
+    component: ambiguous-reference-disambiguation-prompt
+    fixture: ambiguous-feature-ref-multi-match
+    intent: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    cases:
+      - name: prompt names the feature reference and lists candidates
+        description: Header line shows the feature ref; candidate list enumerates each matching root
+        steps:
+          - action: render
+            target: ambiguous-reference-disambiguation-prompt
+          - verify: text
+            target: prompt-header
+            expected: "@intent/A matches in multiple roots. Which one?"
+          - verify: count
+            target: candidate-list
+            expected: 2
+      - name: select-one resolves the reference
+        description: Selecting option A resolves to root web
+        steps:
+          - action: select
+            target: select-root
+            value: A
+          - verify: state
+            target: ResolutionResult.active-root.name
+            expected: web
+      - name: non-interactive variant is hidden in interactive context
+        description: The non-interactive error message is not visible when interactive is true
+        steps:
+          - action: render
+            target: ambiguous-reference-disambiguation-prompt
+          - verify: hidden
+            target: non-interactive-error
+            expected: true
+
+  - name: Ambiguous feature reference errors in non-interactive context
+    component: ambiguous-reference-disambiguation-prompt
+    fixture: ambiguous-feature-ref-non-interactive
+    intent: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    cases:
+      - name: non-interactive error names the candidates
+        description: When interactive is false, the error lists candidate roots and suggests prefix or --root
+        steps:
+          - action: render
+            target: ambiguous-reference-disambiguation-prompt
+          - verify: visible
+            target: non-interactive-error
+            expected: true
+          - verify: text
+            target: non-interactive-error
+            expected: "[ERR] ambiguous: @intent/A matches roots [web, api]; use prefix or --root <name> for non-interactive runs."
+      - name: prompt header is hidden in non-interactive context
+        description: The interactive prompt header does not show when interactive is false
+        steps:
+          - action: render
+            target: ambiguous-reference-disambiguation-prompt
+          - verify: hidden
+            target: prompt-header
+            expected: true
+
+  - name: Cross-root reference inside intent body is rejected by validation
+    component: cross-root-reference-validation-error
+    fixture: cross-root-reference-in-intent-body
+    intent: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
+    cases:
+      - name: validation error names the rule
+        description: The error message names the v1 scope limit
+        steps:
+          - action: render
+            target: cross-root-reference-validation-error
+          - verify: text
+            target: error-status
+            expected: "[ERR] cross-root references in intent content are not supported in v1"
+      - name: validation error names the file location
+        description: The error includes the file path and line number for the offending reference
+        steps:
+          - action: render
+            target: cross-root-reference-validation-error
+          - verify: visible
+            target: location-line
+            expected: true
+      - name: validation exits non-zero
+        description: emit-validation-error produces a non-zero exit
+        steps:
+          - action: click
+            target: emit-validation-error
+          - verify: error
+            target: emit-validation-error
+            expected: "cross-root references"
+
+  - name: Upgrade refresh confirms skills, schemas, and roots written
+    component: upgrade-refresh-confirmation
+    fixture: upgrade-success
+    intent: "@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots"
+    cases:
+      - name: success status names target root
+        description: The [OK] line names the repo-level root that was refreshed
+        steps:
+          - action: render
+            target: upgrade-refresh-confirmation
+          - verify: text
+            target: success-status
+            expected: "[OK] Agent surface refreshed at /repo."
+      - name: summary counts skills and schemas
+        description: The summary line shows skills-deployed and schemas-updated counts
+        steps:
+          - action: render
+            target: upgrade-refresh-confirmation
+          - verify: text
+            target: summary-counts
+            expected: "Skills deployed: 18  Schemas updated: 12"
+      - name: roots list enumerates parent and children
+        description: All registered roots are listed with name and relative path
+        steps:
+          - action: render
+            target: upgrade-refresh-confirmation
+          - verify: count
+            target: roots-list
+            expected: 3
+
+  - name: Upgrade from inside a child root is refused
+    component: upgrade-refresh-confirmation
+    fixture: upgrade-from-child-refused
+    intent: "@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots"
+    cases:
+      - name: refusal hides success elements
+        description: When invoked from a child root, success lines do not render
+        steps:
+          - action: render
+            target: upgrade-refresh-confirmation
+          - verify: hidden
+            target: success-status
+            expected: true
+          - verify: hidden
+            target: roots-list
+            expected: true
+      - name: refusal status names the rule
+        description: The refusal status tells the user to run upgrade from the repo-level root
+        steps:
+          - action: render
+            target: upgrade-refresh-confirmation
+          - verify: text
+            target: refusal-status
+            expected: "[ERR] run upgrade from the repo-level root, not from a child root."
+
+  - name: Status with bare parent shows zero parent features and registered children
+    component: status-with-bare-parent
+    fixture: bare-parent-with-two-children
+    intent: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    cases:
+      - name: tree root names parent and path
+        description: Top node shows the parent root name and absolute path
+        steps:
+          - action: render
+            target: status-with-bare-parent
+          - verify: text
+            target: root-node
+            expected: "root: parent (/repo)"
+      - name: empty features renders without error
+        description: Zero parent features is a valid state — no warning, no error
+        steps:
+          - action: render
+            target: status-with-bare-parent
+          - verify: visible
+            target: empty-features-line
+            expected: true
+          - verify: hidden
+            target: features-line
+            expected: true
+      - name: children listed below the parent
+        description: Both registered children appear in the children list
+        steps:
+          - action: render
+            target: status-with-bare-parent
+          - verify: visible
+            target: children-header
+            expected: true
+          - verify: count
+            target: children-list
+            expected: 2
+
+  - name: Status in single-root project shows feature count and no children
+    component: status-with-bare-parent
+    fixture: single-root-at-repo
+    intent: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
+    cases:
+      - name: single-root status hides children section
+        description: A standalone root (no children registered) hides the children-header and children-list
+        steps:
+          - action: render
+            target: status-with-bare-parent
+          - verify: hidden
+            target: children-header
+            expected: true
+          - verify: hidden
+            target: children-list
+            expected: true
+
+  - name: Skill-side operating-root announcement renders in conversation
+    component: skill-side-operating-root-announcement
+    fixture: prefix-targeting-web
+    intent: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    cases:
+      - name: announcement line shows chosen root
+        description: The visible response prefix names the root and resolution source
+        steps:
+          - action: render
+            target: skill-side-operating-root-announcement
+          - verify: text
+            target: announcement-line
+            expected: "operating on root: web (prefix)"
+
+  - name: Skill-side disambiguation prompt re-renders via AskUserQuestion
+    component: skill-side-root-disambiguation-prompt
+    fixture: ambiguous-feature-ref-multi-match
+    intent: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    cases:
+      - name: prompt header names the feature reference
+        description: The conversation-text prompt names the ambiguous reference
+        steps:
+          - action: render
+            target: skill-side-root-disambiguation-prompt
+          - verify: text
+            target: prompt-header
+            expected: "@intent/A matches in multiple roots. Which one?"
+      - name: candidate list rendered as markdown bullets
+        description: AskUserQuestion options are derived from the candidate list
+        steps:
+          - action: render
+            target: skill-side-root-disambiguation-prompt
+          - verify: count
+            target: candidate-list
+            expected: 2
+      - name: select-one resolves and re-invokes CLI with prefix
+        description: Selecting an option re-invokes the CLI with the chosen root prefix
+        steps:
+          - action: select
+            target: select-root
+            value: A
+          - verify: state
+            target: ResolutionResult.active-root.name
+            expected: web
+
+  - name: Skill-side active-root disambiguation reuses the same prompt
+    component: skill-side-root-disambiguation-prompt
+    fixture: ambiguous-active-root-from-cwd
+    intent: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    cases:
+      - name: active-root prompt header rendered
+        description: The active-root variant of the prompt header shows when kind is ambiguous-active-root
+        steps:
+          - action: render
+            target: skill-side-root-disambiguation-prompt
+          - verify: visible
+            target: active-root-prompt-header
+            expected: true
+          - verify: hidden
+            target: prompt-header
+            expected: true
+
+  - name: Skill-side forbidden-directory guidance offers actionable cleanup
+    component: skill-side-forbidden-directory-guidance
+    fixture: child-with-forbidden-schemas
+    intent: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
+    cases:
+      - name: error status names the forbidden directory
+        description: The skill translates the CLI error into actionable guidance
+        steps:
+          - action: render
+            target: skill-side-forbidden-directory-guidance
+          - verify: visible
+            target: error-status
+            expected: true
+      - name: remediation hint includes the rm command with exact path
+        description: The hint includes the precise path the user should remove
+        steps:
+          - action: render
+            target: skill-side-forbidden-directory-guidance
+          - verify: text
+            target: remediation-hint
+            expected: "Run `rm -rf /repo/apps/web/.parlay/schemas/` to remove it; the parent's resources are shared by all roots."
+      - name: confirm-cleanup offers to run the cleanup
+        description: On agents with tool execution, the skill offers an AskUserQuestion to confirm the cleanup
+        steps:
+          - action: render
+            target: skill-side-forbidden-directory-guidance
+          - verify: visible
+            target: confirm-cleanup
+            expected: true

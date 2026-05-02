@@ -15,9 +15,10 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Bootstrap a new parlay project",
-	RunE:  runInit,
+	Use:         "init",
+	Short:       "Bootstrap a new parlay project",
+	RunE:        runInit,
+	Annotations: map[string]string{annotationSkipResolution: "true"},
 }
 
 // frameworkEntry ties display name, adapter slug, and nav strategy together.

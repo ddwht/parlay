@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
@@ -37,7 +36,7 @@ type allQuestionsOutput struct {
 
 func runCollectQuestions(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
-		slug := strings.TrimPrefix(args[0], "@")
+		slug := parser.FeatureSlug(args[0])
 		output, err := collectForFeature(slug)
 		if err != nil {
 			return err
