@@ -2,3 +2,6 @@ children:
   - name: core
     relative-path: core
     description: Parlay Core — the spec-driven design and codegen engine
+  - name: studio
+    relative-path: studio
+    description: Parlay Studio — designer-facing extension on top of Core (Figma round-trip, domain model editor)

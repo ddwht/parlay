@@ -11,6 +11,7 @@ GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 # faster and works in environments without a C toolchain.
 build:
 	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
+	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
 
 # Edit-source -> build -> upgrade, in one shot.
 # Use this after changing anything under core/internal/embedded/{skills,schemas}/.
