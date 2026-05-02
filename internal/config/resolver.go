@@ -155,6 +155,51 @@ func CandidatesFromIndex(idx *RootsIndex, reason CandidateReason) []Candidate {
 	return out
 }
 
+// DiscoverRootsBelow walks the directory tree under cwd looking for
+// .parlay/ markers that aren't on the walk-up path. Returns at most one
+// candidate per discovered root; a child of an already-discovered root
+// is skipped. Used when walk-up fails but the user might still mean a
+// child somewhere below cwd.
+func DiscoverRootsBelow(cwd string, maxDepth int) []Candidate {
+	var out []Candidate
+	seen := map[string]bool{}
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if depth > maxDepth {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			// Skip dot dirs like .git, .claude, but allow .parlay detection below.
+			if len(name) > 0 && name[0] == '.' {
+				continue
+			}
+			child := filepath.Join(dir, name)
+			if hasParlayDir(child) && !seen[child] {
+				rel, _ := filepath.Rel(cwd, child)
+				seen[child] = true
+				out = append(out, Candidate{
+					Name:         filepath.Base(child),
+					RelativePath: rel,
+					Reason:       ReasonDiscoveredBelowCwd,
+				})
+				// Don't recurse into a discovered root.
+				continue
+			}
+			walk(child, depth+1)
+		}
+	}
+	walk(cwd, 0)
+	return out
+}
+
 // ValidateParentPointer verifies that a child root's recorded parent path
 // resolves to a valid parlay root (a directory with .parlay/ and no
 // parent: of its own). Returns ErrParentRootNotFound wrapped with the

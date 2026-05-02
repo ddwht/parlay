@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -28,6 +29,13 @@ var rootFlag string
 // verboseFlag is the value of --verbose. When true, PersistentPreRunE
 // prints a one-line resolution header to stderr.
 var verboseFlag bool
+
+// ambiguityAsSignalFlag is the value of --ambiguity-as-signal. When
+// true, PersistentPreRunE emits a structured JSON envelope to stderr
+// and exits with AmbiguityExitCode (11) on ambiguity instead of
+// prompting interactively or returning a generic error. Used by skill
+// wrappers around the CLI.
+var ambiguityAsSignalFlag bool
 
 var rootCmd = &cobra.Command{
 	Use:               "parlay",
@@ -82,6 +90,28 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 
 	res, err := config.ResolveActiveRoot(cwd, envMap())
 	if err != nil {
+		// On ErrNoRootFound, look for candidates below cwd. If any
+		// exist, either emit the structured signal (skill mode) or
+		// surface them in the error message (interactive mode).
+		if errors.Is(err, config.ErrNoRootFound) {
+			candidates := config.DiscoverRootsBelow(cwd, 4)
+			if len(candidates) > 0 {
+				if ambiguityAsSignalFlag {
+					_ = emitAmbiguitySignal(cmd.ErrOrStderr(), AmbiguitySignal{
+						Trigger:    TriggerAmbiguousActiveRoot,
+						Candidates: candidates,
+						Hint:       "re-invoke with --root <name> or set PARLAY_ROOT=<abs-path>",
+					})
+					os.Exit(AmbiguityExitCode)
+				}
+				names := make([]string, 0, len(candidates))
+				for _, c := range candidates {
+					names = append(names, c.Name)
+				}
+				return fmt.Errorf("%w; candidate roots discovered below cwd: %v (use --root <name>, set PARLAY_ROOT, or cd into one)",
+					err, names)
+			}
+		}
 		return err
 	}
 
@@ -186,6 +216,7 @@ func envMap() map[string]string {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlag, "root", "", "Operate against the named child root (overrides cwd walk-up)")
 	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Print resolution and resource-load details to stderr")
+	rootCmd.PersistentFlags().BoolVar(&ambiguityAsSignalFlag, "ambiguity-as-signal", false, "Emit a structured JSON envelope on stderr and exit non-zero on ambiguity (used by skill wrappers)")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(addFeatureCmd)
