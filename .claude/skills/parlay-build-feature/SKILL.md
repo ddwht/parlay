@@ -65,6 +65,18 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - `surface_fragments.new[]` — fragments in the current surface that aren't in any existing component. Decide whether to introduce new components for them.
    - Tell the user what's about to be regenerated before doing it (e.g., "Regenerating 2 components: upgrade-prompt, preflight-check. Keeping 5 stable components.").
 
+7.5. **Integration discovery** — Before writing the buildfile, decide where each component lives in the source tree and which existing files each cross-cutting entry must touch. The buildfile carries this decision in its `plan:` section (see step 8); this step is the analysis that produces it.
+
+   For each component, identify the file path the adapter's `file-conventions.component-pattern` and `naming` rules imply. New components produce new files (`plan.creates`). When the adapter's pattern is "extend a shared file" (e.g. one component contributes a function to a shared dispatcher), the file is shared and the component's plan entry is a `plan.modifies` whose `sources` lists every contributing component.
+
+   For each `cross-cutting:` entry whose intent is to modify existing code:
+   - Identify the canonical integration site by reading existing source. Use `parlay scan-generated <source-root>` to enumerate parlay-managed files, plus regular file reads to inspect surrounding code. The site is the file where similar entities are already wired (for example, the file that already registers existing entry-points, the file that owns the resolver, the file that owns the deployer registry).
+   - Record the exact path in the entry's `target-files:`. Avoid `target-pattern:` for known-singleton sites.
+   - When uncertain, ask the user via AskUserQuestion: "This feature introduces a new <thing>. Where should it integrate? Found these candidate sites: <list from scan>. Pick one or specify."
+   - Do NOT default to creating a new package when an existing file is the right home. The strict-target rule in `/parlay-generate-code` step 14.7 will refuse to invent paths under source-root anyway — it is cheaper to identify the site here than to discover the mismatch at code-generation time.
+
+   For purely-introducing cross-cuttings (a new package is genuinely warranted), pick a path consistent with the adapter's `file-conventions.source-root` and naming rules, and list it in `plan.creates`. The agent is responsible for the choice; record it explicitly in `plan` rather than letting generate-code guess.
+
 8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
@@ -100,6 +112,11 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - Infrastructure fragments do NOT produce `components:` or `routes:` entries — only `cross-cutting:` entries
      - If a feature has both `surface.md` and `infrastructure.md`, the buildfile has both `components:` (from surface) AND `cross-cutting:` (from infrastructure)
      - The `cross-cutting:` section follows the same diff lifecycle as `components:`. `parlay diff` reports each entry as `stable`, `dirty`, or `removed`. Generate-code preserves stable entries and re-applies dirty ones.
+   - **Emit the `plan:` section** — derived deterministically from `components:` + `cross-cutting:` + the integration sites identified in step 7.5:
+     - `plan.modifies` — for every cross-cutting entry whose `target-files:` names existing files, add one entry per file with `sources: [cross-cutting/<id>]`. Multi-component shared files merge entries (same `path`, multiple `sources`).
+     - `plan.creates` — one entry per `components:` whose generated file path doesn't already exist (the typical case for new component files). One entry per cross-cutting whose `target-files:` is empty (purely-introducing). `sources` cites the producing component or cross-cutting id.
+     - `plan.deletes` — one entry per id in `components.removed[]` from the diff. `sources` cites the removed component id.
+     - The plan is required for new buildfiles. Do not emit a buildfile without `plan:` — `/parlay-generate-code` will reject it.
 
 9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component

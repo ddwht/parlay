@@ -33,6 +33,10 @@ components:
       inputs:
         - model: Cluster
           field: name
+plan:
+  creates:
+    - path: cmd/cluster_view.go
+      sources: [component/cluster-view]
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -60,6 +64,10 @@ components:
       inputs:
         - model: NonExistentModel
           field: name
+plan:
+  creates:
+    - path: cmd/cluster_view.go
+      sources: [component/cluster-view]
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -87,6 +95,10 @@ routes:
 components:
   real-component:
     source: "@test-feature/something"
+plan:
+  creates:
+    - path: cmd/real_component.go
+      sources: [component/real-component]
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -113,6 +125,8 @@ fixtures:
       NonExistentModel:
         - name: "test"
 components: {}
+plan:
+  creates: []
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -134,6 +148,10 @@ components:
     source: "@test-feature/parent"
     children:
       - ghost-child
+plan:
+  creates:
+    - path: cmd/parent.go
+      sources: [component/parent]
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -154,6 +172,10 @@ components:
   my-comp:
     source: "@test-feature/frag"
     widget: unknown-widget
+plan:
+  creates:
+    - path: cmd/my_comp.go
+      sources: [component/my-comp]
 `
 	adapter := `name: test-adapter
 framework: Test
@@ -312,6 +334,10 @@ components:
         - model: AlsoGhost
     children:
       - phantom
+plan:
+  creates:
+    - path: cmd/real.go
+      sources: [component/real]
 `
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
@@ -320,5 +346,174 @@ components:
 	// Should catch: missing route component, invalid model ref, invalid child, invalid fixture model
 	if len(errors) != 4 {
 		t.Errorf("expected 4 errors, got %d: %v", len(errors), errors)
+	}
+}
+
+// --- plan: section validation tests ---
+
+func TestValidatePlan_MissingPlanFails(t *testing.T) {
+	dir := t.TempDir()
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+`
+	path := filepath.Join(dir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	if len(errors) != 1 || errors[0].Code != "missing-plan" {
+		t.Fatalf("expected single missing-plan error, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_ComponentNotInPlan(t *testing.T) {
+	dir := t.TempDir()
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components:
+  orphan-comp:
+    source: "@test-feature/frag"
+plan:
+  creates: []
+`
+	path := filepath.Join(dir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "component-not-in-plan" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected component-not-in-plan error, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_CrossCuttingTargetNotInPlan(t *testing.T) {
+	dir := t.TempDir()
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: my-cc
+    source: "@test-feature/intent"
+    target-files:
+      - some/existing/file.go
+    transform: "do something"
+plan:
+  modifies: []
+  creates: []
+`
+	path := filepath.Join(dir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-target-not-in-plan" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-target-not-in-plan error, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_DiskShapeChecks(t *testing.T) {
+	// Set up a layout matching the real <root>/.parlay/build/<feature>/buildfile.yaml shape.
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+
+	// One file exists in the source root, one doesn't.
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	existing := filepath.Join(srcDir, "config.go")
+	os.WriteFile(existing, []byte("package config\n"), 0644)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components:
+  comp-a:
+    source: "@test-feature/frag"
+cross-cutting:
+  - id: cc-real
+    source: "@test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    transform: "edit existing config"
+  - id: cc-missing
+    source: "@test-feature/intent"
+    target-files:
+      - internal/missing/file.go
+    transform: "edit nonexistent file"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/cc-real]
+    - path: internal/missing/file.go
+      sources: [cross-cutting/cc-missing]
+  creates:
+    - path: internal/config/config.go
+      sources: [component/comp-a]
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	wantCodes := map[string]bool{
+		"plan-modify-target-missing": false,
+		"plan-create-collision":      false,
+	}
+	for _, e := range errors {
+		if _, ok := wantCodes[e.Code]; ok {
+			wantCodes[e.Code] = true
+		}
+	}
+	for code, found := range wantCodes {
+		if !found {
+			t.Errorf("expected error code %q, did not see it. all errors: %+v", code, errors)
+		}
+	}
+}
+
+func TestValidatePlan_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components:
+  my-comp:
+    source: "@test-feature/frag"
+cross-cutting:
+  - id: my-cc
+    source: "@test-feature/intent"
+    target-files:
+      - some/file.go
+    transform: "do something"
+plan:
+  modifies:
+    - path: some/file.go
+      sources: [cross-cutting/my-cc]
+  creates:
+    - path: cmd/my_comp.go
+      sources: [component/my-comp]
+`
+	path := filepath.Join(dir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	for _, e := range errors {
+		if e.Code == "missing-plan" || e.Code == "component-not-in-plan" || e.Code == "cross-cutting-not-in-plan" || e.Code == "cross-cutting-target-not-in-plan" {
+			t.Errorf("plan validation incorrectly errored on a valid plan: %+v", e)
+		}
 	}
 }

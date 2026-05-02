@@ -52,6 +52,8 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 4. **Load ALL buildfiles** — Read `.parlay/build/*/buildfile.yaml` for every feature that has been built. If no buildfiles exist, stop and tell the user to run `/parlay-build-feature @{feature}` for at least one feature.
 
+   **Require `plan:` on every buildfile.** Each buildfile MUST have a `plan:` section enumerating every file the build will create, modify, or delete (see buildfile.schema.md). If a buildfile is missing `plan:`, STOP and tell the user to regenerate it via `/parlay-build-feature @{feature}` — do NOT fall back to deriving paths on the fly. The plan is the executable contract for which files this feature touches; missing it means the integration intent was never captured.
+
 5. **Compute the merged model and routes** — Across all features' buildfiles:
    - MERGE the `models:` sections: collect all entity definitions from all features. If the same entity appears in multiple features with different properties, take the UNION of properties. This produces the complete model layer.
    - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
@@ -102,8 +104,12 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 11. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
 
+    Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
+
+11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set. Refuse any write to a path not in the plan — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+
 12. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
-    - Map the component to a file path using the adapter's `component-pattern` and `naming` conventions (or, if the file already exists with a marker, reuse its path)
+    - Look up the component's file path in `plan` (the entry whose `sources` references this component). The plan is authoritative — do NOT recompute the path from the adapter's `component-pattern` + `naming` rules at this step. The adapter's conventions were already applied when build-feature emitted the plan.
     - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
     - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
     - Add the marker at the top of every generated file. Use the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell).

@@ -145,6 +145,18 @@ type deepBuildfile struct {
 	Routes       []deepRoute                  `yaml:"routes"`
 	Components   map[string]deepComponent     `yaml:"components"`
 	CrossCutting []deepCrossCuttingEntry       `yaml:"cross-cutting"`
+	Plan         *deepPlan                    `yaml:"plan"`
+}
+
+type deepPlan struct {
+	Modifies []deepPlanEntry `yaml:"modifies"`
+	Creates  []deepPlanEntry `yaml:"creates"`
+	Deletes  []deepPlanEntry `yaml:"deletes"`
+}
+
+type deepPlanEntry struct {
+	Path    string   `yaml:"path"`
+	Sources []string `yaml:"sources"`
 }
 
 type deepCrossCuttingEntry struct {
@@ -312,7 +324,170 @@ func ValidateBuildfileDeepStructured(buildfilePath, adapterPath string) []Valida
 		errors = append(errors, ccErrors...)
 	}
 
+	// 7. Plan section validation: every component and cross-cutting
+	// entry must be represented; modify-paths must exist; create-paths
+	// must not collide with existing files.
+	planErrors := validatePlanSection(bf, buildfilePath)
+	errors = append(errors, planErrors...)
+
 	return errors
+}
+
+// validatePlanSection enforces the executable contract of the plan:
+// section. Every components: entry must produce at least one plan row;
+// every cross-cutting target-files: path must appear in plan.modifies;
+// modify-paths must exist on disk; create-paths must NOT exist.
+//
+// The function resolves paths relative to the directory containing the
+// buildfile's source root, derived from the buildfile's location:
+// .parlay/build/<feature>/buildfile.yaml lives at <root>/.parlay/build/<feature>/.
+// Source-tree paths are interpreted relative to <root>.
+func validatePlanSection(bf deepBuildfile, buildfilePath string) []ValidationError {
+	var errors []ValidationError
+	if bf.Plan == nil {
+		errors = append(errors, ValidationError{
+			Code:    "missing-plan",
+			Message: "buildfile has no plan: section",
+			Context: "plan",
+			Fix:     "regenerate the buildfile via /parlay-build-feature so the plan: section is emitted",
+		})
+		return errors
+	}
+	rootDir := planRootDirFromBuildfilePath(buildfilePath)
+
+	// Index plan entries by source for cross-checks.
+	type planEntryKind struct {
+		kind  string // "modify" | "create" | "delete"
+		path  string
+	}
+	bySource := map[string][]planEntryKind{}
+	addEntries := func(kind string, entries []deepPlanEntry, ctxPrefix string) {
+		for i, e := range entries {
+			ctx := fmt.Sprintf("%s[%d]", ctxPrefix, i)
+			if e.Path == "" {
+				errors = append(errors, ValidationError{
+					Code:    "plan-entry-missing-path",
+					Message: fmt.Sprintf("plan.%s entry at index %d has no path", kind, i),
+					Context: ctx,
+					Fix:     "add path: <file path> to the plan entry",
+				})
+				continue
+			}
+			if len(e.Sources) == 0 {
+				errors = append(errors, ValidationError{
+					Code:    "plan-entry-missing-sources",
+					Message: fmt.Sprintf("plan.%s entry %q has no sources", kind, e.Path),
+					Context: ctx,
+					Fix:     "add sources: [component/<name> or cross-cutting/<id>] linking this entry to the buildfile entry that produced it",
+				})
+			}
+			for _, src := range e.Sources {
+				bySource[src] = append(bySource[src], planEntryKind{kind: kind, path: e.Path})
+			}
+		}
+	}
+	addEntries("modify", bf.Plan.Modifies, "plan.modifies")
+	addEntries("create", bf.Plan.Creates, "plan.creates")
+	addEntries("delete", bf.Plan.Deletes, "plan.deletes")
+
+	// Every components: entry must appear in plan via component/<name> source.
+	for compName := range bf.Components {
+		key := "component/" + compName
+		if _, ok := bySource[key]; !ok {
+			errors = append(errors, ValidationError{
+				Code:    "component-not-in-plan",
+				Message: fmt.Sprintf("component %q has no entry in plan: (no row sources include %q)", compName, key),
+				Context: fmt.Sprintf("plan / components.%s", compName),
+				Fix:     "add a plan.creates or plan.modifies entry whose sources references this component",
+			})
+		}
+	}
+
+	// Every cross-cutting: entry's target-files: paths must appear in plan.modifies,
+	// and the entry must be cited as the source.
+	for _, cc := range bf.CrossCutting {
+		key := "cross-cutting/" + cc.ID
+		entries := bySource[key]
+		if cc.ID != "" && len(entries) == 0 {
+			errors = append(errors, ValidationError{
+				Code:    "cross-cutting-not-in-plan",
+				Message: fmt.Sprintf("cross-cutting %q has no entry in plan:", cc.ID),
+				Context: fmt.Sprintf("plan / cross-cutting[%s]", cc.ID),
+				Fix:     "add plan.modifies entries for each target-files: path, or plan.creates if the entry is purely-introducing",
+			})
+		}
+		for _, target := range cc.TargetFiles {
+			found := false
+			for _, e := range entries {
+				if e.kind == "modify" && e.path == target {
+					found = true
+					break
+				}
+			}
+			if !found {
+				errors = append(errors, ValidationError{
+					Code:    "cross-cutting-target-not-in-plan",
+					Message: fmt.Sprintf("cross-cutting %q names target-files: %q but plan.modifies has no matching entry sourced from %q", cc.ID, target, key),
+					Context: fmt.Sprintf("plan.modifies / cross-cutting[%s].target-files", cc.ID),
+					Fix:     fmt.Sprintf("add plan.modifies entry { path: %s, sources: [%s] }", target, key),
+				})
+			}
+		}
+	}
+
+	// Disk-shape checks (only when we can resolve a sensible root).
+	if rootDir != "" {
+		for _, e := range bf.Plan.Modifies {
+			if e.Path == "" {
+				continue
+			}
+			abs := filepath.Join(rootDir, e.Path)
+			if _, err := os.Stat(abs); err != nil && os.IsNotExist(err) {
+				errors = append(errors, ValidationError{
+					Code:    "plan-modify-target-missing",
+					Message: fmt.Sprintf("plan.modifies %q does not exist in source root %s", e.Path, rootDir),
+					Context: "plan.modifies",
+					Fix:     "either fix the path, or move the entry to plan.creates if this feature genuinely introduces the file",
+				})
+			}
+		}
+		for _, e := range bf.Plan.Creates {
+			if e.Path == "" {
+				continue
+			}
+			abs := filepath.Join(rootDir, e.Path)
+			if info, err := os.Stat(abs); err == nil && !info.IsDir() {
+				errors = append(errors, ValidationError{
+					Code:    "plan-create-collision",
+					Message: fmt.Sprintf("plan.creates %q already exists at %s", e.Path, abs),
+					Context: "plan.creates",
+					Fix:     "either move the entry to plan.modifies (to merge into the existing file) or pick a different path",
+				})
+			}
+		}
+	}
+
+	return errors
+}
+
+// planRootDirFromBuildfilePath derives the project root directory from
+// a buildfile's path. A buildfile at <root>/.parlay/build/<feature>/buildfile.yaml
+// belongs to root <root>. Returns "" when the path doesn't match the
+// expected layout, signaling the disk-shape checks should be skipped.
+func planRootDirFromBuildfilePath(buildfilePath string) string {
+	abs, err := filepath.Abs(buildfilePath)
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(abs) // <root>/.parlay/build/<feature>
+	for i := 0; i < 3; i++ {
+		dir = filepath.Dir(dir)
+	}
+	// Verify <dir>/.parlay/build/<feature>/buildfile.yaml round-trips.
+	if !strings.HasPrefix(abs, dir+string(filepath.Separator)) {
+		return ""
+	}
+	return dir
 }
 
 func validateCrossCuttingEntries(entries []deepCrossCuttingEntry) []ValidationError {
