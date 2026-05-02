@@ -1,0 +1,4 @@
+children:
+  - name: core
+    relative-path: core
+    description: Parlay Core — the spec-driven design and codegen engine
