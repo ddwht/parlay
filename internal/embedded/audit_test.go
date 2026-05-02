@@ -5,6 +5,43 @@ import (
 	"testing"
 )
 
+// TestGenerateCodeStrictTargetRule guards against a regression of the
+// multi-root failure mode: the agent inventing a new file path under
+// the source root instead of merging into the file named by a
+// cross-cutting entry's Affects/target-files clause. The rule lives in
+// the skill's step 14.7 prose; this test checks the prose still
+// contains the load-bearing keywords.
+func TestGenerateCodeStrictTargetRule(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var generateCode string
+	for _, s := range skills {
+		if s.Name == "generate-code" {
+			generateCode = string(s.Content)
+			break
+		}
+	}
+	if generateCode == "" {
+		t.Fatal("generate-code skill not found in embedded bundle")
+	}
+	// Every keyword below must appear within step 14.7's strict-target
+	// rule. Removing any of them weakens the contract — fail the build.
+	required := []string{
+		"strict-target rule",
+		"Affects",
+		"target-files",
+		"do NOT silently invent",
+		"STOP",
+	}
+	for _, kw := range required {
+		if !strings.Contains(generateCode, kw) {
+			t.Errorf("generate-code skill missing required keyword %q in step 14.7 strict-target rule", kw)
+		}
+	}
+}
+
 // TestSkillSourceAudit fails the build when an embedded skill file
 // contains hardcoded `.parlay/...` or `spec/...` path references but is
 // missing the `<!-- parlay:active-root-aware -->` marker that signals

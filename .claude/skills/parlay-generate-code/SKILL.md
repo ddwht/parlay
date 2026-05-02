@@ -230,10 +230,10 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
    1. **Resolve targets**: if the entry has `target-files:`, use the explicit paths. If it has `target-pattern:`, grep the source tree under `file-conventions.source-root` to find matching files. If zero files match, warn but don't error (the pattern may be ahead of the codebase). If the entry has both, resolve both and take the union.
 
-   2. **For each resolved target file**:
-      - If the file doesn't exist AND the entry has `introduces:`: create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review.
-      - If the file doesn't exist AND the entry only has `target-files:` (no introduces): error — the target is missing.
-      - If the file exists: apply Tier 2 intelligent merge — read the file, read the entry's `transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
+   2. **For each resolved target file** — strict-target rule:
+      - **If the entry has non-empty `Affects:` or `target-files:` naming files**: those exact paths MUST be the targets. The file MUST already exist; if it doesn't, error — the buildfile names a file that isn't there. Apply Tier 2 intelligent merge: read the file, read the entry's `Behavior:`/`transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
+      - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): surface the proposed diff via AskUserQuestion (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
+      - **Only when the entry has NO `Affects:`/`target-files:`** (purely-introducing entries that genuinely add a new package): create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review. The file path is computed from the adapter's conventions; the agent must NOT pick an arbitrary path.
 
    3. **Present diff for review**: same A/B/C menu as brownfield mount:
       ```
