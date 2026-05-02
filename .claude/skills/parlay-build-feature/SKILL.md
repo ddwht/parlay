@@ -127,10 +127,15 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - Follow the testcases schema exactly
 
 10. **Validate** — Run all (use `--json` flag for structured error parsing):
-   - `parlay validate --type buildfile --deep --adapter .parlay/adapters/{adapter}.adapter.yaml --json .parlay/build/{feature}/buildfile.yaml`
-   - `parlay validate --type yaml --json .parlay/build/{feature}/testcases.yaml`
-   - Deep validation checks: model references, component references in routes, fixture-model alignment, children references, and adapter vocabulary
-   - If validation fails, parse the JSON error output and apply the fix from each error's `fix` field, then retry
+   - `parlay check-buildfile @{feature}` — feature-ref-aware validation that auto-resolves the buildfile path and adapter, runs deep cross-reference + adapter-vocab + plan-integrity checks, and emits structured JSON. Errors block; warnings are advisory.
+   - `parlay validate --type yaml --json .parlay/build/{feature}/testcases.yaml` — testcases YAML schema only (deep buildfile validation already happened above).
+   - **Treat `check-buildfile` errors as blocking.** Common error codes and fixes:
+     - `missing-plan` — buildfile lacks the plan: section. The buildfile was written before plan: was required; regenerate via `/parlay-build-feature` (this skill).
+     - `component-not-in-plan` / `cross-cutting-not-in-plan` — a buildfile entry has no corresponding plan row. Add a plan.creates or plan.modifies entry whose sources cite the entry.
+     - `cross-cutting-target-not-in-plan` — a cross-cutting target-files: path is not represented in plan.modifies. Add the missing plan.modifies row.
+     - `plan-modify-target-missing` — plan.modifies names a file that doesn't exist in the source root. Either (a) the file path is wrong (correct it), (b) the entry should be plan.creates instead (this is genuinely a new file), or (c) the integration site was misidentified — re-do step 7.5 to find the real site.
+     - `plan-create-collision` — plan.creates names a file that already exists. Surface to the user; either pick a different path or move the entry to plan.modifies.
+   - If `check-buildfile` reports errors, surface them via AskUserQuestion (Revise / Accept and document / Cancel) — do NOT silently commit a buildfile that fails validation.
 
 11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
 

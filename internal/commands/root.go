@@ -244,6 +244,7 @@ func init() {
 	rootCmd.AddCommand(collectQuestionsCmd)
 	rootCmd.AddCommand(checkDriftCmd)
 	rootCmd.AddCommand(checkReadinessCmd)
+	rootCmd.AddCommand(checkBuildfileCmd)
 	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(scanGeneratedCmd)
 	rootCmd.AddCommand(verifyGeneratedCmd)
