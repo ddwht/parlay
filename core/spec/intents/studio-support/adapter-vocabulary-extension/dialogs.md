@@ -1,0 +1,4 @@
+# Adapter-vocabulary-extension — Dialogs
+
+---
+
