@@ -45,12 +45,12 @@ Three-zone layout — strict ownership:
 ## Skill and Schema Updates (dogfooding rule)
 
 This project develops parlay AND uses parlay. Skills and schemas exist in two places:
-- **Source** (authoritative): `internal/embedded/skills/<name>.skill.md` and `internal/embedded/schemas/<name>.schema.md`. Bundled into the binary at compile time via `//go:embed`. This is what new projects receive via `parlay init`.
+- **Source** (authoritative): `core/internal/embedded/skills/<name>.skill.md` and `core/internal/embedded/schemas/<name>.schema.md`. Bundled into the binary at compile time via `//go:embed`. This is what new projects receive via `parlay init`.
 - **Deployed for this project**: `.claude/skills/parlay-<name>/SKILL.md` and `.parlay/schemas/<name>.schema.md`. What Claude Code and the running tool actually load in this repo. Treat these as derived state.
 
 When changing skill or schema behavior, follow the strict three-step source-first rule, in order:
 
-1. **Edit the source** under `internal/embedded/{skills,schemas}/`.
+1. **Edit the source** under `core/internal/embedded/{skills,schemas}/`.
 2. **Rebuild** the binary: `make build`.
 3. **Re-deploy** to this project: `./parlay upgrade`. This overwrites `.claude/skills/parlay-*/SKILL.md` and `.parlay/schemas/*.schema.md` from the freshly-built binary.
 

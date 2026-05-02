@@ -9,14 +9,14 @@ navigation:
 # Changes to skills, skill titles, or CLAUDE.md template affect ALL deployers.
 
 deployers:
-  registry: internal/deployer/deployer.go
+  registry: core/internal/deployer/deployer.go
   shared:
-    - skill-sources: internal/embedded/skills/*.skill.md
-    - skill-titles: internal/deployer/claude.go:skillTitle()
-    - schemas: internal/embedded/schemas/*.schema.md
+    - skill-sources: core/internal/embedded/skills/*.skill.md
+    - skill-titles: core/internal/deployer/claude.go:skillTitle()
+    - schemas: core/internal/embedded/schemas/*.schema.md
   agents:
     claude-code:
-      deployer: internal/deployer/claude.go
+      deployer: core/internal/deployer/claude.go
       output:
         - skills: .claude/skills/parlay-*/SKILL.md
         - project-config: CLAUDE.md (with parlay:begin/end markers)
@@ -25,7 +25,7 @@ deployers:
         - CLAUDE.md section preservation via HTML comment markers
         - AskUserQuestion tool for interactive prompts
     cursor:
-      deployer: internal/deployer/cursor.go
+      deployer: core/internal/deployer/cursor.go
       output:
         - skills: .cursor/skills/parlay-*/SKILL.md
         - project-config: .cursor/rules/parlay.mdc (alwaysApply rule)
@@ -33,7 +33,7 @@ deployers:
         - YAML frontmatter on each skill (name, description)
         - MDC format with alwaysApply flag
     generic:
-      deployer: internal/deployer/generic.go
+      deployer: core/internal/deployer/generic.go
       output:
         - instructions: AGENT_INSTRUCTIONS.md (single file, all skills concatenated)
       features:

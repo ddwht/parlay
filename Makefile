@@ -10,10 +10,10 @@ GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
 # faster and works in environments without a C toolchain.
 build:
-	CGO_ENABLED=0 $(GO) build -o parlay ./cmd/parlay
+	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
 
 # Edit-source -> build -> upgrade, in one shot.
-# Use this after changing anything under internal/embedded/{skills,schemas}/.
+# Use this after changing anything under core/internal/embedded/{skills,schemas}/.
 # This is the dogfooding rule documented in CLAUDE.md.
 sync-skills: build
 	./parlay upgrade
@@ -24,7 +24,7 @@ sync-skills: build
 # OR the source was edited but `make sync-skills` was not run (also forbidden).
 verify-skills:
 	@drift=0; \
-	for src in internal/embedded/skills/*.skill.md; do \
+	for src in core/internal/embedded/skills/*.skill.md; do \
 		name=$$(basename $$src .skill.md); \
 		dst=".claude/skills/parlay-$$name/SKILL.md"; \
 		if [ ! -f "$$dst" ]; then \
@@ -38,7 +38,7 @@ verify-skills:
 			drift=1; \
 		fi; \
 	done; \
-	for src in internal/embedded/schemas/*.schema.md; do \
+	for src in core/internal/embedded/schemas/*.schema.md; do \
 		name=$$(basename $$src); \
 		dst=".parlay/schemas/$$name"; \
 		if [ ! -f "$$dst" ]; then \
