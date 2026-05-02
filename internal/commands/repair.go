@@ -37,11 +37,15 @@ type mismatch struct {
 }
 
 func runRepair(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	if repairDryRun && repairYes {
 		return fmt.Errorf("--dry-run and --yes are mutually exclusive")
 	}
 
-	roots := threeTreeRoots()
+	roots := threeTreeRoots(cfg)
 	intentsRoot := roots[0]
 
 	mismatches, err := detectMismatches(intentsRoot, roots)

@@ -31,6 +31,10 @@ func init() {
 }
 
 func runMoveFeature(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	if moveToFlag != "" && moveOutFlag {
 		return fmt.Errorf("`--to` and `--out` are mutually exclusive. Use `--to <initiative>` to move into an initiative, or `--out` to move to the top level — not both")
 	}
@@ -40,8 +44,8 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 
 	identifier := parser.FeatureSlug(args[0])
 
-	intentsRoot := filepath.Join(config.SpecDir, config.IntentsDir)
-	sourcePath := config.FeaturePath(identifier)
+	intentsRoot := cfg.IntentsRoot()
+	sourcePath := cfg.FeaturePath(identifier)
 
 	info, err := os.Stat(sourcePath)
 	if err != nil || !info.IsDir() {
@@ -78,7 +82,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	destPath := config.FeaturePath(destIdentifier)
+	destPath := cfg.FeaturePath(destIdentifier)
 	if _, statErr := os.Stat(destPath); statErr == nil {
 		return fmt.Errorf("feature `%s` already exists at %s/. Rename one of the features before retrying the move", featureSlug, destPath)
 	}
@@ -88,7 +92,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 		initSlug := parser.Slugify(moveToFlag)
 		initPath := filepath.Join(intentsRoot, initSlug)
 		if _, statErr := os.Stat(initPath); os.IsNotExist(statErr) {
-			for _, root := range threeTreeRoots() {
+			for _, root := range threeTreeRoots(cfg) {
 				if mkErr := os.MkdirAll(filepath.Join(root, initSlug), 0755); mkErr != nil {
 					return fmt.Errorf("creating initiative directory in %s: %w", root, mkErr)
 				}
@@ -97,7 +101,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	roots := threeTreeRoots()
+	roots := threeTreeRoots(cfg)
 	sourceRelPath := strings.TrimPrefix(sourcePath, intentsRoot+"/")
 	destRelPath := strings.TrimPrefix(destPath, intentsRoot+"/")
 

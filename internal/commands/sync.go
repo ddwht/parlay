@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
 	"github.com/spf13/cobra"
 )
@@ -23,9 +22,13 @@ var syncCmdImpl = &cobra.Command{
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	// Data input: feature-ref from command-argument (strip @ prefix)
 	slug := parser.FeatureSlug(args[0])
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
 	// Operation: read-file intents.md, parse using intent-schema
 	intentsPath := filepath.Join(featurePath, "intents.md")

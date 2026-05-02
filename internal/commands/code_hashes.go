@@ -35,14 +35,14 @@ type CodeHashEntry struct {
 }
 
 // codeHashesPath returns the canonical sidecar location for a feature.
-func codeHashesPath(slug string) string {
-	return filepath.Join(config.BuildPath(slug), CodeHashesFile)
+func codeHashesPath(cfg *config.Context, slug string) string {
+	return filepath.Join(cfg.BuildPath(slug), CodeHashesFile)
 }
 
 // loadCodeHashes reads the sidecar file for a feature. Returns nil (no
 // error) when the file does not exist — that's the first-generation case.
-func loadCodeHashes(slug string) (*CodeHashes, error) {
-	data, err := os.ReadFile(codeHashesPath(slug))
+func loadCodeHashes(cfg *config.Context, slug string) (*CodeHashes, error) {
+	data, err := os.ReadFile(codeHashesPath(cfg, slug))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -58,8 +58,8 @@ func loadCodeHashes(slug string) (*CodeHashes, error) {
 
 // saveCodeHashes writes the sidecar file for a feature. Creates the
 // parent directory if needed.
-func saveCodeHashes(slug string, hashes *CodeHashes) error {
-	path := codeHashesPath(slug)
+func saveCodeHashes(cfg *config.Context, slug string, hashes *CodeHashes) error {
+	path := codeHashesPath(cfg, slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -86,8 +86,10 @@ func hashFileContent(path string) (string, error) {
 // and returns a CodeHashes struct ready for serialization. Markers belonging
 // to a different feature are skipped (returned as the second value). Does
 // not touch disk; callers (typically saveBuildState) are responsible for
-// writing.
-func buildCodeHashes(slug, sourceRoot string) (*CodeHashes, int, error) {
+// writing. cfg is currently unused inside this helper but accepted to keep
+// the signature consistent with the surrounding migration.
+func buildCodeHashes(cfg *config.Context, slug, sourceRoot string) (*CodeHashes, int, error) {
+	_ = cfg
 	markers, err := parser.ScanGenerated(sourceRoot)
 	if err != nil {
 		return nil, 0, fmt.Errorf("scan failed: %w", err)

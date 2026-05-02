@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ddwht/parlay/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -32,6 +31,10 @@ type adapterFile struct {
 }
 
 func runRegisterAdapter(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	// Data input: adapter-path from command-argument
 	adapterPath := args[0]
 
@@ -68,7 +71,7 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	}
 
 	// Operation: create-directory ".parlay/adapters/"
-	adaptersDir := config.AdaptersPath()
+	adaptersDir := cfg.AdaptersPath()
 	if err := os.MkdirAll(adaptersDir, 0755); err != nil {
 		return fmt.Errorf("failed to create adapters directory: %w", err)
 	}

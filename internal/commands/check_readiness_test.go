@@ -83,7 +83,7 @@ func TestReadiness_BuildFeature_NoSurface(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
-	issues := checkBuildFeatureReadiness(featureDir, "test-feature")
+	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
 
 	hasError := false
 	for _, i := range issues {
@@ -120,7 +120,7 @@ func TestReadiness_BuildFeature_FragmentMissingPage(t *testing.T) {
 	os.MkdirAll(parlayDir, 0755)
 	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\nprototype-framework: go-cli\n"), 0644)
 
-	issues := checkBuildFeatureReadiness(featureDir, "test-feature")
+	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
 
 	hasError := false
 	for _, i := range issues {
@@ -159,7 +159,7 @@ func TestReadiness_BuildFeature_Valid(t *testing.T) {
 	os.MkdirAll(parlayDir, 0755)
 	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\nprototype-framework: go-cli\n"), 0644)
 
-	issues := checkBuildFeatureReadiness(featureDir, "test-feature")
+	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
 
 	for _, i := range issues {
 		if i.Severity == "error" {

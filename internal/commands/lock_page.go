@@ -23,16 +23,20 @@ var lockPageCmdImpl = &cobra.Command{
 }
 
 func runLockPage(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	// Data input: page-name from command-argument
 	pageName := args[0]
-	manifestPath := filepath.Join(config.PagesPath(), pageName+".page.md")
+	manifestPath := filepath.Join(cfg.PagesPath(), pageName+".page.md")
 
 	if _, err := os.Stat(manifestPath); err == nil {
 		return fmt.Errorf("page manifest already exists at %s", manifestPath)
 	}
 
 	// Data input: assembled-regions from reuse page-assembly-view logic
-	allFragments, err := parser.ScanAllSurfaces(config.SpecDir)
+	allFragments, err := parser.ScanAllSurfaces(filepath.Join(cfg.Root.Path, config.SpecDir))
 	if err != nil {
 		return fmt.Errorf("failed to scan surfaces: %w", err)
 	}
@@ -72,7 +76,7 @@ func runLockPage(cmd *cobra.Command, args []string) error {
 	owner = strings.TrimSpace(owner)
 
 	// Operation: create-directory "spec/pages/"
-	if err := os.MkdirAll(config.PagesPath(), 0755); err != nil {
+	if err := os.MkdirAll(cfg.PagesPath(), 0755); err != nil {
 		return fmt.Errorf("failed to create pages directory: %w", err)
 	}
 

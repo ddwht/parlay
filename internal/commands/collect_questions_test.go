@@ -42,7 +42,7 @@ func TestCollectQuestions_SingleFeature(t *testing.T) {
 
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
-	output, err := collectForFeature("test-feature")
+	output, err := collectForFeature(testContext(t), "test-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCollectQuestions_DefaultPriority(t *testing.T) {
 
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
-	output, err := collectForFeature("no-priority")
+	output, err := collectForFeature(testContext(t), "no-priority")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestCollectQuestions_NoQuestions(t *testing.T) {
 
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
-	output, err := collectForFeature("clean-feature")
+	output, err := collectForFeature(testContext(t), "clean-feature")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -38,16 +39,20 @@ type verifyOutput struct {
 }
 
 func runVerifyGenerated(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		// Project-level: read from _project code-hashes
-		output, err := computeProjectVerifyOutput()
+		output, err := computeProjectVerifyOutput(cfg)
 		if err != nil {
 			return err
 		}
 		return emitVerifyJSON(output)
 	}
 	slug := parser.FeatureSlug(args[0])
-	output, err := computeVerifyOutput(slug)
+	output, err := computeVerifyOutput(cfg, slug)
 	if err != nil {
 		return err
 	}
@@ -56,8 +61,8 @@ func runVerifyGenerated(cmd *cobra.Command, args []string) error {
 
 // computeProjectVerifyOutput reads the project-level code-hashes sidecar
 // and classifies each recorded file.
-func computeProjectVerifyOutput() (*verifyOutput, error) {
-	path := projectCodeHashesPath()
+func computeProjectVerifyOutput(cfg *config.Context) (*verifyOutput, error) {
+	path := projectCodeHashesPath(cfg)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -103,8 +108,8 @@ func computeProjectVerifyOutput() (*verifyOutput, error) {
 // computeVerifyOutput loads the code-hashes sidecar for a feature and
 // classifies each recorded file as stable / modified / missing. Exposed
 // for tests so they can assert on the struct without parsing JSON.
-func computeVerifyOutput(slug string) (*verifyOutput, error) {
-	stored, err := loadCodeHashes(slug)
+func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error) {
+	stored, err := loadCodeHashes(cfg, slug)
 	if err != nil {
 		return nil, err
 	}

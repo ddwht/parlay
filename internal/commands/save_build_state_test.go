@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,7 +16,7 @@ func TestSaveBuildState_HappyPath(t *testing.T) {
 	dir := setupTestDir(t)
 
 	// Author a minimal feature.
-	featureDir := config.FeaturePath("my-feature")
+	featureDir := testContext(t).FeaturePath("my-feature")
 	os.MkdirAll(featureDir, 0755)
 	intents := `## Do Something
 
@@ -31,21 +30,21 @@ func TestSaveBuildState_HappyPath(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "do.go"),
 		"my-feature", "do-something", "func DoSomething() {}")
 
-	err := saveBuildStateForFeature("my-feature", sourceRoot)
+	err := saveBuildStateForFeature(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Both files should exist on disk
-	if _, err := os.Stat(baselinePath("my-feature")); err != nil {
+	if _, err := os.Stat(baselinePath(testContext(t), "my-feature")); err != nil {
 		t.Errorf("baseline file missing: %v", err)
 	}
-	if _, err := os.Stat(codeHashesPath("my-feature")); err != nil {
+	if _, err := os.Stat(codeHashesPath(testContext(t), "my-feature")); err != nil {
 		t.Errorf("code-hashes file missing: %v", err)
 	}
 
 	// Content should round-trip via the load helpers.
-	blData, _ := os.ReadFile(baselinePath("my-feature"))
+	blData, _ := os.ReadFile(baselinePath(testContext(t), "my-feature"))
 	var loaded Baseline
 	if err := yaml.Unmarshal(blData, &loaded); err != nil {
 		t.Fatalf("baseline yaml invalid: %v", err)
@@ -57,7 +56,7 @@ func TestSaveBuildState_HappyPath(t *testing.T) {
 		t.Error("baseline.Sources missing do-something content hash")
 	}
 
-	hashes, err := loadCodeHashes("my-feature")
+	hashes, err := loadCodeHashes(testContext(t), "my-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +74,7 @@ func TestSaveBuildState_HappyPath(t *testing.T) {
 func TestSaveBuildState_NoTempFilesLeftBehind(t *testing.T) {
 	dir := setupTestDir(t)
 
-	featureDir := config.FeaturePath("clean-feature")
+	featureDir := testContext(t).FeaturePath("clean-feature")
 	os.MkdirAll(featureDir, 0755)
 	os.WriteFile(filepath.Join(featureDir, "intents.md"),
 		[]byte("## X\n\n**Goal**: x\n**Persona**: u\n"), 0644)
@@ -83,12 +82,12 @@ func TestSaveBuildState_NoTempFilesLeftBehind(t *testing.T) {
 	sourceRoot := filepath.Join(dir, "cmd", "clean-feature")
 	os.MkdirAll(sourceRoot, 0755)
 
-	if err := saveBuildStateForFeature("clean-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature(testContext(t), "clean-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
 	// Walk the build dir and assert no .tmp-* files remain.
-	buildDir := config.BuildPath("clean-feature")
+	buildDir := testContext(t).BuildPath("clean-feature")
 	entries, err := os.ReadDir(buildDir)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +105,7 @@ func TestSaveBuildState_NoTempFilesLeftBehind(t *testing.T) {
 func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	dir := setupTestDir(t)
 
-	featureDir := config.FeaturePath("twice-feature")
+	featureDir := testContext(t).FeaturePath("twice-feature")
 	os.MkdirAll(featureDir, 0755)
 	os.WriteFile(filepath.Join(featureDir, "intents.md"),
 		[]byte("## First\n\n**Goal**: first\n**Persona**: u\n"), 0644)
@@ -115,7 +114,7 @@ func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "first.go"),
 		"twice-feature", "first-comp", "package twice")
 
-	if err := saveBuildStateForFeature("twice-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature(testContext(t), "twice-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,13 +125,13 @@ func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "second.go"),
 		"twice-feature", "second-comp", "package twice")
 
-	if err := saveBuildStateForFeature("twice-feature", sourceRoot); err != nil {
+	if err := saveBuildStateForFeature(testContext(t), "twice-feature", sourceRoot); err != nil {
 		t.Fatal(err)
 	}
 
 	// Baseline must reflect the new intent only.
 	var loaded Baseline
-	blData, _ := os.ReadFile(baselinePath("twice-feature"))
+	blData, _ := os.ReadFile(baselinePath(testContext(t), "twice-feature"))
 	yaml.Unmarshal(blData, &loaded)
 	if _, ok := loaded.Intents["first"]; ok {
 		t.Error("baseline still contains stale 'first' intent after overwrite")
@@ -142,7 +141,7 @@ func TestSaveBuildState_OverwritesPreviousState(t *testing.T) {
 	}
 
 	// Code hashes must reflect the new file only.
-	hashes, _ := loadCodeHashes("twice-feature")
+	hashes, _ := loadCodeHashes(testContext(t), "twice-feature")
 	if _, ok := hashes.Files[filepath.Join(sourceRoot, "first.go")]; ok {
 		t.Error("code-hashes still contains stale first.go entry")
 	}
@@ -157,7 +156,7 @@ func TestSaveBuildState_MissingIntentsFails(t *testing.T) {
 	setupTestDir(t)
 	// No feature directory created at all.
 
-	err := saveBuildStateForFeature("nonexistent", "cmd/nonexistent")
+	err := saveBuildStateForFeature(testContext(t), "nonexistent", "cmd/nonexistent")
 	if err == nil {
 		t.Fatal("expected error when feature directory is missing, got nil")
 	}

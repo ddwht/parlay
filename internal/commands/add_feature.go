@@ -29,14 +29,18 @@ func init() {
 }
 
 func runAddFeature(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	name := strings.Join(args, " ")
 	slug := parser.Slugify(name)
 
 	if initiativeFlag != "" {
-		return runAddFeatureWithInitiative(name, slug, initiativeFlag)
+		return runAddFeatureWithInitiative(cfg, name, slug, initiativeFlag)
 	}
 
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
 	if _, err := os.Stat(featurePath); err == nil {
 		return fmt.Errorf("feature %q already exists at %s", slug, featurePath)
@@ -69,10 +73,10 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 
 // parlay-feature: initiatives
 // parlay-component: FeatureCreationResult
-func runAddFeatureWithInitiative(name, featureSlug, initiativeName string) error {
+func runAddFeatureWithInitiative(cfg *config.Context, name, featureSlug, initiativeName string) error {
 	initiativeSlug := parser.Slugify(initiativeName)
 
-	intentsRoot := filepath.Join(config.SpecDir, config.IntentsDir)
+	intentsRoot := cfg.IntentsRoot()
 	initiativePath := filepath.Join(intentsRoot, initiativeSlug)
 
 	if config.HasIntentsMd(initiativePath) {
@@ -86,7 +90,7 @@ func runAddFeatureWithInitiative(name, featureSlug, initiativeName string) error
 
 	initiativeCreated := false
 	if _, err := os.Stat(initiativePath); os.IsNotExist(err) {
-		for _, root := range threeTreeRoots() {
+		for _, root := range threeTreeRoots(cfg) {
 			if mkErr := os.MkdirAll(filepath.Join(root, initiativeSlug), 0755); mkErr != nil {
 				return fmt.Errorf("creating initiative directory in %s: %w", root, mkErr)
 			}
@@ -94,7 +98,7 @@ func runAddFeatureWithInitiative(name, featureSlug, initiativeName string) error
 		initiativeCreated = true
 	}
 
-	for _, root := range threeTreeRoots() {
+	for _, root := range threeTreeRoots(cfg) {
 		if mkErr := os.MkdirAll(filepath.Join(root, initiativeSlug, featureSlug), 0755); mkErr != nil {
 			if initiativeCreated {
 				fmt.Printf("[WARN] Created initiative %s (in deferred classification — no features yet), but couldn't create feature %s inside it: %v. Re-run the same command after fixing the issue — it's idempotent.\n", initiativeSlug, featureSlug, mkErr)
@@ -124,11 +128,11 @@ func runAddFeatureWithInitiative(name, featureSlug, initiativeName string) error
 	return nil
 }
 
-func threeTreeRoots() []string {
+func threeTreeRoots(cfg *config.Context) []string {
 	return []string{
-		filepath.Join(config.SpecDir, config.IntentsDir),
-		filepath.Join(config.SpecDir, config.HandoffDir),
-		config.BuildRoot(),
+		cfg.IntentsRoot(),
+		cfg.HandoffRoot(),
+		cfg.BuildRoot(),
 	}
 }
 

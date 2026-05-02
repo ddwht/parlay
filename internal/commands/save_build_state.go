@@ -39,7 +39,11 @@ func init() {
 }
 
 func runSaveBuildState(cmd *cobra.Command, args []string) error {
-	result, err := saveProjectBuildState(saveBuildStateSourceRoot)
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
+	result, err := saveProjectBuildState(cfg, saveBuildStateSourceRoot)
 	if err != nil {
 		return err
 	}
@@ -49,9 +53,9 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s: %d intents, %d dialogs, %d fragments\n",
 			fr.Slug, fr.IntentCount, fr.DialogCount, fr.FragmentCount)
 	}
-	fmt.Printf("  project baseline: %s\n", projectBaselinePath())
+	fmt.Printf("  project baseline: %s\n", projectBaselinePath(cfg))
 	fmt.Printf("  code-hashes:      %s (%d files)\n",
-		projectCodeHashesPath(), result.FileCount)
+		projectCodeHashesPath(cfg), result.FileCount)
 	return nil
 }
 
@@ -72,12 +76,12 @@ type featureSaveResult struct {
 // The CLI command (save-build-state) is project-level; this function
 // provides backward-compatible per-feature saves for unit tests that
 // operate on a single feature in isolation.
-func saveBuildStateForFeature(slug, sourceRoot string) error {
-	baseline, err := buildBaseline(slug)
+func saveBuildStateForFeature(cfg *config.Context, slug, sourceRoot string) error {
+	baseline, err := buildBaseline(cfg, slug)
 	if err != nil {
 		return fmt.Errorf("compute baseline: %w", err)
 	}
-	bfPath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	bfPath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 	if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
 		baseline.BuildfileSections = sectionHashes
 	}
@@ -85,7 +89,7 @@ func saveBuildStateForFeature(slug, sourceRoot string) error {
 	if err != nil {
 		return err
 	}
-	blPath := baselinePath(slug)
+	blPath := baselinePath(cfg, slug)
 	if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
 		return err
 	}
@@ -93,7 +97,7 @@ func saveBuildStateForFeature(slug, sourceRoot string) error {
 		return err
 	}
 
-	hashes, _, err := buildCodeHashes(slug, sourceRoot)
+	hashes, _, err := buildCodeHashes(cfg, slug, sourceRoot)
 	if err != nil {
 		return err
 	}
@@ -101,7 +105,7 @@ func saveBuildStateForFeature(slug, sourceRoot string) error {
 	if err != nil {
 		return err
 	}
-	chPath := codeHashesPath(slug)
+	chPath := codeHashesPath(cfg, slug)
 	if err := os.MkdirAll(filepath.Dir(chPath), 0755); err != nil {
 		return err
 	}
@@ -109,8 +113,8 @@ func saveBuildStateForFeature(slug, sourceRoot string) error {
 }
 
 // projectCodeHashesPath returns the project-level code-hashes sidecar path.
-func projectCodeHashesPath() string {
-	return filepath.Join(config.ProjectBuildPath(), CodeHashesFile)
+func projectCodeHashesPath(cfg *config.Context) string {
+	return filepath.Join(cfg.ProjectBuildPath(), CodeHashesFile)
 }
 
 // saveProjectBuildState atomically commits the full project build state:
@@ -120,8 +124,8 @@ func projectCodeHashesPath() string {
 //
 // This is the only sanctioned write path for these files. It MUST be
 // invoked only as the final step of /parlay-generate-code, after tests pass.
-func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
-	features, err := discoverFeatures()
+func saveProjectBuildState(cfg *config.Context, sourceRoot string) (*projectSaveResult, error) {
+	features, err := discoverFeatures(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("discover features: %w", err)
 	}
@@ -130,7 +134,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 
 	// --- Stage 1: Per-feature baselines ---
 	for _, slug := range features {
-		baseline, err := buildBaseline(slug)
+		baseline, err := buildBaseline(cfg, slug)
 		if err != nil {
 			// Feature may not have intents yet — skip silently.
 			continue
@@ -138,7 +142,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 
 		// Include per-feature buildfile section hashes (still useful for
 		// per-feature diff @feature in the build-feature skill).
-		bfPath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		bfPath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 		if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
 			baseline.BuildfileSections = sectionHashes
 		}
@@ -148,7 +152,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 			return nil, fmt.Errorf("marshal baseline for %s: %w", slug, err)
 		}
 
-		blPath := baselinePath(slug)
+		blPath := baselinePath(cfg, slug)
 		if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
 			return nil, fmt.Errorf("create build dir for %s: %w", slug, err)
 		}
@@ -165,7 +169,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 	}
 
 	// --- Stage 2: Project-level baseline (merged section hashes) ---
-	mergedSections := hashMergedBuildfileSections(features)
+	mergedSections := hashMergedBuildfileSections(cfg, features)
 	projectBL := &ProjectBaseline{
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 		MergedSections: mergedSections,
@@ -174,10 +178,10 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal project baseline: %w", err)
 	}
-	if err := os.MkdirAll(config.ProjectBuildPath(), 0755); err != nil {
+	if err := os.MkdirAll(cfg.ProjectBuildPath(), 0755); err != nil {
 		return nil, fmt.Errorf("create project build dir: %w", err)
 	}
-	if err := writeFileAtomic(projectBaselinePath(), projectBLBytes); err != nil {
+	if err := writeFileAtomic(projectBaselinePath(cfg), projectBLBytes); err != nil {
 		return nil, fmt.Errorf("write project baseline: %w", err)
 	}
 
@@ -185,7 +189,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 	// Scan the source root for ALL marker-tagged files, regardless of
 	// feature. This includes feature-scoped files (parlay-component:) and
 	// project-scoped files (parlay-scope: project + parlay-section:).
-	hashes, _, err := buildCodeHashes("", sourceRoot) // empty slug = accept all features
+	hashes, _, err := buildCodeHashes(cfg, "", sourceRoot) // empty slug = accept all features
 	if err != nil {
 		return nil, fmt.Errorf("compute project code hashes: %w", err)
 	}
@@ -193,7 +197,7 @@ func saveProjectBuildState(sourceRoot string) (*projectSaveResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal project code hashes: %w", err)
 	}
-	if err := writeFileAtomic(projectCodeHashesPath(), hashesBytes); err != nil {
+	if err := writeFileAtomic(projectCodeHashesPath(cfg), hashesBytes); err != nil {
 		return nil, fmt.Errorf("write project code hashes: %w", err)
 	}
 	result.FileCount = len(hashes.Files)

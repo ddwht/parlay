@@ -12,6 +12,7 @@ import (
 	"github.com/ddwht/parlay/internal/deployer"
 	"github.com/ddwht/parlay/internal/embedded"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var initCmd = &cobra.Command{
@@ -86,19 +87,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create .parlay/: %w", err)
 	}
 
+	// init runs before any parlay root exists, so it bypasses the
+	// resolver-based Context and writes cwd-relative paths directly.
+	configPath := filepath.Join(config.ParlayDir, config.ConfigFile)
+	blueprintPath := filepath.Join(config.ParlayDir, config.BlueprintFile)
+	schemasPath := filepath.Join(config.ParlayDir, config.SchemasDir)
+	intentsRoot := filepath.Join(config.SpecDir, config.IntentsDir)
+	handoffRoot := filepath.Join(config.SpecDir, config.HandoffDir)
+	buildRoot := filepath.Join(config.ParlayDir, config.BuildDir)
+
 	// Operation: create-file ".parlay/config.yaml" from ProjectConfig
-	if err := config.Save(cfg); err != nil {
+	cfgBytes, _ := yaml.Marshal(cfg)
+	if err := os.WriteFile(configPath, cfgBytes, 0644); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	// Operation: scaffold ".parlay/blueprint.yaml" with navigation strategy
 	blueprintContent := fmt.Sprintf("app: \"\"\n\nnavigation:\n  strategy: %s\n", fw.NavStrategy)
-	if err := os.WriteFile(config.BlueprintPath(), []byte(blueprintContent), 0644); err != nil {
+	if err := os.WriteFile(blueprintPath, []byte(blueprintContent), 0644); err != nil {
 		return fmt.Errorf("failed to write blueprint: %w", err)
 	}
 
 	// Operation: copy-embedded schemas → ".parlay/schemas/"
-	schemasPath := config.SchemasPath()
 	if err := embedded.WriteSchemas(schemasPath); err != nil {
 		return fmt.Errorf("failed to write schemas: %w", err)
 	}
@@ -111,17 +121,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Operation: create-directory "spec/intents/" (designer-authored input)
-	if err := os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755); err != nil {
+	if err := os.MkdirAll(intentsRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create spec/intents/: %w", err)
 	}
 
 	// Operation: create-directory "spec/handoff/" (engineering-consumed output)
-	if err := os.MkdirAll(config.HandoffRoot(), 0755); err != nil {
+	if err := os.MkdirAll(handoffRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create spec/handoff/: %w", err)
 	}
 
 	// Operation: create-directory ".parlay/build/" (tool-internal build artifacts)
-	if err := os.MkdirAll(config.BuildRoot(), 0755); err != nil {
+	if err := os.MkdirAll(buildRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create .parlay/build/: %w", err)
 	}
 
@@ -191,8 +201,10 @@ func promptChoice(reader *bufio.Reader, question string, options []string) (stri
 }
 
 // copyBundledAdapter copies an embedded adapter by slug to .parlay/adapters/.
+// Called from runInit, before any active root exists, so paths are
+// resolved cwd-relative directly rather than through *config.Context.
 func copyBundledAdapter(adapterSlug string) string {
-	adaptersDir := config.AdaptersPath()
+	adaptersDir := filepath.Join(config.ParlayDir, config.AdaptersDir)
 	os.MkdirAll(adaptersDir, 0755)
 
 	data, err := embedded.ReadAdapter(adapterSlug)

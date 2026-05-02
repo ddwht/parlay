@@ -45,8 +45,12 @@ type readinessOutput struct {
 }
 
 func runCheckReadiness(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	slug := parser.FeatureSlug(args[0])
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
 	output := readinessOutput{
 		Feature: slug,
@@ -58,7 +62,7 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 	case "create-surface":
 		output.Issues = checkCreateSurfaceReadiness(featurePath)
 	case "build-feature":
-		output.Issues = checkBuildFeatureReadiness(featurePath, slug)
+		output.Issues = checkBuildFeatureReadiness(cfg, featurePath, slug)
 	default:
 		return fmt.Errorf("unknown stage %q — supported: create-surface, build-feature", readinessStage)
 	}
@@ -142,7 +146,7 @@ func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 	return issues
 }
 
-func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
+func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) []readinessIssue {
 	var issues []readinessIssue
 
 	// Build-feature requires everything create-surface requires
@@ -225,7 +229,7 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	}
 
 	// Open questions are warnings, not errors — agent decides whether to block
-	driftOrQuestions, _ := collectForFeature(slug)
+	driftOrQuestions, _ := collectForFeature(cfg, slug)
 	if driftOrQuestions != nil && driftOrQuestions.Count > 0 {
 		issues = append(issues, readinessIssue{
 			Severity: "warning",
@@ -236,7 +240,7 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 	}
 
 	// Adapter must be configured
-	cfg, err := config.Load()
+	pc, err := cfg.LoadProjectConfig()
 	if err != nil {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
@@ -246,7 +250,7 @@ func checkBuildFeatureReadiness(featurePath, slug string) []readinessIssue {
 		})
 		return issues
 	}
-	if cfg.PrototypeFramework == "" {
+	if pc.PrototypeFramework == "" {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
 			Code:     "no-prototype-framework",

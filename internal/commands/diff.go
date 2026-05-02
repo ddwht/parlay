@@ -67,17 +67,21 @@ type diffOutput struct {
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
-		return runProjectDiff(cmd)
+		return runProjectDiff(cmd, cfg)
 	}
 	slug := parser.FeatureSlug(args[0])
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
 	output := diffOutput{Feature: slug}
 
 	// Load existing baseline (or treat as first build).
 	var storedBaseline Baseline
-	blData, err := os.ReadFile(baselinePath(slug))
+	blData, err := os.ReadFile(baselinePath(cfg, slug))
 	if err != nil {
 		output.FirstBuild = true
 	} else {
@@ -123,7 +127,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	output.Fragments = diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
 	// Design-spec diff (optional — missing file yields empty maps).
-	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	designSpecPath := filepath.Join(cfg.BuildPath(slug), "design-spec.yaml")
 	currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(designSpecPath)
 	if currentDSFragments == nil {
 		currentDSFragments = make(map[string]string)
@@ -140,7 +144,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	// against, so classifying components as "stable" would be misleading.
 	// The agent uses parlay verify-generated's has_hashes signal to confirm
 	// "no committed code state" and treats every component as new.
-	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	buildfilePath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
 		if !output.FirstBuild {
@@ -387,26 +391,26 @@ type featureDiffView struct {
 	Components   componentDiff `json:"components"`
 }
 
-func runProjectDiff(cmd *cobra.Command) error {
+func runProjectDiff(cmd *cobra.Command, cfg *config.Context) error {
 	output := projectDiffOutput{
 		Project:  true,
 		Features: make(map[string]featureDiffView),
 	}
 
 	// Discover all features by scanning spec/intents/*/
-	features, err := discoverFeatures()
+	features, err := discoverFeatures(cfg)
 	if err != nil {
 		return fmt.Errorf("discover features: %w", err)
 	}
 
 	// Run per-feature diff for each, collecting results.
 	for _, slug := range features {
-		featurePath := config.FeaturePath(slug)
+		featurePath := cfg.FeaturePath(slug)
 		view := featureDiffView{}
 
 		// Load per-feature baseline
 		var storedBaseline Baseline
-		if blData, err := os.ReadFile(baselinePath(slug)); err == nil {
+		if blData, err := os.ReadFile(baselinePath(cfg, slug)); err == nil {
 			if err := yaml.Unmarshal(blData, &storedBaseline); err == nil {
 				if storedBaseline.Sources == nil {
 					view.FirstBuild = true
@@ -448,7 +452,7 @@ func runProjectDiff(cmd *cobra.Command) error {
 		fragmentsDiff := diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
 		// Design-spec diff for this feature.
-		dsPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+		dsPath := filepath.Join(cfg.BuildPath(slug), "design-spec.yaml")
 		currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(dsPath)
 		if currentDSFragments == nil {
 			currentDSFragments = make(map[string]string)
@@ -459,7 +463,7 @@ func runProjectDiff(cmd *cobra.Command) error {
 		}
 		designSpecDiff := diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
-		buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		buildfilePath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 		if fileExists(buildfilePath) {
 			view.HasBuildfile = true
 			if !view.FirstBuild {
@@ -476,7 +480,7 @@ func runProjectDiff(cmd *cobra.Command) error {
 
 	// Compute merged section hashes across all buildfiles and compare to
 	// the project-level baseline.
-	output.Sections = computeProjectSectionDiff(features)
+	output.Sections = computeProjectSectionDiff(cfg, features)
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
@@ -486,26 +490,22 @@ func runProjectDiff(cmd *cobra.Command) error {
 	return nil
 }
 
-// discoverFeatures scans spec/intents/ for feature directories,
-// including initiative-nested features via config.AllFeatures().
-func discoverFeatures() ([]string, error) {
-	features, err := config.AllFeatures()
-	if err != nil {
-		return nil, err
-	}
-	return features, nil
+// discoverFeatures scans the active root's spec/intents/ tree for
+// feature directories, including initiative-nested features.
+func discoverFeatures(cfg *config.Context) ([]string, error) {
+	return cfg.AllFeatures()
 }
 
 // hashMergedBuildfileSections reads ALL features' buildfiles, merges each
 // section (models, routes, fixtures) by concatenating sorted YAML
 // representations, and returns per-section hashes.
-func hashMergedBuildfileSections(features []string) map[string]string {
+func hashMergedBuildfileSections(cfg *config.Context, features []string) map[string]string {
 	// Collect per-section content from each feature, sorted by feature
 	// name for determinism.
 	sectionContent := make(map[string]string) // section → concatenated YAML
 
 	for _, slug := range features {
-		buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+		buildfilePath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 		data, err := os.ReadFile(buildfilePath)
 		if err != nil {
 			continue
@@ -529,7 +529,7 @@ func hashMergedBuildfileSections(features []string) map[string]string {
 
 	// Include blueprint hash as a section — when the blueprint changes,
 	// cross-cutting files (shells, guards, providers) need regeneration.
-	if blueprintData, err := os.ReadFile(config.BlueprintPath()); err == nil {
+	if blueprintData, err := os.ReadFile(cfg.BlueprintPath()); err == nil {
 		sectionContent["blueprint"] = string(blueprintData)
 	}
 
@@ -541,8 +541,8 @@ func hashMergedBuildfileSections(features []string) map[string]string {
 }
 
 // projectBaselinePath returns the path to the project-level baseline.
-func projectBaselinePath() string {
-	return filepath.Join(config.ProjectBuildPath(), ".baseline.yaml")
+func projectBaselinePath(cfg *config.Context) string {
+	return filepath.Join(cfg.ProjectBuildPath(), ".baseline.yaml")
 }
 
 // ProjectBaseline stores merged section hashes for the project level.
@@ -553,15 +553,15 @@ type ProjectBaseline struct {
 
 // computeProjectSectionDiff computes merged section hashes from all features'
 // buildfiles and compares to the stored project baseline.
-func computeProjectSectionDiff(features []string) map[string]string {
-	currentMerged := hashMergedBuildfileSections(features)
+func computeProjectSectionDiff(cfg *config.Context, features []string) map[string]string {
+	currentMerged := hashMergedBuildfileSections(cfg, features)
 	if len(currentMerged) == 0 {
 		return nil
 	}
 
 	// Load stored project baseline
 	var stored ProjectBaseline
-	if data, err := os.ReadFile(projectBaselinePath()); err == nil {
+	if data, err := os.ReadFile(projectBaselinePath(cfg)); err == nil {
 		yaml.Unmarshal(data, &stored)
 	}
 	storedSections := stored.MergedSections

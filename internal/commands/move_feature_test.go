@@ -16,14 +16,14 @@ import (
 func setupMoveTestProject(t *testing.T) {
 	t.Helper()
 	setupTestDir(t)
-	for _, root := range threeTreeRoots() {
+	for _, root := range threeTreeRoots(testContext(t)) {
 		os.MkdirAll(root, 0755)
 	}
 }
 
 func createFeatureInTree(t *testing.T, qualifiedPath string) {
 	t.Helper()
-	for _, root := range threeTreeRoots() {
+	for _, root := range threeTreeRoots(testContext(t)) {
 		dir := filepath.Join(root, qualifiedPath)
 		os.MkdirAll(dir, 0755)
 	}
@@ -42,12 +42,12 @@ func TestMoveFeature_OrphanToInitiative(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, root := range threeTreeRoots() {
+	for _, root := range threeTreeRoots(testContext(t)) {
 		dest := filepath.Join(root, "auth-overhaul", "password-reset")
 		if _, err := os.Stat(dest); os.IsNotExist(err) {
 			t.Errorf("feature not moved in %s tree", root)
@@ -63,7 +63,7 @@ func TestMoveFeature_AutoCreateInitiative(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@sso-setup"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@sso-setup"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestMoveFeature_MoveOut(t *testing.T) {
 	moveOutFlag = true
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@auth-overhaul/password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestMoveFeature_ScopeCollision(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
 		t.Error("expected scope collision error, got nil")
 	}
@@ -121,7 +121,7 @@ func TestMoveFeature_NoopSameLocation(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@auth-overhaul/password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
 		t.Errorf("same-location move should be a no-op, got: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestMoveFeature_NotFound(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@nonexistent"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@nonexistent"})
 	if err == nil {
 		t.Error("expected not-found error, got nil")
 	}
@@ -147,7 +147,7 @@ func TestMoveFeature_MutuallyExclusiveFlags(t *testing.T) {
 	moveOutFlag = true
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
 		t.Error("expected mutually exclusive flag error, got nil")
 	}
@@ -162,7 +162,7 @@ func TestMoveFeature_MissingFlags(t *testing.T) {
 	moveToFlag = ""
 	moveOutFlag = false
 
-	err := runMoveFeature(nil, []string{"@password-reset"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
 		t.Error("expected missing destination error, got nil")
 	}
@@ -181,7 +181,7 @@ func TestMoveFeature_WrongType_Initiative(t *testing.T) {
 	moveOutFlag = false
 	defer func() { moveToFlag = ""; moveOutFlag = false }()
 
-	err := runMoveFeature(nil, []string{"@auth-overhaul"})
+	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul"})
 	if err == nil {
 		t.Error("expected wrong-type error for initiative, got nil")
 	}

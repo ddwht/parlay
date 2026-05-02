@@ -22,10 +22,14 @@ var newInitiativeCmd = &cobra.Command{
 }
 
 func runNewInitiative(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	name := strings.Join(args, " ")
 	slug := parser.Slugify(name)
 
-	intentsRoot := filepath.Join(config.SpecDir, config.IntentsDir)
+	intentsRoot := cfg.IntentsRoot()
 	initiativePath := filepath.Join(intentsRoot, slug)
 
 	if config.HasIntentsMd(initiativePath) {
@@ -37,14 +41,14 @@ func runNewInitiative(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	for _, root := range threeTreeRoots() {
+	for _, root := range threeTreeRoots(cfg) {
 		if err := os.MkdirAll(filepath.Join(root, slug), 0755); err != nil {
 			return fmt.Errorf("creating initiative directory in %s: %w", root, err)
 		}
 	}
 
-	handoffPath := filepath.Join(config.SpecDir, config.HandoffDir, slug)
-	buildPath := filepath.Join(config.BuildRoot(), slug)
+	handoffPath := filepath.Join(cfg.HandoffRoot(), slug)
+	buildPath := filepath.Join(cfg.BuildRoot(), slug)
 
 	fmt.Printf("Initiative %s created at %s/ (with matching parallel paths under %s/ and %s/).\n", slug, initiativePath, handoffPath, buildPath)
 	fmt.Println("The directory is empty and in deferred classification — it becomes a proper initiative once it contains at least one feature subdirectory. A README.md on its own does not change that — it is narrative, not a classification signal.")

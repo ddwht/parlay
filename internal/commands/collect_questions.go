@@ -35,9 +35,13 @@ type allQuestionsOutput struct {
 }
 
 func runCollectQuestions(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	if len(args) == 1 {
 		slug := parser.FeatureSlug(args[0])
-		output, err := collectForFeature(slug)
+		output, err := collectForFeature(cfg, slug)
 		if err != nil {
 			return err
 		}
@@ -45,14 +49,14 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 	}
 
 	// No argument: scan all features (including initiative-nested)
-	featureIDs, err := config.AllFeatures()
+	featureIDs, err := cfg.AllFeatures()
 	if err != nil {
 		return fmt.Errorf("cannot enumerate features: %w", err)
 	}
 
 	var all allQuestionsOutput
 	for _, featureID := range featureIDs {
-		output, err := collectForFeature(featureID)
+		output, err := collectForFeature(cfg, featureID)
 		if err != nil {
 			continue // feature may not have intents yet
 		}
@@ -65,8 +69,8 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 	return printJSON(all)
 }
 
-func collectForFeature(slug string) (*questionsOutput, error) {
-	featurePath := config.FeaturePath(slug)
+func collectForFeature(cfg *config.Context, slug string) (*questionsOutput, error) {
+	featurePath := cfg.FeaturePath(slug)
 	intentsPath := filepath.Join(featurePath, "intents.md")
 
 	intents, err := parser.ParseIntentsFile(intentsPath)

@@ -148,6 +148,30 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// mustContext extracts the resolved *config.Context from the command's
+// context.Context. Returns a clear error when none is set — usually
+// because the command's PreRunE was skipped (e.g. via the
+// parlay-skip-resolution annotation) but the handler then forgot it
+// can't rely on a Context.
+//
+// When cmd.Context() panics (because cmd is fresh and was never given a
+// context), mustContext recovers and returns an error — a defensive
+// shape so unit tests that drive runXxx directly without going through
+// Cobra's full lifecycle get a clear error message instead of a panic.
+func mustContext(cmd *cobra.Command) (cfg *config.Context, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			cfg = nil
+			err = fmt.Errorf("no parlay project found (cmd.Context() unavailable; PersistentPreRunE may not have run)")
+		}
+	}()
+	cfg = config.FromCtx(cmd.Context())
+	if cfg == nil {
+		return nil, fmt.Errorf("no parlay project found (run parlay init first, or check that PersistentPreRunE was not skipped)")
+	}
+	return cfg, nil
+}
+
 // envMap snapshots os.Environ() into a map[string]string so the resolver
 // receives only the keys it cares about. The resolver currently only
 // reads PARLAY_ROOT but the map shape is forward-compatible.

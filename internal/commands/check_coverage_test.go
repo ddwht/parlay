@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
 )
 
@@ -19,7 +18,7 @@ func TestCheckChain_NoDownstreamArtifacts(t *testing.T) {
 		{Title: "Do Something", Slug: "do-something"},
 	}
 
-	chain := checkChain(featureDir, "test-feature", intents)
+	chain := checkChain(testContext(t), featureDir, "test-feature", intents)
 	if chain != nil {
 		t.Error("expected nil chain when no downstream artifacts exist")
 	}
@@ -47,7 +46,7 @@ func TestCheckChain_IntentsWithoutSurface(t *testing.T) {
 		{Title: "Do Another", Slug: "do-another"},
 	}
 
-	chain := checkChain(featureDir, "test-feature", intents)
+	chain := checkChain(testContext(t), featureDir, "test-feature", intents)
 	if chain == nil {
 		t.Fatal("expected chain coverage report")
 	}
@@ -77,7 +76,7 @@ func TestCheckChain_OrphanedSurfaceReference(t *testing.T) {
 		{Title: "Active Intent", Slug: "active-intent"},
 	}
 
-	chain := checkChain(featureDir, "test-feature", intents)
+	chain := checkChain(testContext(t), featureDir, "test-feature", intents)
 	if chain == nil {
 		t.Fatal("expected chain coverage report")
 	}
@@ -92,7 +91,7 @@ func TestCheckChain_FullChain(t *testing.T) {
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
 	os.MkdirAll(featureDir, 0755)
-	buildDir := config.BuildPath("my-feature")
+	buildDir := testContext(t).BuildPath("my-feature")
 	os.MkdirAll(buildDir, 0755)
 
 	// Surface with two fragments
@@ -136,7 +135,7 @@ suites:
 		{Title: "Intent B", Slug: "intent-b"},
 	}
 
-	chain := checkChain(featureDir, "my-feature", intents)
+	chain := checkChain(testContext(t), featureDir, "my-feature", intents)
 	if chain == nil {
 		t.Fatal("expected chain coverage report")
 	}

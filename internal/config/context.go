@@ -111,6 +111,26 @@ func (c *Context) IntentsRoot() string {
 	return filepath.Join(c.Root.Path, SpecDir, IntentsDir)
 }
 
+// AllFeatures enumerates every qualified feature identifier under the
+// active root's spec/intents/ tree. Bypasses the package-global cache
+// in scanFeatureTree, which is single-root-aware.
+func (c *Context) AllFeatures() ([]string, error) {
+	return ScanFeatureTree(c.IntentsRoot())
+}
+
+// LoadProjectConfig reads <activeRoot>/.parlay/config.yaml into a
+// ProjectConfig struct. Returns the underlying os.ReadFile / yaml
+// errors when the file is missing or malformed. The active-root-aware
+// counterpart of the legacy package-level Load().
+func (c *Context) LoadProjectConfig() (*ProjectConfig, error) {
+	return loadProjectConfigAt(c.ConfigPath())
+}
+
+// SaveProjectConfig writes the given config to <activeRoot>/.parlay/config.yaml.
+func (c *Context) SaveProjectConfig(cfg *ProjectConfig) error {
+	return saveProjectConfigAt(c.ConfigPath(), cfg)
+}
+
 // ResolveAdapter performs child-first adapter file resolution: returns
 // the path to <active>/.parlay/adapters/<name>.adapter.yaml when present,
 // else the parent's same-named file. Returns the chosen path and a

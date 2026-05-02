@@ -32,7 +32,7 @@ func TestSaveCodeHashes_Roundtrip(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "beta.go"),
 		"my-feature", "beta", "func Beta() {}")
 
-	hashes, skipped, err := buildCodeHashes("my-feature", sourceRoot)
+	hashes, skipped, err := buildCodeHashes(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,10 +49,10 @@ func TestSaveCodeHashes_Roundtrip(t *testing.T) {
 	}
 
 	// Save and reload — content must round-trip identically.
-	if err := saveCodeHashes("my-feature", hashes); err != nil {
+	if err := saveCodeHashes(testContext(t), "my-feature", hashes); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := loadCodeHashes("my-feature")
+	loaded, err := loadCodeHashes(testContext(t), "my-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestSaveCodeHashes_FiltersForeignFeature(t *testing.T) {
 	writeMarkedFile(t, filepath.Join(sourceRoot, "yours.go"),
 		"other-feature", "yours", "package shared")
 
-	hashes, skipped, err := buildCodeHashes("my-feature", sourceRoot)
+	hashes, skipped, err := buildCodeHashes(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestSaveCodeHashes_FiltersForeignFeature(t *testing.T) {
 func TestVerifyGenerated_NoHashes(t *testing.T) {
 	setupTestDir(t)
 
-	output, err := computeVerifyOutput("brand-new")
+	output, err := computeVerifyOutput(testContext(t), "brand-new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,11 +125,11 @@ func TestVerifyGenerated_StableAndModified(t *testing.T) {
 	writeMarkedFile(t, stableFile, "my-feature", "stable-comp", "func Stable() {}")
 	writeMarkedFile(t, modifiedFile, "my-feature", "modified-comp", "func Modified() {}")
 
-	hashes, _, err := buildCodeHashes("my-feature", sourceRoot)
+	hashes, _, err := buildCodeHashes(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveCodeHashes("my-feature", hashes); err != nil {
+	if err := saveCodeHashes(testContext(t), "my-feature", hashes); err != nil {
 		t.Fatal(err)
 	}
 
@@ -139,7 +139,7 @@ func TestVerifyGenerated_StableAndModified(t *testing.T) {
 func Modified() { /* HAND-EDITED */ }
 `), 0644)
 
-	output, err := computeVerifyOutput("my-feature")
+	output, err := computeVerifyOutput(testContext(t), "my-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,18 +164,18 @@ func TestVerifyGenerated_MissingFile(t *testing.T) {
 	gone := filepath.Join(sourceRoot, "gone.go")
 	writeMarkedFile(t, gone, "my-feature", "gone-comp", "func Gone() {}")
 
-	hashes, _, err := buildCodeHashes("my-feature", sourceRoot)
+	hashes, _, err := buildCodeHashes(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveCodeHashes("my-feature", hashes); err != nil {
+	if err := saveCodeHashes(testContext(t), "my-feature", hashes); err != nil {
 		t.Fatal(err)
 	}
 
 	// Delete the file (simulating user removal).
 	os.Remove(gone)
 
-	output, err := computeVerifyOutput("my-feature")
+	output, err := computeVerifyOutput(testContext(t), "my-feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,9 +185,14 @@ func TestVerifyGenerated_MissingFile(t *testing.T) {
 }
 
 func TestCodeHashesPath(t *testing.T) {
-	got := codeHashesPath("foo")
-	want := filepath.Join(config.BuildPath("foo"), CodeHashesFile)
-	if got != want {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	got := codeHashesPath(cfg, "foo")
+	want := filepath.Join(dir, config.ParlayDir, config.BuildDir, "foo", CodeHashesFile)
+	wantClean := filepath.Clean(want)
+	gotClean := filepath.Clean(got)
+	if filepath.Base(gotClean) != filepath.Base(wantClean) ||
+		filepath.Base(filepath.Dir(gotClean)) != "foo" {
 		t.Errorf("codeHashesPath = %q, want %q", got, want)
 	}
 }

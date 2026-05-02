@@ -30,7 +30,7 @@ func TestInit_CreatesProjectStructure(t *testing.T) {
 
 	os.MkdirAll(config.ParlayDir, 0755)
 	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
-	config.Save(cfg)
+	testContext(t).SaveProjectConfig(cfg)
 
 	// Verify .parlay/config.yaml
 	if _, err := os.Stat(filepath.Join(dir, ".parlay", "config.yaml")); os.IsNotExist(err) {
@@ -38,7 +38,7 @@ func TestInit_CreatesProjectStructure(t *testing.T) {
 	}
 
 	// Verify config content
-	loaded, err := config.Load()
+	loaded, err := testContext(t).LoadProjectConfig()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -68,11 +68,11 @@ func TestInit_ConfigYAMLRoundtrip(t *testing.T) {
 	}
 
 	os.MkdirAll(config.ParlayDir, 0755)
-	if err := config.Save(cfg); err != nil {
+	if err := testContext(t).SaveProjectConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(config.ConfigPath())
+	data, err := os.ReadFile(testContext(t).ConfigPath())
 	if err != nil {
 		t.Fatal(err)
 	}

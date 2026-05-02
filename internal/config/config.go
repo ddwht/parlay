@@ -36,61 +36,12 @@ const (
 	PagesDir      = "pages"
 )
 
-func ConfigPath() string {
-	return filepath.Join(ParlayDir, ConfigFile)
-}
-
-func SchemasPath() string {
-	return filepath.Join(ParlayDir, SchemasDir)
-}
-
-func BlueprintPath() string {
-	return filepath.Join(ParlayDir, BlueprintFile)
-}
-
-func FeaturePath(identifier string) string {
-	return resolveQualifiedPath(identifier, filepath.Join(SpecDir, IntentsDir))
-}
-
-func AdaptersPath() string {
-	return filepath.Join(ParlayDir, AdaptersDir)
-}
-
-func PagesPath() string {
-	return filepath.Join(SpecDir, PagesDir)
-}
-
-// BuildRoot is the root directory for tool-internal build artifacts.
-func BuildRoot() string {
-	return filepath.Join(ParlayDir, BuildDir)
-}
-
-// BuildPath is the per-feature directory for tool-internal build artifacts
-// (buildfile.yaml, testcases.yaml, .baseline.yaml).
-func BuildPath(identifier string) string {
-	return resolveQualifiedPath(identifier, filepath.Join(ParlayDir, BuildDir))
-}
-
-// HandoffRoot is the root directory for engineering handoff artifacts.
-func HandoffRoot() string {
-	return filepath.Join(SpecDir, HandoffDir)
-}
-
-// HandoffPath is the per-feature directory for engineering handoff artifacts
-// (specification.md and any future handoff content).
-func HandoffPath(identifier string) string {
-	return resolveQualifiedPath(identifier, filepath.Join(SpecDir, HandoffDir))
-}
-
-// ProjectBuildPath is the directory for project-level build state
-// (merged section baseline, project code-hashes). Cross-cutting files
-// that serve all features are tracked here, not per-feature.
-func ProjectBuildPath() string {
-	return filepath.Join(ParlayDir, BuildDir, "_project")
-}
-
-func Load() (*ProjectConfig, error) {
-	data, err := os.ReadFile(ConfigPath())
+// loadProjectConfigAt reads a ProjectConfig from a specific filesystem
+// path. Used by the Context-aware (*Context).LoadProjectConfig and by
+// the legacy single-root bootstrap path in `parlay init` (which writes
+// the very first .parlay/config.yaml before any active root exists).
+func loadProjectConfigAt(path string) (*ProjectConfig, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -101,12 +52,12 @@ func Load() (*ProjectConfig, error) {
 	return &cfg, nil
 }
 
-func Save(cfg *ProjectConfig) error {
+func saveProjectConfigAt(path string, cfg *ProjectConfig) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(ConfigPath(), data, 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
 // --- Qualified identifier resolver (cross-cutting: qualified-path-resolver) ---

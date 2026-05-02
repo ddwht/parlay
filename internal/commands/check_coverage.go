@@ -50,8 +50,12 @@ type chainCoverage struct {
 }
 
 func runCheckCoverage(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	slug := parser.FeatureSlug(args[0])
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
@@ -91,13 +95,13 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	}
 
 	// Full-chain traceability: check downstream artifacts if they exist
-	chain := checkChain(featurePath, slug, intents)
+	chain := checkChain(cfg, featurePath, slug, intents)
 	if chain != nil {
 		output.Chain = chain
 	}
 
 	// Drift detection: check if intents changed since last build
-	drift, _ := detectDrift(slug, featurePath)
+	drift, _ := detectDrift(cfg, slug, featurePath)
 	if drift != nil && drift.HasDrift {
 		output.Drift = drift
 	}
@@ -110,9 +114,9 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func checkChain(featurePath, slug string, intents []parser.Intent) *chainCoverage {
+func checkChain(cfg *config.Context, featurePath, slug string, intents []parser.Intent) *chainCoverage {
 	surfacePath := filepath.Join(featurePath, "surface.md")
-	buildPath := config.BuildPath(slug)
+	buildPath := cfg.BuildPath(slug)
 	buildfilePath := filepath.Join(buildPath, "buildfile.yaml")
 	testcasesPath := filepath.Join(buildPath, "testcases.yaml")
 

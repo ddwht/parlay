@@ -72,16 +72,16 @@ type driftOutput struct {
 	Removed    []string    `json:"removed_intents,omitempty"`
 }
 
-func baselinePath(slug string) string {
-	return filepath.Join(config.BuildPath(slug), ".baseline.yaml")
+func baselinePath(cfg *config.Context, slug string) string {
+	return filepath.Join(cfg.BuildPath(slug), ".baseline.yaml")
 }
 
 // buildBaseline computes a Baseline struct from the current source files of
 // a feature. Best-effort on dialogs and surface fragments — missing files are
 // skipped silently. Does not touch disk; callers (typically saveBuildState)
 // are responsible for serialization and writing.
-func buildBaseline(slug string) (*Baseline, error) {
-	featurePath := config.FeaturePath(slug)
+func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
+	featurePath := cfg.FeaturePath(slug)
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
@@ -114,7 +114,7 @@ func buildBaseline(slug string) (*Baseline, error) {
 	}
 
 	// Hash design-spec fragments (optional — missing file is not an error).
-	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	designSpecPath := filepath.Join(cfg.BuildPath(slug), "design-spec.yaml")
 	if dsFragments, dsShared, err := hashDesignSpecFragments(designSpecPath); err == nil {
 		if len(dsFragments) > 0 || dsShared != "" {
 			baseline.Sources.DesignSpecFragments = dsFragments
@@ -131,10 +131,14 @@ func marshalBaseline(b *Baseline) ([]byte, error) {
 }
 
 func runCheckDrift(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
 	slug := parser.FeatureSlug(args[0])
-	featurePath := config.FeaturePath(slug)
+	featurePath := cfg.FeaturePath(slug)
 
-	output, err := detectDrift(slug, featurePath)
+	output, err := detectDrift(cfg, slug, featurePath)
 	if err != nil {
 		return err
 	}
@@ -147,11 +151,11 @@ func runCheckDrift(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func detectDrift(slug, featurePath string) (*driftOutput, error) {
+func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, error) {
 	output := &driftOutput{Feature: slug}
 
 	// Load baseline
-	blPath := baselinePath(slug)
+	blPath := baselinePath(cfg, slug)
 	blData, err := os.ReadFile(blPath)
 	if err != nil {
 		// No baseline = no drift to detect

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -15,7 +14,7 @@ func TestSaveAndDetectDrift_NoDrift(t *testing.T) {
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
 	os.MkdirAll(featureDir, 0755)
-	os.MkdirAll(config.BuildPath("my-feature"), 0755)
+	os.MkdirAll(testContext(t).BuildPath("my-feature"), 0755)
 
 	intents := `## Check Readiness
 
@@ -41,10 +40,10 @@ func TestSaveAndDetectDrift_NoDrift(t *testing.T) {
 		baseline.Intents[intent.Slug] = hashIntent(intent)
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath("my-feature"), data, 0644)
+	os.WriteFile(baselinePath(testContext(t), "my-feature"), data, 0644)
 
 	// Check drift — should be none
-	output, err := detectDrift("my-feature", featureDir)
+	output, err := detectDrift(testContext(t), "my-feature", featureDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +57,7 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
 	os.MkdirAll(featureDir, 0755)
-	os.MkdirAll(config.BuildPath("my-feature"), 0755)
+	os.MkdirAll(testContext(t).BuildPath("my-feature"), 0755)
 
 	// Original intent
 	original := `## Check Readiness
@@ -78,7 +77,7 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 		baseline.Intents[intent.Slug] = hashIntent(intent)
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath("my-feature"), data, 0644)
+	os.WriteFile(baselinePath(testContext(t), "my-feature"), data, 0644)
 
 	// Modify the goal
 	modified := `## Check Readiness
@@ -89,7 +88,7 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(modified), 0644)
 
 	// Check drift
-	output, err := detectDrift("my-feature", featureDir)
+	output, err := detectDrift(testContext(t), "my-feature", featureDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,7 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 
 	featureDir := filepath.Join(dir, "spec", "intents", "my-feature")
 	os.MkdirAll(featureDir, 0755)
-	os.MkdirAll(config.BuildPath("my-feature"), 0755)
+	os.MkdirAll(testContext(t).BuildPath("my-feature"), 0755)
 
 	// Baseline had two intents
 	baseline := Baseline{
@@ -130,7 +129,7 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 		},
 	}
 	data, _ := yaml.Marshal(baseline)
-	os.WriteFile(baselinePath("my-feature"), data, 0644)
+	os.WriteFile(baselinePath(testContext(t), "my-feature"), data, 0644)
 
 	// Current intents: A (unchanged) + C (new), B removed
 	current := `## Intent A
@@ -147,7 +146,7 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(current), 0644)
 
-	output, err := detectDrift("my-feature", featureDir)
+	output, err := detectDrift(testContext(t), "my-feature", featureDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +179,7 @@ func TestDetectDrift_NoBaseline(t *testing.T) {
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
 	// No baseline file — should return no drift
-	output, err := detectDrift("my-feature", featureDir)
+	output, err := detectDrift(testContext(t), "my-feature", featureDir)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/config"
 	"github.com/ddwht/parlay/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -14,7 +13,7 @@ import (
 // and surface.md populated with provided content. Empty strings skip the file.
 func writeFeatureFiles(t *testing.T, slug, intents, dialogs, surface string) string {
 	t.Helper()
-	featureDir := config.FeaturePath(slug)
+	featureDir := testContext(t).FeaturePath(slug)
 	if err := os.MkdirAll(featureDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +32,11 @@ func writeFeatureFiles(t *testing.T, slug, intents, dialogs, surface string) str
 // writeBaseline saves a Baseline yaml file at the canonical location for slug.
 func writeBaseline(t *testing.T, slug string, b Baseline) {
 	t.Helper()
-	if err := os.MkdirAll(config.BuildPath(slug), 0755); err != nil {
+	if err := os.MkdirAll(testContext(t).BuildPath(slug), 0755); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := yaml.Marshal(b)
-	if err := os.WriteFile(baselinePath(slug), data, 0644); err != nil {
+	if err := os.WriteFile(baselinePath(testContext(t), slug), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -45,10 +44,10 @@ func writeBaseline(t *testing.T, slug string, b Baseline) {
 // writeBuildfile writes a minimal buildfile.yaml at the canonical location.
 func writeBuildfile(t *testing.T, slug, content string) {
 	t.Helper()
-	if err := os.MkdirAll(config.BuildPath(slug), 0755); err != nil {
+	if err := os.MkdirAll(testContext(t).BuildPath(slug), 0755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	path := filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +59,11 @@ func writeBuildfile(t *testing.T, slug, content string) {
 // tests can assert on the struct.
 func runDiffForTest(t *testing.T, slug string) diffOutput {
 	t.Helper()
-	featurePath := config.FeaturePath(slug)
+	featurePath := testContext(t).FeaturePath(slug)
 	output := diffOutput{Feature: slug}
 
 	var storedBaseline Baseline
-	if blData, err := os.ReadFile(baselinePath(slug)); err == nil {
+	if blData, err := os.ReadFile(baselinePath(testContext(t), slug)); err == nil {
 		if err := yaml.Unmarshal(blData, &storedBaseline); err != nil {
 			t.Fatal(err)
 		}
@@ -104,7 +103,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	output.Fragments = diffStringMap(stored.SurfaceFragments, currentFragmentHashes)
 
 	// Design-spec diff.
-	designSpecPath := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	designSpecPath := filepath.Join(testContext(t).BuildPath(slug), "design-spec.yaml")
 	currentDSFragments, currentDSShared, _ := hashDesignSpecFragments(designSpecPath)
 	if currentDSFragments == nil {
 		currentDSFragments = make(map[string]string)
@@ -115,7 +114,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	}
 	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
-	buildfilePath := filepath.Join(config.BuildPath(slug), "buildfile.yaml")
+	buildfilePath := filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
 		if !output.FirstBuild {
@@ -163,7 +162,7 @@ func TestDiff_NoChanges(t *testing.T) {
 	writeFeatureFiles(t, "my-feature", intents, "", "")
 
 	// Save a baseline that matches current state.
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -195,7 +194,7 @@ func TestDiff_ChangedIntent(t *testing.T) {
 	writeFeatureFiles(t, "my-feature", original, "", "")
 
 	// Save baseline from original
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -213,7 +212,7 @@ func TestDiff_ChangedIntent(t *testing.T) {
 **Goal**: Updated goal
 **Persona**: User
 `
-	os.WriteFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
+	os.WriteFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
 
 	out := runDiffForTest(t, "my-feature")
 	if len(out.Intents.Changed) != 1 || out.Intents.Changed[0] != "do-something" {
@@ -293,9 +292,9 @@ System: Done
 	writeFeatureFiles(t, "my-feature", intents, dialogs, surface)
 
 	// Save baseline
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedDialogs, _ := parser.ParseDialogsFile(filepath.Join(config.FeaturePath("my-feature"), "dialogs.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedDialogs, _ := parser.ParseDialogsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "dialogs.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -332,7 +331,7 @@ components:
 **Goal**: Updated goal
 **Persona**: User
 `
-	os.WriteFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
+	os.WriteFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
 
 	out := runDiffForTest(t, "my-feature")
 	if !out.HasBuildfile {
@@ -387,8 +386,8 @@ func TestDiff_ComponentImpact_StableWhenUnrelatedChange(t *testing.T) {
 `
 	writeFeatureFiles(t, "my-feature", intents, "", surface)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -429,7 +428,7 @@ components:
 **Goal**: Goal B
 **Persona**: User
 `
-	os.WriteFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
+	os.WriteFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"), []byte(modified), 0644)
 
 	out := runDiffForTest(t, "my-feature")
 	if len(out.Components.Dirty) != 1 || out.Components.Dirty[0].Name != "comp-a" {
@@ -473,7 +472,7 @@ components:
 	writeMarkedFile(t, filepath.Join(sourceRoot, "do.go"),
 		"my-feature", "do-comp", "func Do() {}")
 
-	err := saveBuildStateForFeature("my-feature", sourceRoot)
+	err := saveBuildStateForFeature(testContext(t), "my-feature", sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,8 +532,8 @@ func TestDiff_ComponentImpact_RemovedFragment(t *testing.T) {
 `
 	writeFeatureFiles(t, "my-feature", intents, "", originalSurface)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -563,7 +562,7 @@ components:
 	// Replace surface with empty content (fragment removed)
 	emptySurface := `# My Feature — Surface
 `
-	os.WriteFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"), []byte(emptySurface), 0644)
+	os.WriteFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"), []byte(emptySurface), 0644)
 
 	out := runDiffForTest(t, "my-feature")
 	if len(out.Components.Removed) != 1 || out.Components.Removed[0] != "comp-a" {
@@ -574,10 +573,10 @@ components:
 // writeDesignSpec writes a design-spec.yaml at the canonical build location.
 func writeDesignSpec(t *testing.T, slug, content string) {
 	t.Helper()
-	if err := os.MkdirAll(config.BuildPath(slug), 0755); err != nil {
+	if err := os.MkdirAll(testContext(t).BuildPath(slug), 0755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(config.BuildPath(slug), "design-spec.yaml")
+	path := filepath.Join(testContext(t).BuildPath(slug), "design-spec.yaml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -598,8 +597,8 @@ func TestDiff_DesignSpecNew_DirtiesComponent(t *testing.T) {
 `
 	writeFeatureFiles(t, "my-feature", intents, "", surface)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -680,9 +679,9 @@ fragments:
 `)
 
 	// Build a baseline that includes the design-spec hashes
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
-	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(config.BuildPath("my-feature"), "design-spec.yaml"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
+	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(testContext(t).BuildPath("my-feature"), "design-spec.yaml"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -771,9 +770,9 @@ fragments:
     widget: "Form"
 `)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
-	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(config.BuildPath("my-feature"), "design-spec.yaml"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
+	dsFrags, dsShared, _ := hashDesignSpecFragments(filepath.Join(testContext(t).BuildPath("my-feature"), "design-spec.yaml"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -841,8 +840,8 @@ func TestDiff_NoDesignSpec_AllStable(t *testing.T) {
 `
 	writeFeatureFiles(t, "my-feature", intents, "", surface)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
@@ -907,8 +906,8 @@ func TestDiff_DesignSpecUnrelatedFragment_StableComponent(t *testing.T) {
 `
 	writeFeatureFiles(t, "my-feature", intents, "", surface)
 
-	parsed, _ := parser.ParseIntentsFile(filepath.Join(config.FeaturePath("my-feature"), "intents.md"))
-	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(config.FeaturePath("my-feature"), "surface.md"))
+	parsed, _ := parser.ParseIntentsFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "intents.md"))
+	parsedFragments, _ := parser.ParseSurfaceFile(filepath.Join(testContext(t).FeaturePath("my-feature"), "surface.md"))
 	b := Baseline{
 		GeneratedAt: "2026-04-07T00:00:00Z",
 		Intents:     map[string]IntentHash{},
