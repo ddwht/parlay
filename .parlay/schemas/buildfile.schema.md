@@ -90,6 +90,20 @@ cross-cutting:
       - <new functions/types being added — with optional signatures>
     caching: <caching strategy — tree-scan-on-first-access, none, per-process>
     backward-compatible: <true | false>
+
+plan:
+  modifies:
+    - path: <existing file path the build will edit>
+      sources:
+        - <component or cross-cutting id that produced this entry>
+  creates:
+    - path: <new file path the build will write>
+      sources:
+        - <component or cross-cutting id that produced this entry>
+  deletes:
+    - path: <file path the build will delete>
+      sources:
+        - <component id that was removed>
 ```
 
 ## Cross-cutting section
@@ -110,6 +124,36 @@ The `cross-cutting:` section describes infrastructure changes that flow through 
 \* At least one of `target-files` or `target-pattern` must be present.
 
 The section is optional. Buildfiles without it remain valid. When present, entries follow the same diff lifecycle as components: `parlay diff` classifies each as stable/dirty/removed.
+
+## Plan section
+
+The `plan:` section is the **executable contract** for which files this feature touches. It enumerates every path generate-code will create, modify, or delete, and cites the components or cross-cuttings that produced each entry.
+
+| Field | Required | Description |
+|---|---|---|
+| `modifies` | No | Entries for existing files the build will edit |
+| `creates` | No | Entries for new files the build will write |
+| `deletes` | No | Entries for files the build will remove (matches `components.removed` from the diff) |
+
+Each entry has:
+
+| Field | Required | Description |
+|---|---|---|
+| `path` | Yes | File path relative to the source root |
+| `sources` | Yes | `[component/<name>` or `cross-cutting/<id>]` — buildfile entries that contributed this file |
+
+**Required for new buildfiles.** `parlay build-feature` emits a `plan:` section computed deterministically from `components:` + `cross-cutting:` + the adapter's `file-conventions`. Legacy buildfiles without `plan:` trigger a "regenerate via build-feature" error from generate-code — the missing plan is treated as a hard failure rather than an implicit fallback, because the plan is the integration contract.
+
+**Authoring rule for build-feature:** for every `cross-cutting:` entry with non-empty `target-files:` (or resolvable `target-pattern:`), each named path goes in `plan.modifies`. For every `components:` entry, the file the adapter's `component-pattern` would produce goes in `plan.creates` (unless it merges into a shared file via Tier 2, in which case it goes in `plan.modifies` and shares the path with another entry). For purely-introducing cross-cuttings (no `target-files:`), the agent picks a path consistent with the adapter's conventions and lists it in `plan.creates`.
+
+**Execution rule for generate-code:** `plan` is the single source of truth for "what files this generation may touch." Refuse to write any path not listed in `plan.creates` or `plan.modifies`. Refuse to skip any path that's listed unless the diff explicitly classifies it as stable. The strict-target rule in step 14.7 still applies — `plan:` reinforces it but does not replace it.
+
+**Validation:** `parlay validate --type buildfile --deep` checks plan integrity:
+- Every `plan.modifies` path exists in the source root.
+- Every `plan.creates` path does NOT exist (collisions are blocking errors).
+- Every `components:` entry has at least one `plan.creates` or `plan.modifies` row whose `sources` references it.
+- Every `cross-cutting:` entry's `target-files:` paths appear in `plan.modifies`.
+- Every `plan.modifies` `path` traces back to a real `Affects:`/`target-files:` claim somewhere in `cross-cutting:` (no orphan modify entries).
 
 ## Widget population
 
