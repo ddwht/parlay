@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(parlay:*)",
+      "Bash(./parlay:*)",
+      "Bash(../parlay:*)",
+      "Bash(/workspace/parlay-dev/parlay:*)",
+
+      "Bash(cd:*)",
+      "Bash(mkdir:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(echo:*)",
+      "Bash(diff:*)",
+      "Bash(which:*)",
+      "Bash(awk:*)",
+      "Bash(sed -n:*)",
+
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git blame:*)",
+      "Bash(git stash list:*)",
+
+      "Bash(go test:*)",
+      "Bash(CGO_ENABLED=0 go test:*)",
+      "Bash(/home/node/go/bin/go test:*)",
+      "Bash(CGO_ENABLED=0 /home/node/go/bin/go test:*)",
+      "Bash(/home/node/go/bin/go build:*)",
+      "Bash(CGO_ENABLED=0 /home/node/go/bin/go build:*)",
+      "Bash(go vet:*)",
+      "Bash(CGO_ENABLED=0 go vet:*)",
+      "Bash(make build)",
+      "Bash(make sync-skills)",
+      "Bash(make verify-skills)"
+    ]
+  }
+}
