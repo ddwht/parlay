@@ -40,12 +40,23 @@ type upgradeResult struct {
 func deployToRoot(rootPath string) (upgradeResult, error) {
 	cfgPath := filepath.Join(rootPath, config.ParlayDir, config.ConfigFile)
 	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return upgradeResult{}, fmt.Errorf("read %s: %w (run parlay init first)", cfgPath, err)
-	}
 	var cfg config.ProjectConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return upgradeResult{}, fmt.Errorf("parse %s: %w", cfgPath, err)
+	switch {
+	case err == nil:
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return upgradeResult{}, fmt.Errorf("parse %s: %w", cfgPath, err)
+		}
+	case os.IsNotExist(err):
+		// Bare-parent topology: a multi-root parent registry has
+		// roots.yaml + schemas/ but no config.yaml of its own (children
+		// hold the project state). Proceed with an empty cfg — schemas
+		// still deploy; the agent-deploy step gets skipped below.
+		rootsPath := filepath.Join(rootPath, config.ParlayDir, config.RootsIndexFile)
+		if _, statErr := os.Stat(rootsPath); statErr != nil {
+			return upgradeResult{}, fmt.Errorf("read %s: %w (run parlay init first)", cfgPath, err)
+		}
+	default:
+		return upgradeResult{}, fmt.Errorf("read %s: %w", cfgPath, err)
 	}
 
 	// Re-deploy schemas.
@@ -55,7 +66,10 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 	}
 	schemaNames, _ := embedded.SchemaNames()
 
-	// Re-deploy skills and agent config.
+	// Re-deploy skills and agent config — only if we know the agent.
+	if cfg.AIAgent == "" {
+		return upgradeResult{SchemaCount: len(schemaNames)}, nil
+	}
 	skills, _ := embedded.ReadAllSkills()
 	dep, err := deployer.Get(cfg.AIAgent)
 	if err != nil {
