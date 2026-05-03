@@ -1,0 +1,650 @@
+feature: parlay-tool/status-feature-phases
+adapter: go-cli
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+#
+# This feature is wholly internal to the CLI — there is no domain entity in
+# the user's data tree. The "models" below are the shapes that travel
+# through the feature: the typed phase enum, the per-feature listing entry,
+# and the JSON envelope. Each one is referenced by at least one component
+# or cross-cutting entry below.
+
+models:
+  FeaturePhase:
+    properties:
+      value:
+        type: enum
+        enum: [intents, dialogs, artifacts, build, done]
+        required: true
+        description: >-
+          Furthest pipeline phase whose required on-disk artifacts exist
+          for a given (root, feature) pair. Lowercase string-typed alias
+          backed by exported Go const block. The "code" phase is
+          intentionally excluded — generated code is not tracked here.
+    states:
+      values: [intents, dialogs, artifacts, build, done]
+      transitions:
+        intents:   [dialogs]
+        dialogs:   [artifacts]
+        artifacts: [build]
+        build:     [done]
+
+  FeatureEntry:
+    properties:
+      id:
+        type: string
+        required: true
+        description: Feature slug as it appears under spec/intents/, e.g. "parlay-tool/status-feature-phases".
+      phase:
+        type: FeaturePhase
+        required: true
+        description: Phase value computed by the shared helper.
+
+  ChildRootEntry:
+    properties:
+      name:
+        type: string
+        required: true
+        description: Child-root short name (matches the entry name in roots.yaml).
+      path:
+        type: string
+        required: true
+        description: Absolute on-disk path to the child root.
+      features:
+        type: FeatureEntry[]
+        required: true
+        description: Features authored under this child root, never null — empty array when none.
+      unavailable:
+        type: string
+        required: false
+        description: >-
+          When the child root is missing/unreadable, a single human-readable
+          reason string. The features array is empty in that case. Absent
+          when the child resolves cleanly.
+
+  StatusEnvelope:
+    properties:
+      schema_version:
+        type: number
+        required: true
+        description: Integer schema version. Starts at 1. Bumped only on breaking changes; additive fields do not bump.
+      root:
+        type: RootSection
+        required: true
+      children:
+        type: ChildRootEntry[]
+        required: true
+        description: Always present, never null. Empty array when the active root is a child or standalone.
+
+  RootSection:
+    properties:
+      path:
+        type: string
+        required: true
+        description: Absolute path of the active root.
+      kind:
+        type: enum
+        enum: [parent, child, standalone]
+        required: true
+      source:
+        type: string
+        required: true
+        description: How the root was resolved — flag, cwd, env.
+      features:
+        type: FeatureEntry[]
+        required: true
+        description: Features owned by the active root itself. Empty array when none.
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+fixtures:
+  parent-with-two-children:
+    description: >-
+      Parent root /workspace/parlay-dev with no parent-owned features and two
+      registered children (core, studio) each with one feature. Exercises the
+      bare-parent topology and the cross-root walk in registration order.
+    data:
+      RootSection:
+        - path: /tmp/parlay-fixture/parent
+          kind: parent
+          source: cwd
+          features: []
+      ChildRootEntry:
+        - name: core
+          path: /tmp/parlay-fixture/parent/core
+          features:
+            - id: parlay-tool/status-feature-phases
+              phase: dialogs
+        - name: studio
+          path: /tmp/parlay-fixture/parent/studio
+          features:
+            - id: shell
+              phase: artifacts
+
+  parent-with-unavailable-child:
+    description: >-
+      Parent with one healthy child (core) and one unavailable child (studio)
+      whose spec/intents/ does not exist. Exit code stays zero; studio entry
+      carries an `unavailable` field.
+    data:
+      RootSection:
+        - path: /tmp/parlay-fixture/parent
+          kind: parent
+          source: cwd
+          features: []
+      ChildRootEntry:
+        - name: core
+          path: /tmp/parlay-fixture/parent/core
+          features:
+            - id: parlay-tool/status-feature-phases
+              phase: dialogs
+        - name: studio
+          path: /tmp/parlay-fixture/parent/studio
+          features: []
+          unavailable: "spec/intents not readable: open /tmp/parlay-fixture/parent/studio/spec/intents: no such file or directory"
+
+  child-only:
+    description: >-
+      Active root is a child (core) with three features at different phases.
+      Used to verify downward-only behaviour — no parent header is synthesized,
+      no sibling sections appear, children[] is [].
+    data:
+      RootSection:
+        - path: /tmp/parlay-fixture/parent/core
+          kind: child
+          source: flag
+          features:
+            - id: foo/intents-only
+              phase: intents
+            - id: foo/with-dialogs
+              phase: dialogs
+            - id: foo/full
+              phase: done
+      ChildRootEntry: []
+
+  phase-transition-ladder:
+    description: >-
+      Five synthetic features under one root, each populated up to a successive
+      pipeline phase. Drives the helper's per-phase unit tests.
+    data:
+      FeatureEntry:
+        - id: stage/intents-only
+          phase: intents
+        - id: stage/dialogs-added
+          phase: dialogs
+        - id: stage/with-surface
+          phase: artifacts
+        - id: stage/with-buildfile
+          phase: build
+        - id: stage/full
+          phase: done
+
+  same-name-two-roots:
+    description: >-
+      A feature `widget` exists under both `core/spec/intents/widget/`
+      (intents-only) and `studio/spec/intents/widget/` (full pipeline).
+      Verifies that ComputeFeaturePhase consults the supplied root context
+      and never cross-contaminates between roots.
+    data:
+      FeatureEntry:
+        - id: widget
+          phase: intents
+        - id: widget
+          phase: done
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+#
+# parlay status is a cobra subcommand. The page is the existing "parlay-status"
+# CLI page; the region is `main`. All five surface fragments target this same
+# page — they compose into one command's output.
+
+routes:
+  - path: parlay-status
+    page: parlay-status (CLI)
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components:
+          - hierarchical-listing
+          - phase-column
+          - unavailable-child-diagnostic
+          - json-envelope
+          - exit-and-stream-discipline
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+#
+# Every fragment in surface.md becomes one entry here. All five collapse onto
+# the same source file (internal/commands/status.go) — status is a single
+# cobra command. The plan: section below records that they share a file
+# (plan.modifies with a multi-source `sources:` list).
+
+components:
+  hierarchical-listing:
+    source: "@parlay-tool/status-feature-phases/hierarchical-parent-and-children-listing"
+    widget: cobra-command
+    description: >-
+      When the active root is a parent, render a hierarchical listing:
+      parent root header → parent's own features → for each registered child
+      in registration order, a child section header → that child's features.
+      When the active root is a child or standalone, render only that root's
+      section. Aggregation is downward-only and one level deep.
+
+    data:
+      inputs:
+        - name: active-root
+          model: RootSection
+          field: kind
+          from: command-argument
+        - name: parent-features
+          model: FeatureEntry
+          field: id
+          from: file-read
+        - name: child-roots
+          model: ChildRootEntry
+          field: name
+          from: file-read
+      computed:
+        - name: section-order
+          from: parent-first, then child-roots in pctx.Index.Children slice order (the on-disk roots.yaml order). NEVER alphabetized, NEVER re-sorted.
+          type: ordered list of (root-context, label) pairs
+
+    elements:
+      - name: parent-root-header
+        widget: headed-section
+        bind: active-root
+        format: "root:/kind:/source:/features: lines as today, plus the new `(none)` zero-feature line for bare-parent."
+        visible-when: active-root.kind == parent
+
+      - name: parent-features-table
+        widget: tabwriter
+        bind: parent-features
+        format: "  - <feature-id><TAB><phase>"
+        visible-when: active-root.kind == parent and parent-features non-empty
+
+      - name: parent-features-empty
+        widget: fmt.Println
+        bind: active-root
+        format: "features: (none)"
+        visible-when: active-root.kind == parent and parent-features empty
+
+      - name: child-section-header
+        widget: headed-section
+        bind: ChildRootEntry.name
+        format: "<child-name>\nfeatures: N"
+        visible-when: active-root.kind == parent
+
+      - name: child-features-table
+        widget: tabwriter
+        bind: ChildRootEntry.features
+        format: "  - <feature-id><TAB><phase>"
+        visible-when: active-root.kind == parent and child not unavailable
+
+      - name: child-only-section
+        widget: tabwriter
+        bind: active-root.features
+        format: "  - <feature-id><TAB><phase>"
+        visible-when: active-root.kind in [child, standalone]
+
+    actions: []
+
+    operations:
+      - type: for-each
+        source: pctx.Index.Children
+        do:
+          - type: read-file
+            path: "{root-context}/spec/intents/"
+            parse: feature-tree
+            bind: child-features
+
+  phase-column:
+    source: "@parlay-tool/status-feature-phases/per-feature-phase-column-in-human-listing"
+    widget: tabwriter
+    description: >-
+      Append one new column to the right of every feature identifier in the
+      existing tabwriter table — the lowercase phase token, one of
+      intents | dialogs | artifacts | build | done. Bare token, no decoration,
+      no brackets, no color. Unconditional in human output. No new layout
+      primitive — the existing tabwriter handles right-padding.
+
+    data:
+      inputs:
+        - name: feature-id
+          model: FeatureEntry
+          field: id
+          from: command-argument
+        - name: phase
+          model: FeaturePhase
+          field: value
+          from: computed
+      computed:
+        - name: phase
+          from: ComputeFeaturePhase(rootCtx, feature-id) — delegates entirely to the cross-cutting helper. status.go performs no file-existence logic of its own.
+          type: FeaturePhase
+
+    elements:
+      - name: feature-row
+        widget: tabwriter
+        bind: feature-id, phase
+        format: "  - <feature-id><TAB><phase-token>"
+        visible-when: always
+
+    actions: []
+
+    operations:
+      - type: for-each
+        source: features-at-this-root
+        do:
+          - type: transform
+            source: feature-id
+            using: ComputeFeaturePhase
+            bind: phase
+
+  unavailable-child-diagnostic:
+    source: "@parlay-tool/status-feature-phases/unavailable-child-root-inline-diagnostic"
+    widget: prefixed-message
+    description: >-
+      When a registered child root cannot be read (missing on disk,
+      unreadable spec/intents/, etc.), still emit the child header, then
+      emit a single human-readable diagnostic line of the form
+      `(unavailable: <reason>)`. No feature lines under that header. The
+      remaining children continue to render in registration order. Exit
+      stays zero. In --json output, the same condition becomes a children[]
+      entry with name, path, empty features array, and an `unavailable`
+      string field.
+
+    data:
+      inputs:
+        - name: child-name
+          model: ChildRootEntry
+          field: name
+          from: file-read
+        - name: child-path
+          model: ChildRootEntry
+          field: path
+          from: file-read
+        - name: error-reason
+          model: ChildRootEntry
+          field: unavailable
+          from: computed
+      computed:
+        - name: error-reason
+          from: caught os.Stat / open error against the child's spec/intents/, formatted as a single line; full path included so the user can identify which child failed and why.
+          type: string
+
+    elements:
+      - name: child-header
+        widget: headed-section
+        bind: child-name
+        format: "<child-name>"
+        visible-when: always
+      - name: unavailable-line-human
+        widget: fmt.Println
+        bind: error-reason
+        format: "(unavailable: <reason>)"
+        visible-when: human-mode and error-reason != ""
+      - name: unavailable-field-json
+        widget: fmt.Printf
+        bind: error-reason
+        format: '"unavailable": "<reason>"'
+        visible-when: json-mode and error-reason != ""
+
+    actions: []
+
+    operations:
+      - type: for-each
+        source: pctx.Index.Children
+        do:
+          - type: read-file
+            path: "{child.path}/spec/intents/"
+            bind: child-intents-stat
+          - type: filter
+            source: child-intents-stat
+            where: "stat-error != nil"
+            bind: error-reason
+
+  json-envelope:
+    source: "@parlay-tool/status-feature-phases/machine-readable-json-output-via-json"
+    widget: cobra-command
+    description: >-
+      Register a new boolean flag --json (default false) on the existing
+      parlay status command. When set, suppress the human tabular output
+      entirely and emit a single JSON document on stdout. Envelope shape
+      is fixed: top-level schema_version (integer 1), root (object with
+      path/kind/source/features), and children (always-present array,
+      [] for child or standalone roots). Multi-word keys are snake_case.
+      Each feature entry has at minimum {id, phase}. Unavailable child
+      surfaces as a children[] entry with name, path, empty features
+      array, and an unavailable string field. Errors continue to go to
+      stderr; JSON contract is broken by absence on the error path,
+      never by an invalid envelope.
+
+    data:
+      inputs:
+        - name: json-flag
+          model: StatusEnvelope
+          field: schema_version
+          from: command-argument
+        - name: envelope
+          model: StatusEnvelope
+          field: schema_version
+          from: computed
+      computed:
+        - name: envelope
+          from: assemble StatusEnvelope from active root + ChildRootEntry list. Marshal via json.MarshalIndent with two-space indent, per the agent-json-output convention.
+          type: StatusEnvelope
+
+    elements:
+      - name: schema-version-field
+        widget: fmt.Printf
+        bind: envelope.schema_version
+        format: '"schema_version": 1'
+        visible-when: --json is set
+      - name: root-object
+        widget: fmt.Printf
+        bind: envelope.root
+        format: '"root": { "path": ..., "kind": ..., "source": ..., "features": [...] }'
+        visible-when: --json is set
+      - name: children-array
+        widget: fmt.Printf
+        bind: envelope.children
+        format: '"children": [ ... ]  // always present; [] when active root is child/standalone'
+        visible-when: --json is set
+      - name: feature-entry
+        widget: fmt.Printf
+        bind: FeatureEntry
+        format: '{"id": "<slug>", "phase": "<phase>"}'
+        visible-when: --json is set
+
+    actions:
+      - name: emit-json
+        widget: cobra-command
+        enabled-when: --json is set
+        effect: call:marshal-and-print-status-envelope
+        target: stdout
+      - name: emit-human
+        widget: cobra-command
+        enabled-when: --json is unset
+        effect: call:render-human-tabular-output
+        target: stdout
+
+    operations:
+      - type: transform
+        source: active-root + child-roots
+        using: build-status-envelope
+        bind: envelope
+      - type: write-file
+        path: stdout
+        content: "json.MarshalIndent(envelope, \"\", \"  \")"
+        template: agent-json-output
+
+  exit-and-stream-discipline:
+    source: "@parlay-tool/status-feature-phases/exit-code-and-stream-discipline"
+    widget: cobra-command
+    description: >-
+      Stdout discipline: human output OR a single JSON document, depending
+      on --json. Never both. Never a JSON document mixed with log lines.
+      Stderr discipline: all diagnostics, ambiguity envelopes, and error
+      messages — never the success-path payload. Exit zero whenever the
+      active root resolves and the listing renders, even if some children
+      are unavailable. Exit non-zero only when the active root cannot be
+      resolved or when ambiguity is detected with --ambiguity-as-signal
+      (exit code 11, stderr JSON envelope per active-root convention).
+
+    data:
+      inputs:
+        - name: active-root-resolved
+          model: RootSection
+          field: kind
+          from: command-argument
+        - name: ambiguity-signal
+          model: RootSection
+          field: source
+          from: command-argument
+      computed: []
+
+    elements:
+      - name: exit-zero
+        widget: prefixed-message
+        bind: active-root-resolved
+        format: "process exit code 0"
+        visible-when: render succeeded (even with unavailable children)
+      - name: exit-non-zero-no-root
+        widget: prefixed-message
+        bind: active-root-resolved
+        format: "stderr: 'no active parlay root'; stdout empty; exit non-zero"
+        visible-when: active root could not be resolved
+      - name: exit-eleven-ambiguity
+        widget: prefixed-message
+        bind: ambiguity-signal
+        format: "stderr: ambiguity JSON envelope; stdout empty; exit code 11"
+        visible-when: --ambiguity-as-signal AND ambiguous resolution
+
+    actions:
+      - name: exit-success
+        widget: os.Exit
+        enabled-when: render succeeded
+        effect: call:os-exit-zero
+        target: process
+      - name: exit-no-root
+        widget: os.Exit
+        enabled-when: no active parlay root
+        effect: call:return-error
+        target: cobra
+      - name: exit-ambiguity
+        widget: os.Exit
+        enabled-when: --ambiguity-as-signal triggered
+        effect: call:exit-with-ambiguity-envelope
+        target: process
+
+    operations: []
+
+# ---------------------------------------------------------------------------
+# Cross-cutting (infrastructure)
+# ---------------------------------------------------------------------------
+
+cross-cutting:
+  - id: shared-feature-phase-helper
+    source: "@parlay-tool/status-feature-phases/reuse-readiness-checks-instead-of-reimplementing-them"
+    target-files:
+      - internal/commands/check_readiness.go
+    transform: >-
+      Refactor the file-existence portions of checkBuildFeatureReadiness (and
+      any sibling stage check that duplicates path resolution) to delegate to
+      a new shared helper ComputeFeaturePhase(rootCtx, slug) FeaturePhase.
+      check_readiness keeps its readiness-specific validation (intent
+      parsing, surface fragment validation, adapter checks, open-question
+      collection) layered on top. The CLI flags, JSON output schema
+      ({feature, stage, ready, issues[]}), and exit codes of
+      `parlay check-readiness` are byte-identical before and after.
+      Existing check_readiness_test.go cases must pass without test changes.
+    introduces:
+      - "FeaturePhase string-typed alias in internal/commands/feature_phase.go"
+      - "Const block: PhaseIntents, PhaseDialogs, PhaseArtifacts, PhaseBuild, PhaseDone (string values exactly: intents, dialogs, artifacts, build, done)"
+      - "func ComputeFeaturePhase(rootCtx *config.Context, featureSlug string) FeaturePhase — pure, no side effects, no exits, no marshalling, only os.Stat-equivalent calls on paths derived from rootCtx"
+    caching: none
+    backward-compatible: true
+
+  - id: status-command-call-site
+    source: "@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status"
+    target-files:
+      - internal/commands/status.go
+    transform: >-
+      Wire ComputeFeaturePhase into runStatus. For each feature resolved
+      from the active root's intents tree, call the helper and pass the
+      returned phase value into the renderer. In the human path, append the
+      phase string as a new tabwriter column to the right of the feature
+      identifier. Register a new --json boolean flag (default false) on the
+      existing statusCmd; when true, suppress human output and emit a
+      single JSON document on stdout via json.MarshalIndent (per the
+      agent-json-output convention). status.go performs NO file-existence
+      logic of its own — all phase computation is delegated to the helper.
+    introduces:
+      - "var statusJSON bool — package-level flag variable initialized in init()"
+      - "statusCmd.Flags().BoolVar(&statusJSON, \"json\", false, \"Emit machine-readable JSON output on stdout\")"
+      - "type statusEnvelope struct { ... } and type featureEntry struct { ... } and type childRootEntry struct { ... } — JSON envelope shapes mirroring the StatusEnvelope model above; snake_case json tags"
+      - "Helper renderStatusHuman(pctx, phaseFn) and renderStatusJSON(pctx, phaseFn) for the two output paths"
+    caching: none
+    backward-compatible: true
+
+  - id: cross-root-walk
+    source: "@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots"
+    target-files:
+      - internal/commands/status.go
+    transform: >-
+      When pctx.Root.Kind == parent, after rendering the parent's own
+      features, iterate pctx.Index.Children IN SLICE ORDER (the on-disk
+      roots.yaml order — never alphabetized, never re-sorted). For each
+      child, resolve a freshly-instantiated rootCtx for that child, scan
+      its spec/intents/ tree, and emit one section per child. The phase
+      helper is called with the child's rootCtx, so it consults the
+      child's .parlay/build/, never the parent's. When pctx.Root.Kind is
+      child or standalone, behaviour is unchanged — only that root's
+      features are rendered, no parent header is synthesized, no sibling
+      sections appear. Aggregation is exactly one level deep (no recursion
+      into grandchildren). Unavailable child: catch the per-child error at
+      the per-child boundary, emit the child header followed by an inline
+      `(unavailable: <reason>)` line in the human path or an `unavailable`
+      string field in the JSON path, then continue to the next child. The
+      command still exits zero. The walker is NOT exported — it is a
+      file-private helper inside the commands package.
+    introduces:
+      - "Unexported helper walkChildRoots(pctx, phaseFn, render) error — iterates pctx.Index.Children in slice order, resolves a child rootCtx per entry, calls render with (childName, childPath, features-or-unavailable)"
+      - "Unexported helper resolveChildRootContext(parentPctx, child config.Root) (*config.Context, error) — instantiates a rootCtx for the child without re-reading roots.yaml"
+    caching: none
+    backward-compatible: true
+
+# ---------------------------------------------------------------------------
+# Plan — executable contract for which files this feature touches
+# ---------------------------------------------------------------------------
+
+plan:
+  creates:
+    - path: internal/commands/feature_phase.go
+      sources:
+        - cross-cutting/shared-feature-phase-helper
+    - path: internal/commands/feature_phase_test.go
+      sources:
+        - cross-cutting/shared-feature-phase-helper
+
+  modifies:
+    - path: internal/commands/check_readiness.go
+      sources:
+        - cross-cutting/shared-feature-phase-helper
+
+    - path: internal/commands/status.go
+      sources:
+        - component/hierarchical-listing
+        - component/phase-column
+        - component/unavailable-child-diagnostic
+        - component/json-envelope
+        - component/exit-and-stream-discipline
+        - cross-cutting/status-command-call-site
+        - cross-cutting/cross-root-walk

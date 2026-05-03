@@ -57,6 +57,11 @@ func TestStatus_StandaloneNoFeatures(t *testing.T) {
 }
 
 func TestStatus_BareParentListsChildren(t *testing.T) {
+	// Updated for parlay-tool/status-feature-phases:
+	// status now renders one section per registered child (in
+	// roots.yaml slice order) instead of a single "child roots:"
+	// table. Both children appear; the bare parent reports
+	// "(none)" for its own features.
 	tmp := t.TempDir()
 	tmp, _ = filepath.EvalSymlinks(tmp)
 	makeProjectRoot(t, tmp)
@@ -79,14 +84,12 @@ func TestStatus_BareParentListsChildren(t *testing.T) {
 			t.Fatalf("status: %v", err)
 		}
 	})
-	if !strings.Contains(out, "child roots:") {
-		t.Errorf("expected child roots section, got: %s", out)
-	}
 	if !strings.Contains(out, "web") || !strings.Contains(out, "api") {
 		t.Errorf("expected both children listed, got: %s", out)
 	}
-	if !strings.Contains(out, "Frontend") {
-		t.Errorf("expected description for web, got: %s", out)
+	// Registration-order, NOT alphabetized: web should appear before api.
+	if strings.Index(out, "web") > strings.Index(out, "api") {
+		t.Errorf("expected web before api (registration order), got: %s", out)
 	}
 	if !strings.Contains(out, "(none)") {
 		t.Errorf("expected '(none)' for parent features, got: %s", out)

@@ -1,0 +1,47 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    aggregate-status-across-parent-and-child-roots:
+        content-hash: f99e329b260df924
+        goal-hash: 03fbfa3c111b4075
+        constraints-hash: f4e9a22452d32ae5
+        verify-hash: 2f3bd36b036390e5
+        objects-hash: 848a8841f546a5f1
+    emit-machine-readable-status-with-json:
+        content-hash: e0b49ba47d69f051
+        goal-hash: 7de2daf91aac567c
+        constraints-hash: e0ba95546aa4e9e2
+        verify-hash: 486ab3ccfd570be6
+        objects-hash: 781f25e604c103e5
+    reuse-readiness-checks-instead-of-reimplementing-them:
+        content-hash: 0f36c8379d01e162
+        goal-hash: fc1301dbf5e60d83
+        constraints-hash: e6e1c76c7b10aaa4
+        verify-hash: 7261dbcbc9f44df0
+        objects-hash: b612359ae30e334c
+    show-pipeline-phase-per-feature-in-status:
+        content-hash: 2131f3dd3203e24a
+        goal-hash: fabe0a826a4dbbf7
+        constraints-hash: 9e192090b2a53ace
+        verify-hash: e29f00672612f492
+        objects-hash: d13e0b1f96cfcc03
+sources:
+    intents:
+        aggregate-status-across-parent-and-child-roots: da693d70498945ac
+        emit-machine-readable-status-with-json: bc1ca7aae9627cac
+        reuse-readiness-checks-instead-of-reimplementing-them: 677165fad9c1c326
+        show-pipeline-phase-per-feature-in-status: 8b1fe4be8dd1ab2a
+    dialogs:
+        aggregate-status-across-parent-and-child-roots: 731cb38510973079
+        emit-machine-readable-status-with-json: ca21cc34c3425bea
+        reuse-readiness-checks-instead-of-reimplementing-them: 61f461710ca7196b
+        show-pipeline-phase-per-feature-in-status: 36ba99dcebcec58d
+    surface-fragments:
+        exit-code-and-stream-discipline: 58efbc78d7cf19db
+        hierarchical-parent-and-children-listing: 189e1b7b93ba9982
+        machine-readable-json-output-via-json: 9552fd31b29d0e66
+        per-feature-phase-column-in-human-listing: 3e5c8e8f3e7b80cf
+        unavailable-child-root-inline-diagnostic: d458f9874e23a2b0
+buildfile-sections:
+    fixtures: 8d016f69eeb53741
+    models: f3a3d1de244e5c86
+    routes: de34b2608784600c

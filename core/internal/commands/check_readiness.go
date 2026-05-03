@@ -1,6 +1,7 @@
 // parlay-feature: parlay-tool
 // parlay-component: check-readiness
 // parlay-extends: infrastructure-layer/CheckReadinessInfraSupport
+// parlay-extends: parlay-tool/status-feature-phases/shared-feature-phase-helper
 
 package commands
 
@@ -88,10 +89,17 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkCreateSurfaceReadiness validates that a feature is ready to have
+// surface.md authored. Phase-related file-existence is delegated to the
+// shared ComputeFeaturePhase helper (via featurePathPhase); content-level
+// validation (intent parsing) is performed here.
 func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 	var issues []readinessIssue
+	phase := featurePathPhase(featurePath)
 
-	// Intents file must exist and have at least one valid intent
+	// Intents file must exist and have at least one valid intent.
+	// Content validation requires the parser; the helper only tells us
+	// the file exists.
 	intentsPath := filepath.Join(featurePath, "intents.md")
 	intents, err := parser.ParseIntentsFile(intentsPath)
 	if err != nil {
@@ -132,9 +140,11 @@ func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 		}
 	}
 
-	// Dialogs file is recommended but not required for surface generation
-	dialogsPath := filepath.Join(featurePath, "dialogs.md")
-	if !fileExists(dialogsPath) {
+	// Dialogs file is recommended but not required for surface
+	// generation. Phase >= dialogs ⟹ dialogs.md exists; we delegate
+	// the existence check to the shared helper rather than running
+	// our own os.Stat.
+	if !phaseAtLeast(phase, PhaseDialogs) {
 		issues = append(issues, readinessIssue{
 			Severity: "warning",
 			Code:     "no-dialogs",
@@ -146,19 +156,77 @@ func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 	return issues
 }
 
+// phaseAtLeast returns true when `got` is `want` or further along the
+// pipeline ladder. Used by readiness checks to gate file-existence
+// inferences against the shared ComputeFeaturePhase result.
+func phaseAtLeast(got, want FeaturePhase) bool {
+	rank := map[FeaturePhase]int{
+		PhaseIntents:   0,
+		PhaseDialogs:   1,
+		PhaseArtifacts: 2,
+		PhaseBuild:     3,
+		PhaseDone:      4,
+	}
+	return rank[got] >= rank[want]
+}
+
+// featurePathPhase resolves the pipeline phase for a feature given only
+// its on-disk feature directory (e.g. <root>/spec/intents/<slug> or
+// <root>/spec/intents/<initiative>/<feat>). The companion .parlay/build/
+// directory is derived by walking up to the active root and joining
+// the per-feature build segment. This wrapper lets check_readiness
+// route through the same computeFeaturePhaseAtPaths primitive that
+// ComputeFeaturePhase uses, without forcing the existing public
+// signatures (which take a raw featurePath) to grow a *config.Context
+// argument.
+func featurePathPhase(featurePath string) FeaturePhase {
+	rootPath, segment := splitFeaturePath(featurePath)
+	if rootPath == "" || segment == "" {
+		// Fall back to a single-segment derivation: assume the
+		// feature directory's parent is spec/intents/, and build/
+		// sits at <root>/.parlay/build/<base>.
+		base := filepath.Base(featurePath)
+		buildPath := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(featurePath))),
+			config.ParlayDir, config.BuildDir, base)
+		return computeFeaturePhaseAtPaths(featurePath, buildPath)
+	}
+	buildPath := filepath.Join(rootPath, config.ParlayDir, config.BuildDir, segment)
+	return computeFeaturePhaseAtPaths(featurePath, buildPath)
+}
+
+// splitFeaturePath splits a feature directory into the active root path
+// and the slash-joined feature segment under spec/intents/. Returns
+// ("", "") when the path doesn't look like a spec/intents/ subtree.
+func splitFeaturePath(featurePath string) (rootPath, segment string) {
+	clean := filepath.Clean(featurePath)
+	marker := string(filepath.Separator) + filepath.Join(config.SpecDir, config.IntentsDir) + string(filepath.Separator)
+	idx := strings.Index(clean, marker)
+	if idx < 0 {
+		return "", ""
+	}
+	return clean[:idx], clean[idx+len(marker):]
+}
+
 func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) []readinessIssue {
 	var issues []readinessIssue
+	phase := featurePathPhase(featurePath)
 
 	// Build-feature requires everything create-surface requires
 	issues = append(issues, checkCreateSurfaceReadiness(featurePath)...)
 
-	// At least one of surface.md or infrastructure.md must exist.
+	// At least one of surface.md or infrastructure.md must exist. The
+	// "at-least-one" gate is the same gate that ComputeFeaturePhase
+	// applies when promoting a feature to PhaseArtifacts. We still
+	// need to know which of the two is present (different validation
+	// paths below), so we keep the per-file probe — but it is the
+	// same low-level os.Stat primitive used by the shared helper.
 	surfacePath := filepath.Join(featurePath, "surface.md")
 	infraPath := filepath.Join(featurePath, "infrastructure.md")
-	hasSurface := fileExists(surfacePath)
-	hasInfra := fileExists(infraPath)
+	hasArtifacts := phaseAtLeast(phase, PhaseArtifacts)
+	hasSurface := fileExistsAt(surfacePath)
+	hasInfra := fileExistsAt(infraPath)
 
-	if !hasSurface && !hasInfra {
+	if !hasArtifacts {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
 			Code:     "no-surface-no-infrastructure",

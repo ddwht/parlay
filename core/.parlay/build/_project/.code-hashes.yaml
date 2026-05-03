@@ -1,20 +1,26 @@
-generated-at: "2026-04-20T20:11:01Z"
+generated-at: "2026-05-03T11:43:24Z"
 files:
     internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
-        hash: 13610de5a544a5ca
+        hash: 09a6347c8a7396cc
     internal/commands/check_coverage.go:
         component: CoverageReport
-        hash: 47250e86050bee50
+        hash: 035ad74cb6183a0c
     internal/commands/check_readiness.go:
         component: check-readiness
-        hash: 1bf592333df08061
+        hash: 610a47a7e1c7c118
     internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
         hash: 58fad3d31c6c3f39
     internal/commands/create_dialogs.go:
         component: DialogGenerationReport
-        hash: 70a462f4074fd98d
+        hash: 404ef50964c52631
+    internal/commands/feature_phase.go:
+        component: ""
+        hash: 8c0d7690312f0a6e
+    internal/commands/feature_phase_test.go:
+        component: ""
+        hash: d62f078c94167312
     internal/commands/loop.go:
         component: LoopInvocationAndFeatureResolution
         hash: 9cdd314f595dfd89
@@ -23,25 +29,28 @@ files:
         hash: a0fd4c3cfda9f7e3
     internal/commands/move_feature.go:
         component: MoveResult
-        hash: cf2cf62f51d97438
+        hash: 6cf4d4bc2652d3a1
     internal/commands/move_feature_test.go:
         component: MoveResult
-        hash: 674a4aeda0e7f8cc
+        hash: 18ba5ab4b5548e51
     internal/commands/new_initiative.go:
         component: EmptyInitiativeCreationResult
-        hash: 8cedb6705593b24d
+        hash: 99a8e9df5618e7d6
     internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
-        hash: 22ba1eb290edaa2c
+        hash: 726adf056f39e044
     internal/commands/repair.go:
         component: RepairReport
-        hash: e849d1f3aa33601b
+        hash: 5fff5b44bb7b75b4
     internal/commands/simplify.go:
         component: DuplicationScanResults
-        hash: 2f1e5d5996ae1550
+        hash: 14cd508615a55372
     internal/commands/simplify_test.go:
         component: a
         hash: ff651376a5ee2fa6
+    internal/commands/status.go:
+        component: hierarchical-listing
+        hash: 4d8e91f8d8166e03
     internal/commands/validate.go:
         component: validate
-        hash: 90a26d9075a5e142
+        hash: fa55632de54ce163

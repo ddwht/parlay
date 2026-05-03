@@ -1,0 +1,680 @@
+feature: parlay-tool/status-feature-phases
+framework: stdlib testing (go test ./...)
+
+suites:
+  # ---------------------------------------------------------------------
+  # 1. hierarchical-listing — parent walks parent + children in registration order
+  # ---------------------------------------------------------------------
+  - name: hierarchical-listing parent walks parent + children
+    component: hierarchical-listing
+    fixture: parent-with-two-children
+    intent: "@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots"
+
+    cases:
+      - name: parent root prints parent header then children in registration order
+        description: >-
+          Running `parlay status` from a parent root with zero parent-owned
+          features and two registered children (core, studio in that slice
+          order) prints the parent header, `features: (none)`, then a `core`
+          section followed by a `studio` section. NEVER alphabetized.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: element
+            target: parent-root-header
+          - verify: text
+            target: parent-features-empty
+            expected: "features: (none)"
+          - verify: element
+            target: child-section-header
+          - verify: count
+            target: child-section-header
+            expected: 2
+          - verify: text
+            target: child-section-header
+            expected: "core appears before studio (registration-order, NOT alphabetized)"
+
+      - name: bare-parent — parent with no features falls out of the same code path
+        description: >-
+          A parent root with empty or missing spec/intents/ prints the parent
+          header with `features: (none)`, then each child section prints
+          normally. This is not a special-case branch.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: text
+            target: parent-features-empty
+            expected: "features: (none)"
+          - verify: element
+            target: child-section-header
+
+  - name: hierarchical-listing child invocation is downward-only
+    component: hierarchical-listing
+    fixture: child-only
+    intent: "@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots"
+
+    cases:
+      - name: child root prints only its own section — no parent header, no siblings
+        description: >-
+          `parlay status --root core` (or `cd core && parlay status`) prints
+          only the core section. No parent header is synthesized, no studio
+          sibling section is emitted. Aggregation is downward-only.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: hidden
+            target: parent-root-header
+            expected: true
+          - verify: element
+            target: child-only-section
+          - verify: count
+            target: child-only-section
+            expected: 1
+
+      - name: same-name-different-root features are listed once per root
+        description: >-
+          A feature `widget` under both core/ and studio/ appears once in
+          each root section with each root's independently-computed phase
+          value. Never deduplicated.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: count
+            target: feature-row
+            expected: "one row per (root, feature) pair — same feature name appears in two root sections"
+
+  # ---------------------------------------------------------------------
+  # 2. phase-column — per-feature phase appended to every feature line
+  # ---------------------------------------------------------------------
+  - name: phase-column appears on every feature line
+    component: phase-column
+    fixture: phase-transition-ladder
+    intent: "@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status"
+
+    cases:
+      - name: every feature line carries exactly one phase token
+        description: >-
+          Every listed feature gets exactly one phase value drawn from the
+          typed enum. Never blank, never an error placeholder.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: count
+            target: feature-row
+            expected: 5
+          - verify: text
+            target: feature-row
+            expected: "each row ends with one of: intents, dialogs, artifacts, build, done"
+
+      - name: phase token is bare lowercase — no decoration
+        description: >-
+          Phase tokens are bare lowercase strings: no brackets, no color
+          codes, no progress bars. The column is right-padded by the
+          existing tabwriter — no new layout primitive.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "no [brackets], no ANSI escape codes, no progress bars; bare token only"
+
+      - name: phase column is unconditional in human output
+        description: >-
+          The column appears whenever the features section is rendered, in
+          both child-root and parent-root invocations. There is no flag to
+          turn it off.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: visible
+            target: feature-row
+            expected: true
+
+      - name: features-only intent reports phase intents
+        description: >-
+          A feature with only intents.md reports phase `intents`.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "stage/intents-only ... intents"
+
+      - name: feature with intents+dialogs reports dialogs
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "stage/dialogs-added ... dialogs"
+
+      - name: feature with surface OR infrastructure (or both) reports artifacts
+        description: >-
+          Presence of EITHER artifact is sufficient — the helper does not
+          require both.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "stage/with-surface ... artifacts"
+
+      - name: feature with buildfile reports build
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "stage/with-buildfile ... build"
+
+      - name: feature with all four pre-terminal artifacts reports done
+        description: >-
+          `done` is reached at buildfile presence. The engineering spec under
+          spec/handoff/<feature>/specification.md is NOT consulted. Generated
+          code is also not tracked here.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: text
+            target: feature-row
+            expected: "stage/full ... done"
+
+  # ---------------------------------------------------------------------
+  # 3. unavailable-child-diagnostic — bad child does not abort the run
+  # ---------------------------------------------------------------------
+  - name: unavailable child renders inline diagnostic and exits zero
+    component: unavailable-child-diagnostic
+    fixture: parent-with-unavailable-child
+    intent: "@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots"
+
+    cases:
+      - name: bad child does not abort — header still prints, diagnostic line follows
+        description: >-
+          Studio is unavailable (spec/intents not readable). Core renders
+          normally, then studio's header prints, then a single
+          `(unavailable: <reason>)` line. No feature lines under studio.
+          Command exits zero.
+        steps:
+          - action: render
+            target: unavailable-child-diagnostic
+          - verify: element
+            target: child-header
+          - verify: text
+            target: unavailable-line-human
+            expected: "(unavailable: spec/intents not readable: ..."
+          - verify: state
+            target: process.exit_code
+            expected: 0
+
+      - name: core section emits in full BEFORE the failing studio is encountered
+        description: >-
+          Per-child error boundary: catching the error at the per-child
+          level lets the walk continue with remaining children.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: text
+            target: child-section-header
+            expected: "core section renders fully before studio's failure"
+
+      - name: no stack trace — diagnostic is one human-readable line
+        description: >-
+          The diagnostic is a single line. No Go stack trace. No partial
+          feature listing for the failing child.
+        steps:
+          - action: render
+            target: unavailable-child-diagnostic
+          - verify: text
+            target: unavailable-line-human
+            expected: "exactly one line; no `goroutine` traces; no `panic:` prefix"
+
+      - name: in JSON mode unavailable becomes a children[] entry field
+        description: >-
+          Under --json, the same condition surfaces as a children[] entry
+          with name, path, empty features array, and an `unavailable`
+          string field carrying the reason text. Command still exits zero.
+        steps:
+          - action: render
+            target: json-envelope
+          - verify: text
+            target: unavailable-field-json
+            expected: '"unavailable": "spec/intents not readable: ..."'
+          - verify: count
+            target: feature-entry
+            expected: "0 feature entries inside the unavailable child"
+          - verify: state
+            target: process.exit_code
+            expected: 0
+
+  # ---------------------------------------------------------------------
+  # 4. json-envelope — --json flag, schema_version=1, snake_case keys, stdout-only
+  # ---------------------------------------------------------------------
+  - name: json envelope shape and keys
+    component: json-envelope
+    fixture: parent-with-two-children
+    intent: "@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json"
+
+    cases:
+      - name: --json from a parent emits one envelope on stdout
+        description: >-
+          A single JSON document on stdout; no human-readable preamble; no
+          trailing log lines. All diagnostics continue to go to stderr.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json"
+          - verify: element
+            target: schema-version-field
+          - verify: element
+            target: root-object
+          - verify: element
+            target: children-array
+
+      - name: schema_version is the integer 1 — NOT a string tag
+        description: >-
+          Constraint pin from intents/dialogs: schema_version is the integer
+          `1`, not `"parlay.status/v1"`. Bumped on breaking changes only;
+          additive fields do not bump.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json"
+          - verify: text
+            target: schema-version-field
+            expected: '"schema_version": 1  (integer literal, NOT string)'
+
+      - name: multi-word JSON keys use snake_case
+        description: >-
+          `schema_version`, never `schemaVersion` or `SchemaVersion`. `id`,
+          `phase`, `kind`, `source`, `path`, `features`, `children`,
+          `unavailable` — all snake_case where multi-word.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json"
+          - verify: text
+            target: schema-version-field
+            expected: "no camelCase, no PascalCase keys anywhere in the envelope"
+
+      - name: children is always present — [] for child or standalone, never null
+        description: >-
+          Constraint from dialogs: `children` is always present and is `[]`
+          (never `null`, never omitted) for child or standalone active roots.
+          Agents can `.children[]` over it without a null check.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json --root core"
+          - verify: text
+            target: children-array
+            expected: '"children": []  (always present, never null)'
+
+      - name: each feature entry has at minimum {id, phase}
+        description: >-
+          Additional fields may appear later without bumping schema_version.
+          But id and phase are the contract floor.
+        steps:
+          - action: render
+            target: feature-entry
+          - verify: text
+            target: feature-entry
+            expected: '{"id": "...", "phase": "..."} — minimum required keys'
+
+      - name: phase value is one of the five enum tokens
+        description: >-
+          `parlay status --json | jq '.children[0].features[0].phase'`
+          returns one of intents, dialogs, artifacts, build, done.
+        steps:
+          - action: render
+            target: feature-entry
+          - verify: text
+            target: feature-entry
+            expected: "phase ∈ {intents, dialogs, artifacts, build, done}"
+
+      - name: bare-parent — root.features is [] not null, children lists registered children
+        description: >-
+          `root.features` is `[]` (not null), `children` lists each
+          registered child with its own features array. No special-case
+          envelope shape.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json"
+          - verify: text
+            target: root-object
+            expected: '"features": []  (empty array, never null) when bare-parent'
+
+      - name: --json | jq .schema_version returns 1
+        description: >-
+          End-to-end verify: parlay status --json | jq .schema_version → 1.
+        steps:
+          - action: render
+            target: json-envelope
+            value: "--json"
+          - verify: text
+            target: schema-version-field
+            expected: '`jq .schema_version` returns 1 (integer)'
+
+      - name: default invocation — no --json — produces human output byte-for-byte unchanged
+        description: >-
+          Backward compatibility: without --json, output matches today
+          modulo (a) the new phase column on each feature line, and
+          (b) the new per-child sections in parent-root invocations.
+          No JSON. No preamble.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: hidden
+            target: schema-version-field
+            expected: true
+
+  # ---------------------------------------------------------------------
+  # 5. exit-and-stream-discipline — stdout/stderr/exit-code contracts
+  # ---------------------------------------------------------------------
+  - name: exit codes and stream discipline
+    component: exit-and-stream-discipline
+    fixture: parent-with-unavailable-child
+    intent: "@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json"
+
+    cases:
+      - name: successful render exits zero even with unavailable children
+        description: >-
+          Exit zero whenever the active root resolves and the listing
+          renders. One bad child does not break the whole aggregated view.
+        steps:
+          - action: render
+            target: exit-and-stream-discipline
+          - verify: state
+            target: process.exit_code
+            expected: 0
+
+      - name: no active parlay root — stderr diagnostic, empty stdout, non-zero exit
+        description: >-
+          `parlay status --json` from a directory with no parlay root and no
+          --root and no PARLAY_ROOT prints `no active parlay root` (or
+          equivalent) on stderr, prints nothing on stdout (no partial
+          envelope, no empty object), and exits non-zero. The JSON contract
+          is broken by absence, never by emitting an invalid envelope.
+        steps:
+          - action: render
+            target: exit-non-zero-no-root
+          - verify: text
+            target: exit-non-zero-no-root
+            expected: "stderr: 'no active parlay root'; stdout empty; exit non-zero"
+
+      - name: --ambiguity-as-signal triggers exit code 11 with stderr JSON envelope
+        description: >-
+          Coexistence with --json: stdout stays empty, stderr carries the
+          ambiguity envelope, exit code is 11. The success-path --json
+          envelope is NOT emitted in that case.
+        steps:
+          - action: render
+            target: exit-eleven-ambiguity
+          - verify: state
+            target: process.exit_code
+            expected: 11
+
+      - name: stdout discipline — human OR JSON, never both, never interleaved
+        description: >-
+          Stdout carries either the human table or a single JSON document.
+          Never both. Never JSON mixed with log lines.
+        steps:
+          - action: render
+            target: exit-and-stream-discipline
+          - verify: text
+            target: exit-zero
+            expected: "stdout contains exactly one of {human-tabular, json-envelope}, never both, never interleaved with log lines"
+
+      - name: stderr discipline — diagnostics only, never the success-path payload
+        description: >-
+          Stderr carries diagnostics, ambiguity envelopes, and error
+          messages — never the success-path payload.
+        steps:
+          - action: render
+            target: exit-and-stream-discipline
+          - verify: text
+            target: exit-non-zero-no-root
+            expected: "stderr contains diagnostics only, never the success-path payload"
+
+      - name: malformed flag (cobra default) — unknown flag goes to stderr non-zero
+        description: >-
+          `parlay status --jsno` (typo) — cobra prints
+          `Error: unknown flag: --jsno` on stderr, prints usage, exits
+          non-zero. We do NOT customize this path.
+        steps:
+          - action: render
+            target: exit-and-stream-discipline
+          - verify: text
+            target: exit-non-zero-no-root
+            expected: "cobra default: 'Error: unknown flag: --jsno' on stderr, non-zero exit"
+
+  # ---------------------------------------------------------------------
+  # 6. shared-feature-phase-helper (cross-cutting) — purity, per-root, refactor invariants
+  # ---------------------------------------------------------------------
+  - name: ComputeFeaturePhase pure helper — phase ladder per root
+    component: phase-column
+    fixture: phase-transition-ladder
+    intent: "@parlay-tool/status-feature-phases/reuse-readiness-checks-instead-of-reimplementing-them"
+
+    cases:
+      - name: only intents.md → PhaseIntents
+        description: First rung of the phase ladder.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: intents
+
+      - name: + dialogs.md → PhaseDialogs
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: dialogs
+
+      - name: + surface.md (or infrastructure.md, or both) → PhaseArtifacts
+        description: >-
+          Presence of EITHER artifact is sufficient; the helper does not
+          require both. This is verified with three sub-fixtures: surface
+          only, infrastructure only, both present.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: artifacts
+
+      - name: + .parlay/build/<feature>/buildfile.yaml → PhaseBuild
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: build
+
+      - name: all four pre-terminal artifacts → PhaseDone
+        description: >-
+          `done` is reached at buildfile presence. The engineering spec
+          under spec/handoff/<feature>/specification.md is NOT consulted.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: done
+
+  - name: ComputeFeaturePhase is pure — no side effects, no I/O beyond stat
+    component: phase-column
+    fixture: phase-transition-ladder
+    intent: "@parlay-tool/status-feature-phases/reuse-readiness-checks-instead-of-reimplementing-them"
+
+    cases:
+      - name: helper performs no os.Exit, no fmt.Println, no JSON marshal, no logging
+        description: >-
+          Invariant from infrastructure.md: the only I/O is stat-equivalent
+          file-existence checks on a fixed set of paths. All side-effecting
+          concerns (formatting, exit codes, JSON output) live in call sites.
+          Call the helper 1000 times in a loop — no os.Exit reachable, no
+          fmt.Println fires, no JSON marshalling happens.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: "no observable side effects across 1000 calls"
+
+      - name: idempotent — same input twice returns the same enum value
+        description: >-
+          Pure: invoking the helper twice with the same on-disk state
+          returns the same enum value, with no observable side effects.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: "two calls with the same (rootCtx, slug) return the same value"
+
+      - name: return value is always one of five exported constants
+        description: >-
+          No other string is reachable through the public API. Validated
+          structurally — the function signature returns FeaturePhase, the
+          alias is a const-bound string type.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: "value ∈ {PhaseIntents, PhaseDialogs, PhaseArtifacts, PhaseBuild, PhaseDone}"
+
+  - name: ComputeFeaturePhase is per-root — no cross-contamination
+    component: phase-column
+    fixture: same-name-two-roots
+    intent: "@parlay-tool/status-feature-phases/reuse-readiness-checks-instead-of-reimplementing-them"
+
+    cases:
+      - name: same feature name under two roots returns two independent phases
+        description: >-
+          ComputeFeaturePhase(coreCtx, "widget") returns PhaseIntents and
+          ComputeFeaturePhase(studioCtx, "widget") returns PhaseDone when
+          core/spec/intents/widget has only intents.md and
+          studio/spec/intents/widget has the full pipeline through buildfile.
+          The two contexts never cross-contaminate.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: "coreCtx → intents; studioCtx → done — never mixed"
+
+      - name: build-state lookup uses THAT root's .parlay/build, never a project-wide singleton
+        description: >-
+          Critical per-root property. A unit test creates two roots, each
+          with a .parlay/build/widget/buildfile.yaml, but only one of them
+          has the corresponding spec/intents/widget/intents.md. The
+          buildfile under the OTHER root must NOT leak into the listing.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: state
+            target: FeaturePhase.value
+            expected: "phase computed against rootCtx.BuildPath only — sibling root's buildfile is invisible"
+
+  - name: check-readiness external contract is byte-identical after refactor
+    component: phase-column
+    fixture: phase-transition-ladder
+    intent: "@parlay-tool/status-feature-phases/reuse-readiness-checks-instead-of-reimplementing-them"
+
+    cases:
+      - name: existing check_readiness_test.go cases pass without modification
+        description: >-
+          The refactor is purely internal. CLI flags, JSON output schema
+          {feature, stage, ready, issues[]}, and exit codes of
+          `parlay check-readiness` are unchanged. The test suite at
+          internal/commands/check_readiness_test.go must pass as-is.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: file-exists
+            target: internal/commands/check_readiness_test.go
+          - verify: state
+            target: process.exit_code
+            expected: "go test ./internal/commands -run TestCheckReadiness exits 0"
+
+      - name: file-existence checks for both commands resolve through the single shared helper
+        description: >-
+          Both `parlay status` and `parlay check-readiness` resolve the
+          existence of intents.md, dialogs.md, surface.md, infrastructure.md,
+          and the buildfile through a single shared code path. Verified by
+          static inspection: status.go and check_readiness.go both call
+          ComputeFeaturePhase; neither contains its own os.Stat calls for
+          phase-related artifacts.
+        steps:
+          - action: render
+            target: phase-column
+          - verify: file-content
+            target: internal/commands/status.go
+            expected: "calls ComputeFeaturePhase; no inline phase-related os.Stat calls"
+          - verify: file-content
+            target: internal/commands/check_readiness.go
+            expected: "delegates phase-existence checks to ComputeFeaturePhase"
+
+  # ---------------------------------------------------------------------
+  # 7. cross-root walk (cross-cutting) — parent walks pctx.Index.Children in slice order
+  # ---------------------------------------------------------------------
+  - name: cross-root walk preserves registration order
+    component: hierarchical-listing
+    fixture: parent-with-two-children
+    intent: "@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots"
+
+    cases:
+      - name: children render in pctx.Index.Children slice order — never alphabetized
+        description: >-
+          Constraint pin from infrastructure.md: status MUST consume
+          pctx.Index.Children directly; it MUST NOT re-read roots.yaml
+          itself, MUST NOT alphabetize, MUST NOT re-sort by any other
+          criterion. With roots.yaml in order [studio, core], the listing
+          emits the studio section before core.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: text
+            target: child-section-header
+            expected: "section order matches pctx.Index.Children slice order verbatim"
+
+      - name: aggregation is exactly one level deep — no recursion into grandchildren
+        description: >-
+          Even if a child is itself a parent in its own roots.yaml,
+          grandchildren are NOT walked.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: count
+            target: child-section-header
+            expected: "count == len(parent's pctx.Index.Children); no grandchild headers appear"
+
+      - name: per-child rootCtx is freshly resolved — phase consults child's .parlay/build
+        description: >-
+          For each child entry, the walker resolves a freshly-instantiated
+          rootCtx so ComputeFeaturePhase reads the child's .parlay/build/,
+          never the parent's. This is what makes per-root phase computation
+          correct under aggregation.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: state
+            target: FeaturePhase.value
+            expected: "phase for core/<feature> uses core/.parlay/build, not parent/.parlay/build"
+
+      - name: walker is unexported — no external package depends on it
+        description: >-
+          Constraint: cross-root walker is file-private inside the commands
+          package. Verified by static check: no exported symbol in
+          status.go matches walkChildRoots or resolveChildRootContext.
+        steps:
+          - action: render
+            target: hierarchical-listing
+          - verify: file-content
+            target: internal/commands/status.go
+            expected: "lowercase (unexported) walker helpers; no External callers possible"
