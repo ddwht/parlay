@@ -1,0 +1,25 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    define-a-versioned-yaml-schema-for-the-domain-model:
+        content-hash: 761173dac42f0f87
+        goal-hash: 223a2c8f99088cfd
+        constraints-hash: 0cebbc5b2f6b99a3
+        verify-hash: c335624329ed6c04
+        objects-hash: ed6feef5b00ccb54
+    migrate-existing-domain-modelmd-projects-to-yaml:
+        content-hash: 880366ca02237f3d
+        goal-hash: f0acd43a1b9faeaa
+        constraints-hash: e3771513d046c866
+        verify-hash: eef93111c3271d1d
+        objects-hash: 2057c4eb8c706cb4
+    update-extract-domain-model-and-load-domain-model-to-round-trip-yaml:
+        content-hash: 819d6c5528560bdf
+        goal-hash: b016ad263749ccfe
+        constraints-hash: d822bf1395432279
+        verify-hash: fbcc3762b94f3089
+        objects-hash: ddda42142c69df86
+sources:
+    intents:
+        define-a-versioned-yaml-schema-for-the-domain-model: c177e6738c884242
+        migrate-existing-domain-modelmd-projects-to-yaml: 58e5b322942d14ff
+        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: ebdcd7aa2e29c1b7

@@ -1,0 +1,25 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    backward-compatible-path-for-layout-free-pages:
+        content-hash: 590d713df18e89dd
+        goal-hash: ec552cb998ccd89e
+        constraints-hash: b58f6a9dd3310a2d
+        verify-hash: 5d47f0242ff97632
+        objects-hash: f84c1a38f9095a1c
+    codegen-reads-the-layout-block-when-present:
+        content-hash: c754c85f7e272b1a
+        goal-hash: 8af5b4bcdd6458ba
+        constraints-hash: 3e190052784ba56e
+        verify-hash: ff3db9ef9cf94ab7
+        objects-hash: 4a3a1d7b9705c8d0
+    infer-wiring-from-surface-domain-layout:
+        content-hash: eb18744dcd2ca4c8
+        goal-hash: 2a5cf1469dd4365a
+        constraints-hash: 9167667d7c455630
+        verify-hash: 1bd6bafcf21762da
+        objects-hash: 414cbbd5ee72a998
+sources:
+    intents:
+        backward-compatible-path-for-layout-free-pages: bf1adc774685465e
+        codegen-reads-the-layout-block-when-present: 6d17075191cd5f87
+        infer-wiring-from-surface-domain-layout: 65a4ac25e335c2d5

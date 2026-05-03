@@ -1,0 +1,18 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    declare-a-named-component-vocabulary-in-the-adapter:
+        content-hash: ad5dd5b37b6f35a0
+        goal-hash: f8d5ee6fd35c54dd
+        constraints-hash: 211dd8a3847a272a
+        verify-hash: 82d6cb21dd5f4dc2
+        objects-hash: 4e6a5f42b5beacd8
+    declare-design-tokens-in-the-adapter:
+        content-hash: 18aa83fb231dd3c3
+        goal-hash: 8cc6735a8f5591f2
+        constraints-hash: bf2af87888e7e5e3
+        verify-hash: 88c3620545e92a4a
+        objects-hash: 4fd1546bf7254885
+sources:
+    intents:
+        declare-a-named-component-vocabulary-in-the-adapter: 0c9ba1c9652ef08e
+        declare-design-tokens-in-the-adapter: 2bad9143fbe30422

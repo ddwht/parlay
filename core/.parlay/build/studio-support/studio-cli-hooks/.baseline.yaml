@@ -1,0 +1,18 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    detect-parlay-studio-at-runtime:
+        content-hash: ef8ad4a190c8be7e
+        goal-hash: 7d6e0be2a4b272e4
+        constraints-hash: de17542897181809
+        verify-hash: 4a47e8b1600606cc
+        objects-hash: 944c57eb16aca1ea
+    prompt-to-open-studio-at-workflow-hand-off-points:
+        content-hash: 4de23c6e79988dd9
+        goal-hash: fbf323c1c0ba7f4e
+        constraints-hash: a6ecc428687d613f
+        verify-hash: 94c9e5c2940771a2
+        objects-hash: e0467545078b9b52
+sources:
+    intents:
+        detect-parlay-studio-at-runtime: cb0317c0ad568023
+        prompt-to-open-studio-at-workflow-hand-off-points: 04d1a0d29c41db9f

@@ -1,0 +1,18 @@
+generated-at: "2026-05-03T11:43:24Z"
+intents:
+    add-optional-layout-block-to-the-page-schema:
+        content-hash: 86949f85d66980c5
+        goal-hash: f5c5b0d1be3b8272
+        constraints-hash: ae878f676d175a5f
+        verify-hash: 375b37edf6ae1d15
+        objects-hash: 6df7422d0137a796
+    define-the-layout-tree-schema:
+        content-hash: 81b9d3d416f0a93f
+        goal-hash: ca9c15ab615018ff
+        constraints-hash: 1b24b19a6bc7ceae
+        verify-hash: 01513945f3ddd072
+        objects-hash: 9fef56d031eecd82
+sources:
+    intents:
+        add-optional-layout-block-to-the-page-schema: 44f4cf1390b783cf
+        define-the-layout-tree-schema: 0788f8c57756df9e
