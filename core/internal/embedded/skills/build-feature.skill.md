@@ -97,15 +97,17 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - When design-spec.yaml does not exist: proceed exactly as before — adapter defaults apply, agent uses its judgment
    - Define `routes:` mapping commands to components. The buildfile does not need to know whether the project is greenfield or brownfield — mount resolution happens entirely at generate-code time based on whether target page files already exist in the source tree.
    - Use intent Priority to guide component ordering and emphasis (P0 intents produce primary components)
-   - **When infrastructure.md exists** — read each infrastructure fragment and map it to a `cross-cutting:` entry in the buildfile:
-     - `Modifies` → `target-files:` (explicit file paths or function-qualified locations)
-     - `Introduces` → `introduces:` (new functions/types with optional signatures and locations)
-     - `Detection` → `target-pattern:` (grep pattern for fan-out resolution at generate-code time)
-     - `Behavior` → `transform:` (human-readable change description for Tier 2 intelligent merge)
-     - `Source` → `source:` (intent traceability reference)
-     - `Caching`, `Backward-Compatible`, `Notes` → included in `transform:` as additional context or as separate hint fields
-     - Infrastructure fragments do NOT produce `components:` or `routes:` entries — only `cross-cutting:` entries
-     - If a feature has both `surface.md` and `infrastructure.md`, the buildfile has both `components:` (from surface) AND `cross-cutting:` (from infrastructure)
+   - **When infrastructure.md exists** — translate each infrastructure fragment into a `cross-cutting:` entry via the **adapter bridge**. Infrastructure fragments are framework-agnostic (Affects / Behavior / Invariants); the buildfile entry is framework-specific. The translation is a resolution step, not a 1:1 field rename:
+     - Read `Affects:` to determine the abstract scope of the codebase the capability touches (e.g., "feature resolution", "validation pipeline").
+     - Consult the adapter's `file-conventions` and `coding-conventions` to know how that scope is organized in the current framework.
+     - Scan the existing source tree to find concrete files matching the abstract scope. Emit them as `target-files:` (explicit paths) or, for fan-out changes, as `target-pattern:` (a grep pattern that resolves to a file list at generate-code time). If `Affects:` resolves to zero files, pause and ask the designer which files are affected — never guess.
+     - Read `Behavior:` to understand the capability, and emit a framework-specific `transform:` describing what the code must do (the basis for Tier 2 intelligent merge).
+     - Infer `introduces:` (new functions/types/constants) from `Behavior:` plus the adapter's naming and structure conventions.
+     - Carry `Source:` through verbatim as `source:`.
+     - Each `Invariants:` bullet seeds one testcase for the resulting cross-cutting entry — feed them into testcases.yaml in step 9.
+     - `Caching:`, `Backward-Compatible:`, and `Notes:` carry through as hints embedded in `transform:` or as separate buildfile fields.
+     - Infrastructure fragments do NOT produce `components:` or `routes:` entries — only `cross-cutting:` entries.
+     - If a feature has both `surface.md` and `infrastructure.md`, the buildfile has both `components:` (from surface) AND `cross-cutting:` (from infrastructure).
      - The `cross-cutting:` section follows the same diff lifecycle as `components:`. `parlay diff` reports each entry as `stable`, `dirty`, or `removed`. Generate-code preserves stable entries and re-applies dirty ones.
    - **Emit the `plan:` section** — derived deterministically from `components:` + `cross-cutting:` + the integration sites identified in step 7.5:
      - `plan.modifies` — for every cross-cutting entry whose `target-files:` names existing files, add one entry per file with `sources: [cross-cutting/<id>]`. Multi-component shared files merge entries (same `path`, multiple `sources`).
