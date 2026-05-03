@@ -173,7 +173,7 @@ models:
         description: Whether the auto-refresh hook successfully updated the agent-rules file
       refusal-reason:
         type: enum
-        enum: [none, subdir-already-has-parlay, cwd-not-a-root, nested-inside-child]
+        enum: [none, subdir-already-has-parlay, cwd-not-a-root, nested-inside-child, parent-missing-ai-agent]
         required: true
         description: When the command refused, why
 
@@ -207,6 +207,127 @@ models:
         enum: [prefix, root-flag, auto-resolved-only-match, disambiguated]
         required: true
         description: Why the announcement is being shown
+
+  ProjectConfig:
+    properties:
+      ai-agent:
+        type: string
+        required: false
+        description: Adapter name (Claude Code, Cursor, Generic CLI). Parent-only in multi-root projects; the only-config in single-root.
+      sdd-framework:
+        type: string
+        required: false
+        description: Spec-driven design framework slug. Child-first with parent fallback in multi-root projects.
+      prototype-framework:
+        type: string
+        required: false
+        description: Prototype framework slug. Child-first with parent fallback in multi-root projects.
+      parent:
+        type: string
+        required: false
+        description: Relative path back to the parent root; absent for top-level/single-root.
+      file-path:
+        type: string
+        required: true
+        description: Absolute path of the on-disk config.yaml file this record describes.
+
+  ConfigField:
+    properties:
+      name:
+        type: enum
+        enum: [ai-agent, sdd-framework, prototype-framework, parent]
+        required: true
+        description: Which config field this record describes
+      value:
+        type: string
+        required: false
+        description: Effective value for the field, or empty if not declared
+      source-file:
+        type: string
+        required: true
+        description: Absolute path of the config.yaml the value came from
+      origin:
+        type: enum
+        enum: [from, inherited-from, not-declared]
+        required: true
+        description: How the field reached this value — direct declaration, parent fallback, or absent
+
+  TopologyMismatch:
+    properties:
+      kind:
+        type: enum
+        enum: [bare-parent, agent-at-child, both-have-agent, single-root-missing-ai-agent]
+        required: true
+        description: Which structural mismatch was detected
+      file-paths:
+        type: string
+        required: true
+        description: Comma-separated absolute paths of the offending config.yaml files
+      values:
+        type: string
+        required: false
+        description: For both-have-agent, the conflicting (or matching) ai-agent values; otherwise empty
+      proposed-fix:
+        type: string
+        required: true
+        description: Structured description of which file(s) will be created, modified, or have fields removed
+    states:
+      values: [pending, surfaced, applied, skipped, cancelled]
+      transitions:
+        pending: [surfaced]
+        surfaced: [applied, skipped, cancelled]
+
+  RepairResult:
+    properties:
+      total-mismatches:
+        type: number
+        required: true
+        description: Total mismatches surfaced this invocation (before any apply/skip)
+      applied-count:
+        type: number
+        required: true
+        description: How many fixes the user confirmed and the driver applied
+      skipped-count:
+        type: number
+        required: true
+        description: How many fixes the user skipped; non-zero means a non-zero exit code
+      remaining-count:
+        type: number
+        required: true
+        description: How many mismatches remain after this invocation (== skipped + cancelled)
+
+  StatusTopologyIndicator:
+    properties:
+      state:
+        type: enum
+        enum: [ok, needs-repair]
+        required: true
+        description: Whether the topology check passed or surfaced one or more mismatches
+      mismatch-count:
+        type: number
+        required: true
+        description: How many mismatches the validator returned; zero when state is ok
+
+  InitPrompt:
+    properties:
+      field-name:
+        type: enum
+        enum: [ai-agent, sdd-framework, prototype-framework]
+        required: true
+        description: Which field the user is being prompted for
+      detected-default:
+        type: string
+        required: false
+        description: Pre-filled default value (from agent detection or parent inheritance); empty when no default applies
+      default-source:
+        type: enum
+        enum: [detected, default-from-parent, none]
+        required: true
+        description: Where the pre-filled default came from
+      user-input:
+        type: string
+        required: false
+        description: The value the user typed (or empty when the user pressed Enter to accept the default)
 
 fixtures:
   single-root-at-repo:
@@ -401,6 +522,21 @@ fixtures:
           agent-surface-refreshed: false
           refusal-reason: cwd-not-a-root
 
+  add-root-parent-missing-ai-agent:
+    description: parlay add-root invoked when the parent has no ai-agent (or no config.yaml) — refused before any work, no <child>/.parlay/ created
+    data:
+      AddRootResult:
+        - child-path: apps/web
+          child-name: web
+          agent-surface-refreshed: false
+          refusal-reason: parent-missing-ai-agent
+      ProjectConfig:
+        - ai-agent: ""
+          sdd-framework: ""
+          prototype-framework: ""
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+
   resource-load-mixed:
     description: Verbose run inside a child root with a react-adapter override and parent-only schemas
     data:
@@ -450,6 +586,46 @@ fixtures:
           schemas-updated: 0
           roots-listed: []
 
+  upgrade-bare-parent-error:
+    description: parlay upgrade against a bare-parent topology (parent has roots.yaml but no config.yaml) — hard-error, nothing deployed
+    data:
+      ProjectConfig:
+        - ai-agent: ""
+          sdd-framework: ""
+          prototype-framework: ""
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+      UpgradeResult:
+        - target-root-path: /repo
+          skills-deployed: 0
+          schemas-updated: 0
+          roots-listed: []
+
+  upgrade-uninitialized-directory:
+    description: parlay upgrade in a directory with neither roots.yaml nor config.yaml — distinct error from bare-parent
+    data:
+      ProjectConfig: []
+      UpgradeResult:
+        - target-root-path: /tmp/empty
+          skills-deployed: 0
+          schemas-updated: 0
+          roots-listed: []
+
+  upgrade-missing-ai-agent:
+    description: parlay upgrade against a multi-root project whose parent config exists but lacks ai-agent — hard-error before any deploy
+    data:
+      ProjectConfig:
+        - ai-agent: ""
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+      UpgradeResult:
+        - target-root-path: /repo
+          skills-deployed: 0
+          schemas-updated: 0
+          roots-listed: []
+
   prefix-targeting-web:
     description: Cross-root prefix on a feature reference — operates on web regardless of cwd
     data:
@@ -489,6 +665,288 @@ fixtures:
           feature-slug: feat
           kind: prefixed
 
+  agent-at-child-config:
+    description: Multi-root project where a child config.yaml carries ai-agent — config-load must hard-error with the offending child path
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+        - ai-agent: Cursor
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ".."
+          file-path: /repo/apps/web/.parlay/config.yaml
+
+  both-have-agent-matching:
+    description: Parent and child both declare ai-agent with the same value — load-time error names both files; no silent preference
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ".."
+          file-path: /repo/apps/web/.parlay/config.yaml
+
+  both-have-agent-conflicting:
+    description: Parent and child both declare ai-agent with conflicting values — load-time error surfaces both for parlay repair
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+        - ai-agent: Cursor
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ".."
+          file-path: /repo/apps/web/.parlay/config.yaml
+
+  child-inherits-sdd-framework-from-parent:
+    description: Child config omits sdd-framework; parent declares it — silent inheritance, no warning
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+        - ai-agent: ""
+          sdd-framework: ""
+          prototype-framework: parlay-prototype
+          parent: ".."
+          file-path: /repo/apps/web/.parlay/config.yaml
+      ConfigField:
+        - name: ai-agent
+          value: Claude Code
+          source-file: /repo/.parlay/config.yaml
+          origin: from
+        - name: sdd-framework
+          value: parlay-spec
+          source-file: /repo/.parlay/config.yaml
+          origin: inherited-from
+        - name: prototype-framework
+          value: parlay-prototype
+          source-file: /repo/apps/web/.parlay/config.yaml
+          origin: from
+
+  child-and-parent-both-omit-sdd-framework:
+    description: Child config has no sdd-framework AND parent does not declare it — error names both candidate files
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: ""
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+        - ai-agent: ""
+          sdd-framework: ""
+          prototype-framework: parlay-prototype
+          parent: ".."
+          file-path: /repo/apps/web/.parlay/config.yaml
+
+  init-empty-dir-no-detected-agent:
+    description: parlay init in an empty directory, no agent detected — prompt collects ai-agent with no default
+    data:
+      InitPrompt:
+        - field-name: ai-agent
+          detected-default: ""
+          default-source: none
+          user-input: Claude Code
+
+  init-with-detected-agent:
+    description: parlay init invoked through Claude Code — prompt is pre-filled with the detected agent; user must press Enter or override
+    data:
+      InitPrompt:
+        - field-name: ai-agent
+          detected-default: Claude Code
+          default-source: detected
+          user-input: ""
+
+  init-child-inherits-defaults:
+    description: parlay init at a child whose parent declares sdd-framework / prototype-framework — child prompts pre-filled from parent
+    data:
+      InitPrompt:
+        - field-name: sdd-framework
+          detected-default: parlay-spec
+          default-source: default-from-parent
+          user-input: ""
+        - field-name: prototype-framework
+          detected-default: parlay-prototype
+          default-source: default-from-parent
+          user-input: ""
+
+  init-already-configured:
+    description: parlay init re-run on a topologically-correct project — pure idempotent no-op
+    data:
+      ProjectConfig:
+        - ai-agent: Claude Code
+          sdd-framework: parlay-spec
+          prototype-framework: parlay-prototype
+          parent: ""
+          file-path: /repo/.parlay/config.yaml
+
+  topology-clean-multi-root:
+    description: Validator returns zero mismatches for a multi-root project with parent ai-agent and children with framework + parent pointer
+    data:
+      TopologyMismatch: []
+      StatusTopologyIndicator:
+        - state: ok
+          mismatch-count: 0
+
+  topology-clean-single-root:
+    description: Validator returns zero mismatches for a single-root project with all three fields in one config
+    data:
+      TopologyMismatch: []
+      StatusTopologyIndicator:
+        - state: ok
+          mismatch-count: 0
+
+  topology-bare-parent:
+    description: Validator surfaces a bare-parent mismatch (parent has roots.yaml but no config.yaml)
+    data:
+      TopologyMismatch:
+        - kind: bare-parent
+          file-paths: /repo/.parlay/config.yaml
+          values: ""
+          proposed-fix: "create /repo/.parlay/config.yaml with ai-agent: <prompted>"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 1
+
+  topology-agent-at-child:
+    description: Validator surfaces an agent-at-child mismatch (a child config carries ai-agent)
+    data:
+      TopologyMismatch:
+        - kind: agent-at-child
+          file-paths: /repo/apps/web/.parlay/config.yaml
+          values: "Cursor"
+          proposed-fix: "remove ai-agent from /repo/apps/web/.parlay/config.yaml; write ai-agent: Cursor to /repo/.parlay/config.yaml after confirmation"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 1
+
+  topology-both-have-agent-matching:
+    description: Validator surfaces a both-have-agent mismatch where parent and child agree
+    data:
+      TopologyMismatch:
+        - kind: both-have-agent
+          file-paths: "/repo/.parlay/config.yaml,/repo/apps/web/.parlay/config.yaml"
+          values: "Claude Code,Claude Code"
+          proposed-fix: "remove ai-agent from /repo/apps/web/.parlay/config.yaml (parent's value is authoritative)"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 1
+
+  topology-both-have-agent-conflicting:
+    description: Validator surfaces a both-have-agent mismatch where parent and child disagree
+    data:
+      TopologyMismatch:
+        - kind: both-have-agent
+          file-paths: "/repo/.parlay/config.yaml,/repo/apps/web/.parlay/config.yaml"
+          values: "Claude Code,Cursor"
+          proposed-fix: "user must select which value to keep at the parent; child entry is then removed"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 1
+
+  topology-single-root-missing-ai-agent:
+    description: Validator surfaces a single-root config missing ai-agent
+    data:
+      TopologyMismatch:
+        - kind: single-root-missing-ai-agent
+          file-paths: /repo/.parlay/config.yaml
+          values: ""
+          proposed-fix: "prompt for ai-agent (pre-filled with detected agent if available); write to /repo/.parlay/config.yaml"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 1
+
+  topology-two-simultaneous-mismatches:
+    description: Project has agent-at-child AND a sibling child missing sdd-framework — repair walks one at a time
+    data:
+      TopologyMismatch:
+        - kind: agent-at-child
+          file-paths: /repo/apps/web/.parlay/config.yaml
+          values: "Claude Code"
+          proposed-fix: "remove ai-agent from /repo/apps/web/.parlay/config.yaml; write ai-agent: Claude Code to /repo/.parlay/config.yaml"
+        - kind: bare-parent
+          file-paths: /repo/.parlay/config.yaml
+          values: ""
+          proposed-fix: "create /repo/.parlay/config.yaml with ai-agent: <prompted>"
+      StatusTopologyIndicator:
+        - state: needs-repair
+          mismatch-count: 2
+
+  repair-clean-initial:
+    description: parlay repair on a clean project — no mismatches found
+    data:
+      RepairResult:
+        - total-mismatches: 0
+          applied-count: 0
+          skipped-count: 0
+          remaining-count: 0
+
+  repair-applied-all:
+    description: parlay repair on a project with two mismatches; user confirms both
+    data:
+      RepairResult:
+        - total-mismatches: 2
+          applied-count: 2
+          skipped-count: 0
+          remaining-count: 0
+
+  repair-skipped-some:
+    description: parlay repair where the user skipped one mismatch — exit non-zero, mismatch remains
+    data:
+      RepairResult:
+        - total-mismatches: 2
+          applied-count: 1
+          skipped-count: 1
+          remaining-count: 1
+
+  field-resolution-listing-multi-root:
+    description: Verbose-mode field-resolution table showing inheritance across parent and child
+    data:
+      ConfigField:
+        - name: ai-agent
+          value: Claude Code
+          source-file: /repo/.parlay/config.yaml
+          origin: from
+        - name: sdd-framework
+          value: parlay-spec
+          source-file: /repo/.parlay/config.yaml
+          origin: from
+        - name: prototype-framework
+          value: react
+          source-file: /repo/apps/web/.parlay/config.yaml
+          origin: from
+
+  field-resolution-listing-inherited:
+    description: Verbose-mode listing showing a child silently inheriting sdd-framework from the parent
+    data:
+      ConfigField:
+        - name: ai-agent
+          value: Claude Code
+          source-file: /repo/.parlay/config.yaml
+          origin: from
+        - name: sdd-framework
+          value: parlay-spec
+          source-file: /repo/.parlay/config.yaml
+          origin: inherited-from
+        - name: prototype-framework
+          value: parlay-prototype
+          source-file: /repo/apps/web/.parlay/config.yaml
+          origin: from
+
 routes:
   - path: parlay-cli
     page: parlay-cli
@@ -507,6 +965,17 @@ routes:
           - cross-root-reference-validation-error
           - upgrade-refresh-confirmation
           - status-with-bare-parent
+          - agent-at-child-config-error
+          - both-have-agent-config-error
+          - missing-agent-on-upgrade-error
+          - verbose-field-resolution-listing
+          - init-agent-identity-prompt
+          - add-root-refusal-without-parent-agent
+          - init-framework-default-inheritance-prompt
+          - status-topology-indicator
+          - repair-per-mismatch-prompt
+          - repair-clean-result
+          - bare-parent-upgrade-error
 
   - path: parlay-skill
     page: parlay-skill
@@ -1114,13 +1583,454 @@ components:
         effect: "navigate:cancel-skill"
         target: cancel-skill
 
+  agent-at-child-config-error:
+    source: "@parlay-tool/multi-root/agent-at-child-config-error"
+    widget: prefixed-message
+    description: Config-load-time error refusing to proceed when a child config.yaml declares ai-agent. The error names the offending child path verbatim and instructs the user to remove the field; no warning-then-continue path.
+    data:
+      inputs:
+        - name: child-config-path
+          model: ProjectConfig
+          field: file-path
+          from: computed
+    elements:
+      - name: error-status
+        widget: prefixed-message
+        bind: child-config-path
+        format: "[ERR] agent identity belongs at the parent root; remove ai-agent from %s"
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  both-have-agent-config-error:
+    source: "@parlay-tool/multi-root/both-have-agent-config-error"
+    widget: prefixed-message
+    description: Config-load-time error refusing to proceed when both parent and at least one child declare ai-agent — even if values match. Lists each declaring file with its value and points the user at parlay repair.
+    data:
+      inputs:
+        - name: declaring-files
+          model: ProjectConfig
+          field: file-path
+          from: computed
+        - name: declared-values
+          model: ProjectConfig
+          field: ai-agent
+          from: computed
+      computed:
+        - name: values-match
+          from: "all declared ai-agent values are identical"
+          type: boolean
+    elements:
+      - name: error-header-matching
+        widget: prefixed-message
+        bind: declaring-files
+        format: "[ERR] agent identity declared at multiple levels:"
+        visible-when: "values-match"
+      - name: error-header-conflicting
+        widget: prefixed-message
+        bind: declaring-files
+        format: "[ERR] agent identity declared at multiple levels with conflicting values:"
+        visible-when: "not values-match"
+      - name: declaring-file-list
+        widget: bulleted-list
+        bind: declaring-files
+        format: "  - %s (ai-agent: %s)"
+        visible-when: "always"
+      - name: repair-hint
+        widget: fmt.Println
+        bind: declaring-files
+        format: "Run `parlay repair` to migrate."
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  missing-agent-on-upgrade-error:
+    source: "@parlay-tool/multi-root/missing-agent-on-upgrade-error"
+    widget: prefixed-message
+    description: Atomic refusal printed by parlay upgrade when the parent config.yaml exists but lacks ai-agent. Names the offending file path and points at parlay repair as the migration path.
+    data:
+      inputs:
+        - name: parent-config-path
+          model: ProjectConfig
+          field: file-path
+          from: computed
+    elements:
+      - name: error-status
+        widget: prefixed-message
+        bind: parent-config-path
+        format: "[ERR] no agent identity declared at parent root."
+        visible-when: "always"
+      - name: file-detail
+        widget: fmt.Println
+        bind: parent-config-path
+        format: "  - %s has no `ai-agent` field."
+        visible-when: "always"
+      - name: remediation
+        widget: fmt.Println
+        bind: parent-config-path
+        format: "Add `ai-agent: <Claude Code|Cursor|Generic CLI>` and re-run, or run `parlay repair`."
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  verbose-field-resolution-listing:
+    source: "@parlay-tool/multi-root/verbose-field-resolution-listing"
+    widget: tabwriter
+    description: Verbose-mode table printed by commands that load the project config — one row per effective config field with field name, resolved value, source file path, and origin label (`from <file>` for direct declaration, `inherited from <file>` for parent fallback).
+    data:
+      inputs:
+        - name: fields
+          model: ConfigField
+          field: name
+          from: computed
+    elements:
+      - name: table-header
+        widget: tabwriter
+        bind: fields
+        format: "FIELD\tVALUE\tSOURCE\tORIGIN"
+        visible-when: "verbose-mode-on"
+      - name: field-rows
+        widget: tabwriter
+        bind: fields
+        format: "%s\t%s\t%s\t%s"
+        visible-when: "verbose-mode-on"
+    actions:
+      - name: inspect-fields
+        widget: subcommand
+        enabled-when: "--verbose flag is set and command loaded the config"
+        effect: "call:print-field-resolution-listing"
+        target: print-field-resolution-listing
+
+  init-agent-identity-prompt:
+    source: "@parlay-tool/multi-root/init-agent-identity-prompt"
+    widget: sequential-prompts
+    description: Onboarding prompt collected by parlay init for the ai-agent field. When a known agent is detected (Claude Code, Cursor, Generic CLI), the prompt surfaces the detected name as a default; the user MUST press Enter to accept or type an alternative — init never proceeds without explicit confirmation.
+    data:
+      inputs:
+        - name: detected
+          model: InitPrompt
+          field: detected-default
+          from: computed
+        - name: source
+          model: InitPrompt
+          field: default-source
+          from: computed
+        - name: input
+          model: InitPrompt
+          field: user-input
+          from: command-argument
+      computed:
+        - name: has-default
+          from: "detected != empty"
+          type: boolean
+    elements:
+      - name: prompt-with-default
+        widget: text-prompt
+        bind: detected
+        format: "ai-agent? [%s (detected)] — press Enter to confirm or type to override"
+        visible-when: "has-default"
+      - name: prompt-no-default
+        widget: text-prompt
+        bind: detected
+        format: "ai-agent? [Claude Code | Cursor | Generic CLI]"
+        visible-when: "not has-default"
+      - name: detected-value
+        widget: fmt.Printf
+        bind: detected
+        format: "(detected: %s)"
+        visible-when: "has-default"
+    actions:
+      - name: provide-agent-name
+        widget: text-prompt
+        enabled-when: "always"
+        effect: "mutate:InitPrompt.user-input"
+        target: ProjectConfig.ai-agent
+      - name: confirm-default
+        widget: yn-prompt
+        enabled-when: "has-default and user pressed Enter"
+        effect: "mutate:ProjectConfig.ai-agent"
+        target: ProjectConfig.ai-agent
+
+  add-root-refusal-without-parent-agent:
+    source: "@parlay-tool/multi-root/add-root-refusal-without-parent-agent"
+    widget: prefixed-message
+    description: Refusal printed by parlay add-root when the parent's config.yaml is missing ai-agent (or no parent config exists at all). No partial work — no <child>/.parlay/, no roots.yaml entry.
+    data:
+      inputs:
+        - name: parent-path
+          model: ProjectConfig
+          field: file-path
+          from: computed
+    elements:
+      - name: error-status
+        widget: prefixed-message
+        bind: parent-path
+        format: "[ERR] parent is missing ai-agent — run `parlay init` at the parent first"
+        visible-when: "always"
+      - name: parent-path-line
+        widget: fmt.Println
+        bind: parent-path
+        format: "  parent path: %s"
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
+  init-framework-default-inheritance-prompt:
+    source: "@parlay-tool/multi-root/init-framework-default-inheritance-prompt"
+    widget: sequential-prompts
+    description: Onboarding prompt printed by parlay init / parlay add-root for sdd-framework or prototype-framework at a child root, pre-filled with the parent's value as default. User confirms with Enter or overrides via free entry; siblings need not agree.
+    data:
+      inputs:
+        - name: parent-default
+          model: InitPrompt
+          field: detected-default
+          from: computed
+        - name: source
+          model: InitPrompt
+          field: default-source
+          from: computed
+        - name: field
+          model: InitPrompt
+          field: field-name
+          from: computed
+      computed:
+        - name: has-parent-default
+          from: "source == default-from-parent"
+          type: boolean
+    elements:
+      - name: prompt-with-default
+        widget: text-prompt
+        bind: parent-default
+        format: "%s? [%s (default from parent)]"
+        visible-when: "has-parent-default"
+      - name: prompt-no-default
+        widget: text-prompt
+        bind: parent-default
+        format: "%s? (no default — required)"
+        visible-when: "not has-parent-default"
+    actions:
+      - name: provide-value
+        widget: text-prompt
+        enabled-when: "always"
+        effect: "mutate:InitPrompt.user-input"
+        target: ProjectConfig
+      - name: confirm-default
+        widget: yn-prompt
+        enabled-when: "has-parent-default and user pressed Enter"
+        effect: "mutate:ProjectConfig"
+        target: ProjectConfig
+
+  status-topology-indicator:
+    source: "@parlay-tool/multi-root/status-topology-indicator"
+    widget: prefixed-message
+    description: "One additional line in parlay status output between the root header and the feature/child-root listing — topology ok or topology needs repair (<N> mismatches — run parlay repair). Read-only; no per-file detail in status output."
+    data:
+      inputs:
+        - name: state
+          model: StatusTopologyIndicator
+          field: state
+          from: computed
+        - name: count
+          model: StatusTopologyIndicator
+          field: mismatch-count
+          from: computed
+    elements:
+      - name: topology-ok-line
+        widget: prefixed-message
+        bind: state
+        format: "  topology: ok"
+        visible-when: "state == ok"
+      - name: topology-needs-repair-line
+        widget: prefixed-message
+        bind: count
+        format: "  topology: needs repair (%d mismatches — run `parlay repair`)"
+        visible-when: "state == needs-repair"
+    actions:
+      - name: render-topology-line
+        widget: subcommand
+        enabled-when: "always (called by status renderer)"
+        effect: "call:render-topology-line"
+        target: render-topology-line
+
+  repair-per-mismatch-prompt:
+    source: "@parlay-tool/multi-root/repair-per-mismatch-prompt"
+    widget: display-then-confirm
+    description: Per-mismatch surface for parlay repair. Shows position in the queue, the mismatch kind, the proposed fix in concrete file-path terms, and a confirm/skip prompt. The both-have-agent conflicting-values variant uses select-one to pick which value to keep at the parent. After each confirm-or-skip the validator re-scans and the next mismatch is surfaced.
+    data:
+      inputs:
+        - name: mismatch
+          model: TopologyMismatch
+          field: kind
+          from: computed
+        - name: file-paths
+          model: TopologyMismatch
+          field: file-paths
+          from: computed
+        - name: values
+          model: TopologyMismatch
+          field: values
+          from: computed
+        - name: proposed-fix
+          model: TopologyMismatch
+          field: proposed-fix
+          from: computed
+        - name: position
+          model: RepairResult
+          field: total-mismatches
+          from: computed
+      computed:
+        - name: needs-value-select
+          from: "mismatch == both-have-agent and values are conflicting"
+          type: boolean
+    elements:
+      - name: queue-position
+        widget: headed-section
+        bind: position
+        format: "Topology mismatch detected (%d of %d):"
+        visible-when: "always"
+      - name: mismatch-kind-line
+        widget: fmt.Println
+        bind: mismatch
+        format: "  %s: %s"
+        visible-when: "always"
+      - name: proposed-fix-line
+        widget: fmt.Println
+        bind: proposed-fix
+        format: "Proposed fix: %s"
+        visible-when: "always"
+      - name: candidate-values-list
+        widget: bulleted-list
+        bind: values
+        format: "  %s: %s"
+        visible-when: "needs-value-select"
+      - name: confirm-prompt
+        widget: yn-prompt
+        bind: proposed-fix
+        format: "Confirm? [Y/n]"
+        visible-when: "not needs-value-select"
+    actions:
+      - name: confirm-fix
+        widget: yn-prompt
+        enabled-when: "not needs-value-select"
+        effect: "mutate:TopologyMismatch.state=applied"
+        target: TopologyMismatch
+      - name: select-value
+        widget: lettered-prompt
+        enabled-when: "needs-value-select"
+        effect: "mutate:TopologyMismatch.state=applied"
+        target: TopologyMismatch
+      - name: skip-fix
+        widget: yn-prompt
+        enabled-when: "always"
+        effect: "mutate:TopologyMismatch.state=skipped"
+        target: TopologyMismatch
+      - name: cancel-repair
+        widget: os.Exit
+        enabled-when: "always"
+        effect: "navigate:exit"
+        target: exit
+
+  repair-clean-result:
+    source: "@parlay-tool/multi-root/repair-clean-result"
+    widget: prefixed-message
+    description: Final result printed by parlay repair when the topology check finds no mismatches (initial state or after a successful repair pass). Skipped mismatches produce a separate "remaining" line and a non-zero exit code.
+    data:
+      inputs:
+        - name: result
+          model: RepairResult
+          field: total-mismatches
+          from: computed
+        - name: applied
+          model: RepairResult
+          field: applied-count
+          from: computed
+        - name: skipped
+          model: RepairResult
+          field: skipped-count
+          from: computed
+        - name: remaining
+          model: RepairResult
+          field: remaining-count
+          from: computed
+      computed:
+        - name: clean-initial
+          from: "total-mismatches == 0"
+          type: boolean
+        - name: all-resolved
+          from: "applied > 0 and skipped == 0 and remaining == 0"
+          type: boolean
+        - name: some-skipped
+          from: "skipped > 0"
+          type: boolean
+    elements:
+      - name: clean-initial-line
+        widget: prefixed-message
+        bind: result
+        format: "[OK] No topology mismatches found."
+        visible-when: "clean-initial"
+      - name: all-resolved-line
+        widget: prefixed-message
+        bind: applied
+        format: "[OK] All topology mismatches resolved."
+        visible-when: "all-resolved"
+      - name: skipped-line
+        widget: fmt.Println
+        bind: remaining
+        format: "%d mismatch remaining (skipped). Re-run `parlay repair` to address."
+        visible-when: "some-skipped"
+    actions:
+      - name: render-result
+        widget: subcommand
+        enabled-when: "always (called after the repair loop completes)"
+        effect: "call:render-repair-result"
+        target: render-repair-result
+
+  bare-parent-upgrade-error:
+    source: "@parlay-tool/multi-root/bare-parent-upgrade-error"
+    widget: prefixed-message
+    description: Atomic hard-error printed by parlay upgrade in bare-parent topology (parent has roots.yaml but no config.yaml). Names the missing file path and points at parlay repair. Distinct from the "uninitialized project" message which fires when neither file exists.
+    data:
+      inputs:
+        - name: parent-config-path
+          model: ProjectConfig
+          field: file-path
+          from: computed
+    elements:
+      - name: error-line
+        widget: prefixed-message
+        bind: parent-config-path
+        format: "[ERR] bare-parent topology: %s is missing — run `parlay repair` to create it"
+        visible-when: "always"
+    actions:
+      - name: refuse-and-exit
+        widget: cobra-command
+        enabled-when: "always"
+        effect: "emit:error-and-exit"
+        target: exit-non-zero
+
 cross-cutting:
 
   - id: active-root-resolver
     source: "@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up"
     target-files:
       - internal/config/config.go
-      - internal/config/paths.go
+      - internal/config/context.go
     target-pattern: "filepath\\.Join\\(.*\\\".parlay\\\""
     transform: |
       Replace today's cwd-relative path constants with a per-invocation `ActiveRoot` resolver. Resolution order: (1) PARLAY_ROOT env var (must be absolute and contain .parlay/, else error); (2) walk upward from cwd to first .parlay/, stopping at .git/ boundary or filesystem root; (3) on walk-up failure with discoverable candidates, invoke disambiguation in interactive contexts or return the structured ambiguous-active-root signal in non-interactive contexts. Resolution happens once at command entry and threads the chosen root through subsequent path lookups. Every path helper becomes "given a root, compute paths" instead of operating on cwd directly. parlay --verbose prints the resolved root and source before any other work.
@@ -1135,7 +2045,7 @@ cross-cutting:
     source: "@parlay-tool/multi-root/add-a-child-root-to-an-existing-project"
     target-files:
       - internal/config/config.go
-      - internal/config/roots.go
+      - internal/config/roots_index.go
     target-pattern: "type Config struct"
     transform: |
       Introduce on-disk parent-children link. Parent root's .parlay/roots.yaml lists registered children by short name and relative path. Child root's .parlay/config.yaml gains a `parent:` field with a relative path back to its parent. Child names are slugs (not directory paths). A parent with no children has no roots.yaml file. Parent pointer resolves relative to the child's .parlay/ directory so the repo can be moved on disk without breaking links. Loading a parent root reads roots.yaml lazily; loading a child root resolves its parent pointer eagerly so subsequent resource lookups have it.
@@ -1183,7 +2093,8 @@ cross-cutting:
     source: "@parlay-tool/multi-root/inherit-resources-from-parent-root"
     target-files:
       - internal/config/config.go
-      - internal/embedded/loader.go
+      - internal/embedded/adapters.go
+      - internal/embedded/schemas.go
     target-pattern: "func.*Schema|func.*Adapter|AdaptersPath|SchemasPath"
     transform: |
       Single resolution layer for shared resources keyed off the active root. Schemas resolve unconditionally to the repo-level root (the root reachable by walking parent pointers until we hit a root with no parent). Deployed agent surface (skills, agent-rules) likewise resolves to the repo-level root only. Adapters resolve child-first: <activeRoot>/.parlay/adapters/<name>.adapter.yaml replaces the parent's same-named file as-is (no key-by-key merge); on miss, fall back to the parent's. Domain models are NOT inherited — each root reads its own spec/intents/domain-model.md. Every resolution decision is recorded for verbose-mode reporting.
@@ -1213,7 +2124,7 @@ cross-cutting:
   - id: feature-reference-parser-extension
     source: "@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd"
     target-files:
-      - internal/refs/parser.go
+      - internal/parser/feature.go
     target-pattern: "func ParseFeatureRef|TrimPrefix.*\\\"@\\\""
     transform: |
       Extend the feature-reference parser to accept an optional root prefix: <root-name>:@<feature> or <root-name>:@<initiative>/<feature>. The prefix is a slug followed by a single colon, matching the same slug rules as feature/initiative names. A bare reference (no prefix) preserves existing semantics. The parser returns parsed components; resolution against the roots index happens in the resolver, not the parser. Cross-root references inside intent or dialog content are detected here and surfaced as a validation error (out of scope for v1).
@@ -1361,13 +2272,302 @@ cross-cutting:
     source: "@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project"
     target-files:
       - internal/embedded/audit_test.go
-      - Makefile
     target-pattern: "verify-skills|go test"
     transform: |
-      Build-time validation that scans every embedded skill file for hardcoded path references that would break under multi-root — strings like `.parlay/schemas/`, `spec/intents/`, etc. that are not phrased as "active root's ..." or wrapped in a placeholder the skill resolves at runtime. Failures fail the build with the offending file and line. Approved hardcoded references (e.g. references in skill prose that explain parent-root-only resources) are explicitly allowlisted via marker comments. Runs as part of `make verify-skills` and CI so multi-root regressions are caught before release.
+      Build-time validation that scans every embedded skill file for hardcoded path references that would break under multi-root — strings like `.parlay/schemas/`, `spec/intents/`, etc. that are not phrased as "active root's ..." or wrapped in a placeholder the skill resolves at runtime. Failures fail the build with the offending file and line. Approved hardcoded references (e.g. references in skill prose that explain parent-root-only resources) are explicitly allowlisted via marker comments.
     introduces:
       - "func TestSkillsHaveNoHardcodedPaths(t *testing.T)"
       - "var allowlistedHardcodedPathLines map[string][]int (per-file approved exceptions)"
       - "Makefile target: verify-skills depends on audit-skill-paths"
     caching: none
     backward-compatible: true
+
+  - id: agent-identity-single-source-validation
+    source: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "func LoadConfig|Config.AIAgent"
+    transform: |
+      At config-load time, enforce that ai-agent is declared in exactly one config file per project. In multi-root projects this is the parent's config.yaml; in single-root projects it is the only config.yaml. Detect three illegal states and hard-error before any command work runs. (1) A child config.yaml carries ai-agent — error names the offending child path verbatim and instructs the user to remove the field. (2) Parent and child both carry ai-agent — error enumerates each declaring file with its value and explicitly does NOT silently prefer either side, even when values match; the message points the user at parlay repair. (3) A multi-root parent has no ai-agent field while children continue to operate — parlay upgrade and any other command that needs the agent identity hard-errors with "no agent identity declared at parent root" naming the parent file path. The validator never walks up past the recorded parent and never falls back to a child's value to satisfy the parent's missing field. Validation runs once per invocation. Single-root projects with all three fields together load identically to today.
+    introduces:
+      - "func ValidateAgentIdentitySingleSource(parent *Config, child *Config) error"
+      - "var ErrAgentIdentityAtChild = errors.New(\"agent identity belongs at the parent root\")"
+      - "var ErrAgentIdentityDuplicated = errors.New(\"agent identity declared at multiple levels\")"
+      - "var ErrAgentIdentityMissingAtParent = errors.New(\"no agent identity declared at parent root\")"
+    caching: per-process
+    backward-compatible: false
+
+  - id: per-field-config-inheritance-resolver
+    source: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    target-files:
+      - internal/config/config.go
+    target-pattern: "func LoadConfig|Config.SDDFramework|Config.PrototypeFramework"
+    transform: |
+      When loading a child root's effective configuration, resolve each field independently. ai-agent is parent-only — the resolver never reads it from the child and never inherits it through walk-up beyond the recorded parent. sdd-framework and prototype-framework are child-first with parent fallback — the child's value wins when present, the parent's value is used when the child omits the field, and a hard error fires when neither side declares the field for a command that needs it. Each effective field carries its source file path so verbose mode can render `<field>: <value> (from <file>)` for direct declarations and `<field>: <value> (inherited from <file>)` for parent-fallback cases. The resolver never mutates either config file; inheritance is a load-time decision only. Children may diverge from siblings — sibling configs are not consulted during inheritance resolution.
+    introduces:
+      - "type EffectiveConfig struct { AIAgent FieldOrigin; SDDFramework FieldOrigin; PrototypeFramework FieldOrigin }"
+      - "type FieldOrigin struct { Value string; SourceFile string; Origin OriginKind }"
+      - "type OriginKind int (from | inherited-from | not-declared)"
+      - "func ResolveEffectiveConfig(active *ActiveRoot) (*EffectiveConfig, error)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: init-topology-writer
+    source: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    target-files:
+      - internal/commands/init.go
+    target-pattern: "func runInit|writeConfigYAML"
+    transform: |
+      parlay init writes exactly one config.yaml at the directory it runs in and never creates child configs as a side effect. The write is shape-aware: at a directory with no parent pointer, the writer emits ai-agent, sdd-framework, and prototype-framework (single-root or parent shape). At a directory whose parent: .. resolves to an existing parent config, the writer omits ai-agent and emits only sdd-framework, prototype-framework, parent: <relative> (child shape). The writer never produces a bare-parent state — when the invocation directory will host children (a roots.yaml exists or is being created in the same flow), the parent config MUST contain at least ai-agent. Re-running parlay init against an already-correctly-configured project is a pure idempotent no-op: no fields are re-prompted, no files are touched, the command exits zero with "Project already initialized." The writer never invokes parlay add-root internally; child creation remains an explicit user step. The writer and the Agent-Identity Single-Source validator agree on the shape — the writer never produces a config that would fail the validator.
+    introduces:
+      - "func writeConfigYAMLShapeAware(dir string, role TopologyRole, fields *EffectiveConfig) error"
+      - "type TopologyRole int (single-root | parent-with-children | child)"
+      - "func detectExistingTopology(cwd string) (TopologyRole, *ProjectConfig, error)"
+      - "func runInitIdempotent(cwd string) (changed bool, err error)"
+    caching: none
+    backward-compatible: true
+
+  - id: init-agent-detection-hook
+    source: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    target-files:
+      - internal/commands/init.go
+    target-pattern: "promptChoice|ai-agent|runInit"
+    transform: |
+      When parlay init prompts for ai-agent, the prompt consults a detection hook that inspects the runtime environment (env vars, parent process name, terminal markers) and returns the running agent's name when one is recognized. The detection result pre-fills the prompt as a default; the user MUST press Enter to confirm or type an alternative — init never proceeds without an explicit choice, even when a default is detected. The detection set covers the same adapters the deployer registry knows about (Claude Code, Cursor, Generic CLI). When no agent is detected, the prompt falls back to free entry with the adapter list as guidance. Detection is read-only — it never writes to disk or mutates env state. A detected default is rendered as `[<name> (detected)]` in the prompt; the user's Enter keypress writes the detected value, an alternative entry overrides it. The detector returns "unknown" rather than guessing when signals are ambiguous; the prompt then has no pre-filled default.
+    introduces:
+      - "func DetectRunningAgent() (name string, detected bool)"
+      - "func promptAgentWithDefault(detected string) (chosen string, err error)"
+      - "var knownAgentNames []string (sourced from deployer registry)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: add-root-parent-agent-precondition
+    source: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    target-files:
+      - internal/commands/add_root.go
+    target-pattern: "validateAddRootPreconditions|runAddRoot"
+    transform: |
+      Before creating a new child root, parlay add-root verifies that the resolved parent has a config.yaml containing ai-agent. If the parent's config is missing or has no ai-agent field, the command refuses with `parent is missing ai-agent — run \`parlay init\` at the parent first`, including the resolved parent path in the message, and performs no work — no <child>/.parlay/, no roots.yaml entry, no agent-surface refresh. The precondition is enforced before any other validation (subdir-already-exists, nesting checks) so the user sees the structural problem first when multiple errors apply. A successful precondition check is required before any file-system writes — partial state is impossible. This is a behavior change from the previous flow that would happily create children against bare-parent projects.
+    introduces:
+      - "func validateParentHasAIAgent(parentRoot string) error"
+      - "var ErrParentMissingAIAgent = errors.New(\"parent is missing ai-agent — run `parlay init` at the parent first\")"
+    caching: none
+    backward-compatible: false
+
+  - id: topology-validator
+    source: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    target-pattern: "internal/config/topology\\.go"
+    transform: |
+      Shared topology-check pass that scans the active project for four specific structural mismatches against the config-shape model: (1) bare-parent — a parent has roots.yaml but no config.yaml; (2) agent-at-child — a child config.yaml declares ai-agent; (3) both-have-agent — parent and child both declare ai-agent, regardless of whether values agree; (4) single-root-missing-ai-agent — a single-root config.yaml lacks ai-agent. The pass returns a list of mismatches, each carrying its kind, the offending file paths, the conflicting values when relevant, and a structured "proposed fix" descriptor. The validator is read-only — it never mutates configs, never auto-fixes, never emits side effects. It is invoked by parlay repair (full enumeration with prompts) and by parlay status (count + boolean used to render the topology line); other commands MUST NOT invoke it on every invocation. The four mismatch kinds are mutually identifiable — a project with two simultaneous mismatches returns two distinct entries. Determinism: running the validator twice in succession returns identical results.
+    introduces:
+      - "package topology (new file: internal/config/topology.go)"
+      - "type MismatchKind int (bare-parent | agent-at-child | both-have-agent | single-root-missing-ai-agent)"
+      - "type Mismatch struct { Kind MismatchKind; FilePaths []string; Values []string; ProposedFix FixDescriptor }"
+      - "type FixDescriptor struct { Creates []string; Modifies []string; RemovesFields []FieldRemoval }"
+      - "func ScanTopology(active *ActiveRoot) ([]Mismatch, error)"
+    caching: per-process
+    backward-compatible: true
+
+  - id: repair-one-at-a-time-driver
+    source: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    target-files:
+      - internal/commands/repair.go
+    target-pattern: "runRepair|repairCmd"
+    transform: |
+      parlay repair includes a topology-fix loop that wraps the Topology Validator: surface one mismatch via the Repair Per-Mismatch Prompt; on confirm, apply the proposed fix using the structured fix descriptor and re-scan; on skip, record the mismatch and re-scan (skipped mismatches stay surfaced and contribute to the final exit code); on cancel, exit non-zero with the remaining mismatch count. The driver MUST re-scan after every applied fix so cascading mismatches (e.g. fixing bare-parent reveals an agent-at-child that was previously masked) are surfaced naturally. There is no --all or --yes shortcut in v1 — every fix requires explicit confirmation. Fix application MUST preserve every unrecognized field in the modified config files verbatim; only the targeted fields are added, removed, or changed. Each fix is applied atomically — either the whole structured change lands or the file is left untouched and an error is reported. After all confirmed fixes apply, re-running parlay repair against the same project reports zero mismatches.
+    introduces:
+      - "func runRepairTopologyLoop(active *ActiveRoot) (RepairOutcome, error)"
+      - "type RepairOutcome struct { Total int; Applied int; Skipped int; Remaining int }"
+      - "func applyMismatchFix(m topology.Mismatch) error"
+      - "func surfaceMismatchPrompt(m topology.Mismatch, position, total int) (UserChoice, error)"
+    caching: none
+    backward-compatible: true
+
+  - id: status-topology-line-renderer
+    source: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    target-files:
+      - internal/commands/status.go
+    target-pattern: "runStatus|statusCmd"
+    transform: |
+      parlay status invokes the Topology Validator in count-only mode and emits one new line in its rendered output: `topology: ok` when zero mismatches are returned, or `topology: needs repair (<N> mismatches — run \`parlay repair\`)` otherwise. The renderer never enumerates per-mismatch detail; per-file diagnostics are reserved for parlay repair. The line is uniform across single-root and multi-root projects; a correctly-configured single-root project also reports `topology: ok`. The renderer adds no new failure modes — parlay status continues to exit zero whether the topology is clean or dirty. The renderer relies on the Topology Validator and does not duplicate detection logic. The line sits between the root header and the feature/child-root listing.
+    introduces:
+      - "func renderTopologyLine(out io.Writer, mismatchCount int) error"
+    caching: none
+    backward-compatible: true
+
+  - id: bare-parent-fallback-removal-in-deployToRoot
+    source: "@parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology"
+    target-files:
+      - internal/commands/upgrade.go
+    target-pattern: "deployToRoot|os.IsNotExist|case os.IsNotExist"
+    transform: |
+      Remove the bare-parent branch from the per-root deploy step in parlay upgrade. When the parent has roots.yaml but no config.yaml, the command MUST hard-error immediately with `bare-parent topology: <parent>/.parlay/config.yaml is missing — run \`parlay repair\` to create it`, exit non-zero, and perform no deploys (no schemas, no skills, no partial work). The pre-existing "uninitialized project" path (no roots.yaml AND no config.yaml) continues to error with the existing "run parlay init first" message — that case is distinct. Correctly-configured projects (single-root or multi-root with parent config.yaml) deploy quietly with no warnings or info lines about topology — the success path is preserved unchanged. The deployToRoot code path that previously proceeded with empty config and skipped skills no longer exists — there is one path for correct topology and one path for hard-error. parlay upgrade --help text MUST contain no reference to "bare-parent" as a supported configuration. After parlay repair migrates a bare-parent project, the next parlay upgrade runs cleanly.
+    introduces:
+      - "var ErrBareParentTopology = errors.New(\"bare-parent topology: missing config.yaml\")"
+      - "func deployToRootStrict(root string) error // replaces the previous tolerant deployToRoot signature"
+    caching: none
+    backward-compatible: false
+
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources:
+        - cross-cutting/active-root-resolver
+        - cross-cutting/roots-index-and-parent-pointer
+        - cross-cutting/resource-resolution-strategy
+        - cross-cutting/forbidden-directory-startup-validation
+        - cross-cutting/parent-pointer-validation
+        - cross-cutting/agent-identity-single-source-validation
+        - cross-cutting/per-field-config-inheritance-resolver
+        - component/agent-at-child-config-error
+        - component/both-have-agent-config-error
+    - path: internal/config/context.go
+      sources:
+        - cross-cutting/active-root-resolver
+    - path: internal/config/roots_index.go
+      sources:
+        - cross-cutting/roots-index-and-parent-pointer
+    - path: internal/config/resolver.go
+      sources:
+        - cross-cutting/ambiguous-reference-resolver
+        - cross-cutting/structured-disambiguation-signal
+    - path: internal/embedded/adapters.go
+      sources:
+        - cross-cutting/resource-resolution-strategy
+    - path: internal/embedded/schemas.go
+      sources:
+        - cross-cutting/resource-resolution-strategy
+    - path: internal/commands/root.go
+      sources:
+        - cross-cutting/parlay-add-root-command
+        - cross-cutting/parlay-promote-root-command
+        - cross-cutting/forbidden-directory-startup-validation
+        - cross-cutting/root-flag-plumbing
+        - cross-cutting/structured-disambiguation-signal
+        - component/root-resolution-verbose-output
+        - component/root-disambiguation-prompt
+        - component/no-root-found-error
+        - component/forbidden-directory-error
+        - component/cross-root-targeting-announcement
+        - component/ambiguous-reference-disambiguation-prompt
+        - component/resource-source-listing
+        - component/verbose-field-resolution-listing
+    - path: internal/commands/add_root.go
+      sources:
+        - cross-cutting/parlay-add-root-command
+        - cross-cutting/auto-refresh-hook-on-add-and-remove-root
+        - cross-cutting/add-root-parent-agent-precondition
+        - component/add-child-root-result
+        - component/add-root-refusal-without-parent-agent
+    - path: internal/commands/promote_root.go
+      sources:
+        - cross-cutting/parlay-promote-root-command
+    - path: internal/commands/upgrade.go
+      sources:
+        - cross-cutting/auto-refresh-hook-on-add-and-remove-root
+        - cross-cutting/bare-parent-fallback-removal-in-deployToRoot
+        - component/upgrade-refresh-confirmation
+        - component/missing-agent-on-upgrade-error
+        - component/bare-parent-upgrade-error
+    - path: internal/commands/status.go
+      sources:
+        - cross-cutting/bare-parent-empty-spec-handling
+        - cross-cutting/status-topology-line-renderer
+        - component/status-with-bare-parent
+        - component/status-topology-indicator
+    - path: internal/commands/extract_domain_model.go
+      sources:
+        - cross-cutting/bare-parent-empty-spec-handling
+    - path: internal/commands/init.go
+      sources:
+        - cross-cutting/init-topology-writer
+        - cross-cutting/init-agent-detection-hook
+        - component/init-agent-identity-prompt
+        - component/init-framework-default-inheritance-prompt
+    - path: internal/commands/repair.go
+      sources:
+        - cross-cutting/repair-one-at-a-time-driver
+        - component/repair-per-mismatch-prompt
+        - component/repair-clean-result
+    - path: internal/commands/parse.go
+      sources:
+        - component/cross-root-reference-validation-error
+    - path: internal/parser/feature.go
+      sources:
+        - cross-cutting/feature-reference-parser-extension
+    - path: internal/deployer/claude.go
+      sources:
+        - cross-cutting/deployer-multi-root-awareness
+    - path: internal/deployer/cursor.go
+      sources:
+        - cross-cutting/deployer-multi-root-awareness
+    - path: internal/deployer/generic.go
+      sources:
+        - cross-cutting/deployer-multi-root-awareness
+    - path: internal/deployer/deployer.go
+      sources:
+        - cross-cutting/deployer-multi-root-awareness
+    - path: internal/embedded/skills/sync.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/build-feature.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/generate-code.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/add-feature.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/extract-domain-model.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/scaffold-dialogs.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/create-artifacts.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+        - component/skill-side-operating-root-announcement
+        - component/skill-side-root-disambiguation-prompt
+        - component/skill-side-forbidden-directory-guidance
+    - path: internal/embedded/skills/collect-questions.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/lock-page.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/view-page.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/load-domain-model.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/repair.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/generate-enggspec.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/reference-design-spec.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/loop.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/new-initiative.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/onboard.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/skills/register-adapter.skill.md
+      sources:
+        - cross-cutting/skill-side-multi-root-wrapper
+    - path: internal/embedded/audit_test.go
+      sources:
+        - cross-cutting/skill-source-audit-for-hardcoded-paths
+  creates:
+    - path: internal/config/topology.go
+      sources:
+        - cross-cutting/topology-validator

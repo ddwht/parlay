@@ -1,11 +1,23 @@
-generated-at: "2026-05-03T15:12:52Z"
+generated-at: "2026-05-03T18:01:44Z"
 intents:
     add-a-child-root-to-an-existing-project:
-        content-hash: 1eda7ae138e860be
+        content-hash: a9bef4d4f2e7777c
         goal-hash: c6b72b754d1eb2e7
-        constraints-hash: 201c9620b7a9f6f5
+        constraints-hash: ff8475b7e1f2afe7
         verify-hash: 60e6db2abf1febbc
         objects-hash: e85ac9c82ff20d9b
+    agent-identity-lives-at-the-parent-in-multi-root-projects:
+        content-hash: 7a76f2af6e023c88
+        goal-hash: 3aab7a61e0dfa0b5
+        constraints-hash: 60ac137d051e08b1
+        verify-hash: 22b40041a6a6098b
+        objects-hash: eae7e71a0e90ff7c
+    detect-and-migrate-legacy-topology-mismatches:
+        content-hash: 8b57544688f0342d
+        goal-hash: 604c3ef68bd9cccb
+        constraints-hash: c5012db12ef7ac4c
+        verify-hash: 5ddc97679c1c015e
+        objects-hash: ceb6347bb2488333
     discover-active-root-via-cwd-walk-up:
         content-hash: 23cdf68b09830c77
         goal-hash: 990b32589d645355
@@ -18,6 +30,18 @@ intents:
         constraints-hash: ce9e5d5475ca72b9
         verify-hash: 00b14e095a88367d
         objects-hash: 60e137fb0791e364
+    parlay-init-writes-the-correct-topology-shape:
+        content-hash: b2de22059c7ed57a
+        goal-hash: 0d7d0c650be56a97
+        constraints-hash: a8d0304ada0f3403
+        verify-hash: 30abda8bb0d6149a
+        objects-hash: b586939ef6cc76bc
+    parlay-upgrade-errors-on-bare-parent-topology:
+        content-hash: b6a0e7f3202b0f97
+        goal-hash: f9d0f925e68274c4
+        constraints-hash: afa6bcab6bc145cd
+        verify-hash: ac7e14abefca645d
+        objects-hash: bce0e4a7d2de3696
     single-repo-level-agent-surface-drives-all-roots:
         content-hash: a4a0199508b74354
         goal-hash: 19d105c3853c092c
@@ -25,10 +49,10 @@ intents:
         verify-hash: 74074abefc1a09a0
         objects-hash: 4182036729e1ffa4
     skill-invocation-in-a-multi-root-project:
-        content-hash: 75cc42543c78a4f4
+        content-hash: 763264d45bc5fa34
         goal-hash: 6feb81da8954999d
         constraints-hash: 6fff5bd9f0dde604
-        verify-hash: 0a449bd3d2e0d761
+        verify-hash: 7e79547b7b142517
         objects-hash: a5ec1be300362c56
     target-a-non-active-root-from-any-cwd:
         content-hash: 1fbff6c953b204c1
@@ -38,35 +62,54 @@ intents:
         objects-hash: a9059feb043a1e81
 sources:
     intents:
-        add-a-child-root-to-an-existing-project: cf48b5c4b5184d9c
+        add-a-child-root-to-an-existing-project: a15025a5d524bfa0
+        agent-identity-lives-at-the-parent-in-multi-root-projects: d589bf216998dfdc
+        detect-and-migrate-legacy-topology-mismatches: e59a913420054e01
         discover-active-root-via-cwd-walk-up: a7c78c20e7889afb
         inherit-resources-from-parent-root: 745a2f1795d4a29e
+        parlay-init-writes-the-correct-topology-shape: bdeab81b80ec9884
+        parlay-upgrade-errors-on-bare-parent-topology: 76913e9852fec66a
         single-repo-level-agent-surface-drives-all-roots: 505527f27af300b2
-        skill-invocation-in-a-multi-root-project: 48269fede40745d6
+        skill-invocation-in-a-multi-root-project: 6d1715d3c95b84c3
         target-a-non-active-root-from-any-cwd: c6603e9cfef69859
     dialogs:
         add-a-child-root-to-an-existing-project: 437e0781c09cbe5d
+        agent-identity-lives-at-the-parent-in-multi-root-projects: aab1fce35b294e11
+        detect-and-migrate-legacy-topology-mismatches: 6b85f5b6ca96fc07
         discover-active-root-via-cwd-walk-up: a313cae313b55fe2
         inherit-resources-from-parent-root: 5828fb427872ea3c
+        parlay-init-writes-the-correct-topology-shape: 5dd04cdeaa9d887c
+        parlay-upgrade-errors-on-bare-parent-topology: e339759a339d8e65
         single-repo-level-agent-surface-drives-all-roots: 2676dafce915eee6
         skill-invocation-in-a-multi-root-project: b03a8ff3be4b27da
         target-a-non-active-root-from-any-cwd: b39535345b6bc1a8
     surface-fragments:
         add-child-root-result: d96192776d074ba8
+        add-root-refusal-without-parent-agent: 703e711fd0730f66
+        agent-at-child-config-error: 62bf86125b71fdc4
         ambiguous-reference-disambiguation-prompt: bd615cbf488c670e
+        bare-parent-upgrade-error: 7080b94484f1f47f
+        both-have-agent-config-error: 3c6871579facb32b
         cross-root-reference-validation-error: 483e144e978e3a9e
         cross-root-targeting-announcement: d88feb895654fa1e
         forbidden-directory-error: 86bc7620316f3d41
+        init-agent-identity-prompt: 5152b2dfec42f40a
+        init-framework-default-inheritance-prompt: 7c2861c2acf75864
+        missing-agent-on-upgrade-error: 08108d854037e2dd
         no-root-found-error: 9b4c41e025cb490d
+        repair-clean-result: 5f58f43084158bcf
+        repair-per-mismatch-prompt: d12a33ee78342c4c
         resource-source-listing: be355b6294b6160c
         root-disambiguation-prompt: a3f55f25dcc1cb11
         root-resolution-verbose-output: d18a3aa2cc572f00
         skill-side-forbidden-directory-guidance: 559c0ba4e799ae6f
         skill-side-operating-root-announcement: 4548515c24d7be52
         skill-side-root-disambiguation-prompt: e818475ddc5a661c
+        status-topology-indicator: d42672ba90025e27
         status-with-bare-parent: 6054ccd393243550
         upgrade-refresh-confirmation: 9d87cb70cd4a6913
+        verbose-field-resolution-listing: 058e6a13edbfa55e
 buildfile-sections:
-    fixtures: 42df61e86acd683e
-    models: 6aca2d5d45f58022
-    routes: 6e016673346d2517
+    fixtures: c350b78fb95a7854
+    models: d0f7bdfdc207395a
+    routes: 5ed9f73e2f2c37cd

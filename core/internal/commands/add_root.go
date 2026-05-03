@@ -1,6 +1,14 @@
+// parlay-feature: parlay-tool/multi-root
+// parlay-component: add-child-root-result
+// parlay-extends: parlay-tool/multi-root/add-root-refusal-without-parent-agent
+// parlay-cross-cutting: parlay-add-root-command
+// parlay-cross-cutting: auto-refresh-hook-on-add-and-remove-root
+// parlay-cross-cutting: add-root-parent-agent-precondition
+
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +32,8 @@ in the parent's roots index. After this command:
   - The deployer is re-run so the agent surface (CLAUDE.md or
     equivalent) reflects the new root immediately.
 
-Refusal cases (printed to stderr, exit non-zero):
+Refusal cases (printed to stderr, exit non-zero, no work performed):
+  - Parent root is missing ai-agent (run 'parlay init' at parent first).
   - <subdir> already contains a .parlay/ directory.
   - The active root is itself a child (no nested children).
   - <subdir> is outside the active root's directory tree.
@@ -33,11 +42,39 @@ Refusal cases (printed to stderr, exit non-zero):
 	RunE: runAddRoot,
 }
 
+// ErrParentMissingAIAgent is returned by parlay add-root when the parent
+// root has no config.yaml or has a config.yaml without an ai-agent field.
+// The precondition is enforced before any other validation so the user
+// sees the structural problem first when multiple errors apply.
+var ErrParentMissingAIAgent = errors.New("parent is missing ai-agent — run `parlay init` at the parent first")
+
+// validateParentHasAIAgent enforces the add-root parent-agent precondition.
+// Returns nil when the parent's .parlay/config.yaml exists and declares a
+// non-empty ai-agent. Returns ErrParentMissingAIAgent (wrapped with the
+// resolved parent path) otherwise. This is a behavior change from the
+// previous flow that would happily create children against bare-parent
+// projects.
+func validateParentHasAIAgent(parentRoot string) error {
+	cfgPath := filepath.Join(parentRoot, config.ParlayDir, config.ConfigFile)
+	if !config.HasAIAgentField(cfgPath) {
+		return fmt.Errorf("[ERR] %w\n  parent path: %s", ErrParentMissingAIAgent, parentRoot)
+	}
+	return nil
+}
+
 func runAddRoot(cmd *cobra.Command, args []string) error {
 	pctx := config.FromCtx(cmd.Context())
 	if pctx == nil {
 		return fmt.Errorf("no active parlay root; run from inside a parlay project (or run `parlay init`)")
 	}
+
+	// Precondition: parent must have ai-agent. Enforced FIRST so the
+	// structural problem surfaces ahead of any subdir-collision or
+	// nesting check.
+	if err := validateParentHasAIAgent(pctx.Root.Path); err != nil {
+		return err
+	}
+
 	if pctx.Root.Kind == config.RootKindChild {
 		return fmt.Errorf("nested children are not supported: active root is a child at %s", pctx.Root.Path)
 	}
@@ -124,10 +161,10 @@ func runAddRoot(cmd *cobra.Command, args []string) error {
 		refreshFailed = true
 	}
 
-	fmt.Printf("Created child root %q at %s\n", name, rel)
-	fmt.Printf("Registered in parent's roots index.\n")
+	fmt.Printf("[OK] Created child root at %s/.\n", rel)
+	fmt.Printf("Registered in parent's roots index as %s.\n", name)
 	if !refreshFailed {
-		fmt.Printf("Agent surface refreshed.\n")
+		fmt.Printf("Agent surface refreshed (CLAUDE.md now lists %s).\n", name)
 	}
 	return nil
 }

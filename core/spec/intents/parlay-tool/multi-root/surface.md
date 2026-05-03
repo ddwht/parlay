@@ -248,3 +248,208 @@
 - `message` translates the raw CLI error into actionable guidance with the exact path to remove.
 - On agents that support tool execution, the skill MAY offer `confirm` (delete the directory now) or `dismiss` (let the user handle it). On agents without tool execution, only the message is shown.
 - The CLI's bare error is preserved in skill verbose mode for debugging.
+
+---
+
+## Agent-At-Child Config Error
+
+**Shows**: status, message
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 12
+
+**Notes**:
+- Emitted at config-load time on any command that loads a multi-root project's configs when a child `config.yaml` declares `ai-agent`.
+- `status` is `error`.
+- `message` is exactly: `agent identity belongs at the parent root; remove ai-agent from <child>/.parlay/config.yaml`. The path is concrete (the offending child file), not abstract.
+- Refuses to proceed; no partial work, no warning-then-continue path.
+
+---
+
+## Both-Have-Agent Config Error
+
+**Shows**: status, message, data-list
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 13
+
+**Notes**:
+- Emitted at config-load time when both the parent and at least one child declare `ai-agent`, regardless of whether the values agree.
+- `status` is `error`.
+- `data-list` enumerates each declaring file with its `ai-agent` value: `<file-path> (ai-agent: <value>)`.
+- `message` distinguishes the two sub-cases: matching values say "agent identity declared at multiple levels"; conflicting values add "with conflicting values". Both variants point the user at `parlay repair` for the migration.
+- Refuses to proceed even when the values agree — silent preference would let the inconsistency persist.
+
+---
+
+## Missing-Agent-On-Upgrade Error
+
+**Shows**: status, message
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects, @parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 14
+
+**Notes**:
+- Emitted by `parlay upgrade` when the parent `config.yaml` exists but is missing the `ai-agent` field (and no walk-up is permitted).
+- `status` is `error`.
+- `message` names the offending file path and lists the valid `ai-agent` values, then suggests `parlay repair` as the alternative migration path.
+- Distinct from the bare-parent error (no `config.yaml` at all) and from the agent-at-child error (child holds the field).
+- Atomic: nothing is deployed, no schemas updated, no skills updated.
+
+---
+
+## Verbose Field-Resolution Listing
+
+**Shows**: data-table
+**Actions**: inspect
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 15
+
+**Notes**:
+- Printed only when `--verbose` is passed and the command loaded the project config (`status`, `upgrade`, `build-feature`, etc.).
+- Extends the existing Resource Source Listing with one row per effective config field (`ai-agent`, `sdd-framework`, `prototype-framework`).
+- Each row records the field name, resolved value, source file path, and origin label — `from <file>` for direct declaration or `inherited from <file>` when a child silently inherited from the parent.
+- Read-only; no actions on the table.
+
+---
+
+## Init Agent-Identity Prompt
+
+**Shows**: message, data-value
+**Actions**: provide-text, confirm
+**Flow**: onboarding
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 16
+
+**Notes**:
+- Triggered by `parlay init` when writing the parent (or single-root) config and `ai-agent` is not yet recorded.
+- `data-value` is the detected agent name when running through a known agent (Claude Code, Cursor, Generic CLI); the prompt surfaces it as the default with `[<detected> (detected)]`.
+- `provide-text` accepts a different value to override; `confirm` (Enter) accepts the default.
+- Init never proceeds without an explicit user choice — even with a detected default, the user must press Enter or type an alternative.
+- When invoked on a fully-configured project, init exits with "Project already initialized" and does NOT re-show this prompt.
+
+---
+
+## Add-Root Refusal Without Parent Agent
+
+**Shows**: status, message, data-value
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 17
+
+**Notes**:
+- Triggered when `parlay add-root <child>` is invoked but the parent's `config.yaml` is missing `ai-agent` (or the parent has no `config.yaml` at all).
+- `status` is `error`.
+- `message` is exactly: `parent is missing ai-agent — run \`parlay init\` at the parent first`.
+- `data-value` is the resolved parent path so the user knows which directory needs `parlay init`.
+- Refuses to create the child root; no partial work (no `<child>/.parlay/`, no `roots.yaml` entry).
+
+---
+
+## Init Framework Default-Inheritance Prompt
+
+**Shows**: message, data-value
+**Actions**: provide-text, confirm
+**Flow**: onboarding
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 18
+
+**Notes**:
+- Triggered when `parlay init` (or `parlay add-root`) prompts for `sdd-framework` / `prototype-framework` at a child root and the parent has a corresponding default.
+- `data-value` is the parent's value, surfaced as `[<parent-value> (default from parent)]`.
+- `confirm` (Enter) accepts the parent default; `provide-text` overrides.
+- Children may diverge from siblings — no enforcement that all children agree.
+- When the parent does not declare a value AND the child omits it AND no flag was passed, the prompt collects a value with no default (free entry).
+
+---
+
+## Status Topology Indicator
+
+**Shows**: status, summary
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 19
+
+**Notes**:
+- One additional line in `parlay status` output, between the root header and the feature/child-root listing.
+- Two states: `topology: ok` (all four checks pass) or `topology: needs repair (<N> mismatches — run \`parlay repair\`)`.
+- Single-root and multi-root projects use the same line; a correctly-configured single-root project shows `topology: ok`.
+- Status NEVER enumerates per-file detail — that belongs in `parlay repair`.
+- Read-only; observing the indicator does not trigger any fix.
+
+---
+
+## Repair Per-Mismatch Prompt
+
+**Shows**: message, data-value, data-list, summary
+**Actions**: confirm, dismiss, select-one
+**Flow**: review-and-approve
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 20
+
+**Notes**:
+- Triggered for each topology mismatch detected by `parlay repair`. Mismatches are surfaced one at a time; after each confirm-or-skip the tool re-scans and surfaces the next.
+- `summary` shows the position in the queue: `Topology mismatch detected (1 of N)`.
+- `data-value` names the mismatch kind: `bare-parent`, `agent-at-child`, `both-have-agent`, or `single-root-missing-ai-agent`.
+- `message` describes the problem and the proposed fix in concrete file-path terms — which files will be created, modified, or have fields removed.
+- `data-list` is used in the `both-have-agent` conflicting-values case to enumerate the candidate values; `select-one` lets the user pick which value to keep at the parent. The standard `confirm`/`dismiss` (Y/n) handles the unambiguous cases.
+- Bare-parent and single-root-missing-ai-agent variants additionally show the Init Agent-Identity Prompt to collect the new `ai-agent` value, with a default that prefers the running agent and falls back to a value found in any child config.
+- The fix step preserves any unrecognized fields in the modified config files verbatim.
+- No `--all` or `--yes` shortcut in v1; granular confirmation per mismatch is required.
+
+---
+
+## Repair-Clean Result
+
+**Shows**: status, message
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 21
+
+**Notes**:
+- Emitted by `parlay repair` when the topology check finds no mismatches (either initial state or after a successful repair pass).
+- `status` is `success`; `message` is `No topology mismatches found.` (initial) or `All topology mismatches resolved.` (after a fix).
+- Skipped mismatches are reported separately as `<N> mismatch remaining (skipped). Re-run \`parlay repair\` to address.` with a non-zero exit code.
+
+---
+
+## Bare-Parent Upgrade Error
+
+**Shows**: status, message
+**Source**: @parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology
+
+**Page**: parlay-cli
+**Region**: main
+**Order**: 22
+
+**Notes**:
+- Emitted by `parlay upgrade` when the active root has `.parlay/roots.yaml` but no `.parlay/config.yaml` (bare-parent topology).
+- `status` is `error`.
+- `message` is exactly: `bare-parent topology: <parent>/.parlay/config.yaml is missing — run \`parlay repair\` to create it`. Path is concrete (resolved parent root).
+- Distinct from the uninitialized-project message (`not a parlay project — run \`parlay init\` first`), which fires when neither `roots.yaml` nor `config.yaml` exists.
+- Atomic refusal: nothing deployed, no schemas updated, no skills updated, no warnings printed in the success path.
+- Upgrade `--help` text contains no reference to "bare-parent" as a supported topology.

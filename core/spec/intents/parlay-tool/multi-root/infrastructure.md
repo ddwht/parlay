@@ -228,3 +228,148 @@
 
 **Notes**:
 - Pairs with the dogfooding rule in CLAUDE.md — source-of-truth files are validated; deployed copies are derived state.
+
+---
+
+## Agent-Identity Single-Source Validation
+
+**Affects**: configuration package, every command's config-load path
+**Behavior**: At config-load time, enforce that `ai-agent` is declared in exactly one config file per project. In multi-root projects this is the parent's `config.yaml`; in single-root projects it is the only `config.yaml`. Detect three illegal states and hard-error before any command work runs: (1) a child `config.yaml` carries `ai-agent` — error names the offending child path and tells the user to remove the field; (2) both parent and child carry `ai-agent` — error enumerates each declaring file with its value, and explicitly does NOT silently prefer either side, even when values match; (3) a multi-root parent carries no `ai-agent` field while children continue to operate — `parlay upgrade` and any other command that needs the agent identity hard-errors with a "no agent identity declared at parent root" message that names the parent file path. The validator never walks up past the recorded parent and never falls back to a child's value to satisfy the parent's missing field.
+**Invariants**:
+- A child `config.yaml` containing `ai-agent` causes any command to fail at load time with the offending child path quoted.
+- Parent + child both declaring `ai-agent` causes any command to fail at load time, even when values agree, with both file paths and values quoted.
+- A multi-root parent missing `ai-agent` fails commands that need the agent identity (upgrade, deployer-driven flows) at load time; commands that don't need it (e.g. `parlay status`) still load and report.
+- Single-root projects with `ai-agent` + `sdd-framework` + `prototype-framework` together in one config load identically to today.
+- The validator runs once per command invocation (deterministic, no re-validation mid-command).
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects
+**Backward-Compatible**: no
+
+**Notes**:
+- Removes the previous tolerance for child-declared `ai-agent` and for parent-missing `ai-agent`. Existing projects in those states must run `parlay repair` once before they can use commands that touch the agent identity.
+
+---
+
+## Per-Field Config Inheritance Resolver
+
+**Affects**: configuration package, command-entry config load
+**Behavior**: When loading a child root's effective configuration, resolve each field independently. `ai-agent` is parent-only — the resolver never reads it from the child and never inherits it through walk-up beyond the recorded parent. `sdd-framework` and `prototype-framework` are child-first with parent fallback — the child's value wins when present, the parent's value is used when the child omits the field, and a hard error fires when neither side declares the field for a command that needs it. Each effective field carries its source file path so verbose mode can render `<field>: <value> (from <file>)` for direct declarations and `<field>: <value> (inherited from <file>)` for parent-fallback cases.
+**Invariants**:
+- A child config with no `sdd-framework` and a parent that declares `sdd-framework: parlay-spec` resolves to `parlay-spec` for commands run in the child, with no warning.
+- A child and parent that both omit `sdd-framework` cause a build-feature command at the child to error with both candidate file paths quoted.
+- Children may diverge from siblings — sibling configs are not consulted during inheritance resolution.
+- Verbose output records the resolution origin (`from`, `inherited from`, or the literal `not declared`) for every effective field.
+- The resolver does not mutate either config file; inheritance is a load-time decision only.
+**Source**: @parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects
+**Backward-Compatible**: yes
+
+---
+
+## Init Topology Writer
+
+**Affects**: project initialization, on-disk parlay metadata layout
+**Behavior**: `parlay init` writes exactly one `config.yaml` at the directory it runs in and never creates child configs as a side effect. The write is shape-aware: at a directory with no parent pointer, the writer emits `ai-agent`, `sdd-framework`, and `prototype-framework` (single-root or parent shape); at a directory whose `parent: ..` resolves to an existing parent config, the writer omits `ai-agent` and emits only `sdd-framework`, `prototype-framework`, `parent: <relative>` (child shape). The writer never produces a bare-parent state — when the invocation directory will host children (a `roots.yaml` exists or is being created in the same flow), the parent config MUST contain at least `ai-agent`. Re-running `parlay init` against an already-correctly-configured project is a pure idempotent no-op: no fields are re-prompted, no files are touched, the command exits zero with "Project already initialized."
+**Invariants**:
+- `parlay init` at an empty directory writes one config file with exactly the fields prompted; no other file system writes.
+- `parlay init` at a child whose parent has `ai-agent` set writes the child config with no `ai-agent` field — confirmed by reading back the written file.
+- `parlay init` re-run on a topologically-correct project changes no files (mtime preserved).
+- `parlay init` cannot write a config that fails the Agent-Identity Single-Source validator — the writer and the validator agree on the shape.
+- The writer never invokes `parlay add-root` internally; child creation remains an explicit user step.
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+**Backward-Compatible**: yes
+
+---
+
+## Init Agent-Detection Hook
+
+**Affects**: project initialization, agent-identity prompt
+**Behavior**: When `parlay init` prompts for `ai-agent`, the prompt consults a detection hook that inspects the runtime environment (env vars, parent process, terminal markers) and returns the running agent's name when one is recognized. The detection result pre-fills the prompt as a default; the user MUST press Enter to confirm or type an alternative — init never proceeds without an explicit choice, even when a default is detected. The detection set covers the same adapters the deployer registry knows about (Claude Code, Cursor, Generic CLI). When no agent is detected, the prompt falls back to free entry with the adapter list as guidance.
+**Invariants**:
+- Detection is read-only — it never writes to disk or mutates env state.
+- A detected default is rendered as `[<name> (detected)]` in the prompt; the user's Enter keypress writes the detected value, an alternative entry overrides it.
+- Init does not auto-write the detected value silently — explicit confirmation is required regardless of detection success.
+- The detector returns "unknown" rather than guessing when signals are ambiguous; the prompt then has no pre-filled default.
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+**Backward-Compatible**: yes
+
+---
+
+## Add-Root Parent Agent Precondition
+
+**Affects**: `parlay add-root` command
+**Behavior**: Before creating a new child root, `parlay add-root` verifies that the resolved parent has a `config.yaml` containing `ai-agent`. If the parent's config is missing or has no `ai-agent` field, the command refuses with `parent is missing ai-agent — run \`parlay init\` at the parent first`, including the resolved parent path in the message, and performs no work — no `<child>/.parlay/`, no `roots.yaml` entry, no agent-surface refresh. The precondition is enforced before any other validation (subdir-already-exists, nesting checks) so the user sees the structural problem first when multiple errors apply.
+**Invariants**:
+- `parlay add-root` against a bare-parent project (no parent config) errors with the precondition message and the parent path.
+- `parlay add-root` against a parent whose `config.yaml` exists but lacks `ai-agent` errors with the same precondition message.
+- A successful precondition check is required before any file system writes — partial state is impossible.
+- The precondition runs after parent resolution but before subdir validation; the order is fixed so the message is consistent.
+**Source**: @parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape
+**Backward-Compatible**: no
+
+**Notes**:
+- This is a behavior change from the previous flow that would happily create children against bare-parent projects. Existing bare-parent projects must run `parlay init` (or `parlay repair`) at the parent before adding more children.
+
+---
+
+## Topology Validator
+
+**Affects**: configuration package, `parlay status` and `parlay repair`
+**Behavior**: A shared topology-check pass that scans the active project for four specific structural mismatches against the config-shape model: (1) bare-parent — a parent has `roots.yaml` but no `config.yaml`; (2) agent-at-child — a child `config.yaml` declares `ai-agent`; (3) both-have-agent — parent and child both declare `ai-agent`, regardless of whether values agree; (4) single-root-missing-ai-agent — a single-root `config.yaml` lacks `ai-agent`. The pass returns a list of mismatches, each carrying its kind, the offending file paths, the conflicting values when relevant, and a structured "proposed fix" descriptor. The validator is read-only — it never mutates configs, never auto-fixes, never emits side effects. It is invoked by `parlay repair` (full enumeration with prompts) and by `parlay status` (count + boolean used to render the topology line); other commands MUST NOT invoke it on every invocation, and they may surface a one-line hint only when they directly hit a topology error.
+**Invariants**:
+- Running the validator twice in succession against the same on-disk state returns identical results (deterministic, no caching that drifts).
+- The validator's output is structured (mismatch kind enum + file paths + values), so both `parlay status` (which renders a count) and `parlay repair` (which renders per-mismatch detail) consume the same source of truth.
+- A single-root project with `ai-agent` + `sdd-framework` + `prototype-framework` declared together returns zero mismatches.
+- A multi-root project with parent `ai-agent` and children carrying only framework + parent-pointer returns zero mismatches.
+- The validator never writes to disk and never invokes the deployer or any other side-effect-bearing component.
+- The four mismatch kinds are mutually identifiable — a project with two simultaneous mismatches (e.g. agent-at-child plus bare-parent) returns two distinct entries.
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+**Caching**: per-process
+**Backward-Compatible**: yes
+
+---
+
+## Repair One-At-A-Time Driver
+
+**Affects**: `parlay repair` command
+**Behavior**: `parlay repair` includes a topology-fix loop that wraps the Topology Validator: surface one mismatch via the Repair Per-Mismatch Prompt; on confirm, apply the proposed fix using the structured fix descriptor and re-scan; on skip, record the mismatch and re-scan (skipped mismatches stay surfaced and contribute to the final exit code); on cancel, exit non-zero with the remaining mismatch count. The driver MUST re-scan after every applied fix so cascading mismatches (e.g. fixing bare-parent reveals an agent-at-child that was previously masked) are surfaced naturally. There is no `--all` or `--yes` shortcut in v1 — every fix requires explicit confirmation. Fix application MUST preserve every unrecognized field in the modified config files verbatim; only the targeted fields are added, removed, or changed.
+**Invariants**:
+- Each fix is applied atomically — either the whole structured change lands or the file is left untouched and an error is reported.
+- Re-scanning after a fix uses the same Topology Validator pass — there is no stale state.
+- Skipped mismatches do NOT block the next mismatch from being surfaced; the user can address as many or as few as they want in one invocation.
+- After all confirmed fixes apply, re-running `parlay repair` against the same project reports zero mismatches (durability).
+- `parlay status` reports `topology: ok` after a successful repair pass.
+- Unrecognized fields in modified config files survive the fix verbatim — the repair driver is a structural-rewrite, not a re-serialization from scratch.
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+**Backward-Compatible**: yes
+
+---
+
+## Status Topology-Line Renderer
+
+**Affects**: `parlay status` command
+**Behavior**: `parlay status` invokes the Topology Validator in count-only mode and emits one new line in its rendered output: `topology: ok` when zero mismatches are returned, or `topology: needs repair (<N> mismatches — run \`parlay repair\`)` otherwise. The renderer never enumerates per-mismatch detail; per-file diagnostics are reserved for `parlay repair`. The line is uniform across single-root and multi-root projects; a correctly-configured single-root project also reports `topology: ok`. The renderer adds no new failure modes — `parlay status` continues to exit zero whether the topology is clean or dirty.
+**Invariants**:
+- `parlay status` in a clean project prints exactly `topology: ok`.
+- `parlay status` with N mismatches prints `topology: needs repair (<N> mismatches — run \`parlay repair\`)` with no enumerated detail.
+- Status's exit code is unchanged by the topology indicator (always zero on a successful read).
+- The renderer relies on the Topology Validator and does not duplicate detection logic.
+**Source**: @parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches
+**Backward-Compatible**: yes
+
+---
+
+## Bare-Parent Fallback Removal in deployToRoot
+
+**Affects**: `parlay upgrade` command, the deployToRoot helper
+**Behavior**: Remove the bare-parent branch from the per-root deploy step in `parlay upgrade`. When the parent has `roots.yaml` but no `config.yaml`, the command MUST hard-error immediately with `bare-parent topology: <parent>/.parlay/config.yaml is missing — run \`parlay repair\` to create it`, exit non-zero, and perform no deploys (no schemas, no skills, no partial work). The pre-existing "uninitialized project" path (no `roots.yaml` AND no `config.yaml`) continues to error with the existing "run parlay init first" message — that case is distinct. Correctly-configured projects (single-root or multi-root with parent `config.yaml`) deploy quietly with no warnings or info lines about topology — the success path is preserved unchanged.
+**Invariants**:
+- `parlay upgrade` against a bare-parent project produces the exact error string above and exits non-zero with zero file system writes.
+- `parlay upgrade` against a correctly-configured project (single or multi-root) writes schemas and skills with no topology-related warnings.
+- `parlay upgrade` against an uninitialized directory produces the pre-existing "not a parlay project" error — distinct text from the bare-parent error so users can disambiguate.
+- The deployToRoot code path that previously proceeded with empty config and skipped skills no longer exists — there is one path for correct topology and one path for hard-error.
+- After `parlay repair` migrates a bare-parent project, the next `parlay upgrade` runs cleanly with no manual intervention.
+- `parlay upgrade --help` text contains no reference to "bare-parent" as a supported configuration.
+**Source**: @parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology
+**Backward-Compatible**: no
+
+**Notes**:
+- This release removes the only soft-fail path that hid the original drift bug. With Intents A, B, and C in place, the migration story is "run `parlay repair` once" rather than "wait for a deprecation cycle."

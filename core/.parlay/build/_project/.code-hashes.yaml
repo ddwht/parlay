@@ -1,8 +1,17 @@
-generated-at: "2026-05-03T15:12:52Z"
+generated-at: "2026-05-03T18:01:44Z"
 files:
+    internal/agent/validate_infrastructure.go:
+        component: InfrastructureValidationResult
+        hash: 814e41af4cbb4df4
+    internal/agent/validate_layout_test.go:
+        component: adapter-validator-deep-vocabulary-and-tokens
+        hash: 7e6519a83d534ec3
     internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
         hash: 09a6347c8a7396cc
+    internal/commands/add_root.go:
+        component: add-child-root-result
+        hash: e5814513b1598159
     internal/commands/check_coverage.go:
         component: CoverageReport
         hash: 035ad74cb6183a0c
@@ -21,6 +30,9 @@ files:
     internal/commands/feature_phase_test.go:
         component: ""
         hash: d62f078c94167312
+    internal/commands/init.go:
+        component: init-agent-identity-prompt
+        hash: b13045f8dd7266f8
     internal/commands/loop.go:
         component: LoopInvocationAndFeatureResolution
         hash: 9cdd314f595dfd89
@@ -39,6 +51,9 @@ files:
     internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
         hash: 726adf056f39e044
+    internal/commands/parse.go:
+        component: cross-root-reference-validation-error
+        hash: e8d73a379882ae36
     internal/commands/register_adapter.go:
         component: adapter-registration
         hash: c416b4a8eee30118
@@ -47,7 +62,7 @@ files:
         hash: 1b466d975cf8eb56
     internal/commands/repair.go:
         component: RepairReport
-        hash: 5fff5b44bb7b75b4
+        hash: 244e3cef157ebb29
     internal/commands/simplify.go:
         component: DuplicationScanResults
         hash: 14cd508615a55372
@@ -56,7 +71,46 @@ files:
         hash: ff651376a5ee2fa6
     internal/commands/status.go:
         component: hierarchical-listing
-        hash: 4d8e91f8d8166e03
+        hash: 45eaf04f82ec2f5a
+    internal/commands/upgrade.go:
+        component: upgrade-refresh-confirmation
+        hash: 913c25b7d30f8626
+    internal/commands/upgrade_test.go:
+        component: bare-parent-upgrade-error
+        hash: 5271a12fbc792002
     internal/commands/validate.go:
         component: validate
         hash: fa55632de54ce163
+    internal/config/config.go:
+        component: ""
+        hash: 14dc78de972cd49f
+    internal/config/config_test.go:
+        component: directory-classification-validation
+        hash: 7c1e6133a220780a
+    internal/config/topology.go:
+        component: ""
+        hash: d6ffb6d707e52c50
+    internal/deployer/cursor.go:
+        component: ""
+        hash: db519794d9b86528
+    internal/deployer/generic.go:
+        component: ""
+        hash: 5cbe19f8e69ab143
+    internal/embedded/agents.go:
+        component: ""
+        hash: aa8cdfcba8cefd43
+    internal/embedded/agents_test.go:
+        component: SubagentDefinitionBundle
+        hash: 417cc51f15a6e170
+    internal/embedded/schemas/adapter.schema.md:
+        component: ""
+        hash: b0ab4e49840e2a73
+    internal/embedded/schemas/layout.schema.md:
+        component: ""
+        hash: 7242ee82596f59a4
+    internal/parser/infrastructure.go:
+        component: InfrastructureValidationResult
+        hash: e04ef6eee212b8c9
+    internal/parser/marker_test.go:
+        component: upgrade-prompt
+        hash: fc3768c9f3dea897

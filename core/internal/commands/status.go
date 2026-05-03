@@ -6,6 +6,10 @@
 // parlay-extends: parlay-tool/status-feature-phases/exit-and-stream-discipline
 // parlay-extends: parlay-tool/status-feature-phases/status-command-call-site
 // parlay-extends: parlay-tool/status-feature-phases/cross-root-walk
+// parlay-extends: parlay-tool/multi-root/status-with-bare-parent
+// parlay-extends: parlay-tool/multi-root/status-topology-indicator
+// parlay-cross-cutting: status-topology-line-renderer
+// parlay-cross-cutting: bare-parent-empty-spec-handling
 
 package commands
 
@@ -125,6 +129,14 @@ func runStatusHuman(pctx *config.Context) error {
 	}
 	if pctx.Resolution != nil {
 		fmt.Printf("source:   %s\n", pctx.Resolution.Source)
+	}
+
+	// Topology line — sits between the root header and the feature
+	// listing. Per the read-only contract, this never enumerates
+	// per-mismatch detail; per-file diagnostics are reserved for
+	// `parlay repair`.
+	if mismatches, err := config.ScanTopology(&pctx.Root); err == nil {
+		renderTopologyLine(os.Stdout, len(mismatches))
 	}
 
 	// Active root's own features. Treat a missing intents/ tree as
@@ -358,4 +370,18 @@ func scanFeaturesAtTolerant(intentsRoot string) ([]string, error) {
 		return nil, err
 	}
 	return config.ScanFeatureTree(intentsRoot)
+}
+
+// renderTopologyLine writes one line summarizing the topology check
+// result. The line is uniform across single-root and multi-root
+// projects; a correctly-configured single-root project also reports
+// `topology: ok`. The renderer adds no new failure modes — `parlay
+// status` continues to exit zero whether the topology is clean or
+// dirty.
+func renderTopologyLine(out interface{ Write([]byte) (int, error) }, mismatchCount int) {
+	if mismatchCount == 0 {
+		fmt.Fprintln(out, "topology: ok")
+		return
+	}
+	fmt.Fprintf(out, "topology: needs repair (%d mismatches — run `parlay repair`)\n", mismatchCount)
 }

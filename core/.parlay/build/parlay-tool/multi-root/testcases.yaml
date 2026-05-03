@@ -616,3 +616,429 @@ suites:
           - verify: visible
             target: confirm-cleanup
             expected: true
+
+  - name: Agent-at-child config error refuses with offending child path
+    component: agent-at-child-config-error
+    fixture: agent-at-child-config
+    intent: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    cases:
+      - name: error names the child config path verbatim
+        description: The [ERR] message includes the offending child config.yaml path
+        steps:
+          - action: render
+            target: agent-at-child-config-error
+          - verify: element
+            target: error-status
+          - verify: text
+            target: error-status
+            expected: "[ERR] agent identity belongs at the parent root; remove ai-agent from /repo/apps/web/.parlay/config.yaml"
+      - name: command refuses to proceed
+        description: The action emits exit-non-zero — no warning-then-continue path
+        steps:
+          - action: click
+            target: refuse-and-exit
+          - verify: error
+            target: refuse-and-exit
+            expected: "exit-non-zero"
+
+  - name: Both-have-agent error rejects matching values without silent preference
+    component: both-have-agent-config-error
+    fixture: both-have-agent-matching
+    intent: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    cases:
+      - name: header reports duplicate declaration without conflict wording
+        description: When values match the header is "agent identity declared at multiple levels" (no "with conflicting values" suffix)
+        steps:
+          - action: render
+            target: both-have-agent-config-error
+          - verify: visible
+            target: error-header-matching
+            expected: true
+          - verify: hidden
+            target: error-header-conflicting
+            expected: true
+      - name: declaring-file-list enumerates each declaring file with value
+        description: Each declaring file is listed with its ai-agent value as a bulleted line
+        steps:
+          - action: render
+            target: both-have-agent-config-error
+          - verify: count
+            target: declaring-file-list
+            expected: 2
+      - name: repair-hint points the user at parlay repair
+        description: The error never picks silently — points the user at parlay repair instead
+        steps:
+          - action: render
+            target: both-have-agent-config-error
+          - verify: text
+            target: repair-hint
+            expected: "Run `parlay repair` to migrate."
+      - name: command refuses to proceed (matching values)
+        description: Even when values agree, the loader hard-errors — silent preference would let the inconsistency persist
+        steps:
+          - action: click
+            target: refuse-and-exit
+          - verify: error
+            target: refuse-and-exit
+            expected: "exit-non-zero"
+
+  - name: Both-have-agent error names conflicting values explicitly
+    component: both-have-agent-config-error
+    fixture: both-have-agent-conflicting
+    intent: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    cases:
+      - name: header reports conflicting values
+        description: When values disagree the header includes "with conflicting values"
+        steps:
+          - action: render
+            target: both-have-agent-config-error
+          - verify: visible
+            target: error-header-conflicting
+            expected: true
+          - verify: hidden
+            target: error-header-matching
+            expected: true
+
+  - name: Missing-agent-on-upgrade error refuses atomically
+    component: missing-agent-on-upgrade-error
+    fixture: upgrade-missing-ai-agent
+    intent: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    cases:
+      - name: error names parent file path
+        description: The error message names the offending parent config.yaml path
+        steps:
+          - action: render
+            target: missing-agent-on-upgrade-error
+          - verify: element
+            target: error-status
+          - verify: text
+            target: file-detail
+            expected: "  - /repo/.parlay/config.yaml has no `ai-agent` field."
+      - name: remediation suggests adding ai-agent or running parlay repair
+        description: Remediation line lists valid agent values and offers the parlay repair migration path
+        steps:
+          - action: render
+            target: missing-agent-on-upgrade-error
+          - verify: text
+            target: remediation
+            expected: "Add `ai-agent: <Claude Code|Cursor|Generic CLI>` and re-run, or run `parlay repair`."
+      - name: nothing is deployed (atomic refusal)
+        description: Skills, schemas, agent-rules — none are touched in this failure path
+        steps:
+          - action: render
+            target: missing-agent-on-upgrade-error
+          - verify: state
+            target: UpgradeResult.skills-deployed
+            expected: 0
+          - verify: state
+            target: UpgradeResult.schemas-updated
+            expected: 0
+
+  - name: Verbose field-resolution listing renders inheritance origin per field
+    component: verbose-field-resolution-listing
+    fixture: field-resolution-listing-inherited
+    intent: "@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects"
+    cases:
+      - name: table header listed
+        description: The verbose-mode header naming FIELD/VALUE/SOURCE/ORIGIN appears
+        steps:
+          - action: render
+            target: verbose-field-resolution-listing
+          - verify: visible
+            target: table-header
+            expected: true
+      - name: rows include each effective field
+        description: Three field rows — ai-agent, sdd-framework (inherited), prototype-framework
+        steps:
+          - action: render
+            target: verbose-field-resolution-listing
+          - verify: count
+            target: field-rows
+            expected: 3
+
+  - name: Init agent-identity prompt pre-fills detected agent
+    component: init-agent-identity-prompt
+    fixture: init-with-detected-agent
+    intent: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    cases:
+      - name: prompt names detected agent as default
+        description: When an agent is detected the prompt surfaces it as the bracketed default
+        steps:
+          - action: render
+            target: init-agent-identity-prompt
+          - verify: visible
+            target: prompt-with-default
+            expected: true
+          - verify: hidden
+            target: prompt-no-default
+            expected: true
+      - name: detected-value line shown when default present
+        description: "The (detected: ...) helper line accompanies the default"
+        steps:
+          - action: render
+            target: init-agent-identity-prompt
+          - verify: visible
+            target: detected-value
+            expected: true
+
+  - name: Init agent-identity prompt collects free entry when no agent detected
+    component: init-agent-identity-prompt
+    fixture: init-empty-dir-no-detected-agent
+    intent: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    cases:
+      - name: free-entry prompt rendered when no default
+        description: Without a detected agent, the prompt offers the agent list with no pre-fill
+        steps:
+          - action: render
+            target: init-agent-identity-prompt
+          - verify: visible
+            target: prompt-no-default
+            expected: true
+          - verify: hidden
+            target: prompt-with-default
+            expected: true
+
+  - name: Add-root refuses when parent is missing ai-agent (precondition)
+    component: add-root-refusal-without-parent-agent
+    fixture: add-root-parent-missing-ai-agent
+    intent: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    cases:
+      - name: error message is exactly the precondition text
+        description: The refusal text is the exact "parent is missing ai-agent — run parlay init at the parent first"
+        steps:
+          - action: render
+            target: add-root-refusal-without-parent-agent
+          - verify: text
+            target: error-status
+            expected: "[ERR] parent is missing ai-agent — run `parlay init` at the parent first"
+      - name: parent path line shows resolved parent
+        description: The parent path the precondition resolved is included so the user knows where to run init
+        steps:
+          - action: render
+            target: add-root-refusal-without-parent-agent
+          - verify: element
+            target: parent-path-line
+      - name: no <child>/.parlay/ created (no partial work)
+        description: Refusal happens before any file system write — agent-surface-refreshed is false, refusal-reason is parent-missing-ai-agent
+        steps:
+          - action: click
+            target: refuse-and-exit
+          - verify: state
+            target: AddRootResult.refusal-reason
+            expected: "parent-missing-ai-agent"
+          - verify: state
+            target: AddRootResult.agent-surface-refreshed
+            expected: false
+
+  - name: Init framework default-inheritance prompt offers parent value as default
+    component: init-framework-default-inheritance-prompt
+    fixture: init-child-inherits-defaults
+    intent: "@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape"
+    cases:
+      - name: prompt shows parent value as default
+        description: When the parent declares the framework, the child prompt is pre-filled with that value
+        steps:
+          - action: render
+            target: init-framework-default-inheritance-prompt
+          - verify: visible
+            target: prompt-with-default
+            expected: true
+          - verify: hidden
+            target: prompt-no-default
+            expected: true
+
+  - name: Status topology indicator shows ok on clean project
+    component: status-topology-indicator
+    fixture: topology-clean-multi-root
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: ok line rendered when zero mismatches
+        description: Clean topology renders the topology ok line, never the needs-repair line
+        steps:
+          - action: render
+            target: status-topology-indicator
+          - verify: visible
+            target: topology-ok-line
+            expected: true
+          - verify: hidden
+            target: topology-needs-repair-line
+            expected: true
+      - name: 'ok line text is exactly "topology: ok"'
+        description: Single-root and multi-root projects both report this line on clean topology
+        steps:
+          - action: render
+            target: status-topology-indicator
+          - verify: text
+            target: topology-ok-line
+            expected: "  topology: ok"
+
+  - name: Status topology indicator surfaces mismatch count without per-file detail
+    component: status-topology-indicator
+    fixture: topology-bare-parent
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: needs-repair line includes mismatch count
+        description: The needs-repair variant shows the count and points at parlay repair; per-file detail is reserved for parlay repair
+        steps:
+          - action: render
+            target: status-topology-indicator
+          - verify: visible
+            target: topology-needs-repair-line
+            expected: true
+          - verify: text
+            target: topology-needs-repair-line
+            expected: "  topology: needs repair (1 mismatches — run `parlay repair`)"
+
+  - name: Repair surfaces one mismatch at a time with proposed fix
+    component: repair-per-mismatch-prompt
+    fixture: topology-bare-parent
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: queue position rendered (1 of 1 for first mismatch)
+        description: The summary line shows "Topology mismatch detected (M of N)"
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: element
+            target: queue-position
+      - name: proposed-fix line names the file path concretely
+        description: The proposed-fix line is rendered in concrete file-path terms
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: visible
+            target: proposed-fix-line
+            expected: true
+      - name: confirm prompt available for non-conflict cases
+        description: For bare-parent / agent-at-child / both-have-agent-matching, the standard Y/n confirm is shown (not the value-select prompt)
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: visible
+            target: confirm-prompt
+            expected: true
+
+  - name: Repair surfaces select-one prompt when both-have-agent values disagree
+    component: repair-per-mismatch-prompt
+    fixture: topology-both-have-agent-conflicting
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: candidate-values list rendered for the conflicting variant
+        description: When both-have-agent values disagree, the user picks via a candidate-values list
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: visible
+            target: candidate-values-list
+            expected: true
+          - verify: hidden
+            target: confirm-prompt
+            expected: true
+      - name: select-value action enabled in this variant
+        description: The select-one action is enabled only when needs-value-select is true
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: enabled
+            target: select-value
+            expected: true
+
+  - name: Repair walks two mismatches one at a time
+    component: repair-per-mismatch-prompt
+    fixture: topology-two-simultaneous-mismatches
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: first mismatch surfaced as 1 of 2
+        description: Multiple mismatches are surfaced sequentially — re-scan after each apply
+        steps:
+          - action: render
+            target: repair-per-mismatch-prompt
+          - verify: element
+            target: queue-position
+
+  - name: Repair clean result reports zero mismatches initially
+    component: repair-clean-result
+    fixture: repair-clean-initial
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: clean-initial line shown when total mismatches is 0
+        description: Initial-state output uses the [OK] No topology mismatches found message
+        steps:
+          - action: render
+            target: repair-clean-result
+          - verify: visible
+            target: clean-initial-line
+            expected: true
+          - verify: hidden
+            target: all-resolved-line
+            expected: true
+          - verify: hidden
+            target: skipped-line
+            expected: true
+
+  - name: Repair clean result reports all-resolved after applying all fixes
+    component: repair-clean-result
+    fixture: repair-applied-all
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: all-resolved line shown after all fixes applied
+        description: After every fix is applied (zero skipped, zero remaining), the [OK] All topology mismatches resolved line is shown
+        steps:
+          - action: render
+            target: repair-clean-result
+          - verify: visible
+            target: all-resolved-line
+            expected: true
+          - verify: hidden
+            target: clean-initial-line
+            expected: true
+
+  - name: Repair clean result reports skipped count and exits non-zero
+    component: repair-clean-result
+    fixture: repair-skipped-some
+    intent: "@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches"
+    cases:
+      - name: skipped line shown when any mismatches were skipped
+        description: Skipped mismatches are reported separately; the user is told to re-run parlay repair
+        steps:
+          - action: render
+            target: repair-clean-result
+          - verify: visible
+            target: skipped-line
+            expected: true
+
+  - name: Bare-parent upgrade error refuses atomically with concrete path
+    component: bare-parent-upgrade-error
+    fixture: upgrade-bare-parent-error
+    intent: "@parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology"
+    cases:
+      - name: error line includes resolved parent config path
+        description: The exact error message names the missing parent config.yaml path and points at parlay repair
+        steps:
+          - action: render
+            target: bare-parent-upgrade-error
+          - verify: text
+            target: error-line
+            expected: "[ERR] bare-parent topology: /repo/.parlay/config.yaml is missing — run `parlay repair` to create it"
+      - name: nothing deployed (atomic refusal — no schemas, no skills, no partial work)
+        description: The fallback that previously redeployed schemas while skipping skills no longer exists; this case must show 0/0 deploys
+        steps:
+          - action: click
+            target: refuse-and-exit
+          - verify: state
+            target: UpgradeResult.skills-deployed
+            expected: 0
+          - verify: state
+            target: UpgradeResult.schemas-updated
+            expected: 0
+          - verify: error
+            target: refuse-and-exit
+            expected: "exit-non-zero"
+      - name: distinct from uninitialized-project error
+        description: bare-parent fires when roots.yaml exists but config.yaml is missing — the uninitialized case (neither file) emits a different message
+        steps:
+          - action: render
+            target: bare-parent-upgrade-error
+          - verify: text
+            target: error-line
+            expected: "[ERR] bare-parent topology: /repo/.parlay/config.yaml is missing — run `parlay repair` to create it"

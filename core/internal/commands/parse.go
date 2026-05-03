@@ -1,8 +1,12 @@
+// parlay-feature: parlay-tool/multi-root
+// parlay-component: cross-root-reference-validation-error
+
 package commands
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -26,6 +30,23 @@ func init() {
 
 func runParse(cmd *cobra.Command, args []string) error {
 	path := args[0]
+
+	// Multi-root cross-root reference guard: any file we are about to
+	// parse as authored content (intents, dialogs) is checked for
+	// `web:@feat`-style cross-root prefixes. Cross-root references in
+	// authored content are not supported in v1; surface as a validation
+	// error before parsing proceeds.
+	if parseType == "intents" || parseType == "dialogs" {
+		if body, err := os.ReadFile(path); err == nil {
+			if errs := parser.ValidateNoCrossRootRefsInContent(path, body); len(errs) > 0 {
+				fmt.Fprintln(os.Stderr, "[ERR] cross-root references in intent content are not supported in v1")
+				for _, e := range errs {
+					fmt.Fprintf(os.Stderr, "  at %s:%d (%s)\n", e.File, e.Line, e.Ref)
+				}
+				return fmt.Errorf("cross-root references found in %s", path)
+			}
+		}
+	}
 
 	var result interface{}
 	var err error

@@ -1,6 +1,6 @@
-generated-at: "2026-05-03T15:12:52Z"
+generated-at: "2026-05-03T18:01:44Z"
 merged-sections:
     blueprint: 29c9100532fa3fcc
-    fixtures: ae18ba319a1594c7
-    models: db7d059f1bcc0dde
-    routes: 37bac9734499bf87
+    fixtures: 46ebc66042a63de9
+    models: 22a052bd0964d31c
+    routes: 77f0eac7a1dbc6c2

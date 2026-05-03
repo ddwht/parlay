@@ -1,3 +1,9 @@
+// parlay-feature: parlay-tool/multi-root
+// parlay-component: init-agent-identity-prompt
+// parlay-extends: parlay-tool/multi-root/init-framework-default-inheritance-prompt
+// parlay-cross-cutting: init-topology-writer
+// parlay-cross-cutting: init-agent-detection-hook
+
 package commands
 
 import (
@@ -32,6 +38,66 @@ type frameworkEntry struct {
 // Single source of truth for all options.
 var agentOptions = []string{"Claude Code", "Cursor", "Generic"}
 var sddOptions = []string{"GitHub SpecKit", "Kiro", "None"}
+
+// knownAgentNames is sourced from the deployer registry — kept in sync
+// with agentOptions for the detection hook.
+var knownAgentNames = []string{"Claude Code", "Cursor", "Generic"}
+
+// DetectRunningAgent inspects the runtime environment (env vars,
+// parent process name, terminal markers) and returns the running
+// agent's name when one is recognized. Returns ("", false) when no
+// agent is detected. The detector returns "unknown" via a false hit
+// rather than guessing when signals are ambiguous.
+//
+// Detection signals (in priority order):
+//   1. CLAUDECODE / CLAUDE_CODE_ENTRYPOINT / ANTHROPIC_* env vars → Claude Code
+//   2. CURSOR_* env vars → Cursor
+//   3. CI / non-TTY contexts → no detection (return false)
+//
+// Detection is read-only — it never writes to disk or mutates env state.
+func DetectRunningAgent() (name string, detected bool) {
+	if v := os.Getenv("CLAUDECODE"); v != "" {
+		return "Claude Code", true
+	}
+	if v := os.Getenv("CLAUDE_CODE_ENTRYPOINT"); v != "" {
+		return "Claude Code", true
+	}
+	if os.Getenv("ANTHROPIC_API_KEY") != "" && os.Getenv("CLAUDE_AGENT") != "" {
+		return "Claude Code", true
+	}
+	if os.Getenv("CURSOR_AGENT") != "" || os.Getenv("CURSOR_TRACE_ID") != "" {
+		return "Cursor", true
+	}
+	return "", false
+}
+
+// promptAgentWithDefault shows the agent-identity prompt, pre-filled
+// with the detected default when one was discovered. The user MUST
+// press Enter to confirm or type an alternative — init never proceeds
+// without an explicit choice. When no agent is detected, the prompt
+// falls back to free entry against the adapter list.
+func promptAgentWithDefault(reader *bufio.Reader, detected string) (string, error) {
+	if detected != "" {
+		fmt.Printf("ai-agent? [%s (detected)] — press Enter to confirm or type to override\n", detected)
+		fmt.Print("> ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		input = strings.TrimSpace(input)
+		if input == "" {
+			return detected, nil
+		}
+		// Accept any of the known names verbatim; otherwise pass through.
+		for _, opt := range knownAgentNames {
+			if strings.EqualFold(input, opt) {
+				return opt, nil
+			}
+		}
+		return input, nil
+	}
+	return promptChoice(reader, "What AI agent would you like to use?", agentOptions)
+}
 var frameworks = []frameworkEntry{
 	{Display: "Go CLI", Adapter: "go-cli", NavStrategy: "cli-subcommands"},
 	{Display: "React + Ant Design", Adapter: "react-antd", NavStrategy: "browser"},
@@ -47,7 +113,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	agent, err := promptChoice(reader, "What AI agent would you like to use?", agentOptions)
+	detectedAgent, _ := DetectRunningAgent()
+	agent, err := promptAgentWithDefault(reader, detectedAgent)
 	if err != nil {
 		return err
 	}

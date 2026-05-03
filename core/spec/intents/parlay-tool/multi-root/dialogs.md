@@ -111,7 +111,7 @@ User: cd apps/web && parlay promote-root
 System (background): Removes parent pointer from `apps/web/.parlay/config`; child becomes its own top-level root.
 System: apps/web is now a standalone parlay root.
 
-#### Branch: Bare parent — features only in children
+#### Branch: Feature-empty parent — features only in children
 
 User: parlay init   (in repo root)
 System (background): Creates `.parlay/` (schemas, adapters, roots.yaml), `spec/intents/`, `.claude/skills/`, `CLAUDE.md`. The parent root exists; it has no features yet.
@@ -358,7 +358,7 @@ System (background): Skill passes `--root web` through to the CLI verbatim.
 System: operating on root: ==web== (--root flag)
 System (background): Domain model extracted for the chosen root only.
 
-#### Branch: Bare-parent — skill at repo root with no parent features prompts
+#### Branch: Feature-empty parent — skill at repo root with no parent features prompts
 
 User: /parlay-sync @feat   (agent cwd is repo root, parent spec/intents/ is empty, two child roots exist)
 System (background): Skill invokes the CLI; the CLI returns "feature not found in active root; matches roots [web, api]".
@@ -395,6 +395,349 @@ System: Synced @feat in root ==web==.
 User: /parlay-sync @feat   (project uses Generic CLI)
 System (background): Generic CLI's `AGENT_INSTRUCTIONS.md` describes the same invocation pattern; skill content is identical to Claude/Cursor.
 System: Synced @feat in root ==web==.
+
+---
+
+### Agent Identity Lives at the Parent in Multi-Root Projects
+
+**Trigger**: User runs any `parlay` command that loads config in a multi-root project (e.g. `parlay upgrade`, `parlay status`, `parlay build-feature`)
+
+User: parlay upgrade   (multi-root project, parent has `config.yaml` with `ai-agent: Claude Code`)
+System (background): Loads parent `config.yaml`; reads `ai-agent: Claude Code`.
+System (background): Selects the Claude Code deployer for both schemas AND skills.
+System: Deployed schemas to ==/abs/path/to/repo/.parlay/schemas/== (==12==).
+System: Deployed skills to ==/abs/path/to/repo/.claude/skills/parlay-*/== (==18==).
+
+#### Branch: Child config declares ai-agent (forbidden)
+
+User: parlay status   (multi-root project; `apps/web/.parlay/config.yaml` contains `ai-agent: Cursor`)
+System (background): Loads child config; sees `ai-agent` field.
+System: error: agent identity belongs at the parent root; remove `ai-agent` from ==apps/web/.parlay/config.yaml==.
+System (background): Refuses to proceed.
+
+#### Branch: Both parent and child declare ai-agent — agreeing or disagreeing
+
+User: parlay status   (parent has `ai-agent: Claude Code`, `apps/web/.parlay/config.yaml` also has `ai-agent: Claude Code`)
+System: error: agent identity declared at multiple levels:
+System:   - ==/abs/path/to/repo/.parlay/config.yaml== (ai-agent: Claude Code)
+System:   - ==/abs/path/to/repo/apps/web/.parlay/config.yaml== (ai-agent: Claude Code)
+System: The model is exactly one agent identity per project. Run `parlay repair` to migrate.
+System (background): Refuses to proceed even when the values agree — silent preference would let the inconsistency persist.
+
+User: parlay status   (parent has `ai-agent: Claude Code`, `apps/web/.parlay/config.yaml` has `ai-agent: Cursor`)
+System: error: agent identity declared at multiple levels with conflicting values:
+System:   - ==/abs/path/to/repo/.parlay/config.yaml== (ai-agent: Claude Code)
+System:   - ==/abs/path/to/repo/apps/web/.parlay/config.yaml== (ai-agent: Cursor)
+System: Run `parlay repair` to choose which to keep at the parent.
+
+#### Branch: Child omits sdd-framework, parent declares it — silent inheritance
+
+User: cd apps/web && parlay build-feature @feat   (child config has no `sdd-framework`; parent declares `sdd-framework: parlay-spec`)
+System (background): Loads child config; field absent. Walks parent pointer; reads parent's `sdd-framework: parlay-spec`.
+System (background): Proceeds with build using the parent's value. No warning.
+
+User: cd apps/web && parlay --verbose status
+System: ai-agent: ==Claude Code== (from ==/abs/path/to/repo/.parlay/config.yaml==)
+System: sdd-framework: ==parlay-spec== (inherited from ==/abs/path/to/repo/.parlay/config.yaml==)
+System: prototype-framework: ==parlay-prototype== (from ==/abs/path/to/repo/apps/web/.parlay/config.yaml==)
+
+#### Branch: Child omits sdd-framework AND parent does not declare it
+
+User: cd apps/web && parlay build-feature @feat
+System: error: no sdd-framework declared in child or parent.
+System: Add `sdd-framework: <name>` to ==apps/web/.parlay/config.yaml== or to ==/abs/path/to/repo/.parlay/config.yaml== (parent default).
+System (background): Refuses to proceed.
+
+#### Branch: parlay upgrade with parent missing ai-agent (declared, then removed)
+
+User: parlay upgrade   (parent `config.yaml` exists but the user removed the `ai-agent: ...` line)
+System: error: no agent identity declared at parent root.
+System:   - ==/abs/path/to/repo/.parlay/config.yaml== has no `ai-agent` field.
+System: Add `ai-agent: <Claude Code|Cursor|Generic CLI>` and re-run, or run `parlay repair`.
+System (background): Refuses to deploy. Never walks up, never silently skips.
+
+#### Branch: Single-root project — no behavior change
+
+User: parlay upgrade   (single-root project; one `config.yaml` with all three fields)
+System (background): Loads the one config; reads `ai-agent`, `sdd-framework`, `prototype-framework`.
+System: Deployed schemas (==12==) and skills (==18==) to ==/abs/path/to/repo==.
+
+#### Branch: Verbose mode shows resolution source for every effective field
+
+User: parlay --verbose status   (multi-root, parent declares ai-agent and sdd-framework, child overrides prototype-framework)
+System: ai-agent: ==Claude Code== (from ==/abs/path/to/repo/.parlay/config.yaml==)
+System: sdd-framework: ==parlay-spec== (from ==/abs/path/to/repo/.parlay/config.yaml==)
+System: prototype-framework: ==react== (from ==/abs/path/to/repo/apps/web/.parlay/config.yaml==)
+
+---
+
+### parlay init Writes the Correct Topology Shape
+
+**Trigger**: User runs `parlay init` (single-root or as the first step of bootstrapping a multi-root project), or `parlay add-root <child>` after the parent is initialized
+
+User: parlay init   (empty directory, NOT invoked through a known agent)
+System: ai-agent? [Claude Code | Cursor | Generic CLI]
+User: Claude Code
+System: sdd-framework? [parlay-spec | ...]
+User: parlay-spec
+System: prototype-framework? [parlay-prototype | react | ...]
+User: parlay-prototype
+System (background): Writes ==.parlay/config.yaml== with `ai-agent: Claude Code`, `sdd-framework: parlay-spec`, `prototype-framework: parlay-prototype`. No `parent:` field. Single-root project.
+System: Initialized parlay project at ==/abs/path/to/dir==.
+
+#### Branch: parlay init invoked through Claude Code — prompt is pre-filled
+
+User: parlay init   (running inside Claude Code; env signals detected)
+System: ai-agent? [==Claude Code== (detected)] — press Enter to confirm or type to override
+User: <press Enter>
+System (background): Confirms `ai-agent: Claude Code`.
+System: sdd-framework? ...
+User: ...
+System (background): Writes config. Init never proceeds without explicit confirmation, even with a detected default.
+
+#### Branch: parlay init invoked through Claude Code — user overrides the detected agent
+
+User: parlay init   (running inside Claude Code)
+System: ai-agent? [==Claude Code== (detected)]
+User: Cursor
+System (background): Records `ai-agent: Cursor` (override accepted).
+System: sdd-framework? ...
+
+#### Branch: Bootstrap multi-root — init at parent, then add-root per child
+
+User: parlay init   (in repo root that will host children)
+System (background): Prompts for `ai-agent` (pre-filled if detected). User confirms.
+System (background): Optionally prompts for `sdd-framework` / `prototype-framework` defaults (used by parent's own features OR offered as defaults to children).
+System (background): Writes ==/abs/path/to/repo/.parlay/config.yaml==.
+User: parlay add-root core
+System (background): Prompts for `sdd-framework` (default: parent's value). User confirms.
+System (background): Prompts for `prototype-framework` (default: parent's value). User confirms.
+System (background): Writes ==core/.parlay/config.yaml== containing `sdd-framework`, `prototype-framework`, `parent: ..`. Does NOT write `ai-agent` to the child.
+User: parlay add-root studio
+System (background): Same flow. Writes ==studio/.parlay/config.yaml== — no `ai-agent`.
+
+#### Branch: parlay add-root invoked when parent has no ai-agent
+
+User: parlay add-root core   (parent's `config.yaml` exists but has no `ai-agent`, OR parent has no `config.yaml` at all)
+System: error: parent is missing ai-agent — run `parlay init` at the parent first.
+System:   parent path: ==/abs/path/to/repo==
+System (background): Refuses to create the child root. No partial work.
+
+#### Branch: parlay init invoked at a child whose parent already has ai-agent
+
+User: cd apps/web && parlay init   (child dir; `parent: ..` resolves to parent that has `ai-agent: Claude Code` set)
+System: sdd-framework? [==parlay-spec== (default from parent)]
+User: <press Enter>
+System: prototype-framework? [==parlay-prototype== (default from parent)]
+User: <press Enter>
+System (background): Writes ==apps/web/.parlay/config.yaml== with `sdd-framework`, `prototype-framework`, `parent: ..`. ai-agent is NOT prompted and NOT written to the child.
+System: Initialized child root at ==/abs/path/to/repo/apps/web==.
+
+#### Branch: parlay init re-run on already-configured project — idempotent
+
+User: parlay init   (project already has `.parlay/config.yaml` with all three fields set correctly)
+System (background): Reads existing config. All required fields present and topology is correct.
+System: Project already initialized. No changes made.
+System (background): Exits zero. Does not re-prompt for any field.
+
+User: parlay init   (multi-root project: parent has `ai-agent`, all children have framework + parent pointer)
+System (background): Reads parent and child configs. Topology valid.
+System: Project already initialized. No changes made.
+
+#### Branch: Single-root project unchanged
+
+User: parlay init   (empty directory, single-root use case)
+System: ai-agent? ...; sdd-framework? ...; prototype-framework? ...
+User: ...
+System (background): Writes one ==.parlay/config.yaml== with all three fields. No `parent:` field, no `roots.yaml`. Behavior identical to today.
+
+---
+
+### Detect and Migrate Legacy Topology Mismatches
+
+**Trigger**: User runs `parlay repair` (full topology check with prompts) or `parlay status` (read-only topology summary)
+
+User: parlay repair   (project has bare-parent topology: `roots.yaml` at parent, no `config.yaml` at parent)
+System (background): Runs topology-check pass; detects bare-parent mismatch.
+System: Topology mismatch detected (1 of 1):
+System:   ==bare-parent==: ==/abs/path/to/repo== has `roots.yaml` but no `config.yaml`.
+System: Proposed fix: create ==/abs/path/to/repo/.parlay/config.yaml== with `ai-agent: <value>`.
+System: ai-agent? [==Claude Code== (detected from current agent, or from a child config if present)]
+User: <press Enter>
+System (background): Writes parent config; re-scans.
+System: Fix applied. No remaining mismatches.
+
+#### Branch: Bare-parent — agent value comes from a child config
+
+User: parlay repair   (parent has `roots.yaml` no `config.yaml`; `apps/web/.parlay/config.yaml` has `ai-agent: Cursor`)
+System: Topology mismatch detected (1 of 2):
+System:   ==bare-parent==: ==/abs/path/to/repo== has `roots.yaml` but no `config.yaml`.
+System: Proposed fix: create ==/abs/path/to/repo/.parlay/config.yaml== with `ai-agent: ==Cursor==` (from ==apps/web/.parlay/config.yaml==).
+System: Confirm? [Y/n]
+User: Y
+System (background): Writes parent config. Re-scans.
+System: Topology mismatch detected (1 of 1):   (note: re-scan surfaced agent-at-child as the next mismatch)
+System:   ==agent-at-child==: ==apps/web/.parlay/config.yaml== contains `ai-agent: Cursor`.
+System: Proposed fix: remove `ai-agent` from ==apps/web/.parlay/config.yaml==. Parent already has `ai-agent: Cursor` (matches), so no parent change needed.
+System: Confirm? [Y/n]
+User: Y
+System (background): Removes `ai-agent` from child. Re-scans. No further mismatches.
+System: All topology mismatches resolved.
+
+#### Branch: Agent-at-child — child config has ai-agent, parent does not
+
+User: parlay repair   (parent `config.yaml` exists with no `ai-agent`; `apps/web/.parlay/config.yaml` has `ai-agent: Claude Code`)
+System: Topology mismatch detected (1 of 1):
+System:   ==agent-at-child==: ==apps/web/.parlay/config.yaml== contains `ai-agent: Claude Code`.
+System: Proposed fix: remove `ai-agent` from the child config; write `ai-agent: Claude Code` to ==/abs/path/to/repo/.parlay/config.yaml==.
+System: Confirm? [Y/n]
+User: Y
+System (background): Updates parent config (adds `ai-agent: Claude Code`); removes `ai-agent` from child. Re-scans. No remaining mismatches.
+
+#### Branch: Both-have-agent, values agree
+
+User: parlay repair   (parent and child both declare `ai-agent: Claude Code`)
+System: Topology mismatch detected (1 of 1):
+System:   ==both-have-agent==: ai-agent declared at both levels with matching value.
+System:     - ==/abs/path/to/repo/.parlay/config.yaml== (ai-agent: Claude Code)
+System:     - ==apps/web/.parlay/config.yaml== (ai-agent: Claude Code)
+System: Proposed fix: remove `ai-agent` from ==apps/web/.parlay/config.yaml== (parent's value is authoritative).
+System: Confirm? [Y/n]
+User: Y
+System (background): Removes child entry. No further mismatches.
+
+#### Branch: Both-have-agent, values disagree
+
+User: parlay repair   (parent has `ai-agent: Claude Code`, child has `ai-agent: Cursor`)
+System: Topology mismatch detected (1 of 1):
+System:   ==both-have-agent==: ai-agent declared at both levels with conflicting values.
+System:     - ==/abs/path/to/repo/.parlay/config.yaml== (ai-agent: Claude Code)
+System:     - ==apps/web/.parlay/config.yaml== (ai-agent: Cursor)
+System: Which value should be kept at the parent?
+  A: ==Claude Code== (parent's current value)
+  B: ==Cursor== (child's current value)
+  C: Skip
+User: Selects A
+System (background): Keeps parent's `ai-agent: Claude Code`; removes `ai-agent` from child. No silent pick.
+System: Resolved.
+
+#### Branch: Single-root missing ai-agent
+
+User: parlay repair   (single-root project; one `config.yaml` with `sdd-framework` and `prototype-framework` but no `ai-agent`)
+System: Topology mismatch detected (1 of 1):
+System:   ==single-root-missing-ai-agent==: ==/abs/path/to/repo/.parlay/config.yaml== is missing `ai-agent`.
+System: ai-agent? [==Claude Code== (detected from current agent)]
+User: <press Enter>
+System (background): Writes `ai-agent: Claude Code` to the config. No remaining mismatches.
+
+#### Branch: Two simultaneous mismatches — walked one at a time
+
+User: parlay repair   (project has agent-at-child AND a sibling child missing `sdd-framework`)
+System: Topology mismatch detected (1 of 2):
+System:   ==agent-at-child==: ==apps/web/.parlay/config.yaml== contains `ai-agent: Claude Code`.
+System: Proposed fix: ...
+User: Y
+System (background): Applies fix. Re-scans.
+System: Topology mismatch detected (1 of 1):   (note: count decremented after re-scan)
+System:   ==missing-sdd-framework==: ==apps/api/.parlay/config.yaml== has no `sdd-framework` and parent does not declare one either.
+System: Proposed fix: ...
+User: Selects skip
+System (background): Skips this fix. Re-scan still shows it.
+System: 1 mismatch remaining (skipped). Re-run `parlay repair` to address.
+
+#### Branch: User-authored fields preserved when ai-agent is moved out
+
+User: parlay repair   (child config has `ai-agent: Cursor`, `sdd-framework: parlay-spec`, `prototype-framework: parlay-prototype`, `parent: ..`, AND a custom field `team: web`)
+System: Topology mismatch detected (1 of 1):
+System:   ==agent-at-child==: ==apps/web/.parlay/config.yaml== contains `ai-agent: Cursor`.
+System: Proposed fix: remove `ai-agent` from child; write to parent.
+System: Note: ==team: web== and other unrecognized fields will be preserved in the child config.
+User: Y
+System (background): Removes only `ai-agent`; preserves `team: web` and all other fields verbatim.
+
+#### Branch: parlay status — clean topology
+
+User: parlay status
+System: root: ==parent== (==/abs/path/to/repo==)
+System:   topology: ==ok==
+System:   features: 5
+System:   child roots: ==web, api==
+
+#### Branch: parlay status — needs repair, summary only
+
+User: parlay status   (project has 2 topology mismatches)
+System: root: ==parent== (==/abs/path/to/repo==)
+System:   topology: ==needs repair== (==2 mismatches== — run `parlay repair`)
+System:   features: 5
+System:   child roots: ==web, api==
+System (background): Does NOT enumerate which mismatches; per-file detail belongs in `parlay repair`.
+
+#### Branch: After successful repair — durable fix
+
+User: parlay repair   (after a previous run resolved all mismatches)
+System (background): Topology check passes cleanly.
+System: No topology mismatches found.
+
+User: parlay status
+System: root: ==parent==
+System:   topology: ==ok==
+
+#### Branch: Other commands surface a one-line topology hint, never block on it
+
+User: parlay upgrade   (topology has agent-at-child, but user is running an unrelated command)
+System: error: no agent identity at parent — run `parlay repair`.
+System (background): Refuses to deploy. Topology checks do not run on every command — they only fire when a command directly hits the failure (e.g. upgrade needs the parent's `ai-agent`).
+
+---
+
+### parlay upgrade Errors on Bare-Parent Topology
+
+**Trigger**: User runs `parlay upgrade` in any project state — bare-parent, correctly-configured (single or multi-root), or uninitialized
+
+User: parlay upgrade   (bare-parent topology: parent has `.parlay/roots.yaml`, no `.parlay/config.yaml`)
+System: error: bare-parent topology: ==/abs/path/to/repo/.parlay/config.yaml== is missing — run `parlay repair` to create it.
+System (background): Exits non-zero. Nothing is deployed: no schemas, no skills, no partial work. Atomic.
+
+#### Branch: Correctly-configured multi-root — quiet success
+
+User: parlay upgrade   (parent `config.yaml` declares `ai-agent: Claude Code`)
+System (background): Loads parent config. Selects deployer.
+System (background): Deploys schemas to ==/abs/path/to/repo/.parlay/schemas/== and skills to ==/abs/path/to/repo/.claude/skills/parlay-*/==.
+System: Upgraded to ==v1.2.3==. Schemas: ==12==. Skills: ==18==.
+System (background): No warnings, no info lines about topology.
+
+#### Branch: Correctly-configured single-root — quiet success
+
+User: parlay upgrade   (one `config.yaml` with all three fields)
+System (background): Loads config; deploys schemas and skills.
+System: Upgraded to ==v1.2.3==. Schemas: ==12==. Skills: ==18==.
+
+#### Branch: Uninitialized directory — distinct error from bare-parent
+
+User: parlay upgrade   (directory with neither `.parlay/roots.yaml` nor `.parlay/config.yaml`)
+System: error: not a parlay project — run `parlay init` first.
+System (background): Distinct message from the bare-parent error; this case is "uninitialized," that one is "structurally invalid."
+
+#### Branch: After parlay repair fixes a bare-parent project
+
+User: parlay repair   (bare-parent project; user accepts the prompted fix)
+System: ... (see Detect and Migrate Legacy Topology Mismatches dialog)
+User: parlay upgrade
+System (background): Parent now has `config.yaml` with `ai-agent`. Upgrade runs cleanly.
+System: Upgraded to ==v1.2.3==. Schemas: ==12==. Skills: ==18==.
+
+#### Branch: parlay upgrade --help text contains no "bare-parent" as supported state
+
+User: parlay upgrade --help
+System: Re-deploy schemas, skills, and agent config to match the current parlay version.
+System: ...
+System (background): Help text mentions bare-parent only in the context of the error message, never as a supported configuration. The previous fallback's documentation is gone.
+
+#### Branch: deployToRoot fallback removed — code path no longer exists
+
+User: parlay upgrade   (bare-parent project)
+System: error: bare-parent topology: ==/abs/path/to/repo/.parlay/config.yaml== is missing — run `parlay repair` to create it.
+System (background): The previous `case os.IsNotExist(err):` arm in `deployToRoot` is gone. There is no soft-fail path that proceeds with empty config and skips skills. Single code path: correct topology or hard-error.
 
 ---
 
