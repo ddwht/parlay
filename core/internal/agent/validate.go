@@ -198,10 +198,328 @@ type deepInput struct {
 
 // deepAdapter is the parsed adapter structure for vocabulary validation.
 // Maps surface vocabulary terms (shows/actions/flows) to framework widgets.
+//
+// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+//
+// The ComponentVocabulary and Tokens fields are populated when the adapter
+// declares the corresponding optional sections. Layout validation (and,
+// looking forward, page-layout buildfile region validation) consult these
+// to enforce vocabulary and token rules.
 type deepAdapter struct {
-	Shows   map[string]interface{} `yaml:"shows"`
-	Actions map[string]interface{} `yaml:"actions"`
-	Flows   map[string]interface{} `yaml:"flows"`
+	Shows               map[string]interface{}        `yaml:"shows"`
+	Actions             map[string]interface{}        `yaml:"actions"`
+	Flows               map[string]interface{}        `yaml:"flows"`
+	ComponentVocabulary *deepComponentVocabulary      `yaml:"componentVocabulary,omitempty"`
+	Tokens              *deepAdapterTokens            `yaml:"tokens,omitempty"`
+}
+
+// deepComponentVocabulary mirrors the adapter file's componentVocabulary
+// block for validation lookups. Field names match the YAML schema.
+type deepComponentVocabulary struct {
+	Name       string                  `yaml:"name"`
+	Components []deepVocabularyComponent `yaml:"components"`
+}
+
+type deepVocabularyComponent struct {
+	Type            string                       `yaml:"type"`
+	Category        string                       `yaml:"category"`
+	Variants        []string                     `yaml:"variants,omitempty"`
+	Properties      []deepVocabularyProperty     `yaml:"properties,omitempty"`
+	AllowedChildren []string                     `yaml:"allowed-children,omitempty"`
+}
+
+type deepVocabularyProperty struct {
+	Name       string   `yaml:"name"`
+	Type       string   `yaml:"type"`
+	EnumValues []string `yaml:"enum-values,omitempty"`
+	ChildTypes []string `yaml:"child-types,omitempty"`
+	Required   bool     `yaml:"required"`
+}
+
+type deepAdapterTokens struct {
+	Modes      []string                  `yaml:"modes"`
+	Spacing    []deepSpacingToken        `yaml:"spacing,omitempty"`
+	Color      []deepColorToken          `yaml:"color,omitempty"`
+	Typography []deepTypographyToken     `yaml:"typography,omitempty"`
+}
+
+type deepSpacingToken struct {
+	Name     string `yaml:"name"`
+	Order    int    `yaml:"order"`
+	EmitForm string `yaml:"emit-form"`
+}
+
+type deepColorToken struct {
+	Name      string   `yaml:"name"`
+	Tone      string   `yaml:"tone,omitempty"`
+	EmitForms []string `yaml:"emit-forms"`
+}
+
+type deepTypographyToken struct {
+	Name     string `yaml:"name"`
+	UseSite  string `yaml:"use-site"`
+	EmitForm string `yaml:"emit-form"`
+}
+
+// LayoutReference is the minimal shape of a layout used by ValidateLayout.
+// Real layouts arrive via @studio-support/page-layout-field; this struct is
+// sufficient to verify the validation contract today and is forward-compatible
+// with the richer layout schema landing later.
+//
+// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+type LayoutReference struct {
+	// Vocabulary is the vocabulary version this layout pins itself to
+	// (e.g., "clarity@17"). Mismatch with the adapter's vocabulary fails
+	// fast before any component lookup.
+	Vocabulary string
+
+	// Nodes is the flat list of layout nodes to validate. Container nodes
+	// are checked for allowed-children; leaf nodes are checked for variant
+	// and property closure; data-shape nodes are checked for property
+	// closure only.
+	Nodes []LayoutNode
+}
+
+// LayoutNode is a single node within a LayoutReference.
+type LayoutNode struct {
+	Type         string         // e.g., "clarity.button"
+	ParentType   string         // empty for root; the type of the parent container otherwise
+	Variant      string         // empty when the node has no variant
+	Properties   map[string]any // referenced property names → declared values
+	TokenRefs    []TokenReference
+}
+
+// TokenReference is a single token reference in a layout node's chrome
+// (e.g., gap: spacing-lg → TokenReference{Field: "gap", Value: "spacing-lg",
+// Kind: "spacing"}). Raw values that should have been a token reference are
+// represented with RawValue=true.
+type TokenReference struct {
+	Field    string // e.g., "gap"
+	Value    string // the raw or token value supplied by the layout
+	Kind     string // "spacing" | "color" | "typography"
+	RawValue bool   // true when the layout supplied a literal value (e.g., "24px") instead of a token name
+}
+
+// ValidateLayout runs the deep validation passes for a layout against an
+// adapter's componentVocabulary and tokens. Returns a list of structured
+// errors with stable codes for programmatic handling.
+//
+// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationError {
+	var errors []ValidationError
+	if adapter == nil || adapter.ComponentVocabulary == nil {
+		return errors
+	}
+	vocab := adapter.ComponentVocabulary
+
+	// (1) Version-mismatch fails fast before any component lookup.
+	if layout.Vocabulary != "" && layout.Vocabulary != vocab.Name {
+		return []ValidationError{{
+			Code:    "version-mismatch",
+			Message: fmt.Sprintf("layout pins vocabulary %q but the active adapter declares %q — fails fast before any component lookup", layout.Vocabulary, vocab.Name),
+			Context: "layout.vocabulary",
+			Fix:     fmt.Sprintf("either update the layout to pin %q, or upgrade the adapter to declare %q", vocab.Name, layout.Vocabulary),
+		}}
+	}
+
+	// Index components by type for the lookup passes.
+	componentByType := map[string]*deepVocabularyComponent{}
+	declaredTypes := make([]string, 0, len(vocab.Components))
+	for i := range vocab.Components {
+		c := &vocab.Components[i]
+		componentByType[c.Type] = c
+		declaredTypes = append(declaredTypes, c.Type)
+	}
+	declaredTypesList := strings.Join(declaredTypes, ", ")
+
+	// Index spacing tokens for raw-value-where-token-required + unknown-token.
+	spacingNames := map[string]bool{}
+	spacingList := []string{}
+	if adapter.Tokens != nil {
+		for _, st := range adapter.Tokens.Spacing {
+			spacingNames[st.Name] = true
+			spacingList = append(spacingList, st.Name)
+		}
+	}
+	spacingListStr := strings.Join(spacingList, ", ")
+
+	for _, node := range layout.Nodes {
+		// (2) Unknown component type.
+		comp, ok := componentByType[node.Type]
+		if !ok {
+			errors = append(errors, ValidationError{
+				Code:    "unknown-component",
+				Message: fmt.Sprintf("layout (%s) references component type %q which is not declared in vocabulary %s", layout.Vocabulary, node.Type, vocab.Name),
+				Context: fmt.Sprintf("layout.nodes.%s", node.Type),
+				Fix:     fmt.Sprintf("either change the type to one of {%s} or add %q to the adapter's componentVocabulary", declaredTypesList, node.Type),
+			})
+			continue
+		}
+
+		// (3) Unknown variant.
+		if node.Variant != "" {
+			variantOK := false
+			for _, v := range comp.Variants {
+				if v == node.Variant {
+					variantOK = true
+					break
+				}
+			}
+			if !variantOK {
+				errors = append(errors, ValidationError{
+					Code:    "unknown-variant",
+					Message: fmt.Sprintf("layout references component %q with variant %q which is not in the closed enum {%s}", node.Type, node.Variant, strings.Join(comp.Variants, ", ")),
+					Context: fmt.Sprintf("layout.nodes.%s.variant", node.Type),
+					Fix:     fmt.Sprintf("change the variant to one of {%s}", strings.Join(comp.Variants, ", ")),
+				})
+			}
+		}
+
+		// (4) Unknown property — name or value-shape outside the closed type set.
+		propByName := map[string]*deepVocabularyProperty{}
+		for i := range comp.Properties {
+			propByName[comp.Properties[i].Name] = &comp.Properties[i]
+		}
+		for propName := range node.Properties {
+			if _, ok := propByName[propName]; !ok {
+				errors = append(errors, ValidationError{
+					Code:    "unknown-property",
+					Message: fmt.Sprintf("layout references property %q on component %q which is not declared in the vocabulary", propName, node.Type),
+					Context: fmt.Sprintf("layout.nodes.%s.properties", node.Type),
+					Fix:     "either add this property to the component's componentVocabulary entry, or remove the reference from the layout",
+				})
+			}
+		}
+
+		// (5) Disallowed child — checked when ParentType is set on the node.
+		if node.ParentType != "" {
+			parent, ok := componentByType[node.ParentType]
+			if ok && parent.Category == "container" {
+				if !contains(parent.AllowedChildren, node.Type) {
+					errors = append(errors, ValidationError{
+						Code:    "disallowed-child",
+						Message: fmt.Sprintf("layout places %q as a child of container %q whose allowed-children set is {%s} — %q is not in that set", node.Type, node.ParentType, strings.Join(parent.AllowedChildren, ", "), node.Type),
+						Context: fmt.Sprintf("layout.nodes.%s.parent=%s", node.Type, node.ParentType),
+						Fix:     fmt.Sprintf("either move the child under a container that allows it, or pick a child from {%s}", strings.Join(parent.AllowedChildren, ", ")),
+					})
+				}
+			}
+		}
+
+		// (6) Token references.
+		for _, tr := range node.TokenRefs {
+			if tr.RawValue {
+				errors = append(errors, ValidationError{
+					Code:    "raw-value-where-token-required",
+					Message: fmt.Sprintf("layout uses raw value %q for %q on component %q — a token-reference is required (available spacing tokens: %s)", tr.Value, tr.Field, node.Type, spacingListStr),
+					Context: fmt.Sprintf("layout.nodes.%s.%s", node.Type, tr.Field),
+					Fix:     fmt.Sprintf("replace the literal with one of: %s", spacingListStr),
+				})
+				continue
+			}
+			if tr.Kind == "spacing" {
+				if !spacingNames[tr.Value] {
+					errors = append(errors, ValidationError{
+						Code:    "unknown-token",
+						Message: fmt.Sprintf("layout uses %s token %q which is not declared (available: %s)", tr.Kind, tr.Value, spacingListStr),
+						Context: fmt.Sprintf("layout.nodes.%s.%s", node.Type, tr.Field),
+						Fix:     fmt.Sprintf("either change the value to one of {%s} or add %q to the adapter's tokens.%s section", spacingListStr, tr.Value, tr.Kind),
+					})
+				}
+			}
+		}
+	}
+	return errors
+}
+
+// contains reports whether s contains v.
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckCrossAdapterParity compares two adapters' componentVocabulary blocks
+// and reports any drift as a parity violation. Two adapters declaring the
+// same vocabulary version MUST produce structurally identical vocabulary
+// blocks; until a shared-include mechanism lands, parity is held by hand.
+//
+// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+func CheckCrossAdapterParity(a, b *deepAdapter) []ValidationError {
+	var errors []ValidationError
+	if a == nil || b == nil || a.ComponentVocabulary == nil || b.ComponentVocabulary == nil {
+		return errors
+	}
+	if a.ComponentVocabulary.Name != b.ComponentVocabulary.Name {
+		// Different vocabulary versions — parity check does not apply.
+		return errors
+	}
+	aTypes := map[string]bool{}
+	for _, c := range a.ComponentVocabulary.Components {
+		aTypes[c.Type] = true
+	}
+	bTypes := map[string]bool{}
+	for _, c := range b.ComponentVocabulary.Components {
+		bTypes[c.Type] = true
+	}
+	for t := range bTypes {
+		if !aTypes[t] {
+			errors = append(errors, ValidationError{
+				Code:    "parity-violation",
+				Message: fmt.Sprintf("cross-adapter parity drift in %s: component %q is declared in one adapter but missing from the other", a.ComponentVocabulary.Name, t),
+				Context: fmt.Sprintf("componentVocabulary.%s.components", a.ComponentVocabulary.Name),
+				Fix:     fmt.Sprintf("either add %q to the missing adapter or remove it from the present one", t),
+			})
+		}
+	}
+	for t := range aTypes {
+		if !bTypes[t] {
+			errors = append(errors, ValidationError{
+				Code:    "parity-violation",
+				Message: fmt.Sprintf("cross-adapter parity drift in %s: component %q is declared in one adapter but missing from the other", a.ComponentVocabulary.Name, t),
+				Context: fmt.Sprintf("componentVocabulary.%s.components", a.ComponentVocabulary.Name),
+				Fix:     fmt.Sprintf("either add %q to the missing adapter or remove it from the present one", t),
+			})
+		}
+	}
+	return errors
+}
+
+// EmitTokenValue translates a token reference to the adapter's emit-form for
+// codegen. Spacing tokens have a single mode-invariant emit-form; color
+// tokens carry per-mode emit-forms and the returned string is a serialized
+// list (e.g., "light:var(--color-surface-light) | dark:var(--color-surface-dark)").
+// Returns ok=false when the token is not declared.
+//
+// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+func EmitTokenValue(adapter *deepAdapter, kind, name string) (string, bool) {
+	if adapter == nil || adapter.Tokens == nil {
+		return "", false
+	}
+	switch kind {
+	case "spacing":
+		for _, t := range adapter.Tokens.Spacing {
+			if t.Name == name {
+				return t.EmitForm, true
+			}
+		}
+	case "color":
+		for _, t := range adapter.Tokens.Color {
+			if t.Name == name {
+				return strings.Join(t.EmitForms, " | "), true
+			}
+		}
+	case "typography":
+		for _, t := range adapter.Tokens.Typography {
+			if t.Name == name {
+				return t.EmitForm, true
+			}
+		}
+	}
+	return "", false
 }
 
 // ValidationError is a structured error returned by deep validation.

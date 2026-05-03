@@ -1,4 +1,4 @@
-generated-at: "2026-05-03T11:43:24Z"
+generated-at: "2026-05-03T15:12:52Z"
 files:
     internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
@@ -39,6 +39,12 @@ files:
     internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
         hash: 726adf056f39e044
+    internal/commands/register_adapter.go:
+        component: adapter-registration
+        hash: c416b4a8eee30118
+    internal/commands/register_adapter_vocabulary_test.go:
+        component: adapter-parser-vocabulary-and-tokens
+        hash: 1b466d975cf8eb56
     internal/commands/repair.go:
         component: RepairReport
         hash: 5fff5b44bb7b75b4

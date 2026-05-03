@@ -1,18 +1,24 @@
-generated-at: "2026-05-03T11:43:24Z"
+generated-at: "2026-05-03T15:12:52Z"
 intents:
     declare-a-named-component-vocabulary-in-the-adapter:
-        content-hash: ad5dd5b37b6f35a0
+        content-hash: b896b75c40276dc2
         goal-hash: f8d5ee6fd35c54dd
-        constraints-hash: 211dd8a3847a272a
-        verify-hash: 82d6cb21dd5f4dc2
+        constraints-hash: 8e2976a0fc5dbd16
+        verify-hash: a6738a7edbc0e48c
         objects-hash: 4e6a5f42b5beacd8
     declare-design-tokens-in-the-adapter:
-        content-hash: 18aa83fb231dd3c3
+        content-hash: 93a65c652916f000
         goal-hash: 8cc6735a8f5591f2
-        constraints-hash: bf2af87888e7e5e3
-        verify-hash: 88c3620545e92a4a
-        objects-hash: 4fd1546bf7254885
+        constraints-hash: 6afdb3fcb257ca38
+        verify-hash: 8c70b5e23786c047
+        objects-hash: 220733d992dd0dc1
 sources:
     intents:
-        declare-a-named-component-vocabulary-in-the-adapter: 0c9ba1c9652ef08e
-        declare-design-tokens-in-the-adapter: 2bad9143fbe30422
+        declare-a-named-component-vocabulary-in-the-adapter: 97a47195fc10bd42
+        declare-design-tokens-in-the-adapter: 1eab97a4ab5ded8b
+    dialogs:
+        declare-a-named-component-vocabulary-in-the-adapter: 3fbb2ac1a2669c4c
+        declare-design-tokens-in-the-adapter: cd5aa46d9bd83b2b
+buildfile-sections:
+    fixtures: 647200200276b57c
+    models: 073afe96ca265582

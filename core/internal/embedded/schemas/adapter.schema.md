@@ -1,3 +1,10 @@
+<!--
+parlay-section: cross-cutting
+parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-component-vocabulary-section
+parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-tokens-section
+parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-theme-modes
+-->
+
 # Framework Adapter Schema
 
 File: `.parlay/adapters/<adapter-name>.adapter.yaml`
@@ -101,6 +108,39 @@ mount-strategies:
     template: |
       <code template with {{placeholders}}>
     description: <when this strategy applies>
+
+# --- Section 8: Component vocabulary (design-system-specific) ---
+
+componentVocabulary:
+  name: <versioned vocabulary identifier — e.g., clarity@17 (bare names without @<version> are rejected)>
+  components:
+    - type: <string referenced from layout files — e.g., clarity.button>
+      category: <one of: container | leaf | data-shape>
+      variants: [<closed enum of allowed variant values>]
+      properties:
+        - name: <property name as referenced in layout files>
+          type: <one of: string | token-reference | enum | boolean | int | child-list>
+          enum-values: [<allowed values when type is enum>]
+          child-types: [<allowed child types when type is child-list>]
+          required: <boolean>
+      allowed-children: [<for containers only — explicit list of allowed child component types>]
+
+# --- Section 9: Design tokens (design-system-specific) ---
+
+tokens:
+  modes: [<at least one mode — typically light; may include dark or named themes>]
+  spacing:
+    - name: <token name — e.g., spacing-md>
+      order: <integer position within the ordered scale>
+      emit-form: <single mode-invariant emit form — e.g., var(--spacing-md)>
+  color:
+    - name: <token name — e.g., color-status-danger>
+      tone: <one of: neutral | info | warning | danger | success — shared with the domain enum-tone>
+      emit-forms: [<per mode: e.g., "light:var(--color-danger-light)", "dark:var(--color-danger-dark)">]
+  typography:
+    - name: <use-site name — e.g., heading-page>
+      use-site: <one of: heading-page | heading-section | body | caption>
+      emit-form: <single mode-invariant emit form>
 ```
 
 ## Section 1: Framework vocabulary
@@ -279,6 +319,102 @@ A component may use both: a composition for its internal wiring, and a mount str
 
 Templates use double-brace syntax: `{{key}}`, `{{label}}`, `{{Component}}`, `{{path}}`, etc. Placeholder names are freeform — the agent fills them from the buildfile component data (component name, route path, page name) and adapter conventions (naming, import style).
 
+## Section 8: Component vocabulary
+
+The `componentVocabulary:` section declares the closed list of design-system components an adapter exposes to layouts. It is the runtime source of truth for "what components exist, what variants they have, what properties they accept, and what children they allow." Layouts (and Studio's layout pipeline) validate every component reference, variant, property, and child relationship against this vocabulary.
+
+### Versioned vocabulary name
+
+The vocabulary `name` is a versioned identifier — e.g., `clarity@17`. Bare names without `@<version>` are rejected at parse time. The version suffix lets layouts pin themselves to a specific vocabulary revision and lets validation fail fast (with a `version-mismatch` error) before any component lookup runs when a layout pins a version the active adapter does not declare.
+
+### Component declaration
+
+Each entry in `components:` declares one design-system component:
+
+| Field | Required | Description |
+|---|---|---|
+| `type` | Yes | The string layout files reference (e.g., `clarity.button`, `clarity.datagrid`). |
+| `category` | Yes | One of the closed set `{container, leaf, data-shape}`. Containers hold children. Leaves are terminal. Data-shapes carry data without rendering chrome (e.g., a datagrid column descriptor). |
+| `variants` | No | Closed enum of allowed variant values. References to variants outside this enum fail with `unknown-variant`. |
+| `properties` | No | Per-component overlay properties (NOT universal container fields — see below). |
+| `allowed-children` | Container only | Explicit list of allowed child component types. Required for containers; absent or empty for leaves and data-shapes. References to disallowed children fail with `disallowed-child`. |
+
+Each property has its own shape:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Property name as referenced in layout files. |
+| `type` | Yes | One of the closed set `{string, token-reference, enum, boolean, int, child-list}`. Any other type fails parse with `unknown-property`. |
+| `enum-values` | When type is enum | Allowed values for this property. |
+| `child-types` | When type is child-list | Allowed child component types for this slot. |
+| `required` | Yes | Whether layouts must supply a value. |
+
+### Universal container fields (NOT here)
+
+The fields `direction`, `gap`, `padding`, `alignment` are **universal**: they live on every container node in any vocabulary, regardless of which adapter is active. They are declared once in the layout schema and are NEVER repeated inside `componentVocabulary` component entries. An adapter that re-declares a universal field inside a component fails parse with `universal-field-redeclared`. See `internal/embedded/schemas/layout.schema.md` for the canonical definition.
+
+### Cross-adapter parity
+
+Two adapters declaring the same vocabulary version (e.g., `angular-clarity` and `react-clarity` both declaring `clarity@17`) MUST produce structurally identical `componentVocabulary` blocks. Drift between them is a parity violation reported by the cross-adapter parity check. Until a shared-include mechanism lands, parity is held by hand — a regression test compares the two blocks at registration time.
+
+### Optional section
+
+The `componentVocabulary:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout references a vocabulary against an adapter without one, vocabulary-reference validation is skipped with a warning rather than failing the build.
+
+## Section 9: Design tokens
+
+The `tokens:` section declares the design-system tokens an adapter emits during codegen. Tokens are referenced by name from layouts (e.g., `gap: spacing-lg`, `color: color-status-danger`) and translated to per-framework emit-forms (CSS variables, theme-object key paths, etc.) when code is generated.
+
+### Theme modes
+
+Every adapter declaring `tokens:` MUST declare at least one theme mode (typically `light`). Adapters MAY declare additional modes such as `dark` or named themes. An empty or missing `modes:` list fails parse with `at least one mode` is required.
+
+Mode names are stable across same-design-system adapters declaring the same vocabulary version. Renaming a mode (e.g., `dark` → `night`) or adding a new mode within an existing vocabulary version is rejected — it requires a vocabulary version bump (e.g., `clarity@17` → `clarity@18`). This is the breaking-change posture: every adapter declaration must include a mode list from this change forward; existing adapters without one need a one-line migration adding `modes: [light]`.
+
+Codegen output is **per-mode-aware**: for each token that varies by mode, emission carries every supported mode's value side-by-side. The page's selected mode defaults to the adapter's first declared mode and a runtime mode-switch never requires re-running codegen — the mode-varying emit-forms are all already present in the generated output. This is the contract that makes runtime theme switching free.
+
+### Spacing tokens
+
+Spacing tokens form an ordered named scale (e.g., `spacing-xs`, `spacing-sm`, `spacing-md`, `spacing-lg`, `spacing-xl`). Each token declares:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Token name as referenced from layouts. |
+| `order` | Yes | Position within the ordered scale; the parser preserves order and uses it for sync-back warnings if Studio re-orders. |
+| `emit-form` | Yes | Single mode-invariant emit-form (most spacing is mode-invariant). |
+
+### Color tokens
+
+Color tokens form a named palette. Each token declares:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Token name as referenced from layouts (e.g., `color-surface`, `color-status-danger`). |
+| `tone` | No | One of the closed set `{neutral, info, warning, danger, success}` — shared with the domain model's enum-tone metadata so a status-bearing enum can map directly to its semantic color. |
+| `emit-forms` | Yes | Per-mode emit-forms covering every mode the adapter declares. A missing form fails parse naming the offending token AND the missing mode (e.g., `color-surface missing emit-form for dark`). |
+
+### Typography tokens
+
+Typography tokens are named text styles keyed by use-site. Each token declares:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Use-site name (typically the same as `use-site`). |
+| `use-site` | Yes | One of the closed set `{heading-page, heading-section, body, caption}`. The logical role; the physical mapping (font, size, line-height) is an emit detail. |
+| `emit-form` | Yes | Single mode-invariant emit-form (typography is mode-invariant in the supported design system). |
+
+### Vocabulary-version-locked token list
+
+The set of tokens within a vocabulary version is **closed**. Adding or removing a token requires a vocabulary version bump. This is the same lock as the component list — it lets layouts pin themselves to a token set with the same fail-fast guarantees they get for components.
+
+### MCP fetches are an authoring aid only
+
+The adapter file is the **runtime source of truth** at codegen time. Studio MAY use a live MCP fetch from the upstream design system as an authoring aid (to suggest tokens to add, to flag drift between the upstream system and the local adapter), but codegen NEVER fetches at generation time. This keeps codegen offline and reproducible. Adapters cannot invent tokens absent from the upstream design system; the authoring tool's job is to keep the adapter in sync.
+
+### Optional section
+
+The `tokens:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout uses a token-reference against an adapter without `tokens:`, token validation is skipped with a warning rather than failing the build.
+
 ## Validation
 
 When an adapter file is loaded, the tool verifies:
@@ -292,6 +428,8 @@ When an adapter file is loaded, the tool verifies:
 - `compositions:`, `conventions:`, and `design-system:` sections are optional but recommended
 - If `design-system:` is present, each category must have a `source:` field with value `framework`, `figma`, or `not-defined`
 - If `mount-strategies:` is present, each strategy must have `detection:`, `template:`, and `description:` fields. `detection:` must be a non-empty string. `template:` must contain at least one `{{placeholder}}`
+- If `componentVocabulary:` is present, the `name:` field MUST include `@<version>` (bare names are rejected). Every property `type:` must be drawn from the closed set `{string, token-reference, enum, boolean, int, child-list}`. Every component `category:` must be one of `{container, leaf, data-shape}`. Universal container fields (`direction`, `gap`, `padding`, `alignment`) MUST NOT appear inside any component's `properties:` — they live in the layout schema and re-declaring them fails parse with `universal-field-redeclared`.
+- If `tokens:` is present, the `modes:` list MUST contain at least one mode. Every color token's `emit-forms:` must cover every declared mode (a missing per-mode form fails parse naming the token and the missing mode). Color token `tone:` (when present) must be one of `{neutral, info, warning, danger, success}`. Typography token `use-site:` must be one of `{heading-page, heading-section, body, caption}`.
 
 ## Relationship to buildfile
 
@@ -323,3 +461,5 @@ The buildfile stays small (it describes WHAT). The adapter carries the implement
 | File conventions | Parlay (ships defaults) | Team (matches their project structure) | Project restructure |
 | Patterns | Parlay (ships defaults) | Team (matches their UX preferences) | Design system changes |
 | Mount strategies | Parlay (ships defaults for known frameworks) | Team (adapts to their codebase integration patterns) | Team discovers new integration patterns or changes page structure |
+| Component vocabulary | Design-system owner (mirrored into the adapter) | Rarely — vocabulary content is intended to be identical across same-design-system adapters | Vocabulary version bump (e.g., clarity@17 → clarity@18) |
+| Design tokens | Design-system owner (mirrored into the adapter) | Per-framework emit-forms; the token set itself is closed by vocabulary version | Vocabulary version bump or per-framework emit-form change |
