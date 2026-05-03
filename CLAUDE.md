@@ -40,6 +40,15 @@ Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
+
+## Multi-Root Layout
+
+This project has registered child roots. Each child has its own
+intents, dialogs, and build artifacts; schemas, adapters, and the
+agent surface live at the repo-level root and are shared.
+
+- **core** (`core`) — Parlay Core — the spec-driven design and codegen engine
+- **studio** (`studio`) — Parlay Studio — designer-facing extension on top of Core (Figma round-trip, domain model editor)
 <!-- parlay:end -->
 
 ## Skill and Schema Updates (dogfooding rule)
