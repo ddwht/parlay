@@ -790,22 +790,27 @@ func validatePlanSection(bf deepBuildfile, buildfilePath string) []ValidationErr
 
 // planRootDirFromBuildfilePath derives the project root directory from
 // a buildfile's path. A buildfile at <root>/.parlay/build/<feature>/buildfile.yaml
-// belongs to root <root>. Returns "" when the path doesn't match the
+// — or, for initiative-nested features, <root>/.parlay/build/<initiative>/<feature>/buildfile.yaml
+// — belongs to root <root>. Returns "" when the path doesn't match the
 // expected layout, signaling the disk-shape checks should be skipped.
 func planRootDirFromBuildfilePath(buildfilePath string) string {
 	abs, err := filepath.Abs(buildfilePath)
 	if err != nil {
 		return ""
 	}
-	dir := filepath.Dir(abs) // <root>/.parlay/build/<feature>
-	for i := 0; i < 3; i++ {
-		dir = filepath.Dir(dir)
+	// Walk up from the buildfile's directory until we land on
+	// <root>/.parlay/build/, then return <root>. Feature slugs may be
+	// qualified (e.g., "initiative/feature"), so the depth between the
+	// buildfile and .parlay/build is not fixed.
+	dir := filepath.Dir(abs)
+	for dir != "/" && dir != "." && dir != "" {
+		parent := filepath.Dir(dir)
+		if filepath.Base(dir) == "build" && filepath.Base(parent) == ".parlay" {
+			return filepath.Dir(parent)
+		}
+		dir = parent
 	}
-	// Verify <dir>/.parlay/build/<feature>/buildfile.yaml round-trips.
-	if !strings.HasPrefix(abs, dir+string(filepath.Separator)) {
-		return ""
-	}
-	return dir
+	return ""
 }
 
 func validateCrossCuttingEntries(entries []deepCrossCuttingEntry) []ValidationError {

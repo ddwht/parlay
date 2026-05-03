@@ -485,6 +485,45 @@ plan:
 	}
 }
 
+func TestValidatePlan_DiskShapeChecks_QualifiedSlug(t *testing.T) {
+	// Regression: initiative-nested features have qualified slugs like
+	// <root>/.parlay/build/<initiative>/<feature>/buildfile.yaml. The root
+	// resolver must land on <root>, not on <root>/.parlay, so existing
+	// plan targets are recognized as existing.
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "my-initiative", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	existing := filepath.Join(srcDir, "config.go")
+	os.WriteFile(existing, []byte("package config\n"), 0644)
+
+	buildfile := `feature: my-initiative/test-feature
+adapter: go-cli
+models: {}
+cross-cutting:
+  - id: cc-real
+    source: "@my-initiative/test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    transform: "edit existing config"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/cc-real]
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	errors := ValidateBuildfileDeepStructured(path, "")
+	for _, e := range errors {
+		if e.Code == "plan-modify-target-missing" {
+			t.Errorf("qualified-slug buildfile spuriously reports plan-modify-target-missing: %+v", e)
+		}
+	}
+}
+
 func TestValidatePlan_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	buildfile := `feature: test-feature
