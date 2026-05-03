@@ -1,0 +1,430 @@
+feature: studio-support/adapter-vocabulary-extension
+framework: go-test
+
+# Pure-infrastructure feature — suites are keyed on cross-cutting ids
+# (the buildfile has no components: section). Each suite verifies the
+# Invariants of its source infrastructure fragment and the corresponding
+# dialog branches.
+
+suites:
+  - name: adapter-schema documents componentVocabulary section
+    component: adapter-schema-component-vocabulary-section
+    fixture: adapter-with-clarity-vocabulary
+    intent: "@studio-support/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+
+    cases:
+      - name: schema documents top-level componentVocabulary block
+        description: Adapter schema doc must include a section describing the componentVocabulary structure with versioned name.
+        steps:
+          - verify: file-exists
+            target: internal/embedded/schemas/adapter.schema.md
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "componentVocabulary"
+
+      - name: schema documents the closed property type set
+        description: The schema doc enumerates the closed property type set.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "string, token-reference, enum, boolean, int, child-list"
+
+      - name: schema documents the closed component category set
+        description: The schema doc enumerates the closed category set (container, leaf, data-shape).
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "container"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "data-shape"
+
+      - name: schema documents the universal-fields rule
+        description: The schema doc explicitly states that direction, gap, padding, alignment do NOT belong inside componentVocabulary entries.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "universal"
+
+  - name: adapter-schema documents tokens section
+    component: adapter-schema-tokens-section
+    fixture: adapter-with-clarity-tokens-light-dark
+    intent: "@studio-support/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+
+    cases:
+      - name: schema documents top-level tokens block with three subsections
+        description: The schema doc names spacing, color, typography subsections under tokens.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "tokens:"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "spacing"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "color"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "typography"
+
+      - name: schema documents the closed color-tone set
+        description: The doc enumerates neutral, info, warning, danger, success and notes alignment with domain enum-tone metadata.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "neutral"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "danger"
+
+      - name: schema documents the closed typography use-site set
+        description: The doc enumerates heading-page, heading-section, body, caption.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "heading-page"
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "caption"
+
+      - name: schema documents MCP-as-authoring-aid rule
+        description: The doc states the adapter file is the runtime source of truth at codegen time and MCP fetches are an authoring aid only.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "source of truth"
+
+  - name: adapter-schema documents theme modes
+    component: adapter-schema-theme-modes
+    fixture: adapter-with-clarity-tokens-light-dark
+    intent: "@studio-support/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+
+    cases:
+      - name: schema documents that every adapter declares at least one mode
+        description: The doc requires at least one mode (typically light) and notes empty mode lists fail parse.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "at least one mode"
+
+      - name: schema documents per-mode emit-form rule for mode-varying tokens
+        description: The doc states mode-varying tokens declare an emit-form per declared mode; missing forms fail parse.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "per mode"
+
+      - name: schema documents version-bump rule for renaming or adding modes
+        description: Renaming or adding a mode within a vocabulary version requires a version bump.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "vocabulary version bump"
+
+      - name: schema documents per-mode-aware emission so runtime switching is regen-free
+        description: The doc states codegen output carries every supported mode's value, so runtime mode-switching does not require re-running codegen.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/adapter.schema.md
+            expected: "runtime"
+
+  - name: adapter parser accepts componentVocabulary and tokens sections
+    component: adapter-parser-vocabulary-and-tokens
+    fixture: adapter-with-clarity-vocabulary
+    intent: "@studio-support/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+
+    cases:
+      - name: well-formed clarity@17 vocabulary parses cleanly
+        description: register_adapter parses an adapter declaring a representative clarity@17 component set without error.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-clarity-vocabulary
+          - verify: state
+            target: ComponentVocabulary.name
+            expected: "clarity@17"
+
+      - name: registration message reports vocabulary component count
+        description: After successful registration, the message includes the number of vocabulary components.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-clarity-vocabulary
+          - verify: text
+            target: registration-summary
+            expected: "5 components"
+
+      - name: registration message reports token counts including modes
+        description: After successful registration, the message reports the spacing, color, typography token counts and the declared modes.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-clarity-tokens-light-dark
+          - verify: text
+            target: registration-summary
+            expected: "5 spacing"
+          - verify: text
+            target: registration-summary
+            expected: "light, dark"
+
+      - name: bare vocabulary name without version fails parse
+        description: "An adapter declaring `name: clarity` (no @<version>) fails parse with an error naming the offending vocabulary."
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-missing-vocabulary-version
+          - verify: error
+            target: register-adapter
+            expected: "vocabulary name must include @<version>"
+
+      - name: property type outside the closed set fails validation
+        description: A property declared with type `object` fails validation listing the closed type set.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-property-type-outside-closed-set
+          - verify: error
+            target: register-adapter
+            expected: "type `object` is not allowed"
+
+      - name: universal field re-declared inside componentVocabulary fails parse
+        description: Declaring `direction` inside a componentVocabulary entry fails at adapter parse time, not at layout-validate time.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-universal-field-redeclared
+          - verify: error
+            target: register-adapter
+            expected: "universal container fields"
+
+      - name: empty mode list fails parse
+        description: An adapter with `tokens:` but no declared modes fails parse.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-empty-mode-list
+          - verify: error
+            target: register-adapter
+            expected: "at least one mode"
+
+      - name: color token missing emit-form for declared mode fails parse
+        description: An adapter declaring [light, dark] modes whose color-surface omits a dark emit-form fails parse naming token and missing mode.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-color-token-missing-mode
+          - verify: error
+            target: register-adapter
+            expected: "color-surface"
+          - verify: error
+            target: register-adapter
+            expected: "dark"
+
+      - name: parsed vocabulary is cached per-process
+        description: A second lookup against the same adapter file within a single CLI invocation reuses the cached parse result.
+        steps:
+          - action: input
+            target: adapter-file
+            value: adapter-with-clarity-vocabulary
+          - verify: state
+            target: AdapterCache.parse-count
+            expected: 1
+
+  - name: adapter validator enforces vocabulary and token rules in deep validation
+    component: adapter-validator-deep-vocabulary-and-tokens
+    fixture: layout-validates-against-clarity-17
+    intent: "@studio-support/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+
+    cases:
+      - name: well-formed layout pinned to clarity@17 validates clean
+        description: A layout referencing only declared components, variants, properties, child relationships, and tokens passes deep validation with no errors.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-validates-against-clarity-17
+          - verify: count
+            target: validation-errors
+            expected: 0
+
+      - name: vocabulary version mismatch fails fast before any component lookup
+        description: A layout pinned to clarity@17 against an adapter declaring clarity@18 fails fast naming both versions.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-version-mismatch
+          - verify: error
+            target: validate-layout
+            expected: "version-mismatch"
+          - verify: error
+            target: validate-layout
+            expected: "clarity@17"
+          - verify: error
+            target: validate-layout
+            expected: "clarity@18"
+
+      - name: unknown component type names the offending value and the declared types
+        description: A layout referencing clarity.foobar fails validation with the offending value and the declared type list.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-references-unknown-component
+          - verify: error
+            target: validate-layout
+            expected: "unknown-component"
+          - verify: error
+            target: validate-layout
+            expected: "clarity.foobar"
+
+      - name: unknown variant lists the allowed alternatives
+        description: A layout referencing variant `mega-button` fails validation listing the allowed variants.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-references-unknown-variant
+          - verify: error
+            target: validate-layout
+            expected: "unknown-variant"
+          - verify: error
+            target: validate-layout
+            expected: "mega-button"
+          - verify: error
+            target: validate-layout
+            expected: "primary, secondary, tertiary, danger"
+
+      - name: disallowed child names parent, allowed set, and offending child
+        description: A layout placing clarity.button inside clarity.datagrid fails naming the parent, the allowed-children set, and the offender.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-disallowed-child
+          - verify: error
+            target: validate-layout
+            expected: "disallowed-child"
+          - verify: error
+            target: validate-layout
+            expected: "clarity.datagrid-column"
+
+      - name: raw value where token required lists available tokens
+        description: "A layout using `gap: 24px` fails with a list of available spacing tokens, not a generic type error."
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-uses-raw-value-where-token-required
+          - verify: error
+            target: validate-layout
+            expected: "raw-value-where-token-required"
+          - verify: error
+            target: validate-layout
+            expected: "spacing-xs, spacing-sm, spacing-md, spacing-lg, spacing-xl"
+
+      - name: unknown token names the value and lists available tokens
+        description: "A layout using `gap: spacing-mega` fails naming the unknown token and listing valid alternatives."
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-references-unknown-token
+          - verify: error
+            target: validate-layout
+            expected: "unknown-token"
+          - verify: error
+            target: validate-layout
+            expected: "spacing-mega"
+
+      - name: layout references vocabulary-removed component on next codegen pass
+        description: After a component is removed from the adapter, an existing layout that still references it fails validation naming the layout, the component, and the vocabulary version.
+        steps:
+          - action: input
+            target: layout-file
+            value: layout-removed-component-still-referenced
+          - verify: error
+            target: validate-layout
+            expected: "clarity.callout"
+          - verify: error
+            target: validate-layout
+            expected: "clarity@17"
+
+      - name: cross-adapter parity holds when vocabulary blocks are identical
+        description: Two adapters declaring clarity@17 with structurally identical componentVocabulary blocks produce no parity violation.
+        steps:
+          - action: input
+            target: layout-file
+            value: cross-adapter-parity-identical
+          - verify: count
+            target: parity-violations
+            expected: 0
+
+      - name: cross-adapter parity drift is reported as a violation
+        description: When two adapters declaring clarity@17 differ on a component, the diff is reported as a parity violation listing the differing component.
+        steps:
+          - action: input
+            target: layout-file
+            value: cross-adapter-parity-drift
+          - verify: error
+            target: parity-check
+            expected: "clarity.tooltip"
+
+      - name: codegen translates spacing-lg to the adapter's emit-form
+        description: "For a layout using `gap: spacing-lg`, codegen substitutes the adapter's emit-form (e.g., var(--spacing-lg)) without changing the layout file."
+        steps:
+          - action: input
+            target: layout-file
+            value: codegen-translates-token-to-emit-form
+          - verify: text
+            target: emitted-css
+            expected: "var(--spacing-lg)"
+
+      - name: per-mode emission carries every supported mode's value
+        description: When the adapter declares [light, dark], the emission for color-surface includes both modes so runtime switching does not require regeneration.
+        steps:
+          - action: input
+            target: layout-file
+            value: codegen-per-mode-emission
+          - verify: text
+            target: emitted-css
+            expected: "color-surface-light"
+          - verify: text
+            target: emitted-css
+            expected: "color-surface-dark"
+
+  - name: layout schema introduces universal container fields
+    component: layout-schema-universal-container-fields
+    fixture: layout-validates-against-clarity-17
+    intent: "@studio-support/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+
+    cases:
+      - name: layout schema doc exists at the canonical path
+        description: A new layout schema doc is created in the embedded schemas directory.
+        steps:
+          - verify: file-exists
+            target: internal/embedded/schemas/layout.schema.md
+
+      - name: layout schema enumerates the fixed universal-fields set
+        description: The doc lists exactly direction, gap, padding, alignment as the universal container fields.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "direction"
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "gap"
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "padding"
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "alignment"
+
+      - name: layout schema states value-types are uniform across vocabularies
+        description: The doc commits to a single value-type per universal field (e.g., gap is always token-reference).
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "token-reference"
+
+      - name: layout schema documents the migration posture
+        description: The doc notes the one-time migration step for existing adapters that re-declared a universal field.
+        steps:
+          - verify: file-content
+            target: internal/embedded/schemas/layout.schema.md
+            expected: "migration"
