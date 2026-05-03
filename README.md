@@ -31,7 +31,7 @@ brew install ddwht/parlay/parlay
 curl -sSfL https://raw.githubusercontent.com/ddwht/parlay/main/install.sh | sh
 
 # Go (if you have Go installed)
-go install github.com/ddwht/parlay/cmd/parlay@latest
+go install github.com/ddwht/parlay/core/cmd/parlay@latest
 ```
 
 ### Bootstrap a Project
