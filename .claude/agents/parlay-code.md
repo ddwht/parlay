@@ -17,6 +17,17 @@ You own exactly this phase:
 - Do not commit build state (`parlay save-build-state`) unless all tests passed.
 - If any test fails, stop, surface the failures, and ask the user how to proceed.
 
+## Recommended commands
+
+The skill and parlay CLI helpers your phase should reach for. Use them; don't reinvent equivalents in the shell.
+
+- `/parlay-generate-code` — main work; project-level, no `@{feature}` argument.
+- Run the project's canonical test suite — defined by the active adapter / project conventions, not pinned here. Never skip.
+- `parlay save-build-state --root <root>` — commit project baseline + code-hashes ONLY after tests pass.
+- `parlay diff --root <root>` — post-commit verification; every component should report `stable`.
+- `parlay verify-generated --root <root>` — confirm recorded code-hashes match the working tree.
+- `parlay repair --root <root>` — final drift check before returning to the parent.
+
 ## Handoff
 
 After the code phase completes successfully (tests pass, state committed), return the natural-completion summary to the parent: feature reference, phases run, artifacts produced, generated file paths. The parent (the parlay-loop skill) ends the loop here — there is no next phase.

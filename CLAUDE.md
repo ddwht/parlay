@@ -16,6 +16,7 @@ All operations are available as /parlay-* slash commands.
 - `/parlay-load-domain-model` — Load and integrate external domain model
 - `/parlay-lock-page` — Lock a page layout into a manifest
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
+- `/parlay-migrate-domain-model` — Convert domain-model.md to domain-model.yaml
 - `/parlay-new-initiative` — Create an empty initiative directory
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
 - `/parlay-reference-design-spec` — Extract design spec from Figma

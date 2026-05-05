@@ -21,6 +21,18 @@ At the end of each phase, ask the user to confirm advancement via AskUserQuestio
 - Never auto-advance. Confirmation at every phase boundary.
 - Stop and hand control back to the parent agent when the user picks "exit" or when all three phases are complete.
 
+## Recommended commands
+
+The skills and parlay CLI helpers your phase-group should reach for. Use them; don't reinvent equivalents in the shell.
+
+- `/parlay-add-feature` — only if the feature folder does not yet exist (and only after user confirmation).
+- `/parlay-scaffold-dialogs @{feature}` — dialogs phase; generates templates from authored intents.
+- `/parlay-create-artifacts @{feature}` — artifacts phase; produces `surface.md`, `infrastructure.md`, or both, depending on intent signals.
+- `parlay collect-questions @{feature}` — gap analysis at the end of the intents phase; surfaces unresolved `Questions:` blocks.
+- `parlay sync @{feature}` — gap analysis at the end of the dialogs phase; coverage + orphans.
+- `parlay validate --type {surface,infrastructure} <path>` — verify generated artifacts pass their schemas before asking the user to confirm.
+- `parlay repair --root <root>` — final drift check before handing off to the build group.
+
 ## Handoff
 
 After the **artifacts** phase completes and the user confirms, return a summary to the parent: feature reference, phases completed, and a notice that the designer group is done. The parent agent (the parlay-loop skill) will spawn the next phase-group (`parlay-build`) in a fresh sub-agent.
