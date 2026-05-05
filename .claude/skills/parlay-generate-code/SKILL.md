@@ -3,6 +3,15 @@ name: parlay-generate-code
 description: "Parlay: Generate prototype code from buildfile"
 ---
 
+<!--
+parlay-section: cross-cutting
+parlay-extends: studio-support/layout-aware-codegen/layout-block-reader
+parlay-extends: studio-support/layout-aware-codegen/resolved-binding-consumer
+parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
+parlay-extends: studio-support/layout-aware-codegen/layout-validation-precheck-surfacer
+parlay-extends: studio-support/layout-aware-codegen/non-interactive-codegen-pipeline
+-->
+
 # Generate Code
 
 Translate ALL features' buildfiles into working prototype source code at the project level. Reads every feature's buildfile, merges cross-cutting concerns (models, routes), and generates code for the entire project incrementally.
@@ -38,6 +47,17 @@ Every relative path below is interpreted against the **active root** — the par
 - **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
 
 When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+
+## Non-interactive, CI-safe by construction
+
+Codegen has **no TTY-conditional code paths and no interactive prompts** in any path. The skill reads the buildfile, runs the freshness gate (see step 11.6), runs the layout-validation precheck (see step 11.7), and emits framework code via an AI agent — but the agent has no decisions left to make at codegen time. Wiring inference, disambiguation, and layout validation all live upstream (in build-feature and the layout-creation flow) and have already produced their verdicts before codegen runs.
+
+Concretely:
+
+- **No TTY checks.** Codegen behaves identically with and without a controlling terminal. A no-TTY container produces output behaviorally equivalent to a local TTY run on the same source state.
+- **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt the parent skill describes (mount-strategy ambiguity, hand-edited stable file, etc.) lives in the AI-agent author surface that wraps codegen — the codegen execution itself is prompt-free. The `--non-interactive` flag is silently accepted for compatibility but has no observable effect; running with or without it produces identical exit codes, the same testcases pass, and the same component tree is emitted.
+- **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
+- **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent.
 
 ## Steps
 
@@ -107,6 +127,55 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
     Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
 
 11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set. Refuse any write to a path not in the plan — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+
+11.6. **Buildfile freshness gate** (per feature, before emission) — For every feature whose buildfile is loaded, run the freshness gate **before any emission begins for that feature**:
+
+   1. Read the buildfile's `source-signatures:` section (see buildfile.schema.md).
+   2. Recompute content signatures for every source artifact the buildfile consumed: `intents`, `dialogs`, `surface`, `domain`, `layout` (where applicable), and `adapter-version`. Signatures are **content hashes**, not timestamps — filesystem mtime never enters the comparison.
+   3. Compare each recorded signature against the freshly-computed signature.
+   4. **On match**: proceed with that feature's emission.
+   5. **On mismatch (or absent `source-signatures:` section)**: refuse to run for that feature, surface the error verbatim:
+      ```
+      stale-buildfile at <feature>: buildfile reflects <prior-signature>; current sources are <current-signature>. To fix: run `parlay build-feature <feature>` to refresh the buildfile, then re-run codegen.
+      ```
+      and exit with a non-zero status. Continue to run the gate for other features in the same project — the gate is **per-feature**, not per-project. A stale buildfile in feature A does not block feature B from generating, but the overall process exit code remains non-zero whenever any feature fails the gate.
+
+   The check is mechanical: signature comparison only — no AI invocation, no prompts. Codegen does NOT auto-run `parlay build-feature` and does NOT auto-rewrite the layout on stale-buildfile; it points the author at the offending feature and the human (or `parlay build-feature`) makes the change. Missing bindings inside an otherwise-fresh buildfile (i.e., a layout node that has no binding entry) are also classified as `stale-buildfile` — codegen does not surface a separate "missing-binding" error class. `stale-buildfile` is the only codegen-owned content-error category.
+
+   `stale-buildfile` is suppressed for any page that ALSO fails the layout-validation precheck (step 11.7) — the precheck refusal wins because the layout itself is invalid.
+
+11.7. **Layout-validation precheck surfacer** (per page, after freshness gate, before emission) — For every layout-bearing page in a feature whose freshness gate passed, consult the layout-validation precheck owned by the layout-creation feature:
+
+   1. Read the precheck verdict for the page from its layout artifact. The precheck implementation itself is the layout-creation feature's concern; this step only covers codegen's role of consulting the verdict.
+   2. **On precheck pass**: proceed to per-page emission.
+   3. **On precheck refusal** (unknown component type, vocabulary version mismatch, malformed block, etc.):
+      - Surface the precheck's refusal **verbatim**. Do NOT augment the message with codegen-internal vocabulary. Do NOT re-classify the failure as `stale-buildfile`. Do NOT silently fall back to the layout-free emission path — silent fallback would mask a real authoring error and is forbidden.
+      - Refuse codegen for THAT PAGE only. Other pages in the same project (including layout-free pages and other layout-bearing pages whose prechecks pass) continue to generate normally.
+      - Exit code remains non-zero for the run because at least one page failed.
+
+   The surfaced message points the author back at the layout-creation flow, not at codegen internals. When a page fails BOTH this precheck and the freshness gate, the precheck refusal wins and `stale-buildfile` is suppressed for that page.
+
+11.8. **Detect and consume layout block** (per page) — After the freshness gate (11.6) and the layout-validation precheck (11.7) have passed, dispatch each page to one of two emission paths based on whether its page artifact carries a `layout:` block. Activation is **per-page**, not per-project — pages with and without layout coexist in the same run, and the same project may mix layout-aware and layout-free pages.
+
+   For each page to be emitted:
+
+   1. **Detect the layout block.** Inspect the page artifact (the `*.page.md`/`*.page.yaml` resolved through the buildfile) for a `layout:` block.
+
+   2. **Layout-aware emission path** (when a layout block is present): the typed layout tree is the **structural source of truth** for that page's emission. The skill walks the typed tree and produces **one component instance per node, in declaration order**, with the structural shape of the layout tree preserved one-for-one in the emitted component tree (parent/child relationships and sibling order match the layout exactly). For each layout node:
+      - **Look up the binding entry in the buildfile** for that node.
+      - **Emit framework-specific wiring code** for the node:
+        - Pass entity data into the component (the `data.inputs:` resolved by the binding).
+        - Attach operation calls to action handlers (the `actions:` resolved by the binding).
+        - Apply presentation hints from the binding to the component's render properties (e.g. `presentation: badge` on a status column → render the column as a Clarity badge with the bound entity field flowing through unchanged).
+      - **Pass tokens through as adapter-defined token references**, never as raw pixel values. A binding referencing `spacing-lg` emits a token reference recognized by the adapter (e.g. a CSS variable or a framework token import), not the underlying numeric value.
+      - **Emit a traceability annotation** carrying the `(layout-node, surface-fragment, domain-element)` source triple recorded on the binding. The triple appears as a comment or framework-idiomatic annotation alongside the wired component, so traceability survives into the framework output.
+      - **Missing binding handling.** If the buildfile lacks a binding for a layout node codegen reaches, codegen treats it as a **freshness-gate failure** — it surfaces `stale-buildfile` and points the author at `parlay build-feature`. There is no separate "missing-binding" error class in codegen.
+
+   3. **Layout-free emission path** (when no layout block is present): the page falls through to the existing surface-and-domain emission path described in step 12 onward, **unchanged**. Output for layout-free pages is behaviorally equivalent to its pre-feature output given the same adapter version and source state. A project with zero layouts at all generates output indistinguishable in behavior from a pre-feature run.
+
+   **Codegen MUST NOT invoke the rules engine, the AI matcher, or any disambiguation prompt during emission.** Those calls live in the build phase and have already produced the bindings before codegen runs. The codegen execution trace must show zero invocations of any of those subsystems. If a binding is missing, the response is `stale-buildfile`, never an inline disambiguation prompt.
+
+   **Re-running codegen on identical inputs produces behaviorally-equivalent output.** Same `(layout, buildfile, adapter)` input produces output that passes the same testcases and emits the same component tree. Lexical details (whitespace, identifier casing in non-load-bearing places, comment ordering) may differ — the AI emitter is non-deterministic on text — but behavior, structure, and bindings are stable.
 
 12. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
     - Look up the component's file path in `plan` (the entry whose `sources` references this component). The plan is authoritative — do NOT recompute the path from the adapter's `component-pattern` + `naming` rules at this step. The adapter's conventions were already applied when build-feature emitted the plan.
@@ -322,4 +391,6 @@ The fix is structural: the baseline and code-hashes are written together by a si
 - `unknown-component-type` — buildfile uses a component type not in the adapter. Either the buildfile is stale (regenerate it) or the adapter needs extending.
 - `source-root-collision` — adapter's source root conflicts with existing non-generated files. Ask the user how to proceed.
 - `test-execution-failed` — generated tests don't pass. Show summaries and offer the menu (show details / regenerate failing components / stop).
+- `stale-buildfile` — the freshness gate (step 11.6) detected that the buildfile's `source-signatures:` no longer match current source state. The error message format is `stale-buildfile at <feature>: buildfile reflects <prior-signature>; current sources are <current-signature>. To fix: run `parlay build-feature <feature>` to refresh the buildfile, then re-run codegen.` Process exit code is non-zero. No new files are written for the affected feature, but other features in the same run continue. This is the **only codegen-owned content-error category** — missing bindings inside a buildfile are also surfaced as `stale-buildfile`, not as a separate "missing-binding" class.
+- `precheck-refusal` — the layout-validation precheck (step 11.7) refused a layout-bearing page. Codegen surfaces the precheck's message **verbatim**, refuses for that page only, lets other pages in the same project continue, and exits non-zero overall. The precheck refusal wins over `stale-buildfile` when both apply for the same page.
 - `spec-leak` — if you (the agent) find yourself wanting to read a file under `spec/intents/`, **do not**. Stop and report which buildfile field is missing the information you need. This is a buildfile schema bug, not an excuse to cross the boundary.

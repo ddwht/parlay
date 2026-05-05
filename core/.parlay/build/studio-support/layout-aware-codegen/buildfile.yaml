@@ -1,0 +1,204 @@
+feature: studio-support/layout-aware-codegen
+adapter: go-cli
+
+# This feature is purely codegen-side infrastructure — no user-facing surface,
+# no domain entities. The buildfile carries five cross-cutting entries, one
+# per infrastructure fragment, all targeting the codegen skill (and one also
+# touching the buildfile schema to record the source-state signature the
+# freshness gate consumes).
+#
+# Out of scope (for explicit traceability):
+#   - Wiring inference / disambiguation prompts → owned by build-feature
+#     (different feature, build-phase responsibility).
+#   - Layout validation against the adapter (vocabulary version, known types,
+#     well-formed block) → owned by a future layout-creation feature; codegen
+#     consumes its precheck verdict verbatim.
+# Both are referenced from cross-cutting entries below as upstream
+# dependencies but are NOT modified by this buildfile.
+
+models: {}
+
+fixtures: {}
+
+routes: []
+
+components: {}
+
+cross-cutting:
+  - id: layout-block-reader
+    source: "@studio-support/layout-aware-codegen/codegen-reads-the-layout-block-when-present"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    transform: |
+      Extend the generate-code skill so that, after loading buildfiles and
+      before emitting code for each page, the agent detects whether the
+      page artifact carries a `layout:` block. When present, the typed tree
+      becomes the structural source of truth for that page's emission and
+      drives the per-node component-instance loop in step 14 (or its
+      successor). When absent, the page falls through to the existing
+      surface-and-domain emission path unchanged. Activation is per-page,
+      not per-project — pages with and without layout coexist in the same
+      run. Token references in the layout (e.g. spacing-lg) flow through
+      to the generated code as adapter-defined token references, not as
+      raw pixel values. The structural shape of the layout tree is
+      preserved one-for-one in the emitted component tree (parent/child
+      order preserved). Add a new step (or extend an existing per-page
+      step) titled "Detect and consume layout block" that performs the
+      detection and dispatches to one of two paths.
+    introduces:
+      - "Skill step: detect and consume layout block (per page)"
+      - "Skill convention: layout-aware emission path that walks the typed tree and produces one component instance per node, in declaration order"
+      - "Skill convention: layout-free emission path is the existing surface-and-domain path, unchanged"
+    caching: none
+    backward-compatible: true
+
+  - id: resolved-binding-consumer
+    source: "@studio-support/layout-aware-codegen/codegen-consumes-resolved-bindings-from-the-buildfile"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    transform: |
+      Extend the generate-code skill's per-node emission step so that, for
+      each layout node, the agent looks up the binding entry in the
+      buildfile and emits framework-specific wiring code: pass entity data
+      into the component, attach operation calls to action handlers, apply
+      presentation hints from the binding to the component's render
+      properties (e.g. presentation: badge → render the column as a
+      Clarity badge). The (layout-node, surface-fragment, domain-element)
+      source triple recorded on each binding is preserved in the generated
+      code as a comment or annotation alongside the wired component, so
+      traceability survives into the framework output. The skill must
+      explicitly state that codegen DOES NOT invoke the rules engine, the
+      AI matcher, or any disambiguation prompt — those calls live in the
+      build phase and have already produced the bindings before codegen
+      runs. If a buildfile lacks a binding for a layout node codegen
+      reaches, codegen treats it as a freshness-gate failure (delegating
+      to the freshness gate; no separate "missing-binding" error class in
+      codegen).
+    introduces:
+      - "Skill convention: per-layout-node binding lookup against the buildfile"
+      - "Skill convention: emit (layout-node, surface-fragment, domain-element) triple as a traceability annotation in generated code"
+      - "Skill prohibition: no rules-engine / AI-matcher / disambiguation calls inside codegen paths"
+    caching: none
+    backward-compatible: true
+
+  - id: buildfile-freshness-gate
+    source: "@studio-support/layout-aware-codegen/buildfile-freshness-gate, @studio-support/layout-aware-codegen/codegen-consumes-resolved-bindings-from-the-buildfile"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+      - internal/embedded/schemas/buildfile.schema.md
+    transform: |
+      Two coordinated edits:
+
+      1. Buildfile schema (internal/embedded/schemas/buildfile.schema.md):
+         add a new top-level section, `source-signatures:`, recording a
+         content-based signature for every source artifact the buildfile
+         consumed during build (intents, dialogs, surface, domain, layout,
+         adapter version). Signatures are content hashes, not timestamps.
+         Document the section's role: it is the input the freshness gate
+         compares against current source state at codegen time.
+         Backward-compatible: existing buildfiles without the section
+         continue to parse; the freshness gate treats the absence as a
+         stale-buildfile failure (with a fix message that says
+         "regenerate via parlay build-feature").
+
+      2. Generate-code skill (internal/embedded/skills/generate-code.skill.md):
+         add a new step, "Buildfile freshness gate", that runs BEFORE any
+         emission for a layout-bearing feature. The step recomputes
+         content signatures for every source artifact the buildfile
+         consumed and compares them against the buildfile's recorded
+         `source-signatures:`. On match: proceed. On mismatch (or absent
+         section): refuse to run for that feature, surface
+         `stale-buildfile at <feature>: buildfile reflects
+         <prior-signature>; current sources are <current-signature>. To
+         fix: run \`parlay build-feature <feature>\` to refresh the
+         buildfile, then re-run codegen.` and exit non-zero. The gate is
+         per-feature, not per-page — a stale buildfile fails generation
+         for every page in that feature, but other features in the same
+         run continue. The check is mechanical: signature comparison only,
+         no AI invocation, no prompts. A precheck refusal from the
+         layout-creation feature wins over `stale-buildfile` when both
+         apply for the same page (the precheck is surfaced verbatim and
+         `stale-buildfile` is suppressed for that page).
+    introduces:
+      - "Buildfile section: source-signatures (intents, dialogs, surface, domain, layout, adapter-version → content hashes)"
+      - "Skill step: buildfile freshness gate (per feature, before emission)"
+      - "Error code: stale-buildfile (codegen-emitted, the only codegen-owned content-error category)"
+      - "Error message format: stale-buildfile at <feature>: buildfile reflects <prior>; current sources are <current>. To fix: run `parlay build-feature <feature>` to refresh the buildfile, then re-run codegen."
+    caching: none
+    backward-compatible: true
+
+  - id: layout-validation-precheck-surfacer
+    source: "@studio-support/layout-aware-codegen/codegen-reads-the-layout-block-when-present, @studio-support/layout-aware-codegen/backward-compatible-path-for-layout-free-pages, @studio-support/layout-aware-codegen/buildfile-freshness-gate"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    transform: |
+      Add a per-page precheck-surfacer step to the generate-code skill,
+      runs after the freshness gate has passed and before per-page
+      emission begins for a layout-bearing page. The step consults the
+      layout-validation precheck owned by the (future) layout-creation
+      feature. If the precheck refuses (unknown component type, vocabulary
+      version mismatch, malformed block), surface its refusal verbatim,
+      refuse to run codegen for that page, and continue with other pages
+      in the same project. Critical: do NOT augment the message with
+      codegen-internal vocabulary, do NOT silently fall back to the
+      layout-free path (silent fallback would mask a real authoring
+      error), and do NOT re-classify the failure as `stale-buildfile`.
+      When both precheck failure and stale buildfile apply to the same
+      page, the precheck refusal is surfaced and `stale-buildfile` is
+      suppressed for that page (the precheck wins because the layout
+      itself is invalid). The precheck implementation itself is the
+      layout-creation feature's concern; this entry only covers codegen's
+      role of consulting the verdict, surfacing refusals verbatim, and
+      gating per-page emission.
+    introduces:
+      - "Skill step: layout-validation precheck surfacer (per page, after freshness gate, before emission)"
+      - "Skill convention: surface precheck refusals verbatim — no augmentation with codegen-internal vocabulary"
+      - "Skill convention: precheck-refusal wins over stale-buildfile when both apply to the same page"
+    caching: none
+    backward-compatible: true
+
+  - id: non-interactive-codegen-pipeline
+    source: "@studio-support/layout-aware-codegen/codegen-is-non-interactive-and-ci-safe"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    transform: |
+      Update the generate-code skill so that codegen has NO TTY-conditional
+      code paths and NO interactive prompts. The skill must explicitly
+      state: codegen reads the buildfile, runs the freshness gate, runs the
+      layout-validation precheck, and emits framework code via an AI agent
+      — but the agent has no decisions left to make at codegen time, so it
+      never prompts. Process exit code is non-zero on any error path
+      (stale buildfile, layout precheck refusal); zero on success. Passing
+      `--non-interactive` is silently accepted for compatibility but has
+      no effect (codegen has no interactive paths anyway). Output is
+      written atomically: on any per-page failure within a run, no new
+      files are written for the run, so a half-written prototype never
+      reaches CI's verification step. Two concurrent CI workers running
+      against the same source state produce identical exit codes and
+      behaviorally-equivalent output (same testcases pass, same component
+      tree); lexical text may vary because the emitting AI agent is
+      non-deterministic on text, but the CI pass/fail signal stays
+      consistent. CI's pass/fail is derived from exit code, not from
+      stdout pattern matching.
+    introduces:
+      - "Skill convention: no TTY-conditional behavior; no interactive prompts in any codegen path"
+      - "Skill convention: --non-interactive flag silently accepted, no observable effect"
+      - "Skill convention: atomic output — on any per-page failure, no new files are written for the run"
+      - "Skill convention: exit code is the source of truth; CI must not pattern-match stdout"
+    caching: none
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/embedded/skills/generate-code.skill.md
+      sources:
+        - cross-cutting/layout-block-reader
+        - cross-cutting/resolved-binding-consumer
+        - cross-cutting/buildfile-freshness-gate
+        - cross-cutting/layout-validation-precheck-surfacer
+        - cross-cutting/non-interactive-codegen-pipeline
+    - path: internal/embedded/schemas/buildfile.schema.md
+      sources:
+        - cross-cutting/buildfile-freshness-gate
+  creates: []
+  deletes: []

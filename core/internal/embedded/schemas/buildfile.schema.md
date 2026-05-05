@@ -1,3 +1,8 @@
+<!--
+parlay-section: cross-cutting
+parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
+-->
+
 # Buildfile Schema
 
 File: `.parlay/build/<feature-name>/buildfile.yaml`
@@ -104,6 +109,14 @@ plan:
     - path: <file path the build will delete>
       sources:
         - <component id that was removed>
+
+source-signatures:
+  intents: <content-hash of spec/intents/<feature>/intents.md>
+  dialogs: <content-hash of spec/intents/<feature>/dialogs.md>
+  surface: <content-hash of spec/intents/<feature>/surface.md>
+  domain: <content-hash of the project domain-model.yaml>
+  layout: <content-hash of spec/intents/<feature>/<page>.layout.yaml>
+  adapter-version: <content-hash or version string of the adapter file>
 ```
 
 ## Cross-cutting section
@@ -154,6 +167,25 @@ Each entry has:
 - Every `components:` entry has at least one `plan.creates` or `plan.modifies` row whose `sources` references it.
 - Every `cross-cutting:` entry's `target-files:` paths appear in `plan.modifies`.
 - Every `plan.modifies` `path` traces back to a real `Affects:`/`target-files:` claim somewhere in `cross-cutting:` (no orphan modify entries).
+
+## Source-signatures section
+
+The `source-signatures:` section records a **content-based** signature for every source artifact this buildfile consumed during build (intents, dialogs, surface, domain, layout, adapter version). It is the input the buildfile **freshness gate** compares against current source state at codegen time.
+
+| Field | Required | Description |
+|---|---|---|
+| `intents` | When intents.md exists | Content hash of `spec/intents/<feature>/intents.md` at build time |
+| `dialogs` | When dialogs.md exists | Content hash of `spec/intents/<feature>/dialogs.md` at build time |
+| `surface` | When surface.md exists | Content hash of `spec/intents/<feature>/surface.md` at build time |
+| `domain` | When domain-model.yaml exists | Content hash of the project domain-model.yaml at build time |
+| `layout` | When the feature has a layout-bearing page | Content hash of the page's layout file at build time |
+| `adapter-version` | Yes | Content hash or version string of the adapter file at build time |
+
+**Signatures are content hashes, not timestamps.** Filesystem mtime never enters the comparison — re-saving a source file with no actual edits leaves the signature identical and the freshness gate passes. Two CI workers running against the same source bytes compute identical signatures regardless of checkout timestamps.
+
+**Backward compatibility.** Existing buildfiles without `source-signatures:` continue to parse. The freshness gate treats the absence as a stale-buildfile failure with a fix message that says "regenerate via `parlay build-feature <feature>`". This is the only safe interpretation: a buildfile whose source state is unrecorded cannot be proven fresh.
+
+**Freshness gate at codegen.** Before any emission for a layout-bearing feature, generate-code recomputes content signatures for every source artifact this buildfile consumed and compares them against the recorded `source-signatures:`. On match: proceed. On mismatch (or absent section): refuse to run for that feature, surface `stale-buildfile at <feature>: buildfile reflects <prior-signature>; current sources are <current-signature>. To fix: run \`parlay build-feature <feature>\` to refresh the buildfile, then re-run codegen.` and exit non-zero. The gate is **per-feature**, not per-page — a stale buildfile fails generation for every page in that feature, but other features in the same run continue. The check is mechanical: signature comparison only, no AI invocation, no prompts.
 
 ## Widget population
 

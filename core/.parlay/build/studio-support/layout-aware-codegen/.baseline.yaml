@@ -1,25 +1,49 @@
-generated-at: "2026-05-03T21:31:03Z"
+generated-at: "2026-05-05T17:37:09Z"
 intents:
     backward-compatible-path-for-layout-free-pages:
-        content-hash: 590d713df18e89dd
+        content-hash: 87313d148bb92a25
         goal-hash: ec552cb998ccd89e
-        constraints-hash: b58f6a9dd3310a2d
-        verify-hash: 5d47f0242ff97632
+        constraints-hash: c496cf73ff93accf
+        verify-hash: 129076fad82e33f3
         objects-hash: f84c1a38f9095a1c
+    buildfile-freshness-gate:
+        content-hash: fbcd05e0a6667edb
+        goal-hash: 11d4f85b61590c70
+        constraints-hash: a76dd448530c6725
+        verify-hash: a421eba6320e688d
+        objects-hash: 65410e437b5f6218
+    codegen-consumes-resolved-bindings-from-the-buildfile:
+        content-hash: 78e8d556ade18065
+        goal-hash: 3bf5390c84bec366
+        constraints-hash: c58f1b1b95f3314a
+        verify-hash: 23ace13c3643df2e
+        objects-hash: bf3b7a4bd260625d
+    codegen-is-non-interactive-and-ci-safe:
+        content-hash: 090840bfa3f35639
+        goal-hash: 0a778375c0eb146b
+        constraints-hash: d8f5701ee4a45e0b
+        verify-hash: b05f47115d468845
+        objects-hash: 9e2e0c676461a1fe
     codegen-reads-the-layout-block-when-present:
-        content-hash: c754c85f7e272b1a
+        content-hash: 517040d4859e6d12
         goal-hash: 8af5b4bcdd6458ba
-        constraints-hash: 3e190052784ba56e
-        verify-hash: ff3db9ef9cf94ab7
-        objects-hash: 4a3a1d7b9705c8d0
-    infer-wiring-from-surface-domain-layout:
-        content-hash: eb18744dcd2ca4c8
-        goal-hash: 2a5cf1469dd4365a
-        constraints-hash: 9167667d7c455630
-        verify-hash: 1bd6bafcf21762da
-        objects-hash: 414cbbd5ee72a998
+        constraints-hash: 6b06a40052fcafa2
+        verify-hash: 54d134a690ffc500
+        objects-hash: a984f0d8fbecd8c1
 sources:
     intents:
-        backward-compatible-path-for-layout-free-pages: bf1adc774685465e
-        codegen-reads-the-layout-block-when-present: 6d17075191cd5f87
-        infer-wiring-from-surface-domain-layout: 65a4ac25e335c2d5
+        backward-compatible-path-for-layout-free-pages: d09943f0006e2f9e
+        buildfile-freshness-gate: 1f94f6cc6f2a6645
+        codegen-consumes-resolved-bindings-from-the-buildfile: e84fbd23b9ad07c8
+        codegen-is-non-interactive-and-ci-safe: e63e0f9a3c699de4
+        codegen-reads-the-layout-block-when-present: b164e364cf8e7f70
+    dialogs:
+        backward-compatible-path-for-layout-free-pages: 02e46cd0a58b1973
+        buildfile-freshness-gate: aeed0bd5a16344d6
+        codegen-consumes-resolved-bindings-from-the-buildfile: 2f890fda111a5c8e
+        codegen-is-non-interactive-and-ci-safe: 7acd686dbd232f76
+        codegen-reads-the-layout-block-when-present: 4fdb7a1d81af17f0
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819
