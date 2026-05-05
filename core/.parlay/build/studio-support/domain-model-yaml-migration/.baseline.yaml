@@ -1,25 +1,44 @@
-generated-at: "2026-05-03T18:01:44Z"
+generated-at: "2026-05-03T21:31:03Z"
 intents:
     define-a-versioned-yaml-schema-for-the-domain-model:
-        content-hash: 761173dac42f0f87
+        content-hash: 8a1d41ec41631073
         goal-hash: 223a2c8f99088cfd
-        constraints-hash: 0cebbc5b2f6b99a3
-        verify-hash: c335624329ed6c04
-        objects-hash: ed6feef5b00ccb54
+        constraints-hash: 62981fcdf379428a
+        verify-hash: 35c63781188ea30e
+        objects-hash: 27a1888952316ba6
     migrate-existing-domain-modelmd-projects-to-yaml:
-        content-hash: 880366ca02237f3d
+        content-hash: 18570352c2f510f5
         goal-hash: f0acd43a1b9faeaa
         constraints-hash: e3771513d046c866
         verify-hash: eef93111c3271d1d
         objects-hash: 2057c4eb8c706cb4
     update-extract-domain-model-and-load-domain-model-to-round-trip-yaml:
-        content-hash: 819d6c5528560bdf
+        content-hash: c5b1571dde9dc3ff
         goal-hash: b016ad263749ccfe
-        constraints-hash: d822bf1395432279
-        verify-hash: fbcc3762b94f3089
+        constraints-hash: 93ecd9fa05a691dc
+        verify-hash: ced41d4e16f29dd8
         objects-hash: ddda42142c69df86
 sources:
     intents:
-        define-a-versioned-yaml-schema-for-the-domain-model: c177e6738c884242
-        migrate-existing-domain-modelmd-projects-to-yaml: 58e5b322942d14ff
-        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: ebdcd7aa2e29c1b7
+        define-a-versioned-yaml-schema-for-the-domain-model: 5cf21d50aaa522a0
+        migrate-existing-domain-modelmd-projects-to-yaml: b33dc70ba91d7119
+        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: b3315de5c5b7639c
+    dialogs:
+        define-a-versioned-yaml-schema-for-the-domain-model: dc965cc5e87873d2
+        migrate-existing-domain-modelmd-projects-to-yaml: 9d53bb9af722c6c0
+        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: 5b266676dc5f5378
+    surface-fragments:
+        domain-modelmd-deprecation-header: b9a9247099641507
+        domain-modelyaml-validation-error-reporting: 63b1a4fa041c6b62
+        extract-domain-model-output-surface-post-migration: 92e364082423e651
+        load-domain-model-conflict-disambiguation-prompt: df8831818763c547
+        load-domain-model-schema-version-migration-notice: 08d04fa6df69928c
+        migrate-domain-model-command-surface: de8de597344f4210
+        migrate-domain-model-dry-run-preview: e21cb8b3cbf9e7e5
+        migrate-domain-model-force-overwrite-warning: 76efaad7187770bb
+        migrate-domain-model-multi-root-targeting: 3feb64e6357aa68e
+        open-questions-surfaced-from-dialogs: 530e107ba985bd99
+buildfile-sections:
+    fixtures: 31ee07ee558a0ce2
+    models: 1fcd35668f99d5bd
+    routes: 2c38faad05cda50c

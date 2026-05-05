@@ -1,6 +1,7 @@
 // parlay-feature: parlay-tool
 // parlay-component: validate
 // parlay-extends: infrastructure-layer/InfrastructureValidationResult
+// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-validate-cli-type
 
 package commands
 
@@ -26,7 +27,7 @@ var validateAdapter string
 var validateJSON bool
 
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model")
 	validateCmd.MarkFlagRequired("type")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
@@ -65,8 +66,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = agent.ValidateYAML
 	case "infrastructure":
 		validator = agent.ValidateInfrastructure
+	case "domain-model":
+		// parlay-feature: studio-support/domain-model-yaml-migration
+		// parlay-component: validate (extends domain-model-validate-cli-type)
+		validator = agent.ValidateDomainModel
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure", validateType)
+		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model", validateType)
 	}
 
 	if err := validator(path, content); err != nil {

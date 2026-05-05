@@ -1,8 +1,16 @@
+// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-path-resolution
+// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
+
 package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Context carries the resolved active root and (when applicable) the
@@ -17,6 +25,12 @@ type Context struct {
 	Root       Root
 	Index      *RootsIndex
 	Resolution *ResolutionResult
+
+	// domainModelCache is the per-Context cache for the parsed
+	// domain-model.yaml, populated by the first LoadDomainModel call.
+	// Nil means "not yet loaded"; pass a fresh Context to re-read from
+	// disk. See parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence.
+	domainModelCache *DomainModelArtifact
 }
 
 // NewContext builds a Context from a ResolutionResult and an optional
@@ -183,4 +197,146 @@ func FromCtx(ctx context.Context) *Context {
 	}
 	c, _ := ctx.Value(ctxKey).(*Context)
 	return c
+}
+
+// --- Domain-model path resolution ---
+//
+// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-path-resolution
+
+// DomainModelFile is the canonical filename of the project's domain model.
+// Exactly one canonical model per parlay project, located at the active
+// root — never per-feature.
+const DomainModelFile = "domain-model.yaml"
+
+// DomainModelPath returns the absolute path to the active root's
+// domain-model.yaml. Each child root in a multi-root project has an
+// independent domain-model.yaml; one child's model never bleeds into
+// another's. Path resolution is via the same active-root resolver every
+// other command uses (cwd-walk, --root flag, PARLAY_ROOT) — read paths
+// consult this method instead of hard-coding the path.
+//
+// The repo-level root holds the schema (under
+// .parlay/schemas/domain-model.schema.md), shared across every active
+// root via SchemasPath() — no new behavior there.
+func (c *Context) DomainModelPath() string {
+	if c == nil {
+		return ""
+	}
+	return filepath.Join(c.Root.Path, DomainModelFile)
+}
+
+// LegacyDomainModelMarkdownPath returns the path to the pre-migration
+// domain-model.md (if any) at the active root. The post-migration
+// world treats this file as historical-only — it is never parsed,
+// never merged, never consulted as a fallback by tooling. Exposed so
+// migrate-domain-model and diagnostics can surface it without
+// hard-coding the filename.
+func (c *Context) LegacyDomainModelMarkdownPath() string {
+	if c == nil {
+		return ""
+	}
+	return filepath.Join(c.Root.Path, "domain-model.md")
+}
+
+// --- Domain-model read-path precedence ---
+//
+// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
+
+// ErrNoDomainModel is the sentinel returned by LoadDomainModel when
+// neither domain-model.yaml nor (post-migration) any other source is
+// available. Callers translate this into their own actionable errors —
+// extract writes a fresh YAML; load and other consumers fail with a
+// message pointing at parlay migrate-domain-model or
+// parlay extract-domain-model.
+var ErrNoDomainModel = errors.New("no domain-model.yaml at active root")
+
+// DomainModelArtifact is the in-memory representation of a parsed
+// domain-model.yaml. It mirrors the schema declared in
+// .parlay/schemas/domain-model.schema.md and is the merged-model layer
+// the deep validator and consumers operate on.
+//
+// The shape is deliberately permissive at the YAML level (every field
+// optional except SchemaVersion); semantic validation lives in
+// agent.ValidateDomainModel.
+type DomainModelArtifact struct {
+	SchemaVersion int                  `yaml:"schema_version"`
+	Enums         []DomainEnum         `yaml:"enums,omitempty"`
+	Entities      []DomainEntity       `yaml:"entities,omitempty"`
+	Relationships []DomainRelationship `yaml:"relationships,omitempty"`
+	Operations    []DomainOperation    `yaml:"operations,omitempty"`
+}
+
+type DomainEnum struct {
+	Name   string            `yaml:"name"`
+	Values []DomainEnumValue `yaml:"values"`
+}
+
+type DomainEnumValue struct {
+	Value string `yaml:"value"`
+	Label string `yaml:"label,omitempty"`
+	Tone  string `yaml:"tone,omitempty"`
+}
+
+type DomainEntity struct {
+	Name   string        `yaml:"name"`
+	Fields []DomainField `yaml:"fields"`
+}
+
+type DomainField struct {
+	Name     string `yaml:"name"`
+	Type     string `yaml:"type"`
+	Target   string `yaml:"target,omitempty"`
+	Enum     string `yaml:"enum,omitempty"`
+	Required bool   `yaml:"required"`
+}
+
+type DomainRelationship struct {
+	Name        string `yaml:"name"`
+	From        string `yaml:"from"`
+	To          string `yaml:"to"`
+	Cardinality string `yaml:"cardinality"`
+}
+
+type DomainOperation struct {
+	Name    string   `yaml:"name"`
+	Input   []string `yaml:"input"`
+	Effects []string `yaml:"effects,omitempty"`
+}
+
+// LoadDomainModel reads and parses the active root's domain-model.yaml.
+// It is the single enforcement point for the read-path precedence rule:
+//
+//   - The .yaml is the only live source.
+//   - The legacy .md (if present, as a pre-migration artifact) is
+//     never parsed, never merged, never consulted as a fallback.
+//   - When the .yaml is absent, the method returns ErrNoDomainModel —
+//     callers translate this into their own actionable errors
+//     (extract writes a fresh YAML; load and consumers exit non-zero
+//     pointing at parlay migrate-domain-model or
+//     parlay extract-domain-model).
+//
+// The parse is cached per-Context: a second call within the same CLI
+// invocation reuses the in-memory artifact. Pass a fresh Context to
+// re-read from disk.
+func (c *Context) LoadDomainModel() (*DomainModelArtifact, error) {
+	if c == nil {
+		return nil, ErrNoDomainModel
+	}
+	if c.domainModelCache != nil {
+		return c.domainModelCache, nil
+	}
+	path := c.DomainModelPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNoDomainModel
+		}
+		return nil, fmt.Errorf("read domain-model.yaml: %w", err)
+	}
+	var artifact DomainModelArtifact
+	if err := yaml.Unmarshal(data, &artifact); err != nil {
+		return nil, fmt.Errorf("parse domain-model.yaml: %w", err)
+	}
+	c.domainModelCache = &artifact
+	return &artifact, nil
 }

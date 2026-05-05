@@ -1,6 +1,7 @@
 // parlay-extends: claude-md-section-preservation/claudemd-marker-preservation
 // parlay-extends: parlay-tool/parlay-loop/claude-adapter-subagent-deployment
 // parlay-extends: parlay-tool/parlay-loop/parlay-loop-cli-command-registration
+// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-deployer-title
 
 package deployer
 
@@ -151,6 +152,7 @@ func skillTitle(name string) string {
 		"generate-enggspec":    "Generate engineering specification",
 		"extract-domain-model": "Extract domain model from all features",
 		"load-domain-model":    "Load and integrate external domain model",
+		"migrate-domain-model": "Convert domain-model.md to domain-model.yaml",
 		"collect-questions":    "Collect open questions from intents",
 		"reference-design-spec": "Extract design spec from Figma",
 		"sync":                 "Check intent-dialog coverage",

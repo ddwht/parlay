@@ -45,7 +45,10 @@ func TestSchemaNames_ReturnsAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(names) != 12 {
-		t.Errorf("expected 12 schemas, got %d: %v", len(names), names)
+	// 13 = 12 original + domain-model.schema.md (added by
+	// studio-support/domain-model-yaml-migration; auto-discovered by
+	// the //go:embed schemas/*.schema.md glob).
+	if len(names) != 13 {
+		t.Errorf("expected 13 schemas, got %d: %v", len(names), names)
 	}
 }

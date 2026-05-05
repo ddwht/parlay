@@ -1,5 +1,6 @@
 // parlay-feature: parlay-tool/parlay-loop
 // parlay-section: cross-cutting
+// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-generic-deployer-list
 package deployer
 
 import (
@@ -68,6 +69,7 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "- `parlay add-root <subdir>` — Register a child parlay root (multi-root projects)\n"
 	content += "- `parlay status` — Show active root, features, and child roots\n"
 	content += "- `parlay promote-root` — Promote an orphaned child to standalone\n"
+	content += "- `parlay migrate-domain-model [--dry-run] [--force] [--root <name>]` — Convert domain-model.md to domain-model.yaml\n"
 
 	if section := renderMultiRootSection(projectRoot); section != "" {
 		content += section

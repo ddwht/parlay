@@ -1,0 +1,608 @@
+feature: studio-support/domain-model-yaml-migration
+framework: "Go stdlib testing (table-driven; setupTestDir helper per project convention)"
+
+suites:
+  - name: migrate-domain-model default invocation
+    component: migrate-domain-model-command
+    fixture: legacy-md-only
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: writes domain-model.yaml when only .md exists
+        description: A project with domain-model.md and no .yaml is the standard migration target. Command writes domain-model.yaml beside the .md, prepends a deprecation header to the .md, and exits 0 with the YAML's absolute path on stdout.
+        steps:
+          - action: render
+            target: migrate-domain-model-command
+          - action: click
+            target: invoke-migration
+          - verify: file-exists
+            target: /tmp/proj/domain-model.yaml
+          - verify: file-content
+            target: /tmp/proj/domain-model.md
+            expected: "Deprecated"
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 0
+          - verify: visible
+            target: success-message
+            expected: true
+
+  - name: migrate-domain-model greenfield no-op
+    component: migrate-domain-model-command
+    fixture: greenfield-no-md
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: nothing-to-migrate exits zero
+        description: A project with neither .md nor .yaml prints "nothing to migrate" on stdout and exits 0. This is a no-op, safe to run as part of an unconditional upgrade script.
+        steps:
+          - action: render
+            target: migrate-domain-model-command
+          - action: click
+            target: invoke-migration
+          - verify: visible
+            target: nothing-to-migrate-message
+            expected: true
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 0
+          - verify: text
+            target: nothing-to-migrate-message
+            expected: "nothing to migrate"
+
+  - name: migrate-domain-model already-migrated guard
+    component: migrate-domain-model-command
+    fixture: already-migrated-yaml-exists
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: refuses when yaml exists and force not passed
+        description: A project that already has domain-model.yaml exits non-zero with an "already migrated" message naming the YAML's absolute path. The YAML is not modified; the .md is not re-parsed.
+        steps:
+          - action: render
+            target: migrate-domain-model-command
+          - action: click
+            target: invoke-migration
+          - verify: visible
+            target: already-migrated-error
+            expected: true
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 1
+
+      - name: idempotent re-run does not stack deprecation header
+        description: Running the migration twice in succession on a project that has only .md (the second run happens before the designer notices the YAML). First run produces YAML and exits zero; second run sees the YAML, exits non-zero with "already migrated", and does not modify the .md or re-parse it.
+        steps:
+          - action: click
+            target: invoke-migration
+          - action: click
+            target: invoke-migration
+          - verify: file-content
+            target: /tmp/proj/domain-model.md
+            expected: "exactly-one-deprecation-header"
+
+  - name: migrate-domain-model ambiguous markdown
+    component: migrate-domain-model-command
+    fixture: ambiguous-md
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: writes annotated YAML and exits non-zero
+        description: A markdown model where a field has no declared type, a relationship's cardinality is unclear, or an enum's tone is missing. The command writes the YAML with annotation markers on each unresolved field and exits non-zero. The designer must resolve every annotation before downstream commands accept the model.
+        steps:
+          - action: click
+            target: invoke-migration
+          - verify: file-exists
+            target: /tmp/proj/domain-model.yaml
+          - verify: file-content
+            target: /tmp/proj/domain-model.yaml
+            expected: "<unresolved:"
+          - verify: visible
+            target: ambiguous-error
+            expected: true
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 2
+
+  - name: migrate-domain-model dry-run preview
+    component: migrate-domain-model-dry-run
+    fixture: dry-run-clean-migration
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: dry-run writes nothing to disk
+        description: --dry-run on a project that would migrate cleanly. Prints planned YAML + diff on stdout. Filesystem is untouched — no temp files, no partial writes, no deprecation header on the .md. Exit code mirrors what a real run would do (zero on a clean migration that would write successfully).
+        steps:
+          - action: click
+            target: invoke-dry-run
+          - verify: visible
+            target: planned-yaml-output
+            expected: true
+          - verify: visible
+            target: diff-output
+            expected: true
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 0
+          - verify: file-content
+            target: /tmp/proj/domain-model.md
+            expected: "no-deprecation-header-after-dry-run"
+
+      - name: dry-run on ambiguous markdown exits non-zero
+        description: --dry-run on a project with ambiguous markdown still exits non-zero. The YAML is not written, but the planned output shows annotation markers and the exit code is the same as a real run.
+        steps:
+          - action: click
+            target: invoke-dry-run
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 2
+
+  - name: migrate-domain-model force overwrite
+    component: migrate-domain-model-force
+    fixture: force-overwrite
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: warns and overwrites existing yaml
+        description: --force re-parses .md and overwrites domain-model.yaml. Before overwriting, prints a single warning line on stderr. The warning is unconditional under --force — there is no interactive y/n prompt.
+        steps:
+          - action: click
+            target: invoke-force
+          - verify: visible
+            target: force-warning
+            expected: true
+          - verify: text
+            target: force-warning
+            expected: "any hand edits to the YAML will be discarded"
+          - verify: file-exists
+            target: /tmp/proj/domain-model.yaml
+
+      - name: force does not stack a second deprecation header
+        description: A second --force run on a project where the .md already carries a deprecation header from a prior migration. The existing header is detected and left in place; no second header is prepended.
+        steps:
+          - action: click
+            target: invoke-force
+          - verify: file-content
+            target: /tmp/proj/domain-model.md
+            expected: "single-deprecation-header"
+
+  - name: migrate-domain-model multi-root targeting
+    component: migrate-domain-model-multi-root
+    fixture: multi-root-with-flag
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: with --root targets only the named child
+        description: --root child-a targets only child-a's domain-model.md. Other children's models are untouched.
+        steps:
+          - action: click
+            target: invoke-with-root
+          - verify: file-exists
+            target: /tmp/proj/child-a/domain-model.yaml
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 0
+
+  - name: migrate-domain-model multi-root ambiguity
+    component: migrate-domain-model-multi-root
+    fixture: multi-root-ambiguous-no-flag
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: ambiguous multi-root without --root exits 11
+        description: Without --root in an ambiguous multi-root context, the CLI exits with code 11 and the standard ambiguity JSON envelope on stderr. Stdout stays empty. No partial migration is performed.
+        steps:
+          - action: click
+            target: invoke-with-root
+          - verify: state
+            target: MigrationOutcome.exit-code
+            expected: 11
+          - verify: visible
+            target: ambiguity-envelope
+            expected: true
+
+  - name: domain-model.yaml schema validation — missing schema_version
+    component: validation-error-reporter
+    fixture: yaml-missing-schema-version
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: missing schema_version fails parse
+        description: A YAML missing the top-level schema_version field fails parse with an error naming the missing field. No partial parse — the model is not loaded.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: missing-schema-version-error
+            expected: true
+          - verify: text
+            target: missing-schema-version-error
+            expected: "missing required top-level field 'schema_version'"
+
+  - name: domain-model.yaml schema-version mismatch (older)
+    component: validation-error-reporter
+    fixture: yaml-version-older-than-binary
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: older version routes through migrator chain (no error surface)
+        description: A YAML at v1 against a v2 binary. The schema-version dispatch routes the in-memory model through the v1→v2 migrator. No error is surfaced; the on-disk file is unchanged.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: schema-version-older-error
+            expected: false
+
+  - name: domain-model.yaml schema-version mismatch (newer)
+    component: validation-error-reporter
+    fixture: yaml-version-newer-than-binary
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: newer version refuses to load with actionable error
+        description: A YAML at v3 against a v1 binary. Refuses to load and tells the designer to upgrade Core. Does not attempt a forward-migration guess.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: schema-version-newer-error
+            expected: true
+          - verify: text
+            target: schema-version-newer-error
+            expected: "is newer than this Core release supports"
+
+  - name: domain-model.yaml deep-validation — undeclared entity
+    component: validation-error-reporter
+    fixture: yaml-undeclared-entity-reference
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: relationship endpoint references undeclared entity
+        description: A relationship endpoint that references an undeclared entity fails validation naming the relationship, the offending endpoint, and the missing entity name.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: undeclared-entity-error
+            expected: true
+          - verify: text
+            target: undeclared-entity-error
+            expected: "references undeclared entity"
+
+  - name: domain-model.yaml deep-validation — operation input not on entity
+    component: validation-error-reporter
+    fixture: yaml-operation-input-not-found
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: operation input names absent field
+        description: An operation input that names a field absent from the involved entity fails validation naming the operation, the offending input, and the entity scope where the field was expected.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: operation-input-not-found-error
+            expected: true
+
+  - name: domain-model.yaml deep-validation — undeclared enum value
+    component: validation-error-reporter
+    fixture: yaml-enum-value-not-declared
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: enum-typed field references undeclared value
+        description: An enum-typed field that references an enum value not declared on its enum fails validation naming the entity, field, enum name, and offending value.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: enum-value-not-declared-error
+            expected: true
+
+  - name: domain-model.yaml deep-validation — field type outside closed set
+    component: validation-error-reporter
+    fixture: yaml-field-type-outside-closed-set
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: field with type outside closed set fails
+        description: A YAML declaring a field with a type outside the closed set ({uuid, string, int, float, bool, datetime, ref, named-enum}) fails validation naming the offending entity, field, and disallowed type.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: field-type-outside-set-error
+            expected: true
+
+  - name: domain-model.yaml deep-validation — unknown cardinality
+    component: validation-error-reporter
+    fixture: yaml-relationship-cardinality-unknown
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: unknown cardinality fails validation
+        description: A YAML declaring a relationship with a cardinality outside the closed set ({one-to-one, one-to-many, many-to-one, many-to-many}) fails validation naming the offending relationship and disallowed cardinality.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: relationship-cardinality-error
+            expected: true
+
+  - name: domain-model.yaml deep-validation — happy path
+    component: validation-error-reporter
+    fixture: yaml-valid-v1
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: well-formed v1 yaml passes deep validation
+        description: A domain model with enums, entities, relationships, and operations all defined produces a deep-validation pass — every relationship endpoint resolves to an entity, every operation input names a field that exists, every enum value referenced by a field is declared.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: visible
+            target: missing-schema-version-error
+            expected: false
+          - verify: visible
+            target: undeclared-entity-error
+            expected: false
+          - verify: visible
+            target: enum-value-not-declared-error
+            expected: false
+
+  - name: extract-domain-model project-level YAML output
+    component: extract-domain-model-output
+    fixture: extract-writes-project-yaml
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: writes single domain-model.yaml at active root
+        description: parlay extract-domain-model on a project with feature intents writes a single domain-model.yaml at the active root (project level), not per-feature. Aggregates entities/enums/relationships/operations across all features.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: visible
+            target: written-path
+            expected: true
+          - verify: visible
+            target: summary
+            expected: true
+          - verify: file-exists
+            target: <activeRoot>/domain-model.yaml
+
+      - name: does not emit per-feature domain-model.md
+        description: Extract never emits markdown — not as primary output, not as fallback, not as per-feature debug artifact. Existing per-feature .md files (from the pre-migration world) are not touched.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+  - name: extract-domain-model greenfield
+    component: extract-domain-model-output
+    fixture: extract-greenfield
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: empty project produces empty-but-valid YAML
+        description: A project with no feature intents produces an empty-but-valid YAML — declared schema_version, empty enums/entities/relationships/operations lists.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: file-exists
+            target: <activeRoot>/domain-model.yaml
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+  - name: extract-domain-model write failure
+    component: extract-domain-model-output
+    fixture: extract-write-failure
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: yaml write failure exits non-zero without fallback md
+        description: If the YAML write fails (permissions, disk full), extract exits non-zero without writing a fallback .md — the markdown form is gone from the post-migration world.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: error
+            target: invoke-extract
+            expected: "failed to write domain-model.yaml"
+
+  - name: load-domain-model conflict disambiguation
+    component: load-domain-model-conflict-prompt
+    fixture: load-conflict-disambiguation
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: conflicting entity triggers four-option prompt
+        description: "When an incoming entity Order shares a name with an existing one but differs in fields, the merge pauses and presents a side-by-side. The designer sees four options: keep local, take incoming, merge field-by-field, rename one."
+        steps:
+          - action: render
+            target: load-domain-model-conflict-prompt
+          - verify: visible
+            target: side-by-side-table
+            expected: true
+          - verify: visible
+            target: prompt-message
+            expected: true
+          - verify: enabled
+            target: choose-resolution
+            expected: true
+
+      - name: non-conflict entities merge silently
+        description: An incoming entity not present locally, or present and structurally identical, merges without prompting. The user sees no disambiguation prompt.
+        steps:
+          - action: render
+            target: load-domain-model-conflict-prompt
+          - verify: visible
+            target: prompt-message
+            expected: false
+
+  - name: load-domain-model schema-version migration notice
+    component: load-domain-model-version-notice
+    fixture: load-older-version-routes-through-migrator
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: older version emits stderr migration notice
+        description: When the loaded YAML's schema_version is older than the running Core supports, prints a single line on stderr naming the source version and the chain of migrations being applied. The on-disk source is NOT modified.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: visible
+            target: migration-notice
+            expected: true
+          - verify: text
+            target: migration-notice
+            expected: "migrating loaded model from v"
+
+      - name: newer version refuses to load
+        description: When the loaded YAML's schema_version is newer than the running Core understands, exits non-zero with an actionable error pointing at parlay upgrade.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: visible
+            target: too-new-error
+            expected: true
+
+  - name: load-domain-model rejects markdown
+    component: load-domain-model-version-notice
+    fixture: load-rejects-markdown
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: markdown input refused with actionable error
+        description: Markdown loads (path with .md extension or URL whose body is markdown) are refused with an actionable error pointing at parlay migrate-domain-model.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: visible
+            target: markdown-refused-error
+            expected: true
+          - verify: text
+            target: markdown-refused-error
+            expected: "load accepts YAML only"
+
+  - name: load-domain-model URL fetch
+    component: load-domain-model-version-notice
+    fixture: load-yaml-from-url
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: url input fetched and merged
+        description: A URL input is fetched, validated as YAML, and routed through the schema_version migrator chain before merging. HTTPS certificate verification is honored by default.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+      - name: url fetch failure exits non-zero
+        description: A URL fetch returning 404 or non-YAML body exits non-zero with the offending response surfaced.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: error
+            target: invoke-load
+            expected: "URL fetch failed"
+
+  - name: load-domain-model file path
+    component: load-domain-model-version-notice
+    fixture: load-yaml-from-path
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: local file path is read and merged
+        description: A local file path argument is read, schema_version is validated, and the YAML is merged into the project's domain-model.yaml.
+        steps:
+          - action: click
+            target: invoke-load
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+  - name: domain-model.md deprecation header
+    component: md-deprecation-header
+    fixture: md-after-migration
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: header is prepended once and never again
+        description: After a successful migrate-domain-model run, the original domain-model.md carries a one-line deprecation header at the top — the only Core-authored change to the file. The header is plain markdown (not a code fence).
+        steps:
+          - action: render
+            target: md-deprecation-header
+          - verify: visible
+            target: deprecation-header
+            expected: true
+          - verify: text
+            target: deprecation-header
+            expected: "Deprecated"
+
+      - name: --force run does not stack a second header
+        description: A second --force run on a project where the .md already has a deprecation header detects the header and leaves it in place. No second header is prepended.
+        steps:
+          - action: render
+            target: md-deprecation-header
+          - verify: file-content
+            target: /tmp/proj/domain-model.md
+            expected: "exactly-one-deprecation-header"
+
+  # --- Cross-cutting infrastructure suites ---
+
+  - name: domain-model schema artifact published
+    component: validation-error-reporter
+    fixture: yaml-valid-v1
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: schema file ships in the binary at the schemas path
+        description: The new domain-model.schema.md is published at the repo-level root's schemas path so parlay upgrade redeploys it alongside the others. The existing schemas/*.schema.md embed glob auto-discovers it.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: file-exists
+            target: core/internal/embedded/schemas/domain-model.schema.md
+
+  - name: schema_version dispatch — equal version skips chain
+    component: validation-error-reporter
+    fixture: yaml-valid-v1
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: version equal to binary skips migrator chain
+        description: A YAML with the same schema_version as the binary's expected version skips the migrator chain entirely. The reader proceeds directly to the rest of the pipeline.
+        steps:
+          - action: render
+            target: validation-error-reporter
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+  - name: domain-model path resolution — active root
+    component: extract-domain-model-output
+    fixture: extract-writes-project-yaml
+    intent: "@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    cases:
+      - name: domain-model.yaml lives at active root, not per-feature
+        description: The artifact path is computed by the active-root resolver. No caller hard-codes spec/intents/<feature>/domain-model.yaml or any other location. Each child root in a multi-root project has an independent domain-model.yaml.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: file-exists
+            target: <activeRoot>/domain-model.yaml
+          - verify: directory-exists
+            target: <activeRoot>
+
+  - name: read-path precedence — yaml is sole live state
+    component: extract-domain-model-output
+    fixture: extract-writes-project-yaml
+    intent: "@studio-support/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    cases:
+      - name: post-migration commands consult only the yaml
+        description: A project with both domain-model.md and domain-model.yaml has the YAML as sole live state. The .md is treated as historical-only — never parsed, never merged, never consulted as a fallback.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+      - name: edits to .md after migration have no effect
+        description: Editing domain-model.md after a successful migration has no effect on tooling output. The YAML is the only source.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: state
+            target: DomainModelArtifact.schema-version
+            expected: 1
+
+  - name: cross-project round-trip
+    component: extract-domain-model-output
+    fixture: extract-writes-project-yaml
+    intent: "@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    cases:
+      - name: extract from A then load into B produces equivalent model
+        description: Run parlay extract-domain-model in project A, copy the YAML to project B, run parlay load-domain-model ./from-a.yaml in B. B's domain-model.yaml ends up structurally equivalent to A's, modulo any disambiguation choices the designer made on conflicts.
+        steps:
+          - action: click
+            target: invoke-extract
+          - verify: file-exists
+            target: <activeRoot>/domain-model.yaml
