@@ -57,3 +57,36 @@
 - A nested layout tree (containers within containers) validates correctly to arbitrary depth
 
 ---
+
+## Surface Layout Validation as a Precheck Contract for Codegen
+
+**Goal**: Provide a single, callable validation entry point that runs every layout check (well-formedness, schema compliance, vocabulary membership, token correctness, no-wiring-in-layout) and returns a structured verdict that callers — codegen, `parlay status`, `parlay repair`, and Studio's sync flow — can consume uniformly. Codegen never re-implements validation logic; it asks the precheck and surfaces the answer.
+**Persona**: UX Designer
+**Priority**: P0
+**Context**: The first two intents specify *what* makes a layout valid (parse-time schema checks; vocabulary and token cross-checks against the active adapter). They do not specify *who* runs those checks, *when*, or *what the verdict looks like* to a caller. Without that contract, every consumer (codegen, status, sync) implements its own version of validation and the rules drift. *Layout-Aware Code Generation* already references this precheck as the source of its precheck refusals; this intent makes that reference real.
+**Action**: Define a `layout-precheck` function with a stable signature: input is a parsed page artifact plus the active adapter; output is a verdict — either `ok` or a structured failure record carrying an error code, the file path, the layout-node path inside the file, the offending value, the expected shape, and a "to fix" suggestion. The function aggregates every check defined in this feature and in `adapter-vocabulary-extension`. Callers receive the verdict and decide policy (codegen refuses to run; status colors the page red; sync rejects the round-trip).
+**Objects**: layout-precheck, verdict, error-code, page-artifact, adapter, caller-policy
+
+**Constraints**:
+- The verdict is a closed shape across all error types — every failure carries the same fields (code, file, node-path, found, expected, fix-hint) so callers can render messages uniformly without per-error formatting
+- Error codes are stable identifiers and exhaustive: `malformed-layout-block`, `missing-schema-version`, `vocabulary-version-mismatch`, `unknown-component-type`, `unknown-variant`, `raw-value-where-token-required`, `unknown-token`, `wiring-in-layout`, `universal-field-redeclared`, `missing-mode-emit-form`. New codes are added in lockstep with new validation rules in this feature or in `adapter-vocabulary-extension`
+- The precheck is invoked at page-load time, before any consumer attempts to use the layout — codegen, status, repair, and sync all hit this single entry point
+- The precheck never auto-fixes — it returns a verdict; the human (or Studio) makes corrections. Callers may surface the verdict, refuse to proceed, or annotate state, but they never silently mutate the layout
+- The precheck is deterministic: the same `(page-artifact, adapter)` input always produces the same verdict (same code, same wording, same hint). This is testable and CI-stable
+- Aggregating verdicts across many pages is a list of per-page records, not a single global verdict — callers decide whether to fail-fast on the first failure or collect all failures
+- The precheck produces no AI calls and uses no external state — it is a pure function over its inputs and runs in sub-millisecond time on common-case pages
+- A passing verdict carries `code: ok` and no other fields — callers branch on `code == ok` versus everything else, so the failure shape never sneaks into success paths
+
+**Verify**:
+- A page with a malformed `## Layout` YAML block returns a verdict `{code: malformed-layout-block, file: ..., found: <parser error verbatim>, fix: <parser-emitted next step>}`
+- A page declaring `clarity@17` evaluated against an adapter loaded as `clarity@16` returns `{code: vocabulary-version-mismatch, file: ..., found: clarity@17, expected: clarity@16, fix: re-register the clarity adapter at version 17, or change the page declaration to clarity@16}`
+- A page using `gap: 24px` returns `{code: raw-value-where-token-required, file: ..., node-path: ..., found: 24px, expected: <list of valid spacing tokens>, fix: replace 24px with one of [...]}`
+- A page with `type: clarity.kanban` against `clarity@17` returns `{code: unknown-component-type, file: ..., node-path: ..., found: clarity.kanban, expected: <vocabulary list>, fix: pick a known type from clarity@17 or upgrade the adapter}`
+- A page that passes every check returns a verdict whose only field is `{code: ok}`
+- The same page validated twice in a row returns identical verdicts byte-for-byte (the verdict struct is the deterministic part of the system, even though codegen's emitted code text downstream is not)
+- Calling `parlay status` on a project with a mix of valid and invalid layout-bearing pages returns one verdict per page; the per-page results are the union of every check, not just the first failure
+
+**Questions**:
+- Should the verdict carry severity (warning vs error), or are all failures errors? §1 implies warnings are not currently a distinct concept; revisit during dialog authoring if a soft case appears.
+
+---
