@@ -1,6 +1,7 @@
 <!--
 parlay-section: cross-cutting
 parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
+parlay-extends: parlay-tool/cross-cutting-target-paths/buildfile-schema-doc-routing-and-target-creates
 -->
 
 # Buildfile Schema
@@ -88,8 +89,10 @@ cross-cutting:
   - id: <unique identifier>
     source: <@feature/intent-slug — traceability reference>
     target-files:
-      - <explicit file paths to modify>
-    target-pattern: <grep pattern for fan-out — resolve to files at generation time>
+      - <existing file paths to modify (for modifies-only / two-kinded entries)>
+    target-pattern: <grep pattern for fan-out — resolved to a concrete path set at validation time>
+    target-creates:
+      - <new file paths to introduce in a two-kinded entry, parallel to target-files for modifies>
     transform: <human-readable description of what the change does>
     introduces:
       - <new functions/types being added — with optional signatures>
@@ -127,14 +130,71 @@ The `cross-cutting:` section describes infrastructure changes that flow through 
 |---|---|---|
 | `id` | Yes | Unique identifier within the section |
 | `source` | Yes | `@feature/intent-slug` traceability reference |
-| `target-files` | No* | Explicit file paths to modify |
-| `target-pattern` | No* | Grep pattern to resolve target files at generation time |
+| `target-files` | No* | Existing file paths to modify (modifies-only entries) or to modify in the two-kinded shape |
+| `target-pattern` | No* | Grep pattern to resolve target files at validation/generation time |
+| `target-creates` | No* | Explicit file paths to create in a two-kinded entry, parallel to `target-files` for modifies |
 | `transform` | Yes | Human-readable change description — tells the agent WHAT to change |
 | `introduces` | No | New functions, types, or constants being added |
 | `caching` | No | Caching strategy for the introduced/modified code |
 | `backward-compatible` | No | Whether existing callers must continue working |
 
-\* At least one of `target-files` or `target-pattern` must be present.
+\* At least one of `target-files`, `target-pattern`, or `target-creates` must be present.
+
+### Cross-cutting shapes
+
+There are three legitimate shapes a cross-cutting entry can take, each with its own kind-aware routing into the plan. Authoring rules are owned by `parlay build-feature`; the validator enforces them in `parlay validate --type buildfile --deep`.
+
+**Purely-introducing** (every `target-files:` path is absent on disk, no `target-creates:` declared):
+
+```yaml
+cross-cutting:
+  - id: introduce-helpers
+    source: "@some-feature/intent"
+    target-files:
+      - internal/newpkg/helpers.go     # path does not exist on disk
+    transform: "introduce a helper package"
+plan:
+  creates:
+    - path: internal/newpkg/helpers.go
+      sources: [cross-cutting/introduce-helpers]
+```
+
+**Modifies-only** (every `target-files:` path exists on disk):
+
+```yaml
+cross-cutting:
+  - id: extend-config
+    source: "@some-feature/intent"
+    target-files:
+      - internal/config/config.go      # path exists on disk
+    transform: "extend config"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/extend-config]
+```
+
+**Two-kinded** (a single entry that both modifies an existing file and introduces a new one):
+
+```yaml
+cross-cutting:
+  - id: extend-and-add
+    source: "@some-feature/intent"
+    target-files:
+      - internal/config/config.go      # exists -> plan.modifies
+    target-creates:
+      - internal/newhelper/helper.go   # does not exist -> plan.creates
+    transform: "extend config and introduce a helper"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/extend-and-add]
+  creates:
+    - path: internal/newhelper/helper.go
+      sources: [cross-cutting/extend-and-add]
+```
+
+Listing the same path in both `target-files:` and `target-creates:` is rejected with the `cross-cutting-target-double-listed` error — pick one.
 
 The section is optional. Buildfiles without it remain valid. When present, entries follow the same diff lifecycle as components: `parlay diff` classifies each as stable/dirty/removed.
 
@@ -157,15 +217,29 @@ Each entry has:
 
 **Required for new buildfiles.** `parlay build-feature` emits a `plan:` section computed deterministically from `components:` + `cross-cutting:` + the adapter's `file-conventions`. Legacy buildfiles without `plan:` trigger a "regenerate via build-feature" error from generate-code — the missing plan is treated as a hard failure rather than an implicit fallback, because the plan is the integration contract.
 
-**Authoring rule for build-feature:** for every `cross-cutting:` entry with non-empty `target-files:` (or resolvable `target-pattern:`), each named path goes in `plan.modifies`. For every `components:` entry, the file the adapter's `component-pattern` would produce goes in `plan.creates` (unless it merges into a shared file via Tier 2, in which case it goes in `plan.modifies` and shares the path with another entry). For purely-introducing cross-cuttings (no `target-files:`), the agent picks a path consistent with the adapter's conventions and lists it in `plan.creates`.
+**Authoring rule for build-feature:** the destination plan section depends on the cross-cutting entry's *kind*:
+
+- **Modifies-only entry** (every `target-files:` path exists on disk, no `target-creates:` declared): each named `target-files:` path goes in `plan.modifies`.
+- **Purely-introducing entry** (every `target-files:` path is absent on disk and no `target-creates:` is declared): each named `target-files:` path goes in `plan.creates` with the entry as `sources`.
+- **Two-kinded entry** (declares `target-creates:`): `target-files:` paths route to `plan.modifies` and `target-creates:` paths route to `plan.creates`. The on-disk heuristic is bypassed — the explicit shape is authoritative.
+
+For every `components:` entry, the file the adapter's `component-pattern` would produce goes in `plan.creates` (unless it merges into a shared file via Tier 2, in which case it goes in `plan.modifies` and shares the path with another entry).
 
 **Execution rule for generate-code:** `plan` is the single source of truth for "what files this generation may touch." Refuse to write any path not listed in `plan.creates` or `plan.modifies`. Refuse to skip any path that's listed unless the diff explicitly classifies it as stable. The strict-target rule in step 14.7 still applies — `plan:` reinforces it but does not replace it.
 
 **Validation:** `parlay validate --type buildfile --deep` checks plan integrity:
-- Every `plan.modifies` path exists in the source root.
+- Every `plan.modifies` path exists in the source root (project-pass mode relaxes this — see below).
 - Every `plan.creates` path does NOT exist (collisions are blocking errors).
 - Every `components:` entry has at least one `plan.creates` or `plan.modifies` row whose `sources` references it.
-- Every `cross-cutting:` entry's `target-files:` paths appear in `plan.modifies`.
+- Every `cross-cutting:` entry's targets are routed by entry kind. Each route has its own error code:
+  - `cross-cutting-target-not-in-creates` — purely-introducing entry's `target-files:` path is missing from `plan.creates`.
+  - `cross-cutting-target-not-in-modifies` — modifies-only entry's `target-files:` path is missing from `plan.modifies`.
+  - `cross-cutting-target-creates-not-in-plan` — two-kinded entry's `target-creates:` path is missing from `plan.creates`.
+  - `cross-cutting-target-double-listed` — same path appears in both `target-files:` and `target-creates:` on the same entry.
+  - `cross-cutting-mixed-target-kinds` — `target-files:` mixes existing and not-yet-existing paths under heuristic classification; the author must split or declare `target-creates:` explicitly.
+  - `cross-cutting-pattern-empty` — `target-pattern:` resolved to zero paths under the searched root and the project-pass plannedCreates set.
+- `target-pattern:` is resolved at validation time to a concrete path set; resolution uses on-disk files plus the project-pass plannedCreates set. Resolved paths are then routed per-path: on-disk paths to `plan.modifies`, paths from plannedCreates to `plan.creates`.
+- In **project-pass mode** (`parlay validate --project`), `plan.modifies` is satisfied by an on-disk file OR another feature's `plan.creates` in the same pass; cycles in the cross-feature dependency graph fail with `plan-create-modify-cycle`. The `--project` flag takes no positional path argument — it discovers buildfiles by walking the resolved root. Combining `--project` with a path is rejected with `validate-project-takes-no-path`.
 - Every `plan.modifies` `path` traces back to a real `Affects:`/`target-files:` claim somewhere in `cross-cutting:` (no orphan modify entries).
 
 ## Source-signatures section

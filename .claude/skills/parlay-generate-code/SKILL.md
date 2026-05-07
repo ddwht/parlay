@@ -10,6 +10,7 @@ parlay-extends: studio-support/layout-aware-codegen/resolved-binding-consumer
 parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
 parlay-extends: studio-support/layout-aware-codegen/layout-validation-precheck-surfacer
 parlay-extends: studio-support/layout-aware-codegen/non-interactive-codegen-pipeline
+parlay-extends: parlay-tool/cross-cutting-target-paths/generate-code-skill-topological-emission-order
 -->
 
 # Generate Code
@@ -47,6 +48,17 @@ Every relative path below is interpreted against the **active root** — the par
 - **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
 
 When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+
+## Project-pass mode
+
+This skill operates in **project-pass mode** by default — it walks every feature under the resolved root and emits all features in one pass. When invoked via `--project` (or the equivalent agent argument), behavior is identical: project-pass mode is the default, single-feature invocations are a special case where the cross-feature plannedCreates union is empty and the cross-feature dependency graph has at most one node.
+
+Project-pass mode introduces two cross-feature contracts:
+
+1. **Sibling-create satisfies modify.** A `plan.modifies` row in feature B is allowed to name a path that does not yet exist on disk, provided some other feature A in the same pass declares that path in its `plan.creates`. The validator (`parlay validate --project`) enforces this; codegen relies on the topological emission order (step 11.6 below) to make sure A's create has actually happened before B's modify runs.
+2. **Cycles are rejected.** If A's `plan.modifies` matches B's `plan.creates` AND B's `plan.modifies` matches A's `plan.creates`, neither feature can run first. The validator surfaces `plan-create-modify-cycle`; codegen refuses to start emission and stops.
+
+Single-feature invocations remain valid for tooling that wants to drive one feature at a time. In that mode the plannedCreates union is empty, every modify must point at an on-disk file, and the topological order has a single trivial node.
 
 ## Non-interactive, CI-safe by construction
 
@@ -127,6 +139,12 @@ Concretely:
     Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
 
 11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set. Refuse any write to a path not in the plan — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+
+   **Cross-feature dependency graph (project-pass mode).** When multiple buildfiles are loaded, build the cross-feature dependency graph in this same step: every `plan.modifies` path that matches another feature's `plan.creates` path adds an edge from the modifying feature to the creating feature. Validate the graph is acyclic; on cycle, surface `plan-create-modify-cycle` and stop without writing any files. The construction is mechanical — same algorithm `parlay validate --project` uses — and it catches the same authoring mistakes the validator would catch upstream.
+
+11.5.5. **Order features topologically for emission** — After the allowlist is locked and the dependency graph is validated (step 11.5), sort the loaded features into topological order such that creates always run before the modifies they satisfy. The ordering is a **stable topological sort**: feature-slug alphabetization breaks ties so re-running the same project pass produces byte-identical emission order. The runtime invariant: every path appearing in BOTH another feature's `plan.creates` AND this feature's `plan.modifies` is emitted by the producing feature first.
+
+   In single-feature invocations the topological order is trivial — there is one node and no edges; the order is the identity. In project-pass mode with N features and a DAG of dependencies, emission walks the features in topological order; the strict-target rule (step 14.7) still applies AT EMISSION TIME for each feature — by the time a modifying feature runs, the topological order guarantees the file is on disk.
 
 11.6. **Buildfile freshness gate** (per feature, before emission) — For every feature whose buildfile is loaded, run the freshness gate **before any emission begins for that feature**:
 
@@ -306,9 +324,10 @@ Concretely:
    1. **Resolve targets**: if the entry has `target-files:`, use the explicit paths. If it has `target-pattern:`, grep the source tree under `file-conventions.source-root` to find matching files. If zero files match, warn but don't error (the pattern may be ahead of the codebase). If the entry has both, resolve both and take the union.
 
    2. **For each resolved target file** — strict-target rule:
-      - **If the entry has non-empty `Affects:` or `target-files:` naming files**: those exact paths MUST be the targets. The file MUST already exist; if it doesn't, error — the buildfile names a file that isn't there. Apply Tier 2 intelligent merge: read the file, read the entry's `Behavior:`/`transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
+      - **If the entry has non-empty `Affects:` or `target-files:` naming files**: those exact paths MUST be the targets. The file MUST already exist on disk **OR appear in another feature's `plan.creates` set that has already run earlier in the same project pass** (per the topological order from step 11.5.5). If the file is neither on disk nor a satisfied sibling-create, error — the buildfile names a file that isn't there. Apply Tier 2 intelligent merge: read the file, read the entry's `Behavior:`/`transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
       - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): surface the proposed diff via AskUserQuestion (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
-      - **Only when the entry has NO `Affects:`/`target-files:`** (purely-introducing entries that genuinely add a new package): create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review. The file path is computed from the adapter's conventions; the agent must NOT pick an arbitrary path.
+      - **If the entry declares `target-creates:`** (two-kinded shape): paths in `target-creates:` are introducing — generate new files at those exact paths with a `parlay-section: cross-cutting` marker, never invent alternate paths. Paths in `target-files:` are still strict-modifies — they must exist on disk (or be satisfied by a sibling-create earlier in the topological order).
+      - **Only when the entry has NO `Affects:`/`target-files:`/`target-creates:`** (purely-introducing entries that genuinely add a new package via grep-pattern fan-out): create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review. The file path is computed from the adapter's conventions; the agent must NOT pick an arbitrary path.
 
    3. **Present diff for review**: same A/B/C menu as brownfield mount:
       ```

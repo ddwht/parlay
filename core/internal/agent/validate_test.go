@@ -414,15 +414,26 @@ plan:
 	os.WriteFile(path, []byte(buildfile), 0644)
 
 	errors := ValidateBuildfileDeepStructured(path, "")
-	found := false
+	// Under the kind-aware routing introduced by
+	// parlay-tool/cross-cutting-target-paths, the legacy
+	// "cross-cutting-target-not-in-plan" code is replaced by per-kind
+	// codes. With no rootDir (buildfile outside .parlay/build/), the
+	// classifier defaults to modifies-only; the per-target error is
+	// "cross-cutting-target-not-in-modifies" plus the entry-level
+	// "cross-cutting-not-in-plan" since no plan rows are sourced.
+	wantCodes := map[string]bool{
+		"cross-cutting-target-not-in-modifies": false,
+		"cross-cutting-not-in-plan":            false,
+	}
 	for _, e := range errors {
-		if e.Code == "cross-cutting-target-not-in-plan" {
-			found = true
-			break
+		if _, ok := wantCodes[e.Code]; ok {
+			wantCodes[e.Code] = true
 		}
 	}
-	if !found {
-		t.Fatalf("expected cross-cutting-target-not-in-plan error, got: %+v", errors)
+	for code, found := range wantCodes {
+		if !found {
+			t.Fatalf("expected error code %q, got: %+v", code, errors)
+		}
 	}
 }
 
@@ -551,8 +562,545 @@ plan:
 
 	errors := ValidateBuildfileDeepStructured(path, "")
 	for _, e := range errors {
-		if e.Code == "missing-plan" || e.Code == "component-not-in-plan" || e.Code == "cross-cutting-not-in-plan" || e.Code == "cross-cutting-target-not-in-plan" {
+		switch e.Code {
+		case "missing-plan",
+			"component-not-in-plan",
+			"cross-cutting-not-in-plan",
+			"cross-cutting-target-not-in-plan",
+			"cross-cutting-target-not-in-modifies",
+			"cross-cutting-target-not-in-creates",
+			"cross-cutting-mixed-target-kinds",
+			"cross-cutting-target-creates-not-in-plan",
+			"cross-cutting-target-double-listed",
+			"cross-cutting-pattern-empty":
 			t.Errorf("plan validation incorrectly errored on a valid plan: %+v", e)
 		}
+	}
+}
+
+// --- kind-aware cross-cutting routing tests ---
+//
+// parlay-feature: parlay-tool/cross-cutting-target-paths
+// parlay-component: validate (extends validator-classify-entry-kind-and-route)
+// parlay-component: validate (extends validator-resolve-target-pattern-at-validation-time)
+// parlay-component: validate (extends validator-target-creates-and-two-kinded-entries)
+// parlay-component: validate (extends project-pass-validation-and-cli-flag)
+
+func TestValidatePlan_CrossCutting_PurelyIntroducing_RoutesToCreates(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+
+	// Path absent on disk -> classifier returns "purely-introducing".
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: introduce-pkg
+    source: "@test-feature/intent"
+    target-files:
+      - internal/newpkg/file.go
+    transform: "introduce a new package"
+plan:
+  modifies: []
+  creates:
+    - path: internal/newpkg/file.go
+      sources: [cross-cutting/introduce-pkg]
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	for _, e := range errors {
+		switch e.Code {
+		case "cross-cutting-target-not-in-creates",
+			"cross-cutting-target-not-in-modifies",
+			"cross-cutting-mixed-target-kinds":
+			t.Errorf("purely-introducing entry incorrectly errored: %+v", e)
+		}
+	}
+}
+
+func TestValidatePlan_CrossCutting_PurelyIntroducing_MissingFromCreates(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: introduce-pkg
+    source: "@test-feature/intent"
+    target-files:
+      - internal/newpkg/file.go
+    transform: "introduce a new package"
+plan:
+  modifies:
+    - path: internal/newpkg/file.go
+      sources: [cross-cutting/introduce-pkg]
+  creates: []
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-target-not-in-creates" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-target-not-in-creates, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_CrossCutting_ModifiesOnly_NoRegression(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "config.go"), []byte("package config\n"), 0644)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: edit-config
+    source: "@test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    transform: "extend config"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/edit-config]
+  creates: []
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	for _, e := range errors {
+		switch e.Code {
+		case "cross-cutting-target-not-in-creates",
+			"cross-cutting-target-not-in-modifies",
+			"cross-cutting-mixed-target-kinds":
+			t.Errorf("modifies-only entry incorrectly errored: %+v", e)
+		}
+	}
+}
+
+func TestValidatePlan_CrossCutting_MixedKinds_FailsLoudly(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	srcDir := filepath.Join(root, "internal", "exists")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "old.go"), []byte("package exists\n"), 0644)
+
+	// Two paths in target-files: one exists on disk, one doesn't.
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: split-me
+    source: "@test-feature/intent"
+    target-files:
+      - internal/exists/old.go
+      - internal/missing/new.go
+    transform: "ambiguously do something"
+plan:
+  modifies:
+    - path: internal/exists/old.go
+      sources: [cross-cutting/split-me]
+    - path: internal/missing/new.go
+      sources: [cross-cutting/split-me]
+  creates: []
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-mixed-target-kinds" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-mixed-target-kinds, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_CrossCutting_TwoKinded_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "config.go"), []byte("package config\n"), 0644)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: extend-and-add
+    source: "@test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    target-creates:
+      - internal/newhelper/helper.go
+    transform: "extend config and add a helper"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/extend-and-add]
+  creates:
+    - path: internal/newhelper/helper.go
+      sources: [cross-cutting/extend-and-add]
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	for _, e := range errors {
+		switch e.Code {
+		case "cross-cutting-target-not-in-creates",
+			"cross-cutting-target-not-in-modifies",
+			"cross-cutting-target-creates-not-in-plan",
+			"cross-cutting-mixed-target-kinds",
+			"cross-cutting-target-double-listed":
+			t.Errorf("two-kinded entry incorrectly errored: %+v", e)
+		}
+	}
+}
+
+func TestValidatePlan_CrossCutting_TargetCreatesMissingFromPlan(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "config.go"), []byte("package config\n"), 0644)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: forgot-the-create
+    source: "@test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    target-creates:
+      - internal/newhelper/helper.go
+    transform: "forgot to add helper to plan.creates"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/forgot-the-create]
+  creates: []
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-target-creates-not-in-plan" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-target-creates-not-in-plan, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_CrossCutting_DoubleListed_FailsLoudly(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	srcDir := filepath.Join(root, "internal", "config")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "config.go"), []byte("package config\n"), 0644)
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: double-listed
+    source: "@test-feature/intent"
+    target-files:
+      - internal/config/config.go
+    target-creates:
+      - internal/config/config.go
+    transform: "same path in both"
+plan:
+  modifies:
+    - path: internal/config/config.go
+      sources: [cross-cutting/double-listed]
+  creates:
+    - path: internal/config/config.go
+      sources: [cross-cutting/double-listed]
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-target-double-listed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-target-double-listed, got: %+v", errors)
+	}
+}
+
+func TestValidatePlan_CrossCutting_TargetPattern_EmptyResolution(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, ".parlay", "build", "test-feature")
+	os.MkdirAll(buildDir, 0755)
+	// No matching files anywhere under root.
+
+	buildfile := `feature: test-feature
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: pattern-miss
+    source: "@test-feature/intent"
+    target-pattern: "internal/nope/*.go"
+    transform: "fan out across nonexistent dir"
+plan:
+  modifies: []
+  creates: []
+`
+	path := filepath.Join(buildDir, "buildfile.yaml")
+	os.WriteFile(path, []byte(buildfile), 0644)
+	errors := ValidateBuildfileDeepStructured(path, "")
+	found := false
+	for _, e := range errors {
+		if e.Code == "cross-cutting-pattern-empty" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-cutting-pattern-empty, got: %+v", errors)
+	}
+}
+
+func TestResolveTargetPattern_Determinism(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{"a.go", "b.go", "c.txt"} {
+		os.WriteFile(filepath.Join(root, p), []byte("x"), 0644)
+	}
+	out1 := resolveTargetPattern("*.go", root, nil)
+	out2 := resolveTargetPattern("*.go", root, nil)
+	if len(out1) != 2 || out1[0] != "a.go" || out1[1] != "b.go" {
+		t.Fatalf("expected sorted [a.go b.go], got %v", out1)
+	}
+	if len(out2) != len(out1) {
+		t.Fatalf("repeated calls returned different results: %v vs %v", out1, out2)
+	}
+	for i := range out1 {
+		if out1[i] != out2[i] {
+			t.Fatalf("non-deterministic resolution: %v vs %v", out1, out2)
+		}
+	}
+}
+
+func TestResolveTargetPattern_RecursiveStarDoesNotMatch(t *testing.T) {
+	root := t.TempDir()
+	deep := filepath.Join(root, "a", "b")
+	os.MkdirAll(deep, 0755)
+	os.WriteFile(filepath.Join(deep, "x.go"), []byte("x"), 0644)
+
+	// filepath.Match has no recursive ** support; pattern resolves to zero.
+	out := resolveTargetPattern("**/*.go", root, nil)
+	if len(out) != 0 {
+		t.Fatalf("expected zero matches for recursive **, got %v", out)
+	}
+}
+
+// --- project-pass tests ---
+//
+// parlay-feature: parlay-tool/cross-cutting-target-paths
+// parlay-component: validate (extends project-pass-validation-and-cli-flag)
+
+func TestProjectPass_TwoFeatureHappyPath(t *testing.T) {
+	root := t.TempDir()
+	// Feature A creates internal/foo/foo.go.
+	dirA := filepath.Join(root, ".parlay", "build", "feat-a")
+	os.MkdirAll(dirA, 0755)
+	os.WriteFile(filepath.Join(dirA, "buildfile.yaml"), []byte(`feature: feat-a
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: create-foo
+    source: "@feat-a/intent"
+    target-files:
+      - internal/foo/foo.go
+    transform: "introduce foo"
+plan:
+  creates:
+    - path: internal/foo/foo.go
+      sources: [cross-cutting/create-foo]
+`), 0644)
+
+	// Feature B modifies internal/foo/foo.go (which doesn't exist on disk
+	// yet — feat-a creates it). In single-feature mode this fails with
+	// plan-modify-target-missing; in project-pass mode it passes.
+	dirB := filepath.Join(root, ".parlay", "build", "feat-b")
+	os.MkdirAll(dirB, 0755)
+	os.WriteFile(filepath.Join(dirB, "buildfile.yaml"), []byte(`feature: feat-b
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: extend-foo
+    source: "@feat-b/intent"
+    target-files:
+      - internal/foo/foo.go
+    transform: "extend foo"
+plan:
+  modifies:
+    - path: internal/foo/foo.go
+      sources: [cross-cutting/extend-foo]
+`), 0644)
+
+	verdicts, err := ValidateBuildfilesProjectStructured(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	if len(verdicts) != 2 {
+		t.Fatalf("expected 2 verdicts, got %d: %+v", len(verdicts), verdicts)
+	}
+	for _, v := range verdicts {
+		for _, e := range v.Errors {
+			if e.Code == "plan-modify-target-missing" {
+				t.Errorf("project-pass should relax modify-existence via sibling create, but %s reported: %+v", v.Feature, e)
+			}
+		}
+	}
+}
+
+func TestProjectPass_SingleVsProjectRegression(t *testing.T) {
+	root := t.TempDir()
+	dirB := filepath.Join(root, ".parlay", "build", "feat-b")
+	os.MkdirAll(dirB, 0755)
+	bfPath := filepath.Join(dirB, "buildfile.yaml")
+	os.WriteFile(bfPath, []byte(`feature: feat-b
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: extend-foo
+    source: "@feat-b/intent"
+    target-files:
+      - internal/foo/foo.go
+    transform: "extend foo"
+plan:
+  modifies:
+    - path: internal/foo/foo.go
+      sources: [cross-cutting/extend-foo]
+`), 0644)
+
+	// Single-feature mode: file is missing -> plan-modify-target-missing fires.
+	singleErrors := ValidateBuildfileDeepStructured(bfPath, "")
+	foundMissing := false
+	for _, e := range singleErrors {
+		if e.Code == "plan-modify-target-missing" {
+			foundMissing = true
+		}
+	}
+	if !foundMissing {
+		t.Fatalf("single-feature mode should fire plan-modify-target-missing when file is absent and no sibling promises it, got: %+v", singleErrors)
+	}
+}
+
+func TestProjectPass_TwoFeatureCycleDetection(t *testing.T) {
+	root := t.TempDir()
+	dirA := filepath.Join(root, ".parlay", "build", "feat-a")
+	dirB := filepath.Join(root, ".parlay", "build", "feat-b")
+	os.MkdirAll(dirA, 0755)
+	os.MkdirAll(dirB, 0755)
+	// A creates foo.go, modifies bar.go. B creates bar.go, modifies foo.go.
+	os.WriteFile(filepath.Join(dirA, "buildfile.yaml"), []byte(`feature: feat-a
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: a-create
+    source: "@feat-a/i1"
+    target-files:
+      - internal/foo.go
+    transform: "create foo"
+  - id: a-modify
+    source: "@feat-a/i2"
+    target-files:
+      - internal/bar.go
+    transform: "modify bar"
+plan:
+  creates:
+    - path: internal/foo.go
+      sources: [cross-cutting/a-create]
+  modifies:
+    - path: internal/bar.go
+      sources: [cross-cutting/a-modify]
+`), 0644)
+	os.WriteFile(filepath.Join(dirB, "buildfile.yaml"), []byte(`feature: feat-b
+adapter: go-cli
+models: {}
+components: {}
+cross-cutting:
+  - id: b-create
+    source: "@feat-b/i1"
+    target-files:
+      - internal/bar.go
+    transform: "create bar"
+  - id: b-modify
+    source: "@feat-b/i2"
+    target-files:
+      - internal/foo.go
+    transform: "modify foo"
+plan:
+  creates:
+    - path: internal/bar.go
+      sources: [cross-cutting/b-create]
+  modifies:
+    - path: internal/foo.go
+      sources: [cross-cutting/b-modify]
+`), 0644)
+	verdicts, err := ValidateBuildfilesProjectStructured(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	cycleCount := 0
+	for _, v := range verdicts {
+		for _, e := range v.Errors {
+			if e.Code == "plan-create-modify-cycle" {
+				cycleCount++
+			}
+		}
+	}
+	if cycleCount < 2 {
+		t.Fatalf("expected at least 2 plan-create-modify-cycle errors (one per side), got %d. verdicts: %+v", cycleCount, verdicts)
+	}
+}
+
+func TestProjectPass_EmptyProject(t *testing.T) {
+	root := t.TempDir()
+	// No .parlay/build at all.
+	verdicts, err := ValidateBuildfilesProjectStructured(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	if len(verdicts) != 0 {
+		t.Fatalf("expected zero verdicts on empty project, got %d", len(verdicts))
 	}
 }

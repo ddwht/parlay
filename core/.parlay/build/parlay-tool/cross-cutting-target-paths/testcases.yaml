@@ -1,0 +1,441 @@
+feature: parlay-tool/cross-cutting-target-paths
+framework: "Go testing (stdlib testing package, table-driven where natural)"
+
+# This feature is infrastructure-only (no surface, no UI components). The
+# testcases below validate the cross-cutting contracts that fix the latent
+# contradiction between buildfile.schema.md and validatePlanSection. Each
+# suite maps to one cross-cutting entry in buildfile.yaml; cases hew to the
+# Invariants bullets in infrastructure.md and the Verify bullets in
+# intents.md. The `component:` field references the cross-cutting id —
+# infrastructure-only buildfiles have no actual UI components, so the
+# convention is to mirror the cross-cutting id.
+
+suites:
+  - name: validator-routing-purely-introducing
+    component: validator-classify-entry-kind-and-route
+    intent: "@parlay-tool/cross-cutting-target-paths/cross-cutting-target-files-map-to-plan-by-entry-kind"
+    cases:
+      - name: purely-introducing-entry-with-target-in-creates-validates-cleanly
+        description: "A cross-cutting entry whose every target-files: path is missing on disk and whose paths all appear in plan.creates with a matching cross-cutting/<id> source citation validates successfully."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: modifies-only-entry-with-target-in-modifies-validates-cleanly
+        description: "A cross-cutting entry whose every target-files: path exists on disk and whose paths all appear in plan.modifies with a matching source citation validates successfully — the legacy modifies-only path is preserved with no regression."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: purely-introducing-target-misplaced-in-modifies-fails-with-legacy-error
+        description: "A purely-introducing entry whose path is incorrectly placed in plan.modifies (the old workaround attempt) fails with the legacy plan-modify-target-missing error. The new routing rule does not silently rescue this case."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: error
+            target: validatePlanSection
+            expected: "plan-modify-target-missing"
+
+      - name: purely-introducing-with-no-plan-row-fails-with-entry-level-error
+        description: "A purely-introducing entry whose target-files: path is absent from BOTH plan.creates and plan.modifies fails with the legacy entry-level cross-cutting-target-not-in-plan code, with a fix message that names plan.creates as the right destination."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-target-not-in-plan"
+
+      - name: target-in-plan-creates-but-not-cited-as-source-fails
+        description: "An entry whose target-files: path appears in plan.creates but whose plan.creates row's sources do not include cross-cutting/<id> fails with cross-cutting-target-not-in-creates — the existence-and-source-attribution check is unified."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-target-not-in-creates"
+
+      - name: mixed-target-files-list-fails-with-mixed-kinds-error
+        description: "A cross-cutting entry whose target-files: list mixes existing-on-disk and not-yet-existing paths fails with cross-cutting-mixed-target-kinds, naming both paths and their disk states. The fix message offers entry-splitting OR the two-kinded shape."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-mixed-target-kinds"
+
+      - name: legacy-buildfile-validates-byte-identically
+        description: "A buildfile that already validated under the legacy contract — modifies-only entries, target-files: pointing at on-disk paths, plan.modifies citations — validates byte-identically under the new routing rule. The change widens the set of valid buildfiles; it does not narrow it."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: classification-is-pure-over-entry-and-source-root
+        description: "Entry-kind classification is a deterministic function of (entry, source-root) and reads no external state beyond the filesystem. Re-classifying the same entry twice against an unchanged root produces identical kind."
+        steps:
+          - action: render
+            target: validator-classify-entry-kind-and-route
+          - verify: state
+            target: classifyCrossCuttingEntry.determinism
+            expected: identical-across-repeated-calls
+
+  - name: target-pattern-resolution
+    component: validator-resolve-target-pattern-at-validation-time
+    intent: "@parlay-tool/cross-cutting-target-paths/target-pattern-resolves-to-concrete-paths-at-validation-time"
+    cases:
+      - name: pattern-matching-on-disk-files-validates-as-modifies-only
+        description: "A cross-cutting whose pattern resolves to three on-disk files validates successfully only when all three appear in plan.modifies with the entry as source citation. The resolved set is treated identically to a target-files: list."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: pattern-matching-cross-pass-create-validates-as-purely-introducing
+        description: "In project-pass mode, a pattern that matches a path declared in another feature's plan.creates resolves to that path and is classified purely-introducing. Validation passes when the path appears in this feature's plan.creates with the cross-cutting as source."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: pattern-resolving-to-zero-paths-fails-with-pattern-empty
+        description: "A target-pattern that matches no on-disk files and no cross-pass creates fails with cross-cutting-pattern-empty. The error message cites the pattern, the searched root, and the plannedCreates count."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-pattern-empty"
+
+      - name: single-feature-validation-loses-cross-pass-creates
+        description: "When the validator runs in single-feature mode (parlay validate --type buildfile --deep <path>, no --project), plannedCreates is nil and pattern resolution sees only the on-disk set. A pattern that would have resolved through a sibling create in project-pass mode now resolves to zero paths and fails with cross-cutting-pattern-empty, with a fix-hint mentioning project-pass mode."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-pattern-empty"
+          - verify: text
+            target: validatePlanSection.fix
+            expected: "run `parlay validate --project`"
+
+      - name: resolution-is-deterministic-and-byte-identical-across-runs
+        description: "Re-resolving the same pattern against unchanged inputs produces a byte-identical resolved set across repeated calls. resolveTargetPattern is a pure function of (pattern, on-disk-set, plannedCreates-set)."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: state
+            target: resolveTargetPattern.determinism
+            expected: byte-identical-across-runs
+
+      - name: recursive-double-star-pattern-fails-with-pattern-empty
+        description: "A pattern using glob features beyond filepath.Match (e.g., recursive `**`) is treated as a literal-character match and resolves to zero paths, failing with cross-cutting-pattern-empty. Glob-feature creep is out of scope for this feature."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-pattern-empty"
+
+      - name: resolution-makes-no-shell-or-adapter-or-ai-calls
+        description: "Pattern resolution reads only the filesystem and the in-memory cross-pass set. It makes no shell calls, no adapter calls, and no AI calls."
+        steps:
+          - action: render
+            target: validator-resolve-target-pattern-at-validation-time
+          - verify: state
+            target: resolveTargetPattern.side-effects
+            expected: filesystem-read-only
+
+  - name: two-kinded-cross-cutting-entries
+    component: validator-target-creates-and-two-kinded-entries
+    intent: "@parlay-tool/cross-cutting-target-paths/a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets"
+    cases:
+      - name: target-files-on-disk-and-target-creates-not-on-disk-validates-cleanly
+        description: "A cross-cutting entry with target-files: naming an on-disk path AND target-creates: naming a not-on-disk path validates successfully when plan.modifies cites the on-disk path and plan.creates cites the introduce-path, both with this entry as source citation."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: count
+            target: validatePlanSection.errors
+            expected: 0
+
+      - name: target-creates-not-in-plan-fails-with-dedicated-code
+        description: "A target-creates: path that does not appear in plan.creates fails with cross-cutting-target-creates-not-in-plan, naming the path and the cross-cutting id, with a fix message specifying plan.creates as the destination."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-target-creates-not-in-plan"
+
+      - name: target-files-missing-on-disk-in-two-kinded-fails-with-legacy-error
+        description: "In a two-kinded entry, a target-files: path that is missing on disk fails with the legacy plan-modify-target-missing error. The presence of target-creates: bypasses the entry-kind heuristic; target-files: is interpreted strictly as modifies-only."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: error
+            target: validatePlanSection
+            expected: "plan-modify-target-missing"
+
+      - name: path-in-both-target-files-and-target-creates-fails-with-double-listed
+        description: "A path listed in both target-files: and target-creates: on the same entry fails with cross-cutting-target-double-listed, naming the offending path and both fields. Fix message asks the author to pick one."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: error
+            target: validatePlanSection
+            expected: "cross-cutting-target-double-listed"
+
+      - name: two-kinded-entry-with-target-pattern-splits-classification
+        description: "A two-kinded entry with a target-pattern resolves the pattern once and routes each resolved path by classification: on-disk matches go to plan.modifies, cross-pass-create matches go to plan.creates. The mixed-kinds error does NOT fire on this shape — the kinds came from pattern resolution, not from a mixed target-files: list."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: count
+            target: validatePlanSection.mixed-kinds-errors
+            expected: 0
+
+      - name: legacy-buildfile-without-target-creates-validates-byte-identically
+        description: "A buildfile with no target-creates: field anywhere validates byte-identically to its legacy outcome. The new field is optional; legacy authoring shape is unaffected."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: state
+            target: validatePlanSection.legacy-output
+            expected: byte-identical-to-pre-feature
+
+      - name: missing-cross-cutting-target-rule-accepts-target-creates
+        description: "An entry that declares target-creates: alone (no target-files, no target-pattern) is valid. The widened missing-cross-cutting-target rule accepts target-creates as a third equivalent option alongside target-files and target-pattern."
+        steps:
+          - action: render
+            target: validator-target-creates-and-two-kinded-entries
+          - verify: count
+            target: validateCrossCuttingEntries.missing-target-errors
+            expected: 0
+
+  - name: project-pass-validation-mode
+    component: project-pass-validation-and-cli-flag
+    intent: "@parlay-tool/cross-cutting-target-paths/planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass"
+    cases:
+      - name: two-feature-project-where-A-creates-and-B-modifies-validates-cleanly
+        description: "A two-feature project where feature A has plan.creates: [router.go] (path not on disk) and feature B has plan.modifies: [router.go] validates successfully under project-pass mode when both feature's plan rows have valid source attribution."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: count
+            target: ValidateBuildfilesProjectStructured.errors
+            expected: 0
+
+      - name: same-project-fails-in-single-feature-mode-with-fix-hint
+        description: "The same two-feature project, validated one feature at a time without --project, returns plan-modify-target-missing for feature B, with an additional fix-hint mentioning project-pass mode."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: error
+            target: ValidateBuildfileDeepStructured
+            expected: "plan-modify-target-missing"
+          - verify: text
+            target: validatePlanSection.fix
+            expected: "parlay validate --project"
+
+      - name: two-feature-create-modify-cycle-fails
+        description: "A two-feature cycle (feature A creates X and modifies Y; feature B creates Y and modifies X) fails project-pass validation with plan-create-modify-cycle, naming both features and both paths."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: error
+            target: ValidateBuildfilesProjectStructured
+            expected: "plan-create-modify-cycle"
+
+      - name: provenance-still-fires-under-existence-relaxation
+        description: "A modify-path satisfied through a sibling create whose own plan row's source citation does not reference a real entry in this buildfile fails with the existing source-attribution error. The existence relaxation does not mask provenance bugs — the two rules are orthogonal."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: error
+            target: validatePlanSection
+            expected: "plan-entry-missing-sources"
+
+      - name: project-flag-with-positional-path-rejected
+        description: "Passing both --project and a positional buildfile path fails with validate-project-takes-no-path before any validation begins. The two inputs are mutually exclusive."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: error
+            target: parlay-validate-cli
+            expected: "validate-project-takes-no-path"
+
+      - name: empty-project-emits-info-result-and-exits-zero
+        description: "Project-pass mode against a project with zero buildfiles emits an informational result naming the resolved root and reporting zero buildfiles. Exit status is 0 (an empty project is not an error)."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: state
+            target: parlay-validate-cli.exit-code
+            expected: 0
+          - verify: text
+            target: parlay-validate-cli.stdout
+            expected: "zero buildfiles"
+
+      - name: project-pass-determinism-byte-identical-across-runs
+        description: "Re-running project-pass validation against unchanged source produces byte-identical verdicts and a byte-identical dependency graph."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: state
+            target: ValidateBuildfilesProjectStructured.determinism
+            expected: byte-identical-across-runs
+
+      - name: planned-creates-set-carries-source-attribution
+        description: "The cross-pass plannedCreates set carries source attribution per path (feature/<slug>) so error messages can name the producing feature when a modify resolves through a sibling create."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: state
+            target: plannedCreates.attribution
+            expected: feature-slug-per-path
+
+      - name: legacy-validateBuildfileDeep-passes-nil-plannedCreates
+        description: "The existing single-feature entry point ValidateBuildfileDeepStructured continues to call validatePlanSection with a nil plannedCreates map. Single-feature behavior is byte-identical to today; no observable change for callers that never opt into project-pass."
+        steps:
+          - action: render
+            target: project-pass-validation-and-cli-flag
+          - verify: state
+            target: validateBuildfileDeep.plannedCreates
+            expected: nil
+
+  - name: buildfile-schema-doc-amended
+    component: buildfile-schema-doc-routing-and-target-creates
+    intent: "@parlay-tool/cross-cutting-target-paths/cross-cutting-target-files-map-to-plan-by-entry-kind"
+    cases:
+      - name: schema-documents-target-creates-field
+        description: "The buildfile schema's Cross-cutting section table includes a row for target-creates: documenting it as an optional field parallel to target-files for two-kinded entries."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "target-creates"
+
+      - name: schema-authoring-rule-paragraph-covers-three-shapes
+        description: "The schema's Plan section authoring-rule paragraph documents three routing shapes: modifies-only, purely-introducing, and two-kinded. Each is named explicitly."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "purely-introducing"
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "two-kinded"
+
+      - name: schema-validation-bullets-list-stable-error-codes
+        description: "The schema's Plan section Validation bullet list enumerates the stable error codes registered by this feature: cross-cutting-target-not-in-creates, cross-cutting-target-not-in-modifies, cross-cutting-target-creates-not-in-plan, cross-cutting-target-double-listed, cross-cutting-mixed-target-kinds, cross-cutting-pattern-empty, plan-create-modify-cycle, validate-project-takes-no-path."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "cross-cutting-target-not-in-creates"
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "plan-create-modify-cycle"
+
+      - name: schema-target-pattern-bullet-mentions-resolution
+        description: "The schema's Plan section includes a bullet documenting that target-pattern: is resolved at validation time to a concrete path set, with resolution using on-disk files plus the project-pass plannedCreates set."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "resolved at validation time"
+
+      - name: schema-project-pass-bullet-cites-cli-shape
+        description: "The schema's Plan section documents project-pass mode and its CLI shape: parlay validate --project. The bullet names the satisfied-by-disk-OR-sibling-create relaxation."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "parlay validate --project"
+
+      - name: schema-includes-three-worked-examples
+        description: "The schema document carries three worked examples under the Cross-cutting section, demonstrating the purely-introducing shape, the modifies-only shape, and the two-kinded shape side-by-side."
+        steps:
+          - action: render
+            target: buildfile-schema-doc-routing-and-target-creates
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "purely-introducing"
+          - verify: file-content
+            target: core/internal/embedded/schemas/buildfile.schema.md
+            expected: "modifies-only"
+
+  - name: generate-code-skill-topological-emission
+    component: generate-code-skill-topological-emission-order
+    intent: "@parlay-tool/cross-cutting-target-paths/planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass"
+    cases:
+      - name: skill-step-11-5-builds-cross-feature-dependency-graph
+        description: "The generate-code skill's step 11.5 (file-write allowlist lock) is amended to also build the cross-feature dependency graph in the same step. Every plan.modifies path that matches another feature's plan.creates path adds an edge."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: file-content
+            target: core/internal/embedded/skills/generate-code.skill.md
+            expected: "cross-feature dependency graph"
+
+      - name: new-step-11-6-orders-features-topologically
+        description: "A new step 11.6 (or equivalent) appears in the skill, instructing the agent to sort loaded features into topological order before per-feature emission. The sort is stable (feature-slug alphabetization breaks ties) so re-running produces byte-identical emission order."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: file-content
+            target: core/internal/embedded/skills/generate-code.skill.md
+            expected: "topological"
+
+      - name: step-14-7-strict-target-rule-notes-project-pass-satisfaction
+        description: "The skill's step 14.7 strict-target rule is amended to note that, in project-pass mode, a plan.modifies path may be satisfied by an earlier feature's plan.creates emission in the same run; the on-disk strict-target check still applies AT EMISSION TIME but the topological order guarantees the file is on disk."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: file-content
+            target: core/internal/embedded/skills/generate-code.skill.md
+            expected: "topological order guarantees"
+
+      - name: skill-describes-project-pass-mode-entry-conditions
+        description: "The skill carries a Project-pass mode subsection describing when project-pass is invoked: walking every feature under the resolved root and emitting all features in one pass. Single-feature behavior is unchanged."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: file-content
+            target: core/internal/embedded/skills/generate-code.skill.md
+            expected: "Project-pass mode"
+
+      - name: cycle-detection-stops-emission-without-writing-files
+        description: "On detected cycle in the cross-feature dependency graph, the skill surfaces plan-create-modify-cycle and stops without writing any files. Emission is atomic — no partial output is left behind."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: file-content
+            target: core/internal/embedded/skills/generate-code.skill.md
+            expected: "stop without writing any files"
+
+      - name: emission-order-is-deterministic-across-invocations
+        description: "Re-running generate-code against the same project produces byte-identical emission order. The order is determined by the dependency graph plus a stable feature-slug tiebreaker, not by argument order or filesystem traversal order."
+        steps:
+          - action: render
+            target: generate-code-skill-topological-emission-order
+          - verify: state
+            target: generate-code.emission-order
+            expected: byte-identical-across-runs

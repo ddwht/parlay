@@ -1,0 +1,454 @@
+feature: parlay-tool/cross-cutting-target-paths
+adapter: go-cli
+
+# This feature is infrastructure-only — it has no surface.md and produces no
+# components or routes. Every fragment in infrastructure.md translates into a
+# cross-cutting entry. The four intents (entry-kind routing, target-pattern
+# resolution, two-kinded entries, project-pass mode) decompose into six
+# cross-cutting changes that together close the latent contradiction between
+# the buildfile schema and the deep validator's plan-cross-check loop.
+#
+# Every cross-cutting in this buildfile happens to be modifies-only — every
+# target file already exists on disk (validate.go, the validate command, the
+# buildfile schema doc, the generate-code skill source). The current validator
+# bug (cross-cutting-target-not-in-plan failing for purely-introducing
+# entries) is therefore not exercised by THIS buildfile, even though the
+# whole feature is the fix for that bug. The companion irony: the
+# `@studio-support/page-layout-field` buildfile, whose purely-introducing
+# cross-cuttings DID hit the bug and routed around it via target-pattern,
+# was the canary that motivated the work tracked here.
+#
+# All paths in cross-cutting target-files: and plan: are relative to the
+# active root (core/) — the buildfile validator resolves them against the
+# root derived from the buildfile's location, NOT against the repo root.
+
+models: {}
+
+fixtures: {}
+
+routes: []
+
+components: {}
+
+cross-cutting:
+  - id: validator-classify-entry-kind-and-route
+    source: "@parlay-tool/cross-cutting-target-paths/cross-cutting-target-files-map-to-plan-by-entry-kind"
+    target-files:
+      - internal/agent/validate.go
+    transform: |
+      Extend validatePlanSection in core/internal/agent/validate.go so that,
+      for every cross-cutting entry, target-files routes to the plan section
+      determined by the entry's kind rather than always routing to
+      plan.modifies.
+
+      Classification function (mechanical, deterministic, no AI):
+        classifyCrossCuttingEntry(entry deepCrossCuttingEntry, rootDir string)
+            -> kind {"purely-introducing" | "modifies-only" | "mixed" | "two-kinded"}
+      Rules:
+        - If the entry declares the new `target-creates:` field (introduced by
+          the validator-target-creates-and-two-kinded-entries cross-cutting),
+          kind == "two-kinded" — the heuristic is bypassed and the explicit
+          shape from intent 3 governs.
+        - Otherwise, stat-check every path in target-files against rootDir:
+            * All paths missing on disk AND no target-modifies declared
+              -> "purely-introducing"
+            * All paths exist on disk -> "modifies-only"
+            * Mixed (some on disk, some not) -> "mixed"
+        - If target-pattern is set instead of target-files, classification
+          uses the resolved set produced by the
+          validator-resolve-target-pattern-at-validation-time cross-cutting.
+
+      Routing per kind (this entry owns the per-kind plan-cross-check):
+        - "purely-introducing": every resolved path must appear in
+          bf.Plan.Creates with sources containing "cross-cutting/<id>". On
+          miss, emit ValidationError{Code: "cross-cutting-target-not-in-creates",
+          Context: "plan.creates / cross-cutting[<id>].target-files",
+          Message: names the offending path and the cross-cutting id,
+          Fix: "add plan.creates entry { path: <p>, sources: [cross-cutting/<id>] }"}.
+        - "modifies-only": every resolved path must appear in bf.Plan.Modifies
+          with sources containing "cross-cutting/<id>". On miss, emit
+          ValidationError{Code: "cross-cutting-target-not-in-modifies", ...}
+          with the analogous fix message naming plan.modifies.
+        - "mixed": refuse to apply either rule. Emit ValidationError{Code:
+          "cross-cutting-mixed-target-kinds", Message: names both paths and
+          their disk states, Fix: "split into two cross-cutting entries
+          (one per kind), or use the both-kinds shape: declare existing-on-
+          disk paths in target-files: and not-yet-existing paths in
+          target-creates:"}.
+
+      The legacy entry-level error code, cross-cutting-target-not-in-plan, is
+      RETAINED — it fires when the entry has no plan row at all (regardless
+      of kind). Its fix message is updated to name plan.creates as the right
+      destination for a purely-introducing entry.
+
+      The legacy plan-modify-target-missing error continues to fire when a
+      purely-introducing entry's path is incorrectly placed in plan.modifies
+      (the old workaround). The new routing rule does not silently rescue
+      that case — the legacy error still fires and is still the right
+      diagnosis.
+
+      The companion test additions (validate_test.go) cover every Verify-
+      bullet from the routing intent: clean-pass for purely-introducing,
+      clean-pass for modifies-only (no regression), legacy-error for
+      misplaced-in-modifies, legacy-entry-level error when no plan row
+      exists, and the new mixed-kinds error.
+    introduces:
+      - 'ValidationError code "cross-cutting-target-not-in-creates"'
+      - 'ValidationError code "cross-cutting-target-not-in-modifies"'
+      - 'ValidationError code "cross-cutting-mixed-target-kinds"'
+      - "func classifyCrossCuttingEntry(entry deepCrossCuttingEntry, rootDir string) string"
+    caching: none
+    backward-compatible: true
+
+  - id: validator-resolve-target-pattern-at-validation-time
+    source: "@parlay-tool/cross-cutting-target-paths/target-pattern-resolves-to-concrete-paths-at-validation-time"
+    target-files:
+      - internal/agent/validate.go
+    transform: |
+      Stop treating cross-cutting target-pattern as opaque inside
+      validatePlanSection. Resolve every non-empty target-pattern to a
+      concrete path set at validation time, then route the resolved set by
+      entry kind exactly as the validator-classify-entry-kind-and-route
+      cross-cutting routes target-files.
+
+      Resolution function (pure, deterministic, no shell, no adapter, no AI):
+        resolveTargetPattern(pattern string, rootDir string,
+            plannedCreates map[string]string) -> []string
+      Algorithm:
+        1. Walk rootDir for files (filepath.Walk or filepath.WalkDir).
+           Collect paths that satisfy filepath.Match(pattern, relPath).
+        2. Walk plannedCreates keys (the cross-pass set passed in by the
+           project-pass entry point — see project-pass-validation-and-cli-flag).
+           Collect paths that satisfy filepath.Match(pattern, p).
+        3. Union the two sets, sort lexicographically for determinism, and
+           return.
+      When the validator runs in single-feature mode, plannedCreates is nil
+      and step 2 is skipped — the resolved set is the on-disk-only set.
+
+      Empty resolution is a hard error. Emit ValidationError{Code:
+      "cross-cutting-pattern-empty", Context: "cross-cutting[<id>].target-pattern",
+      Message: cites the pattern, the searched root, and the plannedCreates
+      count, Fix: "fix the glob or remove the entry; if a sibling feature is
+      expected to create matching files, run `parlay validate --project`
+      instead"}.
+
+      Patterns using glob features beyond filepath.Match (notably recursive
+      `**`) resolve through filepath.Match's literal-character semantics and
+      typically yield zero matches; cross-cutting-pattern-empty fires with
+      the same message. Glob-feature creep (recursive `**`, brace expansion)
+      is out of scope.
+
+      For two-kinded entries (intent 3), resolveTargetPattern is called once
+      and its output is split by per-path classification: paths present on
+      disk route to plan.modifies; paths from plannedCreates route to
+      plan.creates. The mixed-kinds error from intent 1 does NOT fire on a
+      two-kinded entry's resolved set — explicit author intent overrides the
+      heuristic.
+
+      Companion test additions (validate_test.go) cover every Verify-bullet:
+      pattern-matches-on-disk-only happy path, pattern-matches-cross-pass-
+      create happy path, empty-resolution failure, single-feature-loses-
+      cross-pass-creates failure with the project-pass hint, determinism-
+      byte-equality across repeated calls, and the recursive-double-star
+      no-match case.
+    introduces:
+      - 'ValidationError code "cross-cutting-pattern-empty"'
+      - "func resolveTargetPattern(pattern string, rootDir string, plannedCreates map[string]string) []string"
+    caching: none
+    backward-compatible: true
+
+  - id: validator-target-creates-and-two-kinded-entries
+    source: "@parlay-tool/cross-cutting-target-paths/a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets"
+    target-files:
+      - internal/agent/validate.go
+    transform: |
+      Add the new optional `target-creates:` field to deepCrossCuttingEntry
+      (yaml tag "target-creates", []string) and teach validatePlanSection to
+      handle two-kinded entries.
+
+      Schema-level changes in validate.go:
+        - Extend struct deepCrossCuttingEntry with `TargetCreates []string`.
+        - Update validateCrossCuttingEntries: an entry that declares
+          target-creates: alone is valid (the existing
+          "missing-cross-cutting-target" rule that demands at least one of
+          target-files / target-pattern is widened to accept target-creates
+          as a third equivalent option).
+
+      Plan-cross-check changes in validatePlanSection:
+        - When an entry declares target-creates:, classification skips the
+          on-disk heuristic. target-files is interpreted strictly as
+          modifies-only (every path must exist on disk; route to
+          plan.modifies). target-creates is interpreted strictly as
+          introduce-targets (every path must NOT exist on disk; route to
+          plan.creates).
+        - For target-creates paths missing from plan.creates, emit
+          ValidationError{Code: "cross-cutting-target-creates-not-in-plan",
+          Context: "plan.creates / cross-cutting[<id>].target-creates",
+          Message: names the offending path and the cross-cutting id,
+          Fix: "add plan.creates entry { path: <p>, sources: [cross-cutting/<id>] }"}.
+        - When the same path appears in BOTH target-files AND target-creates
+          on the same entry, emit ValidationError{Code:
+          "cross-cutting-target-double-listed", Message: names the offending
+          path and both fields, Fix: "pick one — list <path> in target-files:
+          if it exists on disk and is being modified, or in target-creates: if
+          it is being introduced"}.
+        - When an entry declares BOTH target-pattern: and target-creates:,
+          the resolveTargetPattern output is split by per-path classification
+          (on-disk -> plan.modifies; cross-pass-create -> plan.creates),
+          using the same algorithm as a non-two-kinded pattern entry; the
+          mixed-kinds error does not fire on a legitimately two-kinded entry.
+        - In a two-kinded entry, a target-files: path missing on disk fires
+          the legacy plan-modify-target-missing error (the heuristic is
+          bypassed; the explicit shape says "this is modifies-only", so the
+          missing-on-disk path is an authoring error, not silent recovery).
+
+      Backward compatibility: a buildfile with no target-creates: anywhere
+      validates byte-identically to today's outcome. The field is optional;
+      legacy authoring shape is unaffected.
+
+      Companion test additions (validate_test.go) cover every Verify-bullet:
+      two-kinded happy path, target-creates-not-in-plan failure,
+      target-files-missing-on-disk in a two-kinded entry, double-listed-path
+      failure, and the no-target-creates byte-identity regression test.
+    introduces:
+      - "Field deepCrossCuttingEntry.TargetCreates []string (yaml tag target-creates)"
+      - 'ValidationError code "cross-cutting-target-creates-not-in-plan"'
+      - 'ValidationError code "cross-cutting-target-double-listed"'
+    caching: none
+    backward-compatible: true
+
+  - id: project-pass-validation-and-cli-flag
+    source: "@parlay-tool/cross-cutting-target-paths/planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass"
+    target-files:
+      - internal/agent/validate.go
+      - internal/commands/validate.go
+    transform: |
+      Add project-pass mode to deep buildfile validation and surface it
+      through a new --project flag on `parlay validate`. The mode threads a
+      cross-pass plannedCreates set through validatePlanSection so that
+      plan.modifies is satisfied by an on-disk file OR another feature's
+      plan.creates in the same pass.
+
+      Validator changes in core/internal/agent/validate.go:
+
+        - New entry point: ValidateBuildfilesProjectStructured(rootDir string)
+          ([]featureVerdict, error). The function:
+            1. Walks rootDir/.parlay/build/**/buildfile.yaml.
+            2. Loads each buildfile into deepBuildfile.
+            3. Builds the project-wide plannedCreates map keyed by path,
+               valued by feature slug ("feature/<slug>") for source
+               attribution in error messages.
+            4. For each feature, calls a refactored
+               validateBuildfileDeepWithProject(path, adapter, plannedCreates)
+               that passes the union-minus-self map into validatePlanSection.
+            5. Returns a per-feature verdict slice.
+          The shared dependency graph (used both for cycle detection here
+          and for emission ordering by generate-code) is built from
+          (feature creates feature.modifies-when-other-feature-creates-the-
+          same-path) edges. Cycles emit ValidationError{Code:
+          "plan-create-modify-cycle", Message: names both features and both
+          paths, Fix: points to splitting one cross-cutting concern across
+          two passes or merging the two features}.
+
+        - Refactor validatePlanSection's signature to accept an optional
+          plannedCreates map[string]string parameter (key: path, value:
+          producing feature slug, or "" for single-feature mode). When
+          plannedCreates is non-nil, the plan-modify-target-missing rule
+          treats a plan.modifies path as satisfied if it exists on disk OR
+          appears in plannedCreates; in the latter case, error messages
+          (when other rules fire on the same row) carry the producing-
+          feature attribution.
+
+        - When plannedCreates is nil (legacy single-feature path, the
+          existing validateBuildfileDeep entry point), behavior is byte-
+          identical to today. validateBuildfileDeep continues to call
+          validatePlanSection with a nil map.
+
+        - Provenance is unchanged: a modify-path satisfied through a sibling
+          create whose own row's sources do not reference a real entry in the
+          buildfile still fails with the existing source-attribution rule.
+          The relaxation is on existence, not provenance.
+
+      CLI changes in core/internal/commands/validate.go:
+
+        - Add a new boolean flag --project to validateCmd. When set, the
+          command takes no positional path argument; it walks the resolved
+          root (cwd-derived, --root, or PARLAY_ROOT) and invokes
+          ValidateBuildfilesProjectStructured.
+        - Reject the combination of --project with a positional path
+          argument with ValidationError{Code: "validate-project-takes-no-path",
+          Message: cites both inputs, Fix: "drop the path argument; --project
+          discovers buildfiles by walking the root"}.
+        - Update the cobra Args constraint so cobra.ExactArgs(1) is replaced
+          by a custom Args func that requires exactly one path UNLESS
+          --project is set, in which case zero arguments are required.
+        - Emit one validateJSONResult per feature when --project is set;
+          aggregate exit code is non-zero if any feature has errors.
+        - Project-pass implies --type buildfile --deep — the flag composes
+          with those values, and the command sets them when missing.
+        - When project-pass walks zero buildfiles, emit an informational
+          result naming the resolved root and reporting zero buildfiles;
+          exit status is 0 (an empty project is not an error).
+
+      Companion test additions (validate_test.go and a new
+      validate_project_test.go alongside it, per the tests-alongside
+      convention): two-feature happy path, single-feature-vs-project
+      regression contrast, two-feature cycle detection,
+      provenance-still-fires under relaxation, --project-with-positional-
+      path rejection, and the empty-project info case.
+    introduces:
+      - "func ValidateBuildfilesProjectStructured(rootDir string) ([]featureVerdict, error)"
+      - "func validateBuildfileDeepWithProject(path, adapter string, plannedCreates map[string]string) []ValidationError"
+      - "Refactored signature: validatePlanSection(bf, buildfilePath, plannedCreates) []ValidationError"
+      - 'ValidationError code "plan-create-modify-cycle"'
+      - 'ValidationError code "validate-project-takes-no-path"'
+      - "Cobra flag: validate --project (boolean)"
+      - "Custom cobra Args func reconciling --project with the positional path argument"
+    caching: per-project-pass
+    backward-compatible: true
+
+  - id: buildfile-schema-doc-routing-and-target-creates
+    source: "@parlay-tool/cross-cutting-target-paths/cross-cutting-target-files-map-to-plan-by-entry-kind"
+    target-files:
+      - internal/embedded/schemas/buildfile.schema.md
+    transform: |
+      Amend the buildfile schema document so the contract is readable in one
+      place — the routing rule, the new target-creates: field, the new error
+      codes, and the project-pass mode all appear in the schema's Plan
+      section and Cross-cutting section.
+
+      Concrete edits:
+
+        Cross-cutting section table (currently lists target-files,
+        target-pattern, transform, introduces, caching, backward-compatible):
+          - Add a row for `target-creates`: optional, "Explicit file paths to
+            create in a two-kinded entry, parallel to target-files for
+            modifies".
+          - Update the footnote: "At least one of target-files,
+            target-pattern, or target-creates must be present."
+
+        Plan section, "Authoring rule for build-feature" paragraph:
+          - The existing sentence ("for every cross-cutting: entry with
+            non-empty target-files: ... each named path goes in plan.modifies")
+            stays for modifies-only entries — qualify it with "when the entry
+            is modifies-only".
+          - Add a parallel sentence for purely-introducing entries: "for
+            every purely-introducing cross-cutting (every target-files: path
+            absent on disk and no target-creates: declared), each named
+            target-files: path goes in plan.creates with the entry as
+            sources".
+          - Add a sentence for two-kinded entries: "for every cross-cutting
+            that declares target-creates:, target-files: paths route to
+            plan.modifies and target-creates: paths route to plan.creates;
+            the heuristic is bypassed".
+
+        Plan section, "Validation" bullet list:
+          - Replace the "Every cross-cutting: entry's target-files: paths
+            appear in plan.modifies" bullet with the kind-aware version: the
+            plan-cross-check routes by entry kind, with new error codes
+            cross-cutting-target-not-in-creates,
+            cross-cutting-target-not-in-modifies,
+            cross-cutting-target-creates-not-in-plan,
+            cross-cutting-target-double-listed,
+            cross-cutting-mixed-target-kinds, and cross-cutting-pattern-empty.
+          - Add a bullet for target-pattern resolution: "target-pattern: is
+            resolved at validation time to a concrete path set; resolution
+            uses on-disk files plus the project-pass plannedCreates set".
+          - Add a bullet for project-pass: "in project-pass mode (parlay
+            validate --project), plan.modifies is satisfied by an on-disk
+            file OR another feature's plan.creates in the same pass; cycles
+            fail with plan-create-modify-cycle".
+
+        New worked examples block under the Cross-cutting section, three
+        shapes side-by-side:
+          - purely-introducing (target-files only, no on-disk file)
+          - modifies-only (target-files only, all on disk)
+          - two-kinded (target-files + target-creates)
+
+      The edits are documentation-only — no Go code changes are made by this
+      cross-cutting. The validator side is owned by the four other cross-
+      cuttings in this buildfile; this entry keeps the schema contract and
+      validator implementation in lockstep.
+    introduces:
+      - "Schema doc rows: target-creates field on cross-cutting entries"
+      - "Schema doc paragraphs: routing rules for purely-introducing, modifies-only, two-kinded"
+      - "Schema doc validation bullets: stable error codes from this feature"
+      - "Schema doc worked examples: three cross-cutting shapes side-by-side"
+    caching: none
+    backward-compatible: true
+
+  - id: generate-code-skill-topological-emission-order
+    source: "@parlay-tool/cross-cutting-target-paths/planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    transform: |
+      Update the embedded generate-code skill so that, when running across
+      multiple features in one project pass, the agent walks the cross-
+      feature dependency graph in topological order and emits creates before
+      the modifies they satisfy. The runtime invariant from intent 4: every
+      path appearing in BOTH another feature's plan.creates AND this feature's
+      plan.modifies is emitted by the producing feature first.
+
+      Concrete edits to core/internal/embedded/skills/generate-code.skill.md:
+
+        - Step 11.5 ("Lock the plan as the file-write allowlist"): keep the
+          existing allowlist behavior; add a sentence: "When multiple
+          buildfiles are loaded, build the cross-feature dependency graph in
+          the same step — every plan.modifies path that matches another
+          feature's plan.creates path adds an edge from the modifying
+          feature to the creating feature. Validate the graph is acyclic;
+          on cycle, surface plan-create-modify-cycle and stop without
+          writing any files."
+        - New step 11.6 ("Order features topologically for emission"): after
+          the allowlist is locked and before any per-feature emission step
+          (12 onward), sort the loaded features into topological order such
+          that creates always run before the modifies they satisfy. The
+          ordering is a stable topological sort — feature-slug
+          alphabetization breaks ties so re-running the same project pass
+          produces byte-identical emission order.
+        - Step 14.7 ("Process cross-cutting entries"): update the strict-
+          target rule to note that, in project-pass mode, a plan.modifies
+          path may be satisfied by an earlier feature's plan.creates emission
+          in the same run. The existing on-disk strict-target check still
+          applies AT EMISSION TIME for that feature — the topological order
+          guarantees the file is on disk when the modifying feature runs.
+
+        - Add a new "Project-pass mode" subsection near the top of the skill
+          describing the entry conditions: when invoked with --project (or
+          equivalent agent argument), the skill walks every feature under
+          the resolved root and emits all features in one pass. When
+          invoked for a single feature, behavior is unchanged.
+
+      The skill edits do not touch the parlay binary — they update the
+      agent's instruction surface so any deployer (claude-code, cursor,
+      generic) emits the new guidance after a `make build && parlay upgrade`
+      cycle. The dogfooding rule (CLAUDE.md, source-first edits) governs:
+      this transform edits the embedded source; deploy is a separate step
+      handled outside the buildfile.
+    introduces:
+      - "Skill step 11.5 amendment: cross-feature dependency graph construction"
+      - "Skill step 11.6 (new): topological ordering of features for emission"
+      - "Skill step 14.7 amendment: strict-target rule notes project-pass satisfaction"
+      - "Skill subsection: Project-pass mode entry conditions"
+    caching: none
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/agent/validate.go
+      sources:
+        - cross-cutting/validator-classify-entry-kind-and-route
+        - cross-cutting/validator-resolve-target-pattern-at-validation-time
+        - cross-cutting/validator-target-creates-and-two-kinded-entries
+        - cross-cutting/project-pass-validation-and-cli-flag
+    - path: internal/commands/validate.go
+      sources:
+        - cross-cutting/project-pass-validation-and-cli-flag
+    - path: internal/embedded/schemas/buildfile.schema.md
+      sources:
+        - cross-cutting/buildfile-schema-doc-routing-and-target-creates
+    - path: internal/embedded/skills/generate-code.skill.md
+      sources:
+        - cross-cutting/generate-code-skill-topological-emission-order
+  creates: []
+  deletes: []

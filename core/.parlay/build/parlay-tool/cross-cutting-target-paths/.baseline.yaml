@@ -1,0 +1,41 @@
+generated-at: "2026-05-07T20:38:59Z"
+intents:
+    a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets:
+        content-hash: 34c4392c5fa4065e
+        goal-hash: 2ec762b0e31c8d41
+        constraints-hash: 1f4296f0ab9d723b
+        verify-hash: 0cecb42dfe9186d6
+        objects-hash: 236a43b51cd5a3fa
+    cross-cutting-target-files-map-to-plan-by-entry-kind:
+        content-hash: 6cf114ccc1af789c
+        goal-hash: 5eda24cfde540b47
+        constraints-hash: 232cfd2c5a4c4d97
+        verify-hash: dd75f2f6fc634c11
+        objects-hash: 050662204625e8ab
+    planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass:
+        content-hash: 33b35a72abc97266
+        goal-hash: 38353f2c5dee10bc
+        constraints-hash: ec87f70da8a9bfe1
+        verify-hash: 2778d4dcf010030f
+        objects-hash: 3b5205ed0931056d
+    target-pattern-resolves-to-concrete-paths-at-validation-time:
+        content-hash: 2ecd86f60dbc720e
+        goal-hash: 5a2dfbc297eb5781
+        constraints-hash: 4f792b9335c98c76
+        verify-hash: 14df29ec43b97e82
+        objects-hash: 3e1e944a60c245be
+sources:
+    intents:
+        a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets: 63a3a56d09ced87f
+        cross-cutting-target-files-map-to-plan-by-entry-kind: 2592d543608cfd88
+        planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass: 54b62af69d56e756
+        target-pattern-resolves-to-concrete-paths-at-validation-time: d99467b12207e40c
+    dialogs:
+        a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets: "0954881920139865"
+        cross-cutting-target-files-map-to-plan-by-entry-kind: 9e3ddf1aa0815d96
+        planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass: 71dafddb9257dc0b
+        target-pattern-resolves-to-concrete-paths-at-validation-time: 653fa03bb070b449
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819
