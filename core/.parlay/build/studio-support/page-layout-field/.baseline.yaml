@@ -1,10 +1,10 @@
-generated-at: "2026-05-05T17:37:09Z"
+generated-at: "2026-05-07T19:03:24Z"
 intents:
     add-optional-layout-block-to-the-page-schema:
-        content-hash: 86949f85d66980c5
+        content-hash: f6a1e9923f0f91a1
         goal-hash: f5c5b0d1be3b8272
-        constraints-hash: ae878f676d175a5f
-        verify-hash: 375b37edf6ae1d15
+        constraints-hash: 2fa41485abe22714
+        verify-hash: c7e83fc0a439689b
         objects-hash: 6df7422d0137a796
     define-the-layout-tree-schema:
         content-hash: 81b9d3d416f0a93f
@@ -12,7 +12,22 @@ intents:
         constraints-hash: 1b24b19a6bc7ceae
         verify-hash: 01513945f3ddd072
         objects-hash: 9fef56d031eecd82
+    surface-layout-validation-as-a-precheck-contract-for-codegen:
+        content-hash: a26f61540f540f37
+        goal-hash: da6866d255f72b56
+        constraints-hash: 3b4b4c4e750e2f9b
+        verify-hash: a61bc464f2d91652
+        objects-hash: ad3e4dec9d100bd5
 sources:
     intents:
-        add-optional-layout-block-to-the-page-schema: 44f4cf1390b783cf
+        add-optional-layout-block-to-the-page-schema: cf6b6631e06dedf7
         define-the-layout-tree-schema: 0788f8c57756df9e
+        surface-layout-validation-as-a-precheck-contract-for-codegen: e6803ad8137f46ba
+    dialogs:
+        add-optional-layout-block-to-the-page-schema: 25bbd4ff0c6a8fd5
+        define-the-layout-tree-schema: a648c0e2775f9d6e
+        surface-layout-validation-as-a-precheck-contract-for-codegen: dae8501f3412aad8
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819

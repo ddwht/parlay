@@ -1,5 +1,20 @@
-generated-at: "2026-05-05T17:37:09Z"
+generated-at: "2026-05-07T19:03:24Z"
 files:
+    core/internal/agent/precheck.go:
+        component: ""
+        hash: b9b42006556325d1
+    core/internal/agent/precheck_test.go:
+        component: ""
+        hash: 579a46593ad693e9
+    core/internal/agent/validate_domain_model_test.go:
+        component: validation-error-reporter
+        hash: 77b5d21196e88fcf
+    core/internal/agent/validate_infrastructure.go:
+        component: InfrastructureValidationResult
+        hash: 814e41af4cbb4df4
+    core/internal/agent/validate_layout_test.go:
+        component: adapter-validator-deep-vocabulary-and-tokens
+        hash: 7e6519a83d534ec3
     core/internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
         hash: 09a6347c8a7396cc
@@ -81,3 +96,51 @@ files:
     core/internal/commands/validate.go:
         component: validate
         hash: 910014621d1f85cb
+    core/internal/config/config.go:
+        component: ""
+        hash: 14dc78de972cd49f
+    core/internal/config/config_test.go:
+        component: directory-classification-validation
+        hash: 7c1e6133a220780a
+    core/internal/config/context_domain_model_test.go:
+        component: extract-domain-model-output
+        hash: dc7f6032b416660a
+    core/internal/config/topology.go:
+        component: ""
+        hash: d6ffb6d707e52c50
+    core/internal/deployer/cursor.go:
+        component: ""
+        hash: db519794d9b86528
+    core/internal/deployer/generic.go:
+        component: ""
+        hash: 6d7cdfa931a0e306
+    core/internal/embedded/agents.go:
+        component: ""
+        hash: aa8cdfcba8cefd43
+    core/internal/embedded/agents_test.go:
+        component: SubagentDefinitionBundle
+        hash: 417cc51f15a6e170
+    core/internal/embedded/schemas/adapter.schema.md:
+        component: ""
+        hash: b0ab4e49840e2a73
+    core/internal/embedded/schemas/buildfile.schema.md:
+        component: ""
+        hash: 67a3eba2572c6c3d
+    core/internal/embedded/schemas/layout.schema.md:
+        component: ""
+        hash: 7242ee82596f59a4
+    core/internal/embedded/skills/generate-code.skill.md:
+        component: ""
+        hash: f18e68e76988c051
+    core/internal/parser/infrastructure.go:
+        component: InfrastructureValidationResult
+        hash: e04ef6eee212b8c9
+    core/internal/parser/marker_test.go:
+        component: upgrade-prompt
+        hash: fc3768c9f3dea897
+    core/internal/parser/page.go:
+        component: ""
+        hash: a65d407584528a63
+    core/internal/parser/page_test.go:
+        component: ""
+        hash: 9edf77934048fc11

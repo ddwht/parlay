@@ -1,4 +1,4 @@
-generated-at: "2026-05-05T17:37:09Z"
+generated-at: "2026-05-07T19:03:24Z"
 intents:
     declare-a-named-component-vocabulary-in-the-adapter:
         content-hash: b896b75c40276dc2
@@ -7,15 +7,15 @@ intents:
         verify-hash: a6738a7edbc0e48c
         objects-hash: 4e6a5f42b5beacd8
     declare-design-tokens-in-the-adapter:
-        content-hash: 93a65c652916f000
+        content-hash: 67fb990a97d1babe
         goal-hash: 8cc6735a8f5591f2
         constraints-hash: 6afdb3fcb257ca38
-        verify-hash: 8c70b5e23786c047
+        verify-hash: 38702ea50af335a9
         objects-hash: 220733d992dd0dc1
 sources:
     intents:
         declare-a-named-component-vocabulary-in-the-adapter: 97a47195fc10bd42
-        declare-design-tokens-in-the-adapter: 1eab97a4ab5ded8b
+        declare-design-tokens-in-the-adapter: 61c87ad10acd25c1
     dialogs:
         declare-a-named-component-vocabulary-in-the-adapter: 3fbb2ac1a2669c4c
         declare-design-tokens-in-the-adapter: cd5aa46d9bd83b2b

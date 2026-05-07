@@ -1,0 +1,335 @@
+feature: studio-support/page-layout-field
+framework: "Go testing (stdlib testing package, table-driven where natural)"
+
+# This feature is infrastructure-only (no surface, no UI components). The
+# testcases below validate the cross-cutting contracts. Each suite maps to
+# one cross-cutting entry in buildfile.yaml; cases hew to the Invariants
+# bullets in infrastructure.md and the Verify bullets in intents.md.
+
+suites:
+  - name: page-artifact-loader-without-layout-block
+    component: page-artifact-loader-with-optional-layout
+    intent: "@studio-support/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: page-without-layout-section-parses-cleanly
+        description: "A page artifact lacking a ## Layout section parses successfully and exposes Layout == nil. Existing pages remain bit-for-bit equivalent to today's pages in all parser-visible respects."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: file-exists
+            target: core/internal/parser/page.go
+          - verify: state
+            target: Page.Layout
+            expected: nil
+
+  - name: page-artifact-loader-with-layout-block
+    component: page-artifact-loader-with-optional-layout
+    intent: "@studio-support/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: page-with-well-formed-layout-section-parses-cleanly
+        description: "A page artifact whose body contains a ## Layout YAML block carrying componentVocabulary, schemaVersion, and a nodes tree parses successfully and exposes a Layout field carrying those three pieces."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout.ComponentVocabulary
+            expected: clarity@17
+          - verify: state
+            target: Page.Layout.SchemaVersion
+            expected: 1
+          - verify: state
+            target: Page.Layout.Nodes
+            expected: non-empty
+
+      - name: layout-section-position-among-siblings-is-irrelevant
+        description: "A page that places ## Layout immediately after the frontmatter and a page that places it after other top-level sections produce identical parse trees. The loader matches by heading, not by position."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout
+            expected: identical-across-orderings
+
+      - name: layout-block-missing-component-vocabulary-fails-parse
+        description: "A layout block that omits the componentVocabulary key fails parse with an error naming the missing field."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "missing required field 'componentVocabulary'"
+
+      - name: layout-block-missing-schema-version-fails-parse
+        description: "A layout block that omits schemaVersion fails parse with an actionable error naming the missing field and the page path."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "missing required field 'schemaVersion'"
+
+      - name: layout-block-with-wiring-field-fails-parse
+        description: "A layout block whose node carries a wiring field (dataSource, binding, expression-string) fails parse with an error naming the offending field, the offending node id, and the page path."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "wiring field 'dataSource' on node 'main-table'"
+
+      - name: layout-block-with-raw-spacing-value-fails-parse
+        description: "A layout block whose container sets gap: 24px or padding: 16 (raw value where a token reference is required) fails parse with an error naming the offending node id and field."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "raw value '24px' for field 'gap' on node 'header-row'"
+
+      - name: round-trip-preserves-node-ids
+        description: "A page round-tripped through Studio's design loop preserves every layout-node id across the read-edit-write cycle. Newly added nodes get fresh ids; surviving nodes keep theirs."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout.Nodes[*].ID
+            expected: stable-across-round-trip
+
+  - name: layout-tree-schema-validator-universal-fields-only
+    component: layout-tree-schema-validator
+    intent: "@studio-support/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: tree-with-only-universal-fields-validates-regardless-of-vocabulary
+        description: "A layout tree whose nodes use only universal fields (id, type, children, direction, gap, padding, alignment) validates as ok regardless of which componentVocabulary is declared, because no vocabulary-specific validation is exercised."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: count
+            target: ValidateLayout.errors
+            expected: 0
+
+      - name: deeply-nested-tree-validates-each-level
+        description: "A layout tree with containers nested several levels deep validates each level recursively against the same rules. Depth has no special cap."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: count
+            target: ValidateLayout.errors
+            expected: 0
+          - verify: state
+            target: ValidateLayout.depth-walked
+            expected: arbitrary
+
+  - name: layout-tree-schema-validator-rejections
+    component: layout-tree-schema-validator
+    intent: "@studio-support/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: tree-with-unknown-component-type-fails-validation
+        description: "A layout tree declaring componentVocabulary clarity@17 and a node type clarity.kanban (not defined in clarity@17) fails validation; the error names the offending node id and the offending type."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: unknown-component
+          - verify: state
+            target: ValidateLayout.errors[0].Context
+            expected: contains-node-id-and-type
+
+      - name: tree-with-raw-value-on-token-field-fails-validation
+        description: "A layout tree where a node sets padding: 16 (raw integer) on a field that expects a spacing-token reference fails validation with an error naming the node id and the field."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: raw-value-where-token-required
+          - verify: state
+            target: ValidateLayout.errors[0].Context
+            expected: contains-node-id-and-field-padding
+
+      - name: schema-version-mismatch-rejected
+        description: "A layout block whose schemaVersion does not match the version this Core build targets fails validation with an error naming the version found and expected."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: layout-schema-version-unsupported
+
+  - name: layout-precheck-contract-passing
+    component: layout-precheck-contract
+    intent: "@studio-support/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: page-without-layout-returns-ok-verdict
+        description: "Calling LayoutPrecheck on a page whose Layout is nil (no ## Layout section) returns Verdict{Code: ok}. A page without a layout is trivially valid for this contract."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: ok
+          - verify: state
+            target: Verdict.File
+            expected: ""
+
+      - name: passing-page-returns-only-ok-code
+        description: "Calling LayoutPrecheck on a well-formed, schema-compliant, vocabulary-correct, token-correct, wiring-free page returns Verdict whose only populated field is Code: ok. The other five fields are empty."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: ok
+          - verify: state
+            target: Verdict.NodePath
+            expected: ""
+          - verify: state
+            target: Verdict.Found
+            expected: ""
+          - verify: state
+            target: Verdict.Expected
+            expected: ""
+          - verify: state
+            target: Verdict.Fix
+            expected: ""
+
+      - name: precheck-is-deterministic-byte-for-byte
+        description: "Calling LayoutPrecheck twice on the same (page, adapter) pair returns identical verdicts byte-for-byte. The verdict struct is the deterministic part of the system even though codegen output downstream is not."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.first-call
+            expected: byte-equal-to-second-call
+
+  - name: layout-precheck-contract-failures
+    component: layout-precheck-contract
+    intent: "@studio-support/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: malformed-yaml-block-yields-malformed-layout-block-verdict
+        description: "A page whose YAML in the ## Layout block fails to parse (bad indent, unterminated string, etc.) yields Verdict{Code: malformed-layout-block, File: <page path>, Found: <verbatim parser error>, Expected: well-formed YAML conforming to the layout schema, Fix: <parser-emitted next step>}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: malformed-layout-block
+          - verify: state
+            target: Verdict.File
+            expected: pages/dashboard.md
+          - verify: state
+            target: Verdict.Found
+            expected: contains-parser-error
+          - verify: state
+            target: Verdict.Expected
+            expected: well-formed-yaml-conforming-to-layout-schema
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-next-step
+
+      - name: vocabulary-version-mismatch-verdict
+        description: "A page declaring clarity@17 evaluated against an adapter loaded as clarity@16 yields Verdict{Code: vocabulary-version-mismatch, File: <page path>, Found: clarity@17, Expected: clarity@16, Fix: names both remediation paths}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: vocabulary-version-mismatch
+          - verify: state
+            target: Verdict.Found
+            expected: clarity@17
+          - verify: state
+            target: Verdict.Expected
+            expected: clarity@16
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-both-remediation-paths
+
+      - name: raw-value-where-token-required-verdict
+        description: "A page whose layout uses gap: 24px on a container yields Verdict{Code: raw-value-where-token-required, File: <page path>, NodePath: <node-path within layout>, Found: 24px, Expected: list of valid spacing tokens, Fix: replace 24px with one of [...]}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: raw-value-where-token-required
+          - verify: state
+            target: Verdict.NodePath
+            expected: non-empty
+          - verify: state
+            target: Verdict.Found
+            expected: 24px
+          - verify: state
+            target: Verdict.Expected
+            expected: contains-valid-spacing-tokens
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-substitution-instruction
+
+      - name: unknown-component-type-verdict
+        description: "A page with type: clarity.kanban against clarity@17 (which does not define that type) yields Verdict{Code: unknown-component-type, File: <page path>, NodePath: <path>, Found: clarity.kanban, Expected: vocabulary's known type list, Fix: pick a known type from clarity@17 or upgrade the adapter}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: unknown-component-type
+          - verify: state
+            target: Verdict.Found
+            expected: clarity.kanban
+          - verify: state
+            target: Verdict.Expected
+            expected: contains-clarity-17-type-list
+          - verify: state
+            target: Verdict.Fix
+            expected: names-both-remediation-paths
+
+      - name: missing-schema-version-verdict
+        description: "A page whose layout block omits schemaVersion yields Verdict{Code: missing-schema-version, File: <page path>, Found: <empty or absent>, Expected: schemaVersion: <integer>, Fix: add schemaVersion at the top of the ## Layout block}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: missing-schema-version
+
+      - name: wiring-in-layout-verdict
+        description: "A page whose layout node carries a wiring field (dataSource, binding, expression-string) yields Verdict{Code: wiring-in-layout, File: <page path>, NodePath: <node-path>, Found: dataSource, Expected: layout node fields without wiring, Fix: move wiring to the layout-aware codegen pass}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: wiring-in-layout
+          - verify: state
+            target: Verdict.Found
+            expected: dataSource
+          - verify: state
+            target: Verdict.Fix
+            expected: mentions-codegen-pass
+
+  - name: layout-precheck-aggregation-across-pages
+    component: layout-precheck-contract
+    intent: "@studio-support/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: walk-of-multiple-pages-yields-one-verdict-per-page
+        description: "A walk of multiple layout-bearing pages produces a list of per-page verdicts; the list is the union of every check across every page, not a single global verdict, and not just the first failure."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: count
+            target: per-page-verdicts
+            expected: number-of-pages-walked
+          - verify: state
+            target: per-page-verdicts.contains-mix-of-ok-and-failure
+            expected: true
+
+      - name: precheck-performs-no-ai-calls-and-no-external-state
+        description: "The precheck is a pure function over its inputs. No file I/O, no network, no AI calls, no external state. Sub-millisecond on common-case pages."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: LayoutPrecheck.purity
+            expected: pure-function

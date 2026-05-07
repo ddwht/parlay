@@ -9,18 +9,19 @@
 **Goal**: Allow pages to carry a structured layout — a typed tree of design-system components — directly inside the existing `pages/<page-id>.md` artifact, without breaking projects whose pages do not have layouts yet.
 **Persona**: UX Designer
 **Priority**: P0
-**Context**: Studio needs a place to write the canonical layout for a page after a Figma round-trip. The architecture (§4.3) commits to embedding layout in the existing page artifact rather than introducing a separate file, so designer/developer parallel editing happens through different sections of the same Markdown file.
+**Context**: Studio needs a place to write the canonical layout for a page after a Figma round-trip. The layout is embedded in the existing page artifact rather than introduced as a separate file, so designer-authored layout and developer-authored prose live in one artifact and parallel editing happens through different sections of the same Markdown file.
 **Action**: Add a `## Layout` section to the page schema whose body is a YAML code block conforming to the layout schema. The block carries `componentVocabulary` (e.g., `clarity@17`), `schemaVersion`, and a recursive `nodes` tree; node properties are typed per component vocabulary. Pages without a `## Layout` section parse exactly as before.
 **Objects**: page, layout, component-vocabulary, layout-node, schema-version
 
 **Constraints**:
 - The layout block is optional — pages without it must continue to load, validate, and codegen exactly as they do today
-- The block is embedded in the existing `pages/<page-id>.md` file, not a separate `*.layout.yaml` — this is a deliberate design choice (P5: Studio extends Core's existing artifacts, doesn't introduce new ones)
+- The block is embedded in the existing `pages/<page-id>.md` file, not a separate `*.layout.yaml` — Studio extends the existing page artifact rather than introducing a parallel file, so designer and developer edits stay co-located
 - `componentVocabulary` is declared explicitly at the top of the layout (e.g., `clarity@17`); a Studio binary configured for a different vocabulary fails fast on read rather than silently mis-rendering
 - `schemaVersion` is present from day one
 - Layout nodes carry only structural and presentation data — `id`, `type`, layout parameters (`direction`, `gap`, `padding`, `alignment`), variants, text, children. Wiring information (data sources, operation references, expressions) is **explicitly forbidden** in the layout block; wiring lives in the layout-aware codegen pass
 - Spacing values are token names (e.g., `spacing-lg`), not raw values, so the same layout codegens correctly across adapter pixel scales
 - Layout-node `id` is stable across round-trips — Studio uses it to match canonical nodes to Figma nodes during sync
+- The `## Layout` section is a top-level body section in the page Markdown — sibling to other top-level sections, never nested under one. Order relative to other top-level sections is not significant for parsing; Studio-emitted output places it immediately after the frontmatter for readability, but a hand-edited page that orders it elsewhere parses identically
 
 **Verify**:
 - A page with `---` frontmatter, body prose, and a `## Layout` YAML block parses cleanly; `parlay status` reports the page as valid
@@ -29,9 +30,7 @@
 - A layout block missing `schemaVersion` fails parse with an actionable error
 - A layout block containing wiring fields (e.g., `dataSource:`, `binding:`, expression strings) fails parse with an error explaining wiring lives in codegen
 - Round-tripping a page through Studio's design loop preserves all node `id`s
-
-**Questions**:
-- Where exactly in the page Markdown does `## Layout` live — top-level under the frontmatter, nested under another section, or order-agnostic? §4.3's example puts it at top level. Confirm during dialog authoring.
+- A page that places `## Layout` immediately after the frontmatter and a page that places it after other top-level sections produce identical parse trees and identical codegen output
 
 ---
 
@@ -68,7 +67,7 @@
 **Objects**: layout-precheck, verdict, error-code, page-artifact, adapter, caller-policy
 
 **Constraints**:
-- The verdict is a closed shape across all error types — every failure carries the same fields (code, file, node-path, found, expected, fix-hint) so callers can render messages uniformly without per-error formatting
+- The verdict is a closed shape across all error types — every failure carries exactly the same fields (code, file, node-path, found, expected, fix-hint) and no others. There is no `severity` field; every failure is an error. If a future requirement surfaces a soft case, it is added as a new closed-shape variant or a separate verdict kind, not by widening this one
 - Error codes are stable identifiers and exhaustive: `malformed-layout-block`, `missing-schema-version`, `vocabulary-version-mismatch`, `unknown-component-type`, `unknown-variant`, `raw-value-where-token-required`, `unknown-token`, `wiring-in-layout`, `universal-field-redeclared`, `missing-mode-emit-form`. New codes are added in lockstep with new validation rules in this feature or in `adapter-vocabulary-extension`
 - The precheck is invoked at page-load time, before any consumer attempts to use the layout — codegen, status, repair, and sync all hit this single entry point
 - The precheck never auto-fixes — it returns a verdict; the human (or Studio) makes corrections. Callers may surface the verdict, refuse to proceed, or annotate state, but they never silently mutate the layout
@@ -85,8 +84,5 @@
 - A page that passes every check returns a verdict whose only field is `{code: ok}`
 - The same page validated twice in a row returns identical verdicts byte-for-byte (the verdict struct is the deterministic part of the system, even though codegen's emitted code text downstream is not)
 - Calling `parlay status` on a project with a mix of valid and invalid layout-bearing pages returns one verdict per page; the per-page results are the union of every check, not just the first failure
-
-**Questions**:
-- Should the verdict carry severity (warning vs error), or are all failures errors? §1 implies warnings are not currently a distinct concept; revisit during dialog authoring if a soft case appears.
 
 ---

@@ -61,6 +61,6 @@
 - A layout file using `gap: spacing-mega` (unknown token) fails validation naming the unknown token and listing valid alternatives
 - Codegen translates `spacing-lg` to the adapter's emit-form — a CSS variable for one adapter, a theme-object lookup for another — without the layout file changing
 - An adapter declaring `light` and `dark` color modes for `color-surface` produces generated code that renders correctly in both modes; switching modes at runtime does not require re-running codegen
-- A color token that declares an emit-form for `light` but omits `dark` in an adapter that supports both modes fails parse with an error naming the token and the missing mode
+- A color token that declares an emit-form for `light` but omits `dark` in an adapter that supports both modes fails parse and the layout-precheck (defined in `page-layout-field`) surfaces the failure as `{code: missing-mode-emit-form, file: <adapter-path>, found: <token-name>, expected: dark, fix: declare a dark emit-form for <token-name> or remove dark from the adapter's mode list}`. This is the canonical Verify for the `missing-mode-emit-form` code; `page-layout-field` lists the code in its registry but defers the rule-Verify here
 
 ---

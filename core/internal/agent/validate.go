@@ -267,26 +267,46 @@ type deepTypographyToken struct {
 // with the richer layout schema landing later.
 //
 // parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
 type LayoutReference struct {
 	// Vocabulary is the vocabulary version this layout pins itself to
 	// (e.g., "clarity@17"). Mismatch with the adapter's vocabulary fails
 	// fast before any component lookup.
 	Vocabulary string
 
-	// Nodes is the flat list of layout nodes to validate. Container nodes
-	// are checked for allowed-children; leaf nodes are checked for variant
-	// and property closure; data-shape nodes are checked for property
-	// closure only.
+	// SchemaVersion is the layout schema version the layout was authored
+	// against. Distinct from Vocabulary (which pins the design system).
+	// Zero means "unspecified" and triggers no schema-version check; a
+	// non-zero value is compared against SupportedLayoutSchemaVersion.
+	SchemaVersion int
+
+	// Nodes is the recursive tree of layout nodes to validate. Container
+	// nodes are checked for allowed-children; leaf nodes are checked for
+	// variant and property closure; data-shape nodes are checked for
+	// property closure only. Every per-node check is re-applied to every
+	// LayoutNode.Children entry to arbitrary depth.
 	Nodes []LayoutNode
 }
 
-// LayoutNode is a single node within a LayoutReference.
+// SupportedLayoutSchemaVersion is the layout schema version this Core
+// build understands. Layouts with a different SchemaVersion fail
+// validation with code "layout-schema-version-unsupported".
+//
+// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
+const SupportedLayoutSchemaVersion = 1
+
+// LayoutNode is a single node within a LayoutReference. Children
+// recurse to arbitrary depth; ValidateLayout descends every level.
+//
+// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
 type LayoutNode struct {
-	Type         string         // e.g., "clarity.button"
-	ParentType   string         // empty for root; the type of the parent container otherwise
-	Variant      string         // empty when the node has no variant
-	Properties   map[string]any // referenced property names → declared values
-	TokenRefs    []TokenReference
+	ID         string         // optional node id; surfaced in error Context for human navigation
+	Type       string         // e.g., "clarity.button"
+	ParentType string         // empty for root; the type of the parent container otherwise
+	Variant    string         // empty when the node has no variant
+	Properties map[string]any // referenced property names → declared values
+	TokenRefs  []TokenReference
+	Children   []LayoutNode // recursive — each child is validated against the same rules
 }
 
 // TokenReference is a single token reference in a layout node's chrome
@@ -300,17 +320,48 @@ type TokenReference struct {
 	RawValue bool   // true when the layout supplied a literal value (e.g., "24px") instead of a token name
 }
 
+// universalLayoutFields is the closed set of universal container fields
+// owned by the layout schema (see internal/embedded/schemas/layout.schema.md).
+// A vocabulary component declaring a property whose name collides with
+// any of these fails the universal-field-redeclared check whenever it
+// crosses the layout boundary.
+//
+// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
+var universalLayoutFields = map[string]bool{
+	"direction": true,
+	"gap":       true,
+	"padding":   true,
+	"alignment": true,
+}
+
 // ValidateLayout runs the deep validation passes for a layout against an
 // adapter's componentVocabulary and tokens. Returns a list of structured
 // errors with stable codes for programmatic handling.
 //
+// The recursive descent walks LayoutNode.Children to arbitrary depth,
+// re-running every per-node check at every level.
+//
 // parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
 func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationError {
 	var errors []ValidationError
 	if adapter == nil || adapter.ComponentVocabulary == nil {
 		return errors
 	}
 	vocab := adapter.ComponentVocabulary
+
+	// (0) Schema-version check — reject layouts whose SchemaVersion does
+	// not match the version this build supports. Zero means
+	// "unspecified" and is treated as a no-op for backward compat with
+	// callers that never populate the field.
+	if layout.SchemaVersion != 0 && layout.SchemaVersion != SupportedLayoutSchemaVersion {
+		return []ValidationError{{
+			Code:    "layout-schema-version-unsupported",
+			Message: fmt.Sprintf("layout schemaVersion %d is not supported by this build (expected %d)", layout.SchemaVersion, SupportedLayoutSchemaVersion),
+			Context: "layout.schemaVersion",
+			Fix:     fmt.Sprintf("either downgrade the layout to schemaVersion %d, or run parlay upgrade to install a build that understands schemaVersion %d", SupportedLayoutSchemaVersion, layout.SchemaVersion),
+		}}
+	}
 
 	// (1) Version-mismatch fails fast before any component lookup.
 	if layout.Vocabulary != "" && layout.Vocabulary != vocab.Name {
@@ -332,6 +383,25 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 	}
 	declaredTypesList := strings.Join(declaredTypes, ", ")
 
+	// (1a) Universal-field-redeclared: surface whenever a vocabulary
+	// component declares a property whose name collides with the
+	// universal-container-fields set. The rule is owned by the
+	// adapter-parse path, but the layout validator surfaces it
+	// consistently when it crosses the layout boundary so callers see
+	// the same error code regardless of where the violation surfaces.
+	for _, c := range vocab.Components {
+		for _, p := range c.Properties {
+			if universalLayoutFields[p.Name] {
+				errors = append(errors, ValidationError{
+					Code:    "universal-field-redeclared",
+					Message: fmt.Sprintf("vocabulary component %q redeclares universal field %q which is owned by the layout schema", c.Type, p.Name),
+					Context: fmt.Sprintf("componentVocabulary.%s.properties.%s", c.Type, p.Name),
+					Fix:     fmt.Sprintf("remove %q from %q's properties — universal fields live on the layout node, not on the vocabulary component", p.Name, c.Type),
+				})
+			}
+		}
+	}
+
 	// Index spacing tokens for raw-value-where-token-required + unknown-token.
 	spacingNames := map[string]bool{}
 	spacingList := []string{}
@@ -343,16 +413,52 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 	}
 	spacingListStr := strings.Join(spacingList, ", ")
 
-	for _, node := range layout.Nodes {
+	// Recursive walk — descend into LayoutNode.Children to arbitrary
+	// depth, re-running the same per-node checks at every level.
+	walkLayoutNodesValidate(layout, layout.Nodes, "", componentByType, declaredTypesList, spacingNames, spacingListStr, &errors)
+	return errors
+}
+
+// nodeContext renders the Context: substring naming both node id and
+// the offending field (e.g., "node:header-row field:gap"). When the
+// node has no id, only the type appears — but every recently-authored
+// layout includes ids, and tests assert presence of "node:" prefix
+// when an id is set.
+func nodeContext(n LayoutNode, field string) string {
+	parts := []string{}
+	if n.ID != "" {
+		parts = append(parts, "node:"+n.ID)
+	}
+	if n.Type != "" {
+		parts = append(parts, "type:"+n.Type)
+	}
+	if field != "" {
+		parts = append(parts, "field:"+field)
+	}
+	return strings.Join(parts, " ")
+}
+
+func walkLayoutNodesValidate(layout *LayoutReference, nodes []LayoutNode, parentType string, componentByType map[string]*deepVocabularyComponent, declaredTypesList string, spacingNames map[string]bool, spacingListStr string, errors *[]ValidationError) {
+	for _, node := range nodes {
+		// Carry an effective parent type — when the caller explicitly
+		// set ParentType on the node, prefer it; otherwise inherit the
+		// recursion's parent.
+		effectiveParent := node.ParentType
+		if effectiveParent == "" {
+			effectiveParent = parentType
+		}
+
 		// (2) Unknown component type.
 		comp, ok := componentByType[node.Type]
 		if !ok {
-			errors = append(errors, ValidationError{
+			*errors = append(*errors, ValidationError{
 				Code:    "unknown-component",
-				Message: fmt.Sprintf("layout (%s) references component type %q which is not declared in vocabulary %s", layout.Vocabulary, node.Type, vocab.Name),
-				Context: fmt.Sprintf("layout.nodes.%s", node.Type),
+				Message: fmt.Sprintf("layout (%s) references component type %q which is not declared in vocabulary %s", layout.Vocabulary, node.Type, layout.Vocabulary),
+				Context: nodeContext(node, ""),
 				Fix:     fmt.Sprintf("either change the type to one of {%s} or add %q to the adapter's componentVocabulary", declaredTypesList, node.Type),
 			})
+			// Recurse anyway so deeper-level errors are still surfaced.
+			walkLayoutNodesValidate(layout, node.Children, node.Type, componentByType, declaredTypesList, spacingNames, spacingListStr, errors)
 			continue
 		}
 
@@ -366,10 +472,10 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 				}
 			}
 			if !variantOK {
-				errors = append(errors, ValidationError{
+				*errors = append(*errors, ValidationError{
 					Code:    "unknown-variant",
 					Message: fmt.Sprintf("layout references component %q with variant %q which is not in the closed enum {%s}", node.Type, node.Variant, strings.Join(comp.Variants, ", ")),
-					Context: fmt.Sprintf("layout.nodes.%s.variant", node.Type),
+					Context: nodeContext(node, "variant"),
 					Fix:     fmt.Sprintf("change the variant to one of {%s}", strings.Join(comp.Variants, ", ")),
 				})
 			}
@@ -382,24 +488,24 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 		}
 		for propName := range node.Properties {
 			if _, ok := propByName[propName]; !ok {
-				errors = append(errors, ValidationError{
+				*errors = append(*errors, ValidationError{
 					Code:    "unknown-property",
 					Message: fmt.Sprintf("layout references property %q on component %q which is not declared in the vocabulary", propName, node.Type),
-					Context: fmt.Sprintf("layout.nodes.%s.properties", node.Type),
+					Context: nodeContext(node, propName),
 					Fix:     "either add this property to the component's componentVocabulary entry, or remove the reference from the layout",
 				})
 			}
 		}
 
-		// (5) Disallowed child — checked when ParentType is set on the node.
-		if node.ParentType != "" {
-			parent, ok := componentByType[node.ParentType]
+		// (5) Disallowed child — checked when an effective parent type is known.
+		if effectiveParent != "" {
+			parent, ok := componentByType[effectiveParent]
 			if ok && parent.Category == "container" {
 				if !contains(parent.AllowedChildren, node.Type) {
-					errors = append(errors, ValidationError{
+					*errors = append(*errors, ValidationError{
 						Code:    "disallowed-child",
-						Message: fmt.Sprintf("layout places %q as a child of container %q whose allowed-children set is {%s} — %q is not in that set", node.Type, node.ParentType, strings.Join(parent.AllowedChildren, ", "), node.Type),
-						Context: fmt.Sprintf("layout.nodes.%s.parent=%s", node.Type, node.ParentType),
+						Message: fmt.Sprintf("layout places %q as a child of container %q whose allowed-children set is {%s} — %q is not in that set", node.Type, effectiveParent, strings.Join(parent.AllowedChildren, ", "), node.Type),
+						Context: nodeContext(node, "parent="+effectiveParent),
 						Fix:     fmt.Sprintf("either move the child under a container that allows it, or pick a child from {%s}", strings.Join(parent.AllowedChildren, ", ")),
 					})
 				}
@@ -409,27 +515,30 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 		// (6) Token references.
 		for _, tr := range node.TokenRefs {
 			if tr.RawValue {
-				errors = append(errors, ValidationError{
+				*errors = append(*errors, ValidationError{
 					Code:    "raw-value-where-token-required",
 					Message: fmt.Sprintf("layout uses raw value %q for %q on component %q — a token-reference is required (available spacing tokens: %s)", tr.Value, tr.Field, node.Type, spacingListStr),
-					Context: fmt.Sprintf("layout.nodes.%s.%s", node.Type, tr.Field),
+					Context: nodeContext(node, tr.Field),
 					Fix:     fmt.Sprintf("replace the literal with one of: %s", spacingListStr),
 				})
 				continue
 			}
 			if tr.Kind == "spacing" {
 				if !spacingNames[tr.Value] {
-					errors = append(errors, ValidationError{
+					*errors = append(*errors, ValidationError{
 						Code:    "unknown-token",
 						Message: fmt.Sprintf("layout uses %s token %q which is not declared (available: %s)", tr.Kind, tr.Value, spacingListStr),
-						Context: fmt.Sprintf("layout.nodes.%s.%s", node.Type, tr.Field),
+						Context: nodeContext(node, tr.Field),
 						Fix:     fmt.Sprintf("either change the value to one of {%s} or add %q to the adapter's tokens.%s section", spacingListStr, tr.Value, tr.Kind),
 					})
 				}
 			}
 		}
+
+		// Recurse into Children. The current node becomes the parent
+		// type for its children's disallowed-child checks.
+		walkLayoutNodesValidate(layout, node.Children, node.Type, componentByType, declaredTypesList, spacingNames, spacingListStr, errors)
 	}
-	return errors
 }
 
 // contains reports whether s contains v.

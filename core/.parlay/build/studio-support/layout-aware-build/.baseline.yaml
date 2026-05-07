@@ -1,0 +1,39 @@
+generated-at: "2026-05-07T19:03:24Z"
+intents:
+    define-a-starter-rule-set-extensible-per-project:
+        content-hash: 5d2c09017513caf4
+        goal-hash: cd836688dc3cbe17
+        constraints-hash: 5ceecc9b80f2e5ba
+        verify-hash: 800613e9f2197190
+        objects-hash: d684f54bbbe8ce33
+    headless-build-for-ci:
+        content-hash: e7a913e81a21176b
+        goal-hash: 46d2597f5b56fa93
+        constraints-hash: 58f82a9904503541
+        verify-hash: 8d3668b07474b5c6
+        objects-hash: b45fe321cadf905c
+    raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity:
+        content-hash: 6fb4d3df968a6e05
+        goal-hash: 4541a65b02055fdb
+        constraints-hash: 98d2b93fd8a7f13f
+        verify-hash: f1c5519ca77f09fb
+        objects-hash: 44df6ee624b11491
+    record-resolved-bindings-in-the-buildfile-with-traceability-triples:
+        content-hash: e647695bdc186e53
+        goal-hash: a698f53f9b28488d
+        constraints-hash: 3a615d711c9492e5
+        verify-hash: 0bef115ee9049ddd
+        objects-hash: 527ecfeaee77191b
+    run-a-two-pass-binding-resolution-during-build:
+        content-hash: 3b2398b9781f76db
+        goal-hash: bf18abc6d66bd5fc
+        constraints-hash: d31f9dfbd5a1546f
+        verify-hash: 9e2329fd3e9cb7e7
+        objects-hash: 9de845d89fd00802
+sources:
+    intents:
+        define-a-starter-rule-set-extensible-per-project: b9c93437f883f85b
+        headless-build-for-ci: 3d6711a2ac12921b
+        raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity: da50cfb85b0cca80
+        record-resolved-bindings-in-the-buildfile-with-traceability-triples: 90858b9cf706ade6
+        run-a-two-pass-binding-resolution-during-build: 363d2174a1fdaf12
