@@ -46,7 +46,7 @@ spec/                              ← Designer authors and reviews; engineering
 | `spec/intents/<feature>/intents.md` | `/parlay add-feature` | Yes — primary source | Feature creation |
 | `spec/intents/<feature>/dialogs.md` | `/parlay add-feature` (empty) → `/parlay create-dialogs` (scaffolded) | Yes — primary source | Intents authored |
 | `spec/intents/<feature>/surface.md` | `/parlay create-surface` | Review and adjust only | Dialogs authored |
-| `spec/intents/<feature>/domain-model.md` | `/parlay extract-domain-model` | Review and adjust | Intents and dialogs authored |
+| `spec/intents/<feature>/domain-model.md` | `/parlay create-domain-model` | Review and adjust | Intents and dialogs authored |
 | `.parlay/build/<feature>/design-spec.yaml` | `/parlay reference-design-spec` | No — tool internal (optional, from Figma) | Surface reviewed, Figma link available |
 | `.parlay/build/<feature>/buildfile.yaml` | `/parlay build-feature` | No — tool internal | Surface reviewed |
 | `.parlay/build/<feature>/testcases.yaml` | `/parlay build-feature` | No — tool internal | Surface reviewed |

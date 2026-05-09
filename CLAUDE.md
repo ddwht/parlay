@@ -10,7 +10,7 @@ All operations are available as /parlay-* slash commands.
 - `/parlay-build-feature` — Generate buildfile and testcases
 - `/parlay-collect-questions` — Collect open questions from intents
 - `/parlay-create-artifacts` — Determine and create surface.md, infrastructure.md, or both
-- `/parlay-extract-domain-model` — Extract domain model from all features
+- `/parlay-create-domain-model` — Create domain model from features
 - `/parlay-generate-code` — Generate prototype code from buildfile
 - `/parlay-generate-enggspec` — Generate engineering specification
 - `/parlay-load-domain-model` — Load and integrate external domain model
