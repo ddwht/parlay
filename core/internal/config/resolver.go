@@ -1,3 +1,6 @@
+// parlay-section: cross-cutting
+// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
+
 package config
 
 import (

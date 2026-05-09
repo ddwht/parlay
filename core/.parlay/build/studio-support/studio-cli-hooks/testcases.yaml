@@ -1,0 +1,561 @@
+feature: studio-support/studio-cli-hooks
+framework: Go stdlib testing
+
+suites:
+  - name: parlay status reports Studio detection
+    component: studio-status-line
+    fixture: studio-on-path
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: detected studio surfaces a status line with path and version
+        description: When parlay-studio is on PATH and executable, parlay status adds a "Studio detected" line including the binary path and version.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: element
+            target: studio-detected-line
+          - verify: text
+            target: studio-detected-line
+            expected: "Studio detected: /usr/local/bin/parlay-studio (version 1.4.0)"
+          - verify: visible
+            target: studio-detected-line
+            expected: true
+
+  - name: parlay status stays silent when Studio is absent
+    component: studio-status-line
+    fixture: studio-absent
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: absent studio produces no status line
+        description: On a machine without parlay-studio on PATH, no Studio-related output appears in normal commands.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: hidden
+            target: studio-detected-line
+            expected: true
+
+  - name: PARLAY_STUDIO env override is honored
+    component: studio-status-line
+    fixture: studio-env-override
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: env-overridden studio path reports as detected
+        description: PARLAY_STUDIO pointing at a custom path is preferred over PATH lookup; the custom path appears in the status line.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: text
+            target: studio-detected-line
+            expected: "Studio detected: /opt/parlay-studio-dev/parlay-studio (version 1.5.0-dev)"
+          - verify: state
+            target: StudioDetection.binary-path
+            expected: /opt/parlay-studio-dev/parlay-studio
+
+  - name: PARLAY_STUDIO empty string suppresses detection
+    component: studio-status-line
+    fixture: studio-env-empty-suppression
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: empty env value forces not-detected even when PATH has the binary
+        description: Setting PARLAY_STUDIO= (explicit empty) makes detection report not-detected regardless of PATH contents.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: hidden
+            target: studio-detected-line
+            expected: true
+          - verify: state
+            target: StudioDetection.detected
+            expected: false
+          - verify: state
+            target: StudioDetection.reason
+            expected: suppressed-by-env
+
+  - name: non-executable binary is treated as not-detected
+    component: studio-status-line
+    fixture: studio-not-executable
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: non-executable studio produces no permission error in normal output
+        description: A parlay-studio entry on PATH whose executable bit is unset is treated as "not detected" — no permission error is surfaced during normal commands.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: hidden
+            target: studio-detected-line
+            expected: true
+          - verify: state
+            target: StudioDetection.reason
+            expected: not-executable
+      - name: verbose mode surfaces the not-executable diagnostic
+        description: With --verbose, parlay status surfaces a one-line diagnostic explaining the not-executable reason.
+        steps:
+          - action: render
+            target: studio-status-line
+          - verify: element
+            target: not-executable-diagnostic
+          - verify: text
+            target: not-executable-diagnostic
+            expected: "studio: not detected (found at /usr/local/bin/parlay-studio but not executable)"
+
+  - name: version mismatch warning fires once per process
+    component: version-mismatch-warning
+    fixture: studio-version-mismatch
+    intent: "@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime"
+    cases:
+      - name: first detection of mismatched version emits the warning
+        description: When detected Studio version is outside the expected range, a single warning line is emitted on stderr at first successful detection.
+        steps:
+          - action: render
+            target: version-mismatch-warning
+          - verify: element
+            target: version-warning-line
+          - verify: text
+            target: version-warning-line
+            expected: "warning: parlay-studio version 0.9.0 is older than expected (need >=1.0.0); some hooks may not work."
+      - name: subsequent reads do not re-emit the warning
+        description: Once warning-emitted is true, the warning is suppressed for the rest of the process — the line does not re-appear.
+        steps:
+          - action: render
+            target: version-mismatch-warning
+          - action: wait
+            target: warning-emitted-flips-to-true
+          - action: render
+            target: version-mismatch-warning
+          - verify: hidden
+            target: version-warning-line
+            expected: true
+      - name: version-mismatched studio is still detected for hook purposes
+        description: A version mismatch never changes the Detected flag — hooks fire normally.
+        steps:
+          - action: render
+            target: version-mismatch-warning
+          - verify: state
+            target: StudioDetection.detected
+            expected: true
+
+  - name: create-domain-model brownfield studio prompt
+    component: studio-prompt-domain-model
+    fixture: trio-interactive-detected
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: brownfield wording fires when all three gates allow
+        description: Interactive TTY + Studio detected + no --no-studio produces a one-line "Open Studio's Domain Model Editor against this model? (y/N)" prompt after create-domain-model finishes.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - verify: element
+            target: prompt-line
+          - verify: text
+            target: prompt-line
+            expected: "Open Studio's Domain Model Editor against this model? (y/N) "
+          - verify: enabled
+            target: confirm-open-studio
+            expected: true
+      - name: confirming the prompt invokes parlay-studio domain-edit synchronously
+        description: On y, Core invokes parlay-studio domain-edit against the active root and waits for it to exit.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - action: input
+            target: prompt-line
+            value: "y"
+          - action: click
+            target: confirm-open-studio
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: domain-edit
+      - name: dismissing the prompt returns the trio command's normal exit code
+        description: On n (or default Enter), Core does not invoke Studio and exits with the trio command's own exit code.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - action: input
+            target: prompt-line
+            value: "n"
+          - action: click
+            target: dismiss-prompt
+          - verify: state
+            target: HookGate.studio-detected
+            expected: true
+
+  - name: create-domain-model greenfield studio prompt
+    component: studio-prompt-domain-model
+    fixture: domain-model-greenfield-prompt
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: greenfield wording differs from brownfield
+        description: When create-domain-model wrote an empty stub, the prompt reframes to "Empty domain model created — ready to author. Open Studio's Domain Model Editor? (y/N)".
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - verify: text
+            target: prompt-line
+            expected: "Empty domain model created — ready to author. Open Studio's Domain Model Editor? (y/N) "
+          - verify: state
+            target: HookPrompt.mode
+            expected: greenfield
+      - name: declining greenfield leaves the empty stub on disk
+        description: On n, Core proceeds normally — the empty stub stays on disk and the command returns successfully.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - action: input
+            target: prompt-line
+            value: "n"
+          - action: click
+            target: dismiss-prompt
+          - verify: file-exists
+            target: spec/domain-model.yaml
+
+  - name: create-artifacts studio prompt
+    component: studio-prompt-artifacts
+    fixture: artifacts-review-prompt
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: artifacts prompt fires after creation summary
+        description: After create-artifacts produces surface.md and/or infrastructure.md, the prompt offers Studio for review.
+        steps:
+          - action: render
+            target: studio-prompt-artifacts
+          - verify: text
+            target: prompt-line
+            expected: "Open Studio to review the produced artifacts? (y/N) "
+      - name: confirming invokes parlay-studio artifacts-review
+        description: On y, Core invokes the matching parlay-studio subcommand against the same active root and feature.
+        steps:
+          - action: render
+            target: studio-prompt-artifacts
+          - action: input
+            target: prompt-line
+            value: "y"
+          - action: click
+            target: confirm-open-studio
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: artifacts-review
+
+  - name: sync studio prompt
+    component: studio-prompt-sync
+    fixture: sync-reconcile-prompt
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: sync prompt fires after coverage and drift report
+        description: After parlay sync produces its report, the prompt offers Studio for visual reconciliation.
+        steps:
+          - action: render
+            target: studio-prompt-sync
+          - verify: text
+            target: prompt-line
+            expected: "Open Studio to reconcile this drift visually? (y/N) "
+      - name: confirming invokes parlay-studio reconcile
+        description: On y, Core invokes parlay-studio reconcile against the same active root and feature.
+        steps:
+          - action: render
+            target: studio-prompt-sync
+          - action: input
+            target: prompt-line
+            value: "y"
+          - action: click
+            target: confirm-open-studio
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: reconcile
+
+  - name: TTY interactivity gate suppresses prompt when output is piped
+    component: studio-prompt-domain-model
+    fixture: trio-non-interactive
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: non-TTY context emits no prompt text
+        description: When stdin and stdout are not both attached to a TTY, no "Open Studio?" line appears in any output stream.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - verify: hidden
+            target: prompt-line
+            expected: true
+      - name: trio commands run to completion without pausing
+        description: Non-interactive runs proceed exactly as a Studio-free environment would, regardless of detection.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - verify: state
+            target: HookGate.tty-interactive
+            expected: false
+
+  - name: --no-studio flag suppresses the prompt
+    component: no-studio-flag-domain-model
+    fixture: trio-no-studio-flag
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: --no-studio short-circuits before any prompt logic
+        description: parlay create-domain-model --no-studio runs its main work and exits without emitting any Studio prompt.
+        steps:
+          - action: render
+            target: no-studio-flag-domain-model
+          - action: click
+            target: toggle-no-studio
+          - verify: state
+            target: HookGate.no-studio-flag
+            expected: true
+      - name: flag help text is one line
+        description: The --no-studio help text is "skip the Studio open-editor prompt at the end".
+        steps:
+          - action: render
+            target: no-studio-flag-domain-model
+          - verify: text
+            target: flag-help
+            expected: "skip the Studio open-editor prompt at the end"
+
+  - name: --no-studio also added to create-artifacts
+    component: no-studio-flag-artifacts
+    fixture: trio-no-studio-flag
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: parlay create-artifacts honors --no-studio
+        description: The same flag silences the Studio prompt for the create-artifacts trio command.
+        steps:
+          - action: render
+            target: no-studio-flag-artifacts
+          - action: click
+            target: toggle-no-studio
+          - verify: state
+            target: HookGate.no-studio-flag
+            expected: true
+
+  - name: --no-studio also added to sync
+    component: no-studio-flag-sync
+    fixture: trio-no-studio-flag
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: parlay sync honors --no-studio
+        description: The same flag silences the Studio prompt for the sync trio command.
+        steps:
+          - action: render
+            target: no-studio-flag-sync
+          - action: click
+            target: toggle-no-studio
+          - verify: state
+            target: HookGate.no-studio-flag
+            expected: true
+
+  - name: trio commands without Studio detected emit no prompt
+    component: studio-prompt-domain-model
+    fixture: trio-studio-absent
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: studio not detected short-circuits the dispatch
+        description: When StudioDetection.detected is false, no hook prompt fires and the trio command produces only its normal output.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - verify: hidden
+            target: prompt-line
+            expected: true
+          - verify: state
+            target: HookGate.studio-detected
+            expected: false
+
+  - name: Studio launch failure surfaces a clear error and propagates non-zero exit
+    component: studio-launch-failure-line
+    fixture: studio-launch-failure
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: non-zero studio exit produces a clear error line on stderr
+        description: When Studio exits non-zero, Core surfaces "[ERR] parlay-studio <subcommand> exited with code N — see Studio's output above. Trio-command artifact completed before Studio launched and is on disk.".
+        steps:
+          - action: render
+            target: studio-launch-failure-line
+          - verify: element
+            target: failure-status
+          - verify: text
+            target: failure-status
+            expected: "[ERR] parlay-studio domain-edit exited with code 1 — see Studio's output above. Trio-command artifact completed before Studio launched and is on disk."
+      - name: trio command artifact is not rolled back on Studio failure
+        description: The trio command's prior artifact (e.g. domain-model.yaml) remains on disk after a Studio failure.
+        steps:
+          - action: render
+            target: studio-launch-failure-line
+          - verify: file-exists
+            target: spec/domain-model.yaml
+      - name: trio command exits non-zero so callers see the failure
+        description: Core's exit code reflects Studio's non-zero exit; declining the prompt would have produced the trio command's own (typically zero) exit code instead.
+        steps:
+          - action: render
+            target: studio-launch-failure-line
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 1
+
+  - name: declining a hook does not silence subsequent hooks
+    component: studio-prompt-domain-model
+    fixture: trio-interactive-detected
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: each hook fires fresh within the same shell session
+        description: Even after declining one trio prompt, the next trio command's prompt still fires — there is no per-session memory of y/N answers.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - action: input
+            target: prompt-line
+            value: "n"
+          - action: click
+            target: dismiss-prompt
+          - action: render
+            target: studio-prompt-artifacts
+          - verify: visible
+            target: prompt-line
+            expected: true
+
+  - name: excluded commands never prompt
+    component: studio-prompt-domain-model
+    fixture: trio-interactive-detected
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: parlay add-feature does not call dispatchStudioHook
+        description: Even with Studio detected, TTY, and no --no-studio, parlay add-feature exits without any Studio prompt.
+        steps:
+          - action: navigate
+            target: parlay-add-feature
+          - verify: hidden
+            target: prompt-line
+            expected: true
+      - name: parlay lock-page does not call dispatchStudioHook
+        description: Same exclusion — parlay lock-page never emits a Studio prompt.
+        steps:
+          - action: navigate
+            target: parlay-lock-page
+          - verify: hidden
+            target: prompt-line
+            expected: true
+
+  - name: skip-until-binary integration test for parlay-studio subprocess invocation
+    component: studio-prompt-domain-model
+    fixture: trio-interactive-detected
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: integration test exercises the real subprocess when parlay-studio is on PATH
+        description: |
+          End-to-end test that runs the actual invokeStudioSubprocess against a real parlay-studio binary
+          resolved on PATH. Verifies exit-code propagation (Studio's exit code surfaces as the trio
+          command's exit code), the failure-line wording on non-zero exit ("[ERR] parlay-studio
+          <subcommand> exited with code N — see Studio's output above. Trio-command artifact completed
+          before Studio launched and is on disk."), and the wait-and-resume contract (Core's process
+          blocks on the subprocess and returns control only after Studio exits). The test exercises the
+          `invokeStudioSubprocess` introduced by cross-cutting/studio-hook-shared-helper end-to-end,
+          not via mocks.
+        steps:
+          - action: render
+            target: studio-prompt-domain-model
+          - action: input
+            target: prompt-line
+            value: "y"
+          - action: click
+            target: confirm-open-studio
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: domain-edit
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 0
+      - name: integration test skips with a clear message when parlay-studio is absent from PATH
+        description: |
+          When parlay-studio is not resolvable on PATH (the current world until Studio ships), the test
+          calls t.Skip with the message "parlay-studio not on PATH" rather than passing trivially. The
+          skipped count surfaces the still-pending Studio dependency in test output. The test flips to
+          passing automatically once Studio is installed and reachable on PATH; no test code change is
+          required when Studio ships.
+        steps:
+          - action: wait
+            target: parlay-studio-absent-from-path
+          - verify: state
+            target: StudioDetection.detected
+            expected: false
+          - verify: state
+            target: StudioDetection.reason
+            expected: absent-from-path
+
+  - name: red contract test for parlay-studio subcommand names
+    component: studio-prompt-domain-model
+    fixture: trio-interactive-detected
+    intent: "@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points"
+    cases:
+      - name: parlay-studio honors the domain-edit subcommand
+        description: |
+          Contract test that asserts the installed parlay-studio binary recognizes the domain-edit
+          subcommand by invoking `parlay-studio domain-edit --help` and checking for a non-error exit.
+          The case is fail-hard red, NOT skipped, when parlay-studio is absent from PATH — the absence
+          is itself a contract violation while Studio is still pending. The case is also red when the
+          binary is present but the domain-edit subcommand is unhonored. The case goes green only
+          when parlay-studio is on PATH AND `parlay-studio domain-edit --help` exits non-error.
+          Distinguished from the skip-until-binary integration test above: that test cannot
+          meaningfully run without the binary, so skip is correct; this contract case asserts a fact
+          about the binary's existence, so absence is a fail. Replaces the self-referential behavior
+          of TestTrioToStudioSubcommandTable in spirit (the existing hard-coded-map sanity test stays
+          — it is the static check — but this case is the actual external contract check against the
+          binary).
+        steps:
+          - action: navigate
+            target: parlay-studio-domain-edit-help
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: domain-edit
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 0
+      - name: parlay-studio honors the artifacts-review subcommand
+        description: |
+          Contract case — invokes `parlay-studio artifacts-review --help` and checks for non-error
+          exit. Fail-hard red when parlay-studio is absent from PATH; also red when the binary is
+          present but the artifacts-review subcommand is unhonored. Green only when both conditions
+          hold.
+        steps:
+          - action: navigate
+            target: parlay-studio-artifacts-review-help
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: artifacts-review
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 0
+      - name: parlay-studio honors the reconcile subcommand
+        description: |
+          Contract case — invokes `parlay-studio reconcile --help` and checks for non-error exit.
+          Fail-hard red when parlay-studio is absent from PATH; also red when the binary is present
+          but the reconcile subcommand is unhonored. Green only when both conditions hold.
+        steps:
+          - action: navigate
+            target: parlay-studio-reconcile-help
+          - verify: state
+            target: StudioInvocation.subcommand
+            expected: reconcile
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 0
+      - name: contract test fails red when parlay-studio is absent from PATH
+        description: |
+          When parlay-studio is not resolvable on PATH, all three contract cases above FAIL — they do
+          NOT skip. The absence of parlay-studio from PATH is itself a contract violation while
+          Studio is still pending: the louder signal is intentional, because the subcommand-name
+          table inside Core is the single source of truth today and a yellow/skipped test would let
+          the contract drift unobserved. This case documents that dual-mode behavior at the suite
+          level: the test transitions from red (binary absent) to green (binary present and all
+          three subcommands honor `--help`) automatically once Studio ships and is on PATH; it never
+          passes via skip. The asserted exit code is non-zero to capture the red-when-absent
+          contract; once the binary lands, this case is superseded by the per-subcommand cases above
+          turning green.
+        steps:
+          - action: wait
+            target: parlay-studio-absent-from-path
+          - verify: state
+            target: StudioDetection.detected
+            expected: false
+          - verify: state
+            target: StudioDetection.reason
+            expected: absent-from-path
+          - verify: state
+            target: StudioInvocation.exit-code
+            expected: 1

@@ -173,9 +173,32 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 			res.ActiveRoot.Path, res.Source)
 	}
 
-	pctx := config.NewContext(res, idx)
+	// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
+	// Use the studio-detection-aware constructor so every command
+	// handler sees the per-process record of parlay-studio's
+	// availability without re-checking PATH or env. Detection is
+	// read-only — we never invoke Studio just to confirm.
+	pctx := config.NewContextWithStudioDetection(res, idx)
+	// One-line stderr warning at first successful detection when the
+	// reported Studio version is outside Core's expected range. The
+	// helper is sync.Once-guarded — every subsequent invocation in the
+	// same process is a no-op, so concurrent or repeated PreRun calls
+	// stay quiet.
+	emitStudioVersionWarningOnceFromCtx(pctx)
 	cmd.SetContext(config.WithCtx(cmd.Context(), pctx))
 	return nil
+}
+
+// emitStudioVersionWarningOnceFromCtx is a thin wrapper around
+// config.emitStudioVersionWarningOnce that pulls the StudioDetection
+// off the *Context. Defined here in package commands so tests of the
+// detection routine itself can call config.EmitStudioVersionWarningOnce
+// directly without dragging in cobra.
+func emitStudioVersionWarningOnceFromCtx(c *config.Context) {
+	if c == nil {
+		return
+	}
+	config.EmitStudioVersionWarningOnce(c.StudioDetection())
 }
 
 // mustContext extracts the resolved *config.Context from the command's

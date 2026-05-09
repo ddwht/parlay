@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T07:07:25Z"
+generated-at: "2026-05-09T09:04:07Z"
 files:
     core/internal/agent/precheck.go:
         component: ""
@@ -29,10 +29,13 @@ files:
         hash: 610a47a7e1c7c118
     core/internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
-        hash: 58fad3d31c6c3f39
+        hash: e84558e3c365e870
     core/internal/commands/create_dialogs.go:
         component: DialogGenerationReport
         hash: 404ef50964c52631
+    core/internal/commands/extract_domain_model.go:
+        component: ""
+        hash: 257c89df18fa81fe
     core/internal/commands/feature_phase.go:
         component: ""
         hash: 8c0d7690312f0a6e
@@ -66,6 +69,18 @@ files:
     core/internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
         hash: 726adf056f39e044
+    core/internal/commands/no_studio_flag_artifacts.go:
+        component: no-studio-flag-artifacts
+        hash: 322fbb28d7ec801b
+    core/internal/commands/no_studio_flag_domain_model.go:
+        component: no-studio-flag-domain-model
+        hash: 225f7605aea2c2b2
+    core/internal/commands/no_studio_flag_sync.go:
+        component: no-studio-flag-sync
+        hash: 62e5078ca58cbe31
+    core/internal/commands/no_studio_flag_test.go:
+        component: no-studio-flag-domain-model
+        hash: 53c67ed6af715a14
     core/internal/commands/parse.go:
         component: cross-root-reference-validation-error
         hash: e8d73a379882ae36
@@ -87,6 +102,42 @@ files:
     core/internal/commands/status.go:
         component: hierarchical-listing
         hash: 45eaf04f82ec2f5a
+    core/internal/commands/studio_hook.go:
+        component: ""
+        hash: 6c480f4c78821d60
+    core/internal/commands/studio_hook_test.go:
+        component: studio-hook-shared-helper
+        hash: 463b95c146f1a36c
+    core/internal/commands/studio_launch_failure_line.go:
+        component: studio-launch-failure-line
+        hash: a51034109781b492
+    core/internal/commands/studio_launch_failure_line_test.go:
+        component: studio-launch-failure-line
+        hash: 9cda7030eaf801cd
+    core/internal/commands/studio_prompt_artifacts.go:
+        component: studio-prompt-artifacts
+        hash: 1e40ea27d677bb8b
+    core/internal/commands/studio_prompt_domain_model.go:
+        component: studio-prompt-domain-model
+        hash: d4ecd16ddef2bd33
+    core/internal/commands/studio_prompt_domain_model_test.go:
+        component: studio-prompt-domain-model
+        hash: 9987570d30fbbeac
+    core/internal/commands/studio_prompt_sync.go:
+        component: studio-prompt-sync
+        hash: 07a57352c64774a7
+    core/internal/commands/studio_status_line.go:
+        component: studio-status-line
+        hash: ab5a2e6fbdb9eaba
+    core/internal/commands/studio_status_line_test.go:
+        component: studio-status-line
+        hash: 0e9f2a484e6572ee
+    core/internal/commands/studio_version_warning.go:
+        component: version-mismatch-warning
+        hash: 045d19d0eac14abf
+    core/internal/commands/studio_version_warning_test.go:
+        component: version-mismatch-warning
+        hash: 10c559eb896f5df5
     core/internal/commands/upgrade.go:
         component: upgrade-refresh-confirmation
         hash: 913c25b7d30f8626
@@ -101,13 +152,22 @@ files:
         hash: 7de6a1c071cc3749
     core/internal/config/config.go:
         component: ""
-        hash: 14dc78de972cd49f
+        hash: 72d29f1bd0eea713
     core/internal/config/config_test.go:
         component: directory-classification-validation
         hash: 7c1e6133a220780a
     core/internal/config/context_domain_model_test.go:
         component: extract-domain-model-output
         hash: dc7f6032b416660a
+    core/internal/config/resolver.go:
+        component: ""
+        hash: 0f3620b715ceb23e
+    core/internal/config/studio.go:
+        component: ""
+        hash: b9aeeeb9675c83af
+    core/internal/config/studio_test.go:
+        component: runtime-studio-detection
+        hash: b29bf27937210d94
     core/internal/config/topology.go:
         component: ""
         hash: d6ffb6d707e52c50

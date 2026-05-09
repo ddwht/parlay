@@ -1,3 +1,6 @@
+// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
+// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+
 package commands
 
 // Generated from buildfile component: coverage-report
@@ -19,6 +22,14 @@ var syncCmdImpl = &cobra.Command{
 	Short: "Check intent-dialog coverage",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSync,
+}
+
+func init() {
+	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+	// --no-studio: skip the Studio open-editor prompt at the end.
+	syncCmdImpl.Flags().BoolVar(
+		&noStudioFlagSync, "no-studio", false, noStudioFlagHelpText,
+	)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -124,22 +135,31 @@ func runSync(cmd *cobra.Command, args []string) error {
 		switch choice {
 		case "A":
 			// Action: generate-all (file-operation, enabled-when: selected == A)
-			return appendDialogTemplates(uncoveredIntents, dialogsPath)
+			if err := appendDialogTemplates(uncoveredIntents, dialogsPath); err != nil {
+				return err
+			}
 
 		case "B":
 			// Action: pick-specific (selection → lettered-prompt, enabled-when: selected == B)
 			selected := promptForSelection(uncoveredIntents, reader)
 			if len(selected) > 0 {
-				return appendDialogTemplates(selected, dialogsPath)
+				if err := appendDialogTemplates(selected, dialogsPath); err != nil {
+					return err
+				}
+			} else {
+				fmt.Println("No intents selected.")
 			}
-			fmt.Println("No intents selected.")
 
 		case "C":
 			// Action: dismiss (enabled-when: selected == C) — no-op
 		}
 	}
 
-	return nil
+	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
+	// Hook-point dispatch — fires after the textual sync report is
+	// produced and after any template-prompt branch has run.
+	noStudio := resolveNoStudioForSync(loadProjectConfigNoStudio(cfg))
+	return runStudioPromptForSync(cfg, args[0], noStudio)
 }
 
 func promptForSelection(intents []parser.Intent, reader *bufio.Reader) []parser.Intent {

@@ -4,6 +4,7 @@
 // parlay-extends: initiatives/directory-classification-validation
 // parlay-extends: initiatives/duplicate-slug-detection
 // parlay-extends: initiatives/cross-tree-traversal-consistency
+// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 
 package config
 
@@ -21,6 +22,15 @@ type ProjectConfig struct {
 	AIAgent            string `yaml:"ai-agent"`
 	SDDFramework       string `yaml:"sdd-framework"`
 	PrototypeFramework string `yaml:"prototype-framework"`
+
+	// NoStudio mirrors the parlay.no_studio key in
+	// .parlay/config.yaml: when true, the trio-command Studio prompt
+	// is suppressed for every invocation in this project, regardless
+	// of the --no-studio flag. The merge with the per-invocation
+	// flag is logical OR — either source suppresses the prompt.
+	//
+	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+	NoStudio bool `yaml:"no_studio,omitempty"`
 }
 
 const (

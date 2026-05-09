@@ -30,12 +30,12 @@
 
 ## Prompt to Open Studio at Workflow Hand-Off Points
 
-**Goal**: When the designer reaches a point in Core's workflow where Studio's tools are appropriate — reviewing a domain model, locking down a page's layout — Core offers a one-line prompt to hand off to Studio rather than requiring the designer to remember the right command.
+**Goal**: When the designer reaches one of three specific points in Core's design loop — authoring or refreshing a domain model, reviewing produced artifacts, reconciling spec drift via `parlay sync` — Core offers a one-line prompt to hand off to Studio rather than requiring the designer to remember the right command.
 **Persona**: UX Designer
 **Priority**: P1
 **Context**: Without hooks, designers either know the Studio command incantation by heart or never use Studio. The architecture (§2) commits to "Core prompts 'open editor?'" at appropriate points; this intent decides which points and what the prompts look like.
-**Action**: At specific Core CLI commands' completion, check the runtime-detection flag and the workflow context, and emit a one-line "Open Studio? (y/N)" style prompt. On confirmation, Core invokes the appropriate `parlay-studio` subcommand with the active root and feature/page context wired through. On dismissal or non-interactive runs, Core proceeds as today.
-**Objects**: hook-point, prompt, parlay-studio-subcommand, workflow-context
+**Action**: At the completion of each command in the **design-loop trio** — `parlay create-domain-model`, `parlay create-artifacts`, `parlay sync` — check the runtime-detection flag and the workflow context, and emit a one-line "Open Studio? (y/N)" style prompt. On confirmation, Core invokes the appropriate `parlay-studio` subcommand with the active root and feature/page context wired through. On dismissal or non-interactive runs, Core proceeds as today.
+**Objects**: hook-point, prompt, parlay-studio-subcommand, workflow-context, design-loop-trio
 
 **Constraints**:
 - Hooks are one-line prompts, not multi-step wizards. Designers stay in the terminal flow they were already in
@@ -43,17 +43,24 @@
 - Each hook respects an opt-out flag (`--no-studio` on the parent command, or a config setting) so designers who never want the prompt can silence it permanently
 - Confirmed hook hand-offs run Studio in the same terminal — Core's process waits for Studio to exit, then resumes — rather than spawning a detached process the designer has to track
 - If the Studio invocation fails (Studio crashes, exits non-zero), Core surfaces the error without rolling back any prior Core work that was completed before the prompt
-- Hook trigger points are conservative initially — start with the points where the architecture explicitly calls them out (§2) and expand based on real workflows, not speculation
+- The starter set is exactly the design-loop trio: `parlay create-domain-model`, `parlay create-artifacts`, and after `parlay sync`. `parlay add-feature` and `parlay lock-page` are explicitly excluded from the starter set — `add-feature` is too early in the workflow (no content to edit yet) and `lock-page` is rarely run interactively in the design loop. Expansion to additional commands is deferred to real-workflow evidence
+- The `create-domain-model` hook handles two modes against a single command. **Brownfield** (extractable signals or an existing model present): the hook offers Studio to edit the freshly produced model. **Greenfield** (no model and no extractable signals): the command creates an empty stub and the hook is framed as "ready to author — open Studio?" rather than as a soft offer
+- Each hook always asks — there is no per-session memory of prior y/N answers. Detection + TTY + `--no-studio` remain the only gates on whether the prompt fires
 
 **Verify**:
-- Running `parlay create-domain-model` (or whatever the relevant command is) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor; declining proceeds normally
-- The same command on a project without Studio detected does not show the prompt
-- Confirming the prompt invokes `parlay-studio domain-edit` against the same active root, with Core waiting for it to exit
-- Passing `--no-studio` to the parent command skips the prompt regardless of detection
-- Running the parent command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+- Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+- Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+- Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+- Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+- Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+- The same trio commands on a project without Studio detected do not show any prompt
+- Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+- Passing `--no-studio` to any trio command skips the prompt regardless of detection
+- Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+- Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+- An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+- A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary's existence, so absence is a fail
 
-**Questions**:
-- Q5 from the v4 spec: which Core commands get hooks? Candidates: `parlay add-feature`, `parlay extract-domain-model`, `parlay create-artifacts`, after `parlay sync`. Decide the starter set during dialog authoring; expand later
-- Should the prompt remember the designer's prior answer for a session and stop asking, or always ask? Always-ask is simplest; remember-for-session is friendlier. Pick during dialog authoring
+**Note**: This intent presupposes a CLI rename from `parlay extract-domain-model` to `parlay create-domain-model` (with the new command spanning both extraction-from-signals and empty-stub creation). The rename itself is out of scope for this feature and is tracked separately. Affected surfaces include other intents under `parlay-tool/domain-model` and `parlay-tool/multi-root`, the `qualified-identifier-resolver` intents, the `studio-support/domain-model-yaml-migration` feature, and the deployer / embedded skills / embedded schemas / CLI command registration that ship the current command name.
 
 ---
