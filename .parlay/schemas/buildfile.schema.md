@@ -2,6 +2,8 @@
 parlay-section: cross-cutting
 parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
 parlay-extends: parlay-tool/cross-cutting-target-paths/buildfile-schema-doc-routing-and-target-creates
+parlay-extends: studio-support/layout-aware-build/starter-rule-set-and-project-extension
+parlay-extends: studio-support/layout-aware-build/buildfile-bindings-section
 -->
 
 # Buildfile Schema
@@ -98,6 +100,35 @@ cross-cutting:
       - <new functions/types being added — with optional signatures>
     caching: <caching strategy — tree-scan-on-first-access, none, per-process>
     backward-compatible: <true | false>
+
+wiring:
+  rules:
+    - name: <rule identifier — unique within this section>
+      match: <predicate over layout-node properties + surface fragment fields + domain element shape>
+      bind:
+        layout_node: <stable layout-node id reference>
+        surface_fragment: <@feature/fragment-slug>
+        domain_element: <@feature/entity[.field] | @feature/operation>
+      precedence: <integer — higher wins on conflict>
+      confidence: rules
+
+bindings:
+  <feature-slug>:
+    <page-path>:
+      <layout-node-path>:
+        layout_node: <stable layout-node id>
+        surface_fragment: <@feature/fragment-slug>
+        domain_element: <@feature/entity[.field] | @feature/operation>
+        presentation:
+          <hint-name>: <hint-value typed against the active adapter's componentVocabulary and tokens>
+        confidence: <rules | ai | designer>
+        provenance:
+          rule: <starter/<name> | project/<name>>      # when confidence: rules
+          ai-session: <AI session/run identifier>      # when confidence: ai
+          recorded-at: <timestamp>                     # when confidence: designer
+          candidates:                                  # when confidence: designer — list at moment of selection
+            - ref: <@feature/operation | @feature/entity[.field]>
+              ai-confidence: <number>
 
 plan:
   modifies:
@@ -197,6 +228,68 @@ plan:
 Listing the same path in both `target-files:` and `target-creates:` is rejected with the `cross-cutting-target-double-listed` error — pick one.
 
 The section is optional. Buildfiles without it remain valid. When present, entries follow the same diff lifecycle as components: `parlay diff` classifies each as stable/dirty/removed.
+
+## Wiring section
+
+The `wiring:` section is the only place project-specific layout-binding rules live. It is a peer to `models`, `fixtures`, `routes`, `components`, `cross-cutting`, `bindings`, and `source-signatures`. The shape is closed — fields outside this list are rejected.
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Rule identifier, unique within `wiring.rules:`; recorded with the bound entry as `project/<name>` when this rule fires |
+| `match` | Yes | Predicate over layout-node properties + surface fragment fields + domain element shape — the rule fires when the predicate is true |
+| `bind` | Yes | Source triple to record: `layout_node`, `surface_fragment`, `domain_element` |
+| `precedence` | Yes | Integer; higher wins on conflict |
+| `confidence` | Yes | Always `rules` — Pass-1 rule outcomes never produce `ai` or `designer` confidence |
+
+**Merge semantics.** At build time the agent unions the **starter rule set** (built into the build-feature skill's vocabulary) with the project-specific rules in `wiring.rules:`, applies them in precedence order, and records each fired rule with its name (`starter/<name>` for built-in rules, `project/<name>` for entries declared here) under the resulting binding's `provenance.rule:` field.
+
+**Starter rule set.** The starter rules are not enumerated in this schema — they are part of the build-feature skill's vocabulary. Three families cover the common cases: structural-hint matches, action-verb matches, single-candidate matches. Adding or removing a starter rule requires a build-feature schema bump.
+
+**Rule-load-time validation.** Before Pass 1 runs, the build-feature skill checks every merged rule for:
+
+- `rule-conflict` — two rules at the same precedence produce different bindings; the build errors with both rule names.
+- `rule-precedence-error` — a project rule attempts to silently disable a starter rule by sitting below it. Projects can override starter rules at higher precedence, but cannot place rules below them.
+- `rule-load-error` — a rule's `match` predicate references a domain field that does not exist in the active feature's domain.
+- `rule-termination-error` — a rule's `bind` output would re-trigger another rule (or itself); termination is checked statically, not at match time.
+
+**Backward compatibility.** The section is optional. Buildfiles without `wiring:` remain valid — the build agent applies only the starter rule set in that case.
+
+## Bindings section
+
+The `bindings:` section records every resolved layout-node-to-domain-element decision the build pipeline made. It is a peer to `models`, `fixtures`, `routes`, `components`, `cross-cutting`, `wiring`, and `source-signatures`. Codegen consumes this section directly; it never re-litigates a binding decision.
+
+The section is keyed three levels deep: `<feature> → <page-path> → <layout-node-path>`. Each leaf entry records:
+
+| Field | Required | Description |
+|---|---|---|
+| `layout_node` | Yes | Stable layout-node id (referenced by id, not by path) |
+| `surface_fragment` | Yes | `@feature/fragment-slug` reference into the surface |
+| `domain_element` | Yes | `@feature/entity[.field]` or `@feature/operation` reference |
+| `presentation` | No | Map of presentation hints typed against the active adapter's `componentVocabulary` and tokens (e.g. `presentation: badge`, `tone: status-color`). Unknown hints raise an `unknown-presentation-hint` build-time error at finalize, not a deferred-to-codegen problem. |
+| `confidence` | Yes | Exhaustive enum: `rules`, `ai`, or `designer`. Every binding has exactly one. |
+| `provenance` | Yes | Per-confidence-kind details. See below. |
+
+**Provenance fields by confidence kind.**
+
+- `rules` → `rule:` is the firing rule's qualified name (`starter/<name>` or `project/<name>`).
+- `ai` → `ai-session:` is the AI session/run identifier.
+- `designer` → `recorded-at:` is the timestamp of the choice; `candidates:` is the candidate list at the moment of selection (each entry an `(ref, ai-confidence)` pair).
+
+**Validity rules.**
+
+- Every layout-bearing-page node MUST have a `bindings:` entry. A buildfile produced for a feature whose pages contain layout nodes is **invalid** if any such node has no entry.
+- `confidence:` is closed-set — `rules`, `ai`, `designer`. Any other value rejects the buildfile.
+- Presentation hints are typed against the active adapter; unknown hints are a build error at finalize time.
+
+**Lifecycle.**
+
+- Bindings are layout-derived: removing a layout node removes its binding entry on the next build run.
+- Renaming a layout-node `id` drops the old entry and triggers fresh Pass-1-then-Pass-2-then-prompt-as-needed resolution; it never silently re-binds.
+- Bindings are feature-scoped — one feature's buildfile carries entries only for that feature's pages.
+
+**Backward compatibility (Backward-Compatible: NO).** This section is a new top-level addition that older buildfiles will not have. Existing buildfiles without `bindings:` need to be regenerated via `parlay build-feature`, not patched in place. The build-feature skill writes this section in its "Emit bindings section" finalize step (after every layout-node decision is final, before commit) and refuses to commit a buildfile that fails the validity check.
+
+**Freshness gate cross-reference.** Bindings are part of the buildfile that codegen reads. The freshness gate's `source-signatures:` cover the layout, surface, and domain inputs that drive binding resolution — a change in any of them invalidates the buildfile and forces a rebuild.
 
 ## Plan section
 

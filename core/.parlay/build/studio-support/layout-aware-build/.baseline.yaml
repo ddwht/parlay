@@ -1,4 +1,4 @@
-generated-at: "2026-05-07T20:38:59Z"
+generated-at: "2026-05-09T07:07:25Z"
 intents:
     define-a-starter-rule-set-extensible-per-project:
         content-hash: 5d2c09017513caf4
@@ -37,3 +37,15 @@ sources:
         raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity: da50cfb85b0cca80
         record-resolved-bindings-in-the-buildfile-with-traceability-triples: 90858b9cf706ade6
         run-a-two-pass-binding-resolution-during-build: 363d2174a1fdaf12
+    dialogs:
+        define-a-starter-rule-set-extensible-per-project: 2c99708450cd6697
+        headless-build-for-ci: 7e55f414ae63f8a5
+        raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity: f91662853fdc9b70
+        record-resolved-bindings-in-the-buildfile-with-traceability-triples: 1ca6abb9d5530822
+        run-a-two-pass-binding-resolution-during-build: 57fdb28a72a323ed
+    surface-fragments:
+        disambiguation-prompt: 4b52eeaea5722314
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 89d11a0d310813da

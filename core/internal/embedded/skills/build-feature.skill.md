@@ -1,3 +1,13 @@
+<!--
+parlay-section: cross-cutting
+parlay-extends: studio-support/layout-aware-build/disambiguation-prompt
+parlay-extends: studio-support/layout-aware-build/two-pass-binding-resolution
+parlay-extends: studio-support/layout-aware-build/starter-rule-set-and-project-extension
+parlay-extends: studio-support/layout-aware-build/interactive-disambiguation-choice-recording
+parlay-extends: studio-support/layout-aware-build/buildfile-bindings-section
+parlay-extends: studio-support/layout-aware-build/headless-build-mode
+-->
+
 # Build Feature
 
 Generate buildfile.yaml and testcases.yaml for a feature using the configured framework adapter.
@@ -72,6 +82,106 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
    For purely-introducing cross-cuttings (a new package is genuinely warranted), pick a path consistent with the adapter's `file-conventions.source-root` and naming rules, and list it in `plan.creates`. The agent is responsible for the choice; record it explicitly in `plan` rather than letting generate-code guess.
 
+7.6. **Detect interactive vs headless mode** — Before any Pass-2 work that might prompt, decide once whether this run is interactive or headless. The skill MUST consult both signals:
+   - **TTY check** on the controlling stdin.
+   - **Explicit `--non-interactive` flag** on the `parlay build-feature` invocation.
+
+   The flag wins over TTY detection in BOTH directions: with `--non-interactive` set, the skill runs as if headless even when a TTY is attached (so a developer can test CI behavior locally); without it, a missing TTY still triggers headless behavior automatically. Record the resolved mode for the rest of the run; per-node fallback is not allowed.
+
+7.7. **Resolve layout bindings (two-pass)** — For every layout-bearing page in the active feature, after layouts are loaded and surface + domain are read, walk every layout node that consumes data or emits an action through two ordered passes.
+
+   **Rule load.** Compute the active rule set: starter rules merged with project rules from the existing buildfile's `wiring.rules:` (if present). The starter rule set is the only other source; no rules are loaded from surface, domain, layout, or any other artifact. Apply rule-load-time checks before Pass 1 runs:
+
+   - `rule-conflict` — two rules at the same precedence produce different bindings → build error naming both rule definitions.
+   - `rule-precedence-error` — a project rule placed below a starter rule for the same match → `rule-precedence-error: project rule <name> attempts to silently disable starter rule <starter-name>. Projects can override starter rules at higher precedence, but cannot place rules below them.`
+   - `rule-load-error` — a rule's `match` predicate references a non-existent domain field → `rule-load-error: rule <name> references domain field <Task.priority> that does not exist in the active feature's domain.`
+   - `rule-termination-error` — a rule's `bind` output would re-trigger another rule (or itself) → `rule-termination-error: rule <name> produces a binding that re-triggers <other-rule-name>` — checked statically, not at match time.
+
+   **Starter rule set vocabulary** — three families cover the common cases:
+   - **structural-hint matches**: a layout-node property like `contentShape: badge` maps to a matching surface Show field.
+   - **action-verb matches**: a button label or aria semantics combined with a surface `Action` maps to a domain operation.
+   - **single-candidate matches**: when surface declares exactly one Action and the domain has exactly one operation of matching shape, the binding is unambiguous.
+
+   Adding or removing a starter rule requires a build-feature schema bump.
+
+   **Pass 1 — deterministic rules:**
+   - Apply rules in precedence order (highest first).
+   - **Single match** — record the binding with `confidence: rules` and the firing rule's qualified name (`starter/<name>` or `project/<name>`).
+   - **Zero matches with a binding-expecting layout shape** (e.g. a `clarity.datagrid` with no Show fragment) — emit `orphan-layout-node` build-time error. Do NOT escalate to Pass 2; never invent a binding from nothing.
+   - **Zero matches with a non-binding-expecting shape, OR multiple matches at distinct precedences** — escalate to Pass 2 with the Pass-1 candidate set (possibly empty for the orphan-eligible shape).
+
+   **Pass 2 — AI matcher:**
+   - Invoked ONLY on nodes that Pass 1 did not resolve unambiguously. Pass 2 must never run on a Pass-1-resolved node.
+   - Receives exactly the candidate set Pass 1 produced (or the empty set for orphan-eligible shapes). The matcher never invents candidates outside this set.
+   - **Inference is bounded to the active feature**: cross-feature surface fragments and domain elements are NEVER candidates.
+   - **Single high-confidence pick** — record the binding with `confidence: ai`, the AI session/run identifier, and the candidate list at the moment of decision.
+   - **Multiple candidates within the configurable confidence threshold**:
+     - In **interactive mode**: transfer control to the disambiguation prompt (see step 7.8).
+     - In **headless mode**: emit `ambiguous-binding` build-time error (see step 7.9). Never block waiting for input.
+
+   **Determinism contract.** Re-running build on identical inputs records bindings whose source triples are stable. Lexical AI reasoning text may differ run-to-run; the recorded triple `(layout_node, surface_fragment, domain_element)` is what defines the decision deterministically.
+
+   **AI participation rule.** AI participation in a binding decision happens at build time only. Codegen reads the buildfile's `bindings:` section and never invokes the rules engine, the AI matcher, or the disambiguation prompt.
+
+7.8. **Interactive disambiguation prompt** (interactive mode only) — When Pass 2 leaves ambiguity in interactive mode (TTY present, `--non-interactive` not set), pause per-node and surface the prompt described by the `disambiguation-prompt` surface fragment. Multiple ambiguities in one run produce prompts one at a time in deterministic `(page-path, node-path)` lexicographic order — not as a batched multi-select.
+
+   **Prompt format (fixed):**
+
+   ```
+   ambiguous binding at:
+     <page-path> > <layout-node-path> ("<node-label>")
+   candidates:
+     [1] <domain-element-ref>  (ai-confidence: <value>)
+     [2] <domain-element-ref>  (ai-confidence: <value>)
+     ...
+     [q] quit (abort build, exit non-zero)
+     [s] skip (record as `unresolved`, continue, buildfile will be invalid)
+   choose >
+   ```
+
+   The prompt component (slug `disambiguation-prompt`) is a fragment of this skill's interactive flow — it does NOT produce a standalone CLI file. Its emission point is this subsection of build-feature.
+
+   **Three input shapes accepted:**
+
+   - **Numeric digit** — selects a candidate. Record the chosen binding with `confidence: designer`, the source triple, the timestamp of the choice, and the candidate list as it existed at the moment of selection. Continue to the next ambiguity (or complete the build if none remain).
+   - **`q` (quit)** — abort the build with a non-zero exit code. No partial buildfile is written; recorded choices made earlier in the same run are also discarded. The buildfile-output directory is left consistent with "no run produced these files."
+   - **`s` (skip)** — record the binding as `unresolved` and continue the build. The resulting buildfile fails its own validity check (signaling that codegen should refuse to consume it), but lets the designer collect multiple decisions before re-running. End-of-run summary lists every `unresolved` binding.
+
+   **Persistence and lifecycle.**
+
+   - A recorded `confidence: designer` binding is read as authoritative on subsequent build runs as long as its **candidate list is unchanged** (same domain operations, same surface action shape, same layout node).
+   - A change in the candidate list (operation rename, removal, addition; surface action shape change) invalidates the recorded choice and re-triggers the prompt with the updated list. The recorded candidate list is what determines invalidation, not the AI confidence values.
+   - Recorded choices live in the buildfile only — never in surface, domain, or layout artifacts. Designer decisions are build-time state, not authoring artifacts.
+   - Adding a new ambiguous node to the layout produces a fresh prompt for that node only; previously recorded choices for unchanged nodes are preserved.
+
+7.9. **Headless ambiguity error** (headless mode only) — In headless mode (TTY absent OR `--non-interactive` set), Pass-2 ambiguity that would have surfaced the disambiguation prompt instead emits `ambiguous-binding` to stderr in the format:
+
+   ```
+   ambiguous-binding at <feature> > <page> > <node-path>:
+     candidates:
+       <domain-element-ref>  (ai-confidence: <value>)
+       <domain-element-ref>  (ai-confidence: <value>)
+     expected: exactly one match
+     to fix: rename the layout-node label to disambiguate, narrow the surface Action that maps to this node,
+             add a wiring rule under wiring.rules, or run `parlay build-feature` interactively
+             to record a designer choice.
+   ```
+
+   Exit code: **non-zero**. The error never blocks waiting for input.
+
+   **Mode-invariant errors.** `orphan-layout-node` and `removed-field-referenced` errors behave identically across modes — actionable error message plus non-zero exit. They never gate on the disambiguation prompt; they fire whether or not a TTY is attached.
+
+   **Pass 2 AI inference is still allowed in headless mode** — only the escalation-to-prompt path is rejected. A node where Pass 2 returns a single high-confidence candidate records the binding with `confidence: ai` and continues.
+
+   **Recorded designer choices** from prior interactive runs are read as authoritative in headless mode and are not re-prompted, as long as their candidate lists are unchanged.
+
+   **Atomicity invariant.** The non-interactive path NEVER writes a partial buildfile. Either the buildfile is committed whole or nothing reaches the output directory. If any binding cannot be resolved on any layout-bearing page, the buildfile-output directory is left in a state consistent with "no run produced these files." Implementations have flexibility (atomic temp-file-rename, in-memory accumulation then single write, write-then-fsync-then-rename); the invariant is "either fully committed or not present," not a specific mechanism.
+
+   **CI contract:**
+   - Process exit code is the source of truth: zero on success, non-zero on any error path.
+   - CI scripts MUST NOT pattern-match stdout/stderr text. Wording may change across versions; only the exit code is stable.
+   - Two CI workers running against the same source state produce buildfiles whose recorded source triples are identical for every binding (including any AI-resolved ones). Lexical AI reasoning text may differ; the recorded triples are stable.
+
 8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:` and `adapter:` fields
    - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
@@ -114,6 +224,12 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - `plan.creates` — one entry per `components:` whose generated file path doesn't already exist (the typical case for new component files). One entry per cross-cutting whose `target-files:` is empty (purely-introducing). `sources` cites the producing component or cross-cutting id.
      - `plan.deletes` — one entry per id in `components.removed[]` from the diff. `sources` cites the removed component id.
      - The plan is required for new buildfiles. Do not emit a buildfile without `plan:` — `/parlay-generate-code` will reject it.
+   - **Preserve the `wiring:` section verbatim.** Project-specific binding rules live in `wiring.rules:` (see buildfile.schema.md). Carry the existing section through unchanged from the prior buildfile (the rules are designer-authored intent, not build-time state). When no prior buildfile exists, omit the section — the build agent applies only the starter rule set.
+   - **Emit the `bindings:` section** — finalize step. After every layout-node decision is final (rules / ai / designer) from steps 7.7–7.9 and before the buildfile is committed, write one entry per layout-bearing-page node. Each entry carries the source triple, presentation hints typed against the active adapter, the `confidence:` annotation (`rules` / `ai` / `designer`), and provenance (rule name / AI session / timestamp + recorded candidate list). Run the validity check before committing:
+     - Every layout-bearing-page node has a `bindings:` entry.
+     - Presentation hints are known to the active adapter — unknown hints raise `unknown-presentation-hint` at finalize time, not deferred to codegen.
+     - `confidence:` is one of the three permitted values.
+     - Refuse to commit a buildfile that fails any of these checks.
 
 9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
