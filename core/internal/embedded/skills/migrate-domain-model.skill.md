@@ -44,7 +44,7 @@ This skill reads ONLY from these locations:
 
 The skill does **not** read `spec/intents/**`. The markdown form is the
 source of truth for this one-shot migration; feature intents are
-handled by `parlay extract-domain-model`.
+handled by `parlay create-domain-model`.
 
 ## Steps
 

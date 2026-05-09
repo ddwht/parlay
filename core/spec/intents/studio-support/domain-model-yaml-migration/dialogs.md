@@ -134,7 +134,7 @@ Decision deferred — see Questions section of `intents.md`.
 
 **Trigger**: A designer runs the existing extraction or load commands after upgrading to a Core release that uses YAML.
 
-User: Runs `parlay extract-domain-model` on a project with feature intents and dialogs.
+User: Runs `parlay create-domain-model` on a project with feature intents and dialogs.
 System: Performs the AI extraction pass over all features and writes a single `domain-model.yaml` at the project (active-root) level — not per-feature. The YAML includes every entity, enum, relationship, and operation the extraction surfaced. Existing per-feature `domain-model.md` files (from the pre-migration world) are not touched and not re-emitted.
 
 User: Runs `parlay load-domain-model <path-or-url>` against a YAML produced by another project.
@@ -142,7 +142,7 @@ System: Parses the YAML, validates it against the local schema, and merges into 
 
 #### Branch: extract no longer emits markdown
 
-User: Looks for a fresh `domain-model.md` after running `parlay extract-domain-model`.
+User: Looks for a fresh `domain-model.md` after running `parlay create-domain-model`.
 System: There is none. Extract writes only YAML. Any `.md` present in the project is a pre-migration artifact left behind by `parlay migrate-domain-model` and is never re-emitted by extract — even as a fallback when the YAML write fails (in that case extract exits non-zero without writing anything).
 
 #### Branch: extract is project-level, not per-feature
@@ -182,12 +182,12 @@ System: Pauses the merge and presents the designer with a side-by-side: incoming
 
 #### Branch: round-trip across projects
 
-User: Runs `parlay extract-domain-model` in project A, copies the YAML to project B, runs `parlay load-domain-model ./from-a.yaml` in B.
+User: Runs `parlay create-domain-model` in project A, copies the YAML to project B, runs `parlay load-domain-model ./from-a.yaml` in B.
 System: B's `domain-model.yaml` ends up structurally equivalent to A's (same entities, enums, relationships, operations), modulo any disambiguation choices the designer made on conflicts. This round-trip is the regression test for the format.
 
 #### Branch: extract on a project still on markdown
 
-User: Runs `parlay extract-domain-model` in a project that has `domain-model.md` but no YAML yet (skipped the migration).
+User: Runs `parlay create-domain-model` in a project that has `domain-model.md` but no YAML yet (skipped the migration).
 System: Treats this as a fresh extraction — writes `domain-model.yaml` from feature intents and dialogs as if the `.md` were not there. The pre-existing `.md` is not consulted; the designer should run `parlay migrate-domain-model` first if the markdown carried hand-authored content not derivable from intents.
 
 ---

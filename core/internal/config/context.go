@@ -276,9 +276,9 @@ func (c *Context) LegacyDomainModelMarkdownPath() string {
 // ErrNoDomainModel is the sentinel returned by LoadDomainModel when
 // neither domain-model.yaml nor (post-migration) any other source is
 // available. Callers translate this into their own actionable errors —
-// extract writes a fresh YAML; load and other consumers fail with a
+// create writes a fresh YAML; load and other consumers fail with a
 // message pointing at parlay migrate-domain-model or
-// parlay extract-domain-model.
+// parlay create-domain-model.
 var ErrNoDomainModel = errors.New("no domain-model.yaml at active root")
 
 // DomainModelArtifact is the in-memory representation of a parsed
@@ -342,9 +342,9 @@ type DomainOperation struct {
 //     never parsed, never merged, never consulted as a fallback.
 //   - When the .yaml is absent, the method returns ErrNoDomainModel —
 //     callers translate this into their own actionable errors
-//     (extract writes a fresh YAML; load and consumers exit non-zero
+//     (create writes a fresh YAML; load and consumers exit non-zero
 //     pointing at parlay migrate-domain-model or
-//     parlay extract-domain-model).
+//     parlay create-domain-model).
 //
 // The parse is cached per-Context: a second call within the same CLI
 // invocation reuses the in-memory artifact. Pass a fresh Context to

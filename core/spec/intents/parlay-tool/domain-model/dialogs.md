@@ -4,9 +4,9 @@
 
 ### Extract Domain Model
 
-**Trigger**: /parlay-extract-domain-model
+**Trigger**: /parlay-create-domain-model
 
-User: /parlay-extract-domain-model
+User: /parlay-create-domain-model
 System (background): Reads through all specifications to extract entities, relationships, and state machines.
 System: The domain model is saved at ==path== and can be shared with others.
 

@@ -162,7 +162,7 @@ System: ==unified diff showing modified resolver functions + new caching==
 User: A
 System (background): Applies the diff.
 System (background): Entry 2: Resolves `target-pattern:` by grepping source tree. Found 4 matching files.
-System: Pattern matched 4 files: collect_questions.go, sync.go, extract_domain_model.go, check_coverage.go
+System: Pattern matched 4 files: collect_questions.go, sync.go, create_domain_model.go, check_coverage.go
 System (background): Applies Tier 2 intelligent merge to each.
 System: Proposed change to internal/commands/collect_questions.go:
 System: ==unified diff==

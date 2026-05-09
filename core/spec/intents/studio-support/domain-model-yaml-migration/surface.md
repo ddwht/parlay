@@ -100,15 +100,15 @@
 **Actions**: invoke
 **Source**: @studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml
 
-**Page**: parlay-extract-domain-model (CLI)
+**Page**: parlay-create-domain-model (CLI)
 **Region**: main
 **Order**: 10
 
 **Notes**:
-- After this migration, `parlay extract-domain-model` emits `domain-model.yaml` at the active root (project level, not per-feature). The existing per-feature `.md` files (if any) are not touched, not re-emitted, and not consulted.
+- After this migration, `parlay create-domain-model` emits `domain-model.yaml` at the active root (project level, not per-feature). The existing per-feature `.md` files (if any) are not touched, not re-emitted, and not consulted.
 - The command prints the absolute path of the written YAML on stdout, plus a one-line summary (`extracted N entities, M enums, K relationships, J operations`). No human-readable preamble before that line.
 - If the YAML write fails (permissions, disk full), the command exits non-zero without writing a fallback `.md` — the markdown form is gone from the post-migration world.
-- Existing callers that previously parsed `extract-domain-model` stdout for the markdown body will break by design; this is a surfaced behavior change, not a silent one. The migration intent commits to that breakage as part of the format swap.
+- Existing callers that previously parsed `create-domain-model` stdout for the markdown body will break by design; this is a surfaced behavior change, not a silent one. The migration intent commits to that breakage as part of the format swap.
 
 ---
 

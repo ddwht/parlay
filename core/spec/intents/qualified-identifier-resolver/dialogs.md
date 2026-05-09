@@ -28,7 +28,7 @@ System: Per the initiatives spec, a bare slug always means the orphan at the top
 
 ### Centralize Feature Enumeration for Bulk-Walker Commands
 
-**Trigger**: The developer notices that parlay collect-questions (or sync, extract-domain-model, check-coverage) misses features that were moved into an initiative.
+**Trigger**: The developer notices that parlay collect-questions (or sync, create-domain-model, check-coverage) misses features that were moved into an initiative.
 
 User: I moved password-reset into the auth-overhaul initiative. Now `parlay collect-questions` doesn't see it anymore — it only reports questions from orphan features. What's wrong?
 System: The bulk-walker commands scan spec/intents/ one level deep via os.ReadDir. With initiatives, nested features live one level deeper — the scan misses them. You need a shared helper that walks both levels.

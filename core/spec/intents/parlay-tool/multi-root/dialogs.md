@@ -129,7 +129,7 @@ System (condition: --verbose): the parent has an empty spec/intents/ — this is
 
 #### Branch: Parent has no features — commands still work
 
-User: cd /repo && parlay extract-domain-model --root web
+User: cd /repo && parlay create-domain-model --root web
 System (background): Operates on `apps/web` exclusively; the empty parent `spec/intents/` is irrelevant.
 System: Domain model extracted for root ==web==.
 
@@ -180,7 +180,7 @@ System: Remove this directory; skills are loaded from the parent automatically.
 
 #### Branch: Per-root domain model
 
-User: cd apps/web && parlay extract-domain-model
+User: cd apps/web && parlay create-domain-model
 System (background): Reads only `apps/web/spec/intents/`; does not include parent intents.
 System: Extracted domain model for root ==web== (==/abs/path/to/repo/apps/web==).
 System: Domain model saved to apps/web/spec/intents/domain-model.md (==12== entities).
@@ -207,7 +207,7 @@ System (background): Runs sync against the named root, regardless of cwd.
 
 #### Branch: --root flag for project-level commands
 
-User: parlay extract-domain-model --root web
+User: parlay create-domain-model --root web
 System (background): No feature reference, but `--root web` selects the target root.
 System: Operating on root: ==web==
 System (background): Extracts domain model for that root only.
@@ -353,7 +353,7 @@ System (background): Sync proceeds against root ==web==.
 
 #### Branch: --root flag passed as skill argument
 
-User: /parlay-extract-domain-model --root web
+User: /parlay-create-domain-model --root web
 System (background): Skill passes `--root web` through to the CLI verbatim.
 System: operating on root: ==web== (--root flag)
 System (background): Domain model extracted for the chosen root only.

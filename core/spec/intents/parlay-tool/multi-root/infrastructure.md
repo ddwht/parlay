@@ -69,7 +69,7 @@
 **Invariants**:
 - A child root with no `.parlay/adapters/` directory loads adapters from the parent root.
 - A child root with `.parlay/adapters/<name>.adapter.yaml` loads that file (and ONLY that file — no key-by-key merge with the parent's same-named adapter).
-- `parlay extract-domain-model` run in a child root produces a domain model scoped to the child's intents only.
+- `parlay create-domain-model` run in a child root produces a domain model scoped to the child's intents only.
 - Schemas always come from the repo-level root, regardless of which child is active.
 - Single-root projects produce identical effective resolutions to today (active root == repo-level root, no parent fallback).
 **Source**: @parlay-tool/multi-root/inherit-resources-from-parent-root
@@ -106,7 +106,7 @@
 ## --root Flag Plumbing
 
 **Affects**: root command, every subcommand that takes a feature reference or operates project-wide
-**Behavior**: Add a persistent `--root <name>` flag at the root command level. When set, override cwd walk-up with the named root from the parent's roots index. If the same invocation also has a prefixed feature reference, the two must agree — disagreement errors. `--root` is most useful for project-level commands that don't take a feature reference (`parlay extract-domain-model --root web`, `parlay status --root web`).
+**Behavior**: Add a persistent `--root <name>` flag at the root command level. When set, override cwd walk-up with the named root from the parent's roots index. If the same invocation also has a prefixed feature reference, the two must agree — disagreement errors. `--root` is most useful for project-level commands that don't take a feature reference (`parlay create-domain-model --root web`, `parlay status --root web`).
 **Invariants**:
 - An unknown root name errors with the list of registered roots — never silently falls through.
 - `--root web` and `web:@feat` together work; `--root api` and `web:@feat` together error.
@@ -174,8 +174,8 @@
 
 ## Bare-Parent Empty-Spec Handling
 
-**Affects**: feature enumeration helpers, `parlay status`, `parlay extract-domain-model`, every command that lists features
-**Behavior**: Every command that enumerates features at a root must treat an empty `spec/intents/` (no feature subdirectories) as a valid state — return an empty list, not an error. `parlay status` at a parent root with empty spec lists zero parent features and the registered children. `parlay extract-domain-model` at such a root produces an empty-but-valid domain model. Commands that target a specific feature reference still error with "no such feature" when the slug doesn't match — that error is unchanged.
+**Affects**: feature enumeration helpers, `parlay status`, `parlay create-domain-model`, every command that lists features
+**Behavior**: Every command that enumerates features at a root must treat an empty `spec/intents/` (no feature subdirectories) as a valid state — return an empty list, not an error. `parlay status` at a parent root with empty spec lists zero parent features and the registered children. `parlay create-domain-model` at such a root produces an empty-but-valid domain model. Commands that target a specific feature reference still error with "no such feature" when the slug doesn't match — that error is unchanged.
 **Invariants**:
 - A parent root with empty `spec/intents/` and one or more registered children is fully functional — no command errors with "no features found in this root".
 - `parlay status` at a bare parent shows the parent (zero features), the registered children, and no warning about empty spec.

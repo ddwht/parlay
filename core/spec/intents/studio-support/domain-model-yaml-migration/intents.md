@@ -1,6 +1,6 @@
 # Domain Model YAML Format
 
-> Migrate Core's domain model artifact from prose markdown to a machine-friendly YAML format with a versioned schema. The YAML form is the format Studio's Domain Model Editor reads and writes; Core's existing `extract-domain-model` and `load-domain-model` commands switch over to consume and emit it. Hand-editing remains supported but is no longer the primary workflow.
+> Migrate Core's domain model artifact from prose markdown to a machine-friendly YAML format with a versioned schema. The YAML form is the format Studio's Domain Model Editor reads and writes; Core's existing `create-domain-model` and `load-domain-model` commands switch over to consume and emit it. Hand-editing remains supported but is no longer the primary workflow.
 
 ---
 
@@ -77,22 +77,22 @@ The CLI surface this intent commits to (the artifacts phase will pin the full sh
 
 ## Update `extract-domain-model` and `load-domain-model` to Round-Trip YAML
 
-**Goal**: Switch the existing `/parlay-extract-domain-model` and `/parlay-load-domain-model` commands to emit and consume the YAML format, so the existing extraction-and-sharing workflow keeps working with the new artifact shape.
+**Goal**: Switch the existing `/parlay-create-domain-model` and `/parlay-load-domain-model` commands to emit and consume the YAML format, so the existing extraction-and-sharing workflow keeps working with the new artifact shape.
 **Persona**: UX Designer
 **Priority**: P1
 **Context**: The existing domain-model commands write per-feature `domain-model.md` files (extraction) or merge an external markdown model into the current project (load). After the format change, these commands must produce and consume YAML.
-**Action**: Update `extract-domain-model` to write `domain-model.yaml` at the project root (not per-feature), populating it from the AI's extraction pass over all features' intents and dialogs. Update `load-domain-model` to accept either a YAML file path or a URL, and merge into the project's `domain-model.yaml` with the same disambiguation prompts the markdown version had.
-**Objects**: extract-domain-model, load-domain-model, domain-model.yaml
+**Action**: Update `create-domain-model` to write `domain-model.yaml` at the project root (not per-feature), populating it from the AI's extraction pass over all features' intents and dialogs. Update `load-domain-model` to accept either a YAML file path or a URL, and merge into the project's `domain-model.yaml` with the same disambiguation prompts the markdown version had.
+**Objects**: create-domain-model, load-domain-model, domain-model.yaml
 
 **Constraints**:
-- After this migration, `extract-domain-model` writes only `domain-model.yaml`. It must not emit `domain-model.md`, even as a fallback or alongside the YAML — the markdown form is gone from the post-migration world. The deprecated `.md` only exists in projects that pre-date this change and is left in place by the one-shot migration; nothing in Core ever produces a fresh `.md` again
+- After this migration, `create-domain-model` writes only `domain-model.yaml`. It must not emit `domain-model.md`, even as a fallback or alongside the YAML — the markdown form is gone from the post-migration world. The deprecated `.md` only exists in projects that pre-date this change and is left in place by the one-shot migration; nothing in Core ever produces a fresh `.md` again
 - Extraction emits the project-level `domain-model.yaml`, not per-feature files — there is exactly one canonical domain model per parlay project
 - Load accepts only YAML — markdown loads from external projects are out of scope; if a user has a markdown model they want to load, they migrate it first
 - Disambiguation behavior on load is unchanged in spirit: when an incoming entity conflicts with an existing one, the agent asks the designer how to resolve
 - Both commands respect the schema version. Loading a model with an older `schema_version` triggers the migration path before merging
 
 **Verify**:
-- `parlay extract-domain-model` on a project with feature intents produces a `domain-model.yaml` with the entities, enums, relationships, and operations described in those intents
+- `parlay create-domain-model` on a project with feature intents produces a `domain-model.yaml` with the entities, enums, relationships, and operations described in those intents
 - `parlay load-domain-model <path-to-yaml>` merges into the existing `domain-model.yaml`; conflicting entities trigger a designer disambiguation prompt
 - Loading a YAML with an unsupported `schema_version` fails with an actionable error pointing at the migration path
 - The extracted YAML round-trips through `parlay extract` → `parlay load` (extract from project A, load into a fresh project B) and produces a structurally equivalent model in B

@@ -65,7 +65,7 @@
 - Deleting the parent's `.parlay/` and running any command in the child root produces the loud "parent root not found" error and refuses to fall through to a different ancestor
 - `parlay promote-root` run inside an orphaned child root makes it standalone (parent pointer removed, child becomes its own top-level root)
 - After `parlay add-root apps/web`, no separate `parlay upgrade` step is required for the agent to see the new root — the repo-level agent-rules file lists it on first agent invocation
-- A parent root with empty `spec/intents/` and one or more child roots is fully functional: `parlay status` at the parent lists zero parent features and the registered children; `parlay sync`, `parlay extract-domain-model --root web`, and other commands work normally against child roots; no command errors with "no features found" at the parent
+- A parent root with empty `spec/intents/` and one or more child roots is fully functional: `parlay status` at the parent lists zero parent features and the registered children; `parlay sync`, `parlay create-domain-model --root web`, and other commands work normally against child roots; no command errors with "no features found" at the parent
 
 
 ---
@@ -91,7 +91,7 @@
 **Verify**:
 - A child root with no `.parlay/adapters/` directory uses adapters from the parent root
 - A child root with `.parlay/adapters/react.adapter.yaml` uses its own version, not the parent's, when commands run inside the child
-- `parlay extract-domain-model` run in a child root produces a `domain-model.md` scoped to the child's intents only — does not include parent intents
+- `parlay create-domain-model` run in a child root produces a `domain-model.md` scoped to the child's intents only — does not include parent intents
 - A feature defined at the parent root does NOT appear in `parlay status` / feature listings run inside a child root, and a feature reference resolved inside a child does not match parent-root features
 - A child root with a `.parlay/schemas/` directory produces a clear startup error
 - A child root with a deployed-skills directory (e.g. `.claude/skills/parlay-*`) produces a clear startup error
@@ -119,7 +119,7 @@
 - The root prefix is a CLI / cross-tool addressing mechanism only — intents.md content MUST NOT contain cross-root references in v1 (those are explicitly out of scope)
 - Conflicts between `--root` and a prefixed reference must error rather than silently picking one
 - The root prefix is accepted by every command that takes a feature reference, including write commands (`add-feature`, `build-feature`, `generate-code`) — there is no read-only restriction
-- `--root <name>` is a separate flag retained for project-level commands that don't take a feature reference (`parlay extract-domain-model --root web`, `parlay status --root web`); `--root` and a prefixed feature reference must agree, or the command errors
+- `--root <name>` is a separate flag retained for project-level commands that don't take a feature reference (`parlay create-domain-model --root web`, `parlay status --root web`); `--root` and a prefixed feature reference must agree, or the command errors
 
 **Verify**:
 - `parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is
@@ -184,7 +184,7 @@
 - `/parlay-sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting
 - `/parlay-build-feature @intent/A` invoked while agent cwd is the parent and the feature exists in two child roots — the skill surfaces an `AskUserQuestion` (or adapter equivalent) with the candidate roots, then re-invokes the CLI against the user's choice
 - `/parlay-sync web:@feat` works regardless of agent cwd
-- `/parlay-extract-domain-model --root web` works as a skill argument the same way it works as a CLI flag
+- `/parlay-create-domain-model --root web` works as a skill argument the same way it works as a CLI flag
 - A skill invoked while the user is in a feature-empty parent project (no parent-owned features in `spec/intents/`) does not show "no features found" — it shows the registered children and prompts for the target root if needed
 - When a skill auto-resolves to a non-cwd root (e.g. single child match for a bare reference), the visible response begins with "operating on root: <name>"
 - Skill prompt text in `internal/embedded/skills/*.skill.md` contains no hardcoded `.parlay/` paths — every path reference is via the active-root resolver

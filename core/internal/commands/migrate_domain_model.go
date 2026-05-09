@@ -32,7 +32,7 @@ const DeprecationHeader = "> **Deprecated** — see [`./domain-model.yaml`](./do
 // is the surface that hosts the skill: it documents the flag set, the
 // stdout/stderr discipline, and the idempotency guard, and it prints a
 // "use the AI skill" message when invoked from a plain CLI without an
-// agent in the loop, matching the existing extract-domain-model and
+// agent in the loop, matching the existing create-domain-model and
 // load-domain-model patterns.
 var migrateDomainModelCmd = &cobra.Command{
 	Use:   "migrate-domain-model",
@@ -73,7 +73,7 @@ func init() {
 //   - Emit the --force warning before overwriting.
 //   - Hand off to the AI skill for the actual translation.
 //
-// This matches the load-domain-model and extract-domain-model patterns
+// This matches the load-domain-model and create-domain-model patterns
 // in this package — those commands are likewise AI-skill stubs that
 // resolve some local state and then invite the user to invoke the
 // skill from an AI agent.

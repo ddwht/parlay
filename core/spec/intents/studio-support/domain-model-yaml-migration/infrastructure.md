@@ -27,7 +27,7 @@
 ## domain-model deep-validation pipeline
 
 **Affects**: domain-model validation pipeline, reference resolution, error reporting
-**Behavior**: Every read of `domain-model.yaml` runs deep validation in addition to schema-shape validation. Deep validation walks every relationship endpoint and verifies it names a declared entity, every operation input and verifies it names a field that exists on the involved entity, and every enum-typed field reference and verifies the enum value is declared. Failures are reported per-reference with the YAML path of the offending value. The model is not partially accepted — any unresolved reference fails the load. The same pipeline runs for hand-authored YAML, generated YAML (from `extract-domain-model`), and merged YAML (from `load-domain-model`).
+**Behavior**: Every read of `domain-model.yaml` runs deep validation in addition to schema-shape validation. Deep validation walks every relationship endpoint and verifies it names a declared entity, every operation input and verifies it names a field that exists on the involved entity, and every enum-typed field reference and verifies the enum value is declared. Failures are reported per-reference with the YAML path of the offending value. The model is not partially accepted — any unresolved reference fails the load. The same pipeline runs for hand-authored YAML, generated YAML (from `create-domain-model`), and merged YAML (from `load-domain-model`).
 **Invariants**:
 - A relationship endpoint that references an undeclared entity fails validation naming the relationship, the offending endpoint, and the missing entity name
 - An operation input that names a field absent from the involved entity fails validation naming the operation, the offending input, and the entity scope where the field was expected
@@ -95,7 +95,7 @@
 **Behavior**: After a project has a `domain-model.yaml`, every parlay command's domain-model read path consults only the YAML. The `.md` (if present, as a pre-migration artifact) is ignored — never parsed, never merged, never consulted as a fallback. There is no grace period during which both files coexist as live state. The deprecation header on the `.md` documents this for the designer; the read path enforces it for the tool.
 **Invariants**:
 - A project with both a `domain-model.md` and a `domain-model.yaml` has the YAML as the sole live state; the `.md` is treated as historical-only
-- A project with only a `domain-model.md` (skipped the migration) and no YAML is treated as having no domain model — `extract-domain-model` writes a fresh YAML from feature intents and dialogs without consulting the `.md`; `load-domain-model` and other consumers fail with "no domain-model.yaml; run parlay migrate-domain-model or parlay extract-domain-model first"
+- A project with only a `domain-model.md` (skipped the migration) and no YAML is treated as having no domain model — `create-domain-model` writes a fresh YAML from feature intents and dialogs without consulting the `.md`; `load-domain-model` and other consumers fail with "no domain-model.yaml; run parlay migrate-domain-model or parlay create-domain-model first"
 - Edits to the `.md` after migration have no effect on tooling output — the YAML is the only source
 - The precedence rule has a single enforcement point (the read path); no caller bypasses it
 **Source**: @studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml, @studio-support/domain-model-yaml-migration/migrate-existing-domain-model-md-projects-to-yaml
@@ -110,8 +110,8 @@
 
 ## extract-domain-model project-level YAML emission
 
-**Affects**: extract-domain-model command (existing), per-feature vs project-level output, markdown emission removal
-**Behavior**: The existing `parlay extract-domain-model` command is modified to emit a single `domain-model.yaml` at the active root (project level), aggregating across all features' intents and dialogs. Per-feature `domain-model.md` emission is removed entirely — the command no longer writes to `spec/intents/<feature>/domain-model.md` under any path, and the project-level emission is the only output. If the YAML write fails (permissions, disk full), the command exits non-zero without writing a fallback `.md`.
+**Affects**: create-domain-model command (existing), per-feature vs project-level output, markdown emission removal
+**Behavior**: The existing `parlay create-domain-model` command is modified to emit a single `domain-model.yaml` at the active root (project level), aggregating across all features' intents and dialogs. Per-feature `domain-model.md` emission is removed entirely — the command no longer writes to `spec/intents/<feature>/domain-model.md` under any path, and the project-level emission is the only output. If the YAML write fails (permissions, disk full), the command exits non-zero without writing a fallback `.md`.
 **Invariants**:
 - Extract writes exactly one YAML file per invocation, at the active root, named `domain-model.yaml`
 - Extract never emits markdown — not as primary output, not as fallback, not as per-feature debug artifact
@@ -124,7 +124,7 @@
 
 **Notes**:
 - This fragment changes both the artifact location (per-feature → project-level) and the format (md → yaml) in one step. The two changes are coupled because the project-level model is the right scope for a single canonical artifact.
-- The skill file for `parlay-extract-domain-model` and any related dialogs/intents in the parlay-tool tree need updating in the same release; that's a different feature's concern, but the read-path contract is established here.
+- The skill file for `parlay-create-domain-model` and any related dialogs/intents in the parlay-tool tree need updating in the same release; that's a different feature's concern, but the read-path contract is established here.
 
 ---
 

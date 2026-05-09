@@ -447,7 +447,7 @@ Operations implied by the dialogs, mapped to the commands that trigger them.
 | lockPage | /parlay lock-page | page name, owner | PageManifest | CLI |
 | buildFeature | /parlay build-feature | @feature + FrameworkAdapter | Buildfile, TestCase | **Agent** |
 | generateEnggSpec | /parlay generate-enggspec | @feature | EngineeringSpec | **Agent** |
-| extractDomainModel | /parlay extract-domain-model | (all features) | DomainModel | **Agent** |
+| createDomainModel | /parlay create-domain-model | (all features) | DomainModel | **Agent** |
 | loadDomainModel | /parlay load-domain-model | model path | DomainModel (integrated) | **Agent** |
 | syncCoverage | /parlay sync | @feature | CoverageReport | CLI |
 
