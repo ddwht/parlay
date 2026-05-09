@@ -1,0 +1,448 @@
+feature: parlay-tool/create-domain-model
+framework: "Go testing (stdlib) + integration scripts"
+
+# This feature is infrastructure-only — there are no surface components,
+# so suites are keyed by cross-cutting id. Each suite verifies one
+# cross-cutting entry's invariants against a buildfile fixture.
+
+suites:
+  # ---------------------------------------------------------------
+  # Fragment 1: CLI Command Rename and Hard Cutover
+  # ---------------------------------------------------------------
+  - name: cli-command-rename
+    component: cross-cutting/cli-command-rename-source-file
+    fixture: empty-project
+    intent: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    cases:
+      - name: parlay-help-lists-create-domain-model
+        description: |
+          `parlay --help` advertises create-domain-model after the rename ships.
+        steps:
+          - action: render
+            target: cli-help
+          - verify: text
+            target: parlay-help-output
+            expected: contains "create-domain-model"
+
+      - name: parlay-help-does-not-list-extract-domain-model
+        description: |
+          `parlay --help` does NOT advertise extract-domain-model after the rename.
+          Hard cutover invariant.
+        steps:
+          - action: render
+            target: cli-help
+          - verify: text
+            target: parlay-help-output
+            expected: does not contain "extract-domain-model"
+
+      - name: extract-domain-model-now-unknown-command
+        description: |
+          Invoking the old name returns the dispatcher's standard
+          unknown-command error. No alias, no special-case message.
+        steps:
+          - action: invoke
+            target: parlay-cli
+            value: "extract-domain-model"
+          - verify: error
+            target: parlay-cli
+            expected: unknown command "extract-domain-model" for "parlay"
+
+      - name: create-domain-model-cobra-command-registered
+        description: |
+          The renamed cobra command is registered exactly once in
+          rootCmd. The Use field is "create-domain-model".
+        steps:
+          - action: render
+            target: rootCmd-subcommands
+          - verify: count
+            target: subcommand-with-Use-create-domain-model
+            expected: 1
+          - verify: count
+            target: subcommand-with-Use-extract-domain-model
+            expected: 0
+
+      - name: source-file-rename-deletes-old-creates-new
+        description: |
+          The rename is realized as a paired delete + create. Old path
+          must be absent on disk after generation; new path must be
+          present.
+        steps:
+          - action: render
+            target: source-tree
+          - verify: file-exists
+            target: core/internal/commands/create_domain_model.go
+          - verify: file-exists
+            target: core/internal/commands/extract_domain_model.go
+            expected: false
+
+      - name: handler-name-renamed
+        description: |
+          The renamed file uses the new function and var names.
+        steps:
+          - action: render
+            target: source-tree
+          - verify: file-content
+            target: core/internal/commands/create_domain_model.go
+            expected:
+              contains:
+                - "createDomainModelCmdImpl"
+                - "runCreateDomainModelHandler"
+                - 'Use:   "create-domain-model"'
+              does-not-contain:
+                - "extractDomainModelCmdImpl"
+                - "runExtractDomainModelHandler"
+
+  - name: cli-command-root-registration
+    component: cross-cutting/cli-command-rename-root-registration
+    fixture: empty-project
+    intent: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    cases:
+      - name: root-go-registers-new-name-only
+        description: |
+          root.go's init() AddCommand line is the new name only. There
+          is no second AddCommand line for the old name.
+        steps:
+          - action: render
+            target: source-tree
+          - verify: file-content
+            target: core/internal/commands/root.go
+            expected:
+              contains:
+                - "rootCmd.AddCommand(createDomainModelCmdImpl)"
+              does-not-contain:
+                - "rootCmd.AddCommand(extractDomainModelCmdImpl)"
+
+  # ---------------------------------------------------------------
+  # Fragment 2: Embedded Skill Rename Across Deployers
+  # ---------------------------------------------------------------
+  - name: embedded-skill-rename-and-deployer-cascade
+    component: cross-cutting/embedded-skill-rename-source-file
+    fixture: upgraded-project-with-stale-skill
+    intent: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    cases:
+      - name: embedded-skill-source-renamed
+        description: |
+          The on-disk embedded skill file has the new slug. The old slug
+          is gone. The //go:embed directive picks up whatever is on disk
+          at compile time — this rename is what cascades to every
+          deployer.
+        steps:
+          - action: render
+            target: source-tree
+          - verify: file-exists
+            target: core/internal/embedded/skills/create-domain-model.skill.md
+          - verify: file-exists
+            target: core/internal/embedded/skills/extract-domain-model.skill.md
+            expected: false
+
+      - name: skill-titles-map-cascades-to-claude-and-cursor
+        description: |
+          The shared skillTitle() map in claude.go is keyed by the new
+          slug only. Both Claude and Cursor deployers consult this single
+          function (writeCLAUDEmd and writeCursorProjectRule), so one
+          edit cascades to both.
+        steps:
+          - action: render
+            target: source-tree
+          - verify: file-content
+            target: core/internal/deployer/claude.go
+            expected:
+              contains:
+                - '"create-domain-model"'
+              does-not-contain:
+                - '"extract-domain-model":'
+
+      - name: claude-deployer-prunes-stale-skill-directory
+        description: |
+          ClaudeDeployer.Deploy removes
+          .claude/skills/parlay-extract-domain-model/ when it runs against
+          a project that previously deployed it. The cleanup is generic —
+          it removes any parlay-<old-slug> directory whose slug is not in
+          the current embedded skills set.
+        steps:
+          - action: render
+            target: deploy-claude
+            value: upgraded-project-with-stale-skill
+          - verify: directory-exists
+            target: .claude/skills/parlay-create-domain-model
+          - verify: directory-exists
+            target: .claude/skills/parlay-extract-domain-model
+            expected: false
+
+      - name: cursor-deployer-prunes-stale-skill-directory
+        description: |
+          Symmetric cleanup against .cursor/skills/.
+        steps:
+          - action: render
+            target: deploy-cursor
+            value: upgraded-project-with-stale-skill
+          - verify: directory-exists
+            target: .cursor/skills/parlay-create-domain-model
+          - verify: directory-exists
+            target: .cursor/skills/parlay-extract-domain-model
+            expected: false
+
+      - name: claude-md-lists-new-skill-only
+        description: |
+          CLAUDE.md (regenerated by writeCLAUDEmd) lists the new slug
+          and not the old. The Available Commands section comes from
+          iterating embedded skills + skillTitle().
+        steps:
+          - action: render
+            target: deploy-claude
+            value: upgraded-project-with-stale-skill
+          - verify: file-content
+            target: CLAUDE.md
+            expected:
+              contains:
+                - "/parlay-create-domain-model"
+              does-not-contain:
+                - "/parlay-extract-domain-model"
+
+      - name: deployer-pruning-leaves-non-parlay-skills-alone
+        description: |
+          The pruning pass touches only directories whose names start
+          with parlay-. User-owned directories under .claude/skills/ are
+          preserved.
+        steps:
+          - action: render
+            target: deploy-claude
+            value: upgraded-project-with-stale-skill-and-user-skill
+          - verify: directory-exists
+            target: .claude/skills/my-team-skill
+
+  # ---------------------------------------------------------------
+  # Fragment 3: Greenfield Branch in the Domain-Model Write Path
+  # ---------------------------------------------------------------
+  - name: greenfield-empty-project
+    component: cross-cutting/skill-greenfield-branch
+    fixture: empty-project
+    intent: "@parlay-tool/create-domain-model/greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract"
+    cases:
+      - name: zero-features-writes-empty-stub
+        description: |
+          On a project with zero features, the recognition pass returns
+          no signals; the greenfield branch fires; an empty stub is
+          written at {root}/domain-model.yaml.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: empty-project
+          - verify: file-exists
+            target: domain-model.yaml
+
+      - name: empty-stub-is-schema-valid
+        description: |
+          The greenfield stub passes
+          `parlay validate --type domain-model {path}` without
+          modification. Required top-level keys present, all collections
+          empty.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: empty-project
+          - action: invoke
+            target: parlay-validate
+            value: "--type domain-model domain-model.yaml"
+          - verify: state
+            target: parlay-validate.exit-code
+            expected: 0
+
+      - name: empty-stub-has-required-top-level-keys
+        description: |
+          The stub contains entities, relationships, operations as
+          empty collections plus mandatory metadata. Keys are present —
+          the YAML is well-formed-but-empty, not a syntax error a
+          designer opening it in Studio would trip over.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: empty-project
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              contains:
+                - "entities:"
+                - "relationships:"
+                - "operations:"
+
+      - name: greenfield-prints-stable-ready-to-author-line
+        description: |
+          The greenfield path prints exactly:
+              Created empty domain-model.yaml stub at {path} — ready to author.
+          The wording is stable so studio-cli-hooks can pattern-match.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: empty-project
+          - verify: text
+            target: stdout
+            expected: "Created empty domain-model.yaml stub at {path} — ready to author."
+
+      - name: greenfield-exits-zero
+        description: |
+          The greenfield branch exits 0.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: empty-project
+          - verify: state
+            target: exit-code
+            expected: 0
+
+      - name: greenfield-is-tty-agnostic
+        description: |
+          Greenfield mode behaves identically in non-TTY (CI / piped)
+          contexts. Output and exit code do not depend on TTY state.
+          Studio hooks are the layer that cares about TTY.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: "empty-project --no-tty"
+          - verify: text
+            target: stdout
+            expected: "Created empty domain-model.yaml stub at {path} — ready to author."
+          - verify: state
+            target: exit-code
+            expected: 0
+
+  - name: greenfield-prose-only-project
+    component: cross-cutting/skill-greenfield-branch
+    fixture: prose-only-project
+    intent: "@parlay-tool/create-domain-model/greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract"
+    cases:
+      - name: features-with-no-extractable-signals-still-greenfield
+        description: |
+          A project with feature folders whose intents/dialogs introduce
+          zero extractable signals produces the same empty stub as the
+          zero-features case. The branch threshold is "any signal at
+          all" — not "are there features".
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: prose-only-project
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              contains:
+                - "entities:"
+                - "relationships:"
+                - "operations:"
+          - verify: text
+            target: stdout
+            expected: "Created empty domain-model.yaml stub at {path} — ready to author."
+
+  - name: brownfield-boundary-one-signal
+    component: cross-cutting/skill-greenfield-branch
+    fixture: one-signal-project
+    intent: "@parlay-tool/create-domain-model/greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract"
+    cases:
+      - name: any-single-signal-flips-to-brownfield
+        description: |
+          Pinning the brownfield/greenfield boundary at "any signal at
+          all". One entity is enough — the result is a populated
+          domain-model.yaml, not the empty stub.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: one-signal-project
+          - verify: text
+            target: stdout
+            expected: "Wrote domain-model.yaml — 1 entity, 0 relationships, 0 operations."
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              contains:
+                - "entities:"
+              does-not-contain:
+                - "Created empty domain-model.yaml stub"
+
+      - name: brownfield-output-byte-equivalent-to-pre-rename
+        description: |
+          On the same project fixture, brownfield-run output is
+          byte-equivalent to what extract-domain-model produced before
+          the rename shipped. Behavior preservation invariant — same
+          inputs, same extractor, same path, same bytes.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: brownfield-fixture
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              equals: golden/domain-model.yaml.pre-rename
+
+  # ---------------------------------------------------------------
+  # Fragment 4: Existing-File Preservation Under No-Signals Conditions
+  # ---------------------------------------------------------------
+  - name: existing-file-preservation
+    component: cross-cutting/skill-existing-file-preservation
+    fixture: existing-file-no-signals-project
+    intent: "@parlay-tool/create-domain-model/greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract"
+    cases:
+      - name: existing-file-preserved-byte-for-byte
+        description: |
+          When a domain-model.yaml is already on disk and the recognition
+          pass returns zero signals, the existing file is preserved
+          byte-for-byte. The greenfield stub does NOT overwrite it.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: existing-file-no-signals-project
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              equals: fixture/domain-model.yaml.before
+
+      - name: distinct-message-for-existing-file-case
+        description: |
+          The user-visible message in the existing-file-preserved case
+          is distinct from the fresh-stub case so a downstream consumer
+          can disambiguate from stdout.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: existing-file-no-signals-project
+          - verify: text
+            target: stdout
+            expected: "domain-model.yaml present and no extractable signals — leaving existing model untouched."
+
+      - name: greenfield-stub-fires-only-when-both-conditions-hold
+        description: |
+          The stub-write branch fires only when zero-signals AND
+          no-existing-file both hold. Either condition false should
+          take a different path.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: existing-file-no-signals-project
+          - verify: text
+            target: stdout
+            expected: does not contain "Created empty domain-model.yaml stub"
+
+      - name: existing-file-reconciliation-uses-brownfield-merge-rules
+        description: |
+          The reconciliation path used here is the SAME path brownfield
+          uses for an existing file with extracted content — there is
+          no separate "no-signals + existing-file" code path. The
+          merge-with-empty operation is a no-op against the existing
+          content.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: existing-file-no-signals-project
+          - verify: file-content
+            target: domain-model.yaml
+            expected:
+              unchanged-from: fixture/domain-model.yaml.before
+
+      - name: existing-file-preservation-exits-zero
+        description: |
+          The existing-file-preserved branch exits 0.
+        steps:
+          - action: invoke
+            target: parlay-create-domain-model
+            value: existing-file-no-signals-project
+          - verify: state
+            target: exit-code
+            expected: 0

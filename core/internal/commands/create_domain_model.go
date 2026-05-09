@@ -1,6 +1,7 @@
 // parlay-section: cross-cutting
 // parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-domain-model
 // parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+// parlay-extends: parlay-tool/create-domain-model/cli-command-rename-source-file
 
 package commands
 
@@ -11,10 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var extractDomainModelCmdImpl = &cobra.Command{
-	Use:   "extract-domain-model",
-	Short: "Extract domain model (use /parlay-extract-domain-model skill)",
-	RunE:  runExtractDomainModelHandler,
+var createDomainModelCmdImpl = &cobra.Command{
+	Use:   "create-domain-model",
+	Short: "Create domain model from features (use /parlay-create-domain-model skill)",
+	RunE:  runCreateDomainModelHandler,
 }
 
 func init() {
@@ -22,27 +23,23 @@ func init() {
 	// --no-studio: skip the Studio open-editor prompt at the end. The
 	// flag has no inverse --studio form; config-level disables can
 	// only be reverted by changing config.
-	extractDomainModelCmdImpl.Flags().BoolVar(
+	createDomainModelCmdImpl.Flags().BoolVar(
 		&noStudioFlagDomainModel, "no-studio", false, noStudioFlagHelpText,
 	)
 }
 
-// runExtractDomainModelHandler is the RunE for `parlay
-// extract-domain-model`. The actual extraction is the AI agent's
+// runCreateDomainModelHandler is the RunE for `parlay
+// create-domain-model`. The actual extraction is the AI agent's
 // responsibility — this handler exists to print the
-// "use the AI skill" message and (post this feature) to fire the
-// Studio hook prompt at the end of a successful run.
+// "use the AI skill" message and to fire the Studio hook prompt at
+// the end of a successful run.
 //
-// Note: the surface intent presupposes a future rename from
-// extract-domain-model to create-domain-model, which is tracked
-// separately and OUT OF SCOPE here. The hook still wires into the
-// existing extract-domain-model command file; the trio-command name
-// passed into dispatch is "create-domain-model" because that is the
-// name the wording table is keyed by — the rename will be a no-op
-// for this dispatch when it lands.
-func runExtractDomainModelHandler(cmd *cobra.Command, args []string) error {
-	fmt.Println("extract-domain-model requires an AI agent.")
-	fmt.Println("Use the /parlay-extract-domain-model skill in your AI agent (e.g., Claude Code).")
+// The trio-command name passed into dispatch is "create-domain-model"
+// — the wording table is keyed by this slug, and the surface intent's
+// rename from extract-domain-model has now landed.
+func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error {
+	fmt.Println("create-domain-model requires an AI agent.")
+	fmt.Println("Use the /parlay-create-domain-model skill in your AI agent (e.g., Claude Code).")
 
 	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-domain-model
 	// Hook-point dispatch — fires after the main work above

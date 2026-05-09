@@ -2,6 +2,8 @@
 // parlay-extends: parlay-tool/parlay-loop/claude-adapter-subagent-deployment
 // parlay-extends: parlay-tool/parlay-loop/parlay-loop-cli-command-registration
 // parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-deployer-title
+// parlay-extends: parlay-tool/create-domain-model/deployer-skill-titles-map
+// parlay-extends: parlay-tool/create-domain-model/deployer-claude-stale-skill-cleanup
 
 package deployer
 
@@ -55,6 +57,22 @@ description: "Parlay: %s"
 		}
 	}
 
+	// parlay-extends: parlay-tool/create-domain-model/deployer-claude-stale-skill-cleanup
+	// Stale-skill cleanup pass — after the wanted skills are written
+	// but before agents and CLAUDE.md are regenerated, prune any
+	// .claude/skills/parlay-<old-slug>/ directory whose slug is not
+	// present in the embedded skills set. The check is generic — it
+	// covers this rename and any future rename without per-rename
+	// special-casing. User-owned directories (not prefixed parlay-)
+	// are never touched.
+	wanted := make(map[string]bool, len(skills))
+	for _, s := range skills {
+		wanted[s.Name] = true
+	}
+	if err := pruneStaleClaudeSkills(projectRoot, wanted); err != nil {
+		return err
+	}
+
 	// Deploy subagents to .claude/agents/parlay-<name>.md
 	if err := writeClaudeAgents(projectRoot); err != nil {
 		return err
@@ -62,6 +80,40 @@ description: "Parlay: %s"
 
 	// Write CLAUDE.md
 	return writeCLAUDEmd(projectRoot, skills)
+}
+
+// pruneStaleClaudeSkills removes any .claude/skills/parlay-<slug>/
+// directory whose slug is not present in the wanted set. The check
+// only touches entries whose names start with the parlay- prefix —
+// user-owned skill directories are preserved.
+//
+// A read error on .claude/skills (e.g. the directory does not yet
+// exist on a fresh project) is non-fatal: the function returns nil
+// so the deploy can continue and write the new skill set.
+func pruneStaleClaudeSkills(projectRoot string, wanted map[string]bool) error {
+	skillsDir := filepath.Join(projectRoot, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		// Missing or unreadable .claude/skills/ — nothing to prune.
+		return nil
+	}
+	const prefix = "parlay-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) {
+			// Non-parlay-prefixed entries are user-owned.
+			continue
+		}
+		slug := strings.TrimPrefix(name, prefix)
+		if wanted[slug] {
+			continue
+		}
+		stale := filepath.Join(skillsDir, name)
+		if err := os.RemoveAll(stale); err != nil {
+			return fmt.Errorf("prune stale Claude skill %s: %w", stale, err)
+		}
+	}
+	return nil
 }
 
 func writeClaudeAgents(projectRoot string) error {
@@ -150,7 +202,7 @@ func skillTitle(name string) string {
 		"build-feature":        "Generate buildfile and testcases",
 		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",
-		"extract-domain-model": "Extract domain model from all features",
+		"create-domain-model":  "Create domain model from features",
 		"load-domain-model":    "Load and integrate external domain model",
 		"migrate-domain-model": "Convert domain-model.md to domain-model.yaml",
 		"collect-questions":    "Collect open questions from intents",

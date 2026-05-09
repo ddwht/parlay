@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T09:04:07Z"
+generated-at: "2026-05-09T10:37:55Z"
 files:
     core/internal/agent/precheck.go:
         component: ""
@@ -33,9 +33,9 @@ files:
     core/internal/commands/create_dialogs.go:
         component: DialogGenerationReport
         hash: 404ef50964c52631
-    core/internal/commands/extract_domain_model.go:
+    core/internal/commands/create_domain_model.go:
         component: ""
-        hash: 257c89df18fa81fe
+        hash: 2f0e715414cce85b
     core/internal/commands/feature_phase.go:
         component: ""
         hash: 8c0d7690312f0a6e
@@ -173,7 +173,7 @@ files:
         hash: d6ffb6d707e52c50
     core/internal/deployer/cursor.go:
         component: ""
-        hash: db519794d9b86528
+        hash: 6520c013a2582dd0
     core/internal/deployer/generic.go:
         component: ""
         hash: 6d7cdfa931a0e306

@@ -1,0 +1,25 @@
+generated-at: "2026-05-09T10:37:55Z"
+intents:
+    greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract:
+        content-hash: 67415ebfa80143e6
+        goal-hash: 589d80f734f5f5e2
+        constraints-hash: 985a1bf354cd1bb3
+        verify-hash: 2c6d3916d6e1c78b
+        objects-hash: 717b0ec343c6ad12
+    rename-to-parlay-create-domain-model-and-preserve-brownfield-behavior:
+        content-hash: 8933c4d7e86e0c63
+        goal-hash: b5e542df80f28ebc
+        constraints-hash: ca4008d961ee362d
+        verify-hash: cf4097b46dec1c53
+        objects-hash: ecd3db4de43138d4
+sources:
+    intents:
+        greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract: "74876008849547e0"
+        rename-to-parlay-create-domain-model-and-preserve-brownfield-behavior: 7ba7319631384b56
+    dialogs:
+        greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract: d0cd32e388aeb467
+        rename-to-parlay-create-domain-model-and-preserve-brownfield-behavior: e39204a053bbf266
+buildfile-sections:
+    fixtures: b1cd7284d813f249
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819

@@ -251,7 +251,7 @@ func init() {
 	rootCmd.AddCommand(buildFeatureCmdImpl)
 	rootCmd.AddCommand(generateCodeCmdImpl)
 	rootCmd.AddCommand(generateEnggspecCmdImpl)
-	rootCmd.AddCommand(extractDomainModelCmdImpl)
+	rootCmd.AddCommand(createDomainModelCmdImpl)
 	rootCmd.AddCommand(loadDomainModelCmdImpl)
 	// parlay-feature: studio-support/domain-model-yaml-migration
 	// parlay-component: migrate-domain-model-command

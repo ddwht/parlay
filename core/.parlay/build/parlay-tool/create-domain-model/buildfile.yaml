@@ -1,0 +1,338 @@
+feature: parlay-tool/create-domain-model
+adapter: go-cli
+
+# This feature is infrastructure-only by design (CLI rename + greenfield write-path
+# branch + deployer plumbing). There is no surface.md and no user-facing component
+# vocabulary to translate. Every change is a cross-cutting modification or a rename
+# of an existing file pair.
+
+models: {}
+
+fixtures:
+  empty-project:
+    description: |
+      A synthetic project with zero features registered (fresh `parlay init`).
+      The recognition pass returns zero entities, relationships, and operations.
+      Greenfield branch fires; a schema-valid empty stub is written.
+    data: {}
+
+  prose-only-project:
+    description: |
+      A synthetic project with feature folders whose intents/dialogs are mostly
+      prose — no Objects: lines that name entities. Recognition pass returns
+      zero signals across the tree. Same outcome as empty-project: greenfield
+      stub is written.
+    data: {}
+
+  one-signal-project:
+    description: |
+      A synthetic project where exactly one feature names exactly one entity
+      in its Objects: line. Recognition pass returns one entity. Brownfield
+      branch fires; a populated domain-model.yaml is written with that entity.
+    data: {}
+
+  existing-file-no-signals-project:
+    description: |
+      A synthetic project with a hand-authored domain-model.yaml already on
+      disk and intents/dialogs that produce zero extractable signals. The
+      existing file is preserved byte-for-byte; the greenfield stub does NOT
+      overwrite it. The user-visible message distinguishes this case from a
+      fresh stub creation.
+    data: {}
+
+  upgraded-project-with-stale-skill:
+    description: |
+      A synthetic project that previously deployed
+      .claude/skills/parlay-extract-domain-model/SKILL.md from an older
+      parlay binary. After running `parlay upgrade` against a binary
+      containing this feature, the project's agent surface contains
+      .claude/skills/parlay-create-domain-model/SKILL.md and the stale
+      .claude/skills/parlay-extract-domain-model/SKILL.md directory has
+      been removed.
+    data: {}
+
+routes: []
+
+components: {}
+
+cross-cutting:
+  # ---------------------------------------------------------------
+  # Fragment 1: CLI Command Rename and Hard Cutover
+  # ---------------------------------------------------------------
+  - id: cli-command-rename-source-file
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    # The source file is renamed by deleting the old path and creating the
+    # new one. The buildfile plan: section has no native "rename"
+    # operation — generate-code receives this as a paired delete + create.
+    # The new file is written from the contents of the old one with the
+    # cobra Use:/Short: strings updated to the new command name and the
+    # var name + handler name changed accordingly.
+    target-creates:
+      - internal/commands/create_domain_model.go
+    transform: |
+      Create internal/commands/create_domain_model.go as the renamed
+      counterpart of internal/commands/extract_domain_model.go.
+      Required content changes from the old file:
+      - cobra.Command.Use: "extract-domain-model" → "create-domain-model"
+      - cobra.Command.Short: "Extract domain model (use /parlay-extract-domain-model skill)"
+        → "Create domain model from features (use /parlay-create-domain-model skill)"
+      - The var name extractDomainModelCmdImpl → createDomainModelCmdImpl
+      - The handler name runExtractDomainModelHandler → runCreateDomainModelHandler
+      - The two fmt.Println strings updated to the new command name and skill slug
+      - The package-level comment block updated to drop the "future rename"
+        note (the rename has now landed)
+      - Package, imports, init() body, and the Studio-hook dispatch logic
+        carry through unchanged. The hook already passes
+        TrioCommand: "create-domain-model" (see studio_prompt_domain_model.go),
+        so no hook-side change is needed.
+      The old path internal/commands/extract_domain_model.go is deleted
+      in the same generation pass (see plan.deletes).
+    introduces:
+      - "var createDomainModelCmdImpl *cobra.Command"
+      - "func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error"
+    backward-compatible: false
+
+  - id: cli-command-rename-root-registration
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    target-files:
+      - internal/commands/root.go
+    transform: |
+      In internal/commands/root.go, change the existing line in init()
+      from
+          rootCmd.AddCommand(extractDomainModelCmdImpl)
+      to
+          rootCmd.AddCommand(createDomainModelCmdImpl)
+      Hard cutover — there is exactly one registration line for this command
+      after this feature ships. No alias, no second AddCommand for the old
+      name, no deprecation shim. The dispatcher's standard "unknown command"
+      handler picks up invocations of the old name with no special-case
+      message.
+    backward-compatible: false
+
+  # ---------------------------------------------------------------
+  # Fragment 2: Embedded Skill Rename Across Deployers
+  # ---------------------------------------------------------------
+  - id: embedded-skill-rename-source-file
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    # Embedded skill source rename. The Go embed directive
+    # //go:embed skills/*.skill.md (in core/internal/embedded/skills.go)
+    # picks up whatever filenames are present on disk at build time, so the
+    # rename of the file itself is what changes the slug threaded through
+    # the deployers. The new file content also folds in the greenfield
+    # branch and the existing-file preservation branch (see
+    # skill-greenfield-branch and skill-existing-file-preservation below).
+    target-creates:
+      - internal/embedded/skills/create-domain-model.skill.md
+    transform: |
+      Create internal/embedded/skills/create-domain-model.skill.md
+      as the renamed counterpart of
+      internal/embedded/skills/extract-domain-model.skill.md.
+      Required content changes from the old file:
+      - The H1 heading and the inline references to "extract-domain-model"
+        / "/parlay-extract-domain-model" updated to "create-domain-model"
+        / "/parlay-create-domain-model"
+      - The skill's instructions extended with the greenfield branch and
+        the existing-file preservation branch (see
+        skill-greenfield-branch and skill-existing-file-preservation
+        cross-cuttings — both target this same file; generate-code
+        produces the merged final content from the three contributing
+        cross-cuttings on this single path)
+      The old path internal/embedded/skills/extract-domain-model.skill.md
+      is deleted in the same generation pass (see plan.deletes).
+    backward-compatible: false
+
+  - id: deployer-skill-titles-map
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    target-files:
+      - internal/deployer/claude.go
+    transform: |
+      In internal/deployer/claude.go, inside the skillTitle(name string)
+      titles map, replace the entry
+          "extract-domain-model": "Extract domain model from all features",
+      with
+          "create-domain-model": "Create domain model from features",
+      The map is shared by both the Claude and Cursor deployers via
+      skillTitle() — Cursor's writeCursorProjectRule and Claude's
+      writeCLAUDEmd both call this single function. One edit cascades to
+      both deployers.
+    backward-compatible: false
+
+  - id: deployer-claude-stale-skill-cleanup
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    target-files:
+      - internal/deployer/claude.go
+    transform: |
+      Extend ClaudeDeployer.Deploy in internal/deployer/claude.go
+      with a stale-skill cleanup pass. After the loop that writes
+      .claude/skills/parlay-<skill.Name>/SKILL.md for every embedded skill,
+      walk .claude/skills/ and remove any parlay-<old-slug> directory whose
+      slug is not present in the embedded skills list. The check is generic
+      — it covers this rename and any future rename without per-rename
+      special-casing. The cleanup runs before writeClaudeAgents and
+      writeCLAUDEmd so the deployer never advertises a stale skill in
+      CLAUDE.md.
+
+      Ordering and atomicity:
+      - Compute the wanted-slug set from the embedded skills slice
+      - Read .claude/skills/ directory entries (skip if missing)
+      - For each entry whose name has the parlay- prefix and whose
+        slug-after-prefix is not in the wanted set, RemoveAll the
+        directory
+      - Non-parlay-prefixed entries are user-owned and never touched
+      - A read error on the .claude/skills directory is non-fatal —
+        the loop continues; the deploy still writes the new skill
+    introduces:
+      - "func pruneStaleClaudeSkills(projectRoot string, wanted map[string]bool) error"
+    caching: none
+    backward-compatible: false
+
+  - id: deployer-cursor-stale-skill-cleanup
+    source: "@parlay-tool/create-domain-model/rename-and-preserve-brownfield-behavior"
+    target-files:
+      - internal/deployer/cursor.go
+    transform: |
+      Extend CursorDeployer.Deploy in internal/deployer/cursor.go
+      with the symmetric stale-skill cleanup pass against .cursor/skills/.
+      Same shape and ordering as the Claude pass — compute wanted-slug set
+      from the embedded skills slice, walk .cursor/skills/, RemoveAll any
+      parlay-<old-slug> directory whose slug is not wanted. Runs before
+      writeCursorAgents and writeCursorProjectRule.
+    introduces:
+      - "func pruneStaleCursorSkills(projectRoot string, wanted map[string]bool) error"
+    caching: none
+    backward-compatible: false
+
+  # ---------------------------------------------------------------
+  # Fragment 3: Greenfield Branch in the Domain-Model Write Path
+  # ---------------------------------------------------------------
+  - id: skill-greenfield-branch
+    source: "@parlay-tool/create-domain-model/greenfield-mode-write-empty-stub"
+    # The "domain model write path" in this codebase is the AI-skill body —
+    # extraction happens in the agent loop, not in Go code. The skill file
+    # is the only place where the recognition-pass verdict is consulted
+    # and the brownfield/greenfield branch is taken. The target file is
+    # the renamed skill (see embedded-skill-rename-source-file); the
+    # generate-code pass merges contributions from all three cross-cuttings
+    # that target this file into a single final body. The path lives in
+    # plan.creates (the skill file itself is created by this feature) so
+    # this entry uses target-creates: rather than target-files:.
+    target-creates:
+      - internal/embedded/skills/create-domain-model.skill.md
+    transform: |
+      Extend the create-domain-model skill body with a greenfield branch
+      taken when the recognition pass returns zero entities, zero
+      relationships, and zero operations across all features.
+
+      Behavior to specify in the skill instructions:
+
+      1. After the recognition pass completes, compute a single boolean
+         "any-signal" verdict: true if any of (entities, relationships,
+         operations) is non-empty across the feature tree, false otherwise.
+         This is the only branch decision — no flag, no env var, no
+         separate detector.
+
+      2. If any-signal is true: brownfield. Proceed with the existing
+         extraction-and-write logic against domain-model.yaml. Print the
+         existing one-line "Wrote domain-model.yaml — N entities, M
+         relationships, K operations." summary. Exit code 0.
+
+      3. If any-signal is false: greenfield. Check the
+         existing-file-preservation branch first (see
+         skill-existing-file-preservation). Otherwise, write a
+         schema-valid empty stub at {root}/domain-model.yaml containing
+         the required top-level scaffolding — empty entities,
+         relationships, operations collections plus mandatory metadata
+         per the domain-model schema. The stub MUST validate cleanly via
+         `parlay validate --type domain-model {path}`. Print the exact
+         stable line:
+             Created empty domain-model.yaml stub at {path} — ready to author.
+         Exit code 0.
+
+      4. The greenfield branch is interactive-agnostic — same output and
+         exit code in CI / non-TTY runs as in interactive ones. Only the
+         Studio hook (a separate feature) cares about TTY; this skill
+         never inspects TTY state.
+
+      The wording "Created empty domain-model.yaml stub at {path} — ready
+      to author." is stable — the studio-cli-hooks feature pattern-matches
+      on this single line to chain its "Open Studio's Domain Model
+      Editor?" prompt.
+    backward-compatible: false
+
+  # ---------------------------------------------------------------
+  # Fragment 4: Existing-File Preservation Under No-Signals Conditions
+  # ---------------------------------------------------------------
+  - id: skill-existing-file-preservation
+    source: "@parlay-tool/create-domain-model/greenfield-mode-write-empty-stub"
+    target-creates:
+      - internal/embedded/skills/create-domain-model.skill.md
+    transform: |
+      Extend the create-domain-model skill body with an
+      existing-file-preservation branch that fires within the greenfield
+      path. Greenfield stub-write applies only when BOTH conditions hold:
+      zero signals AND no domain-model.yaml at the target path.
+
+      Behavior to specify in the skill instructions:
+
+      1. After the recognition pass returns the no-signals verdict and
+         BEFORE writing the empty stub, the skill checks whether
+         {root}/domain-model.yaml already exists.
+
+      2. If it does NOT exist: write the empty stub (see
+         skill-greenfield-branch).
+
+      3. If it DOES exist: do NOT clobber. Apply the same existing-file
+         reconciliation rules brownfield uses — read the file, merge with
+         the (empty) extracted result (which is a no-op), write the
+         existing content back unchanged so the file is byte-equivalent
+         to its prior state. Print a distinct one-line message that
+         clearly differentiates this case from a fresh stub creation,
+         e.g.:
+             domain-model.yaml present and no extractable signals — leaving existing model untouched.
+         Exit code 0.
+
+      4. The reconciliation path used here is the SAME path brownfield
+         uses for an existing file with extracted content — there is no
+         separate "no-signals + existing-file" branch in the
+         reconciliation logic.
+
+      Safety invariant: a designer who hand-authored a domain model in
+      Studio and then runs `parlay create-domain-model` must never have
+      their work clobbered by the new greenfield branch. This branch is
+      what holds that invariant.
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/commands/root.go
+      sources:
+        - cross-cutting/cli-command-rename-root-registration
+    - path: internal/deployer/claude.go
+      sources:
+        - cross-cutting/deployer-skill-titles-map
+        - cross-cutting/deployer-claude-stale-skill-cleanup
+    - path: internal/deployer/cursor.go
+      sources:
+        - cross-cutting/deployer-cursor-stale-skill-cleanup
+  creates:
+    - path: internal/commands/create_domain_model.go
+      sources:
+        - cross-cutting/cli-command-rename-source-file
+    - path: internal/embedded/skills/create-domain-model.skill.md
+      sources:
+        - cross-cutting/embedded-skill-rename-source-file
+        - cross-cutting/skill-greenfield-branch
+        - cross-cutting/skill-existing-file-preservation
+  deletes:
+    - path: internal/commands/extract_domain_model.go
+      sources:
+        - cross-cutting/cli-command-rename-source-file
+    - path: internal/embedded/skills/extract-domain-model.skill.md
+      sources:
+        - cross-cutting/embedded-skill-rename-source-file
+
+source-signatures:
+  intents: a7e01d9421a4d91d2ceb25e3eba46df6009f43063523ce810e92cd7cc9fc2dd8
+  dialogs: 45454ded364a8e490c1c51f9d652c8b0ce20a901eec434a414f9f90b21fe6e5e
+  infrastructure: b7a3ccd32f8141bb2de8b46819443843ae4c07c83bfe872595f747c07c9f1837
+  adapter-version: 3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188
