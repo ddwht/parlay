@@ -1,0 +1,1755 @@
+feature: parlay-tool/multi-adapter
+adapter: go-cli
+
+models:
+  AdapterFile:
+    properties:
+      path:
+        type: string
+        required: true
+        description: Filesystem path to the adapter file under .parlay/adapters/
+      name:
+        type: string
+        required: true
+        description: Adapter slug (filename minus .adapter.yaml)
+      kind:
+        type: enum
+        enum: [presentation, transport, application, persistence]
+        required: false
+        description: Adapter kind; absent means legacy default presentation
+      supports:
+        type: string
+        required: false
+        description: Map of supported terms by closed-vocabulary group (operation_kinds, steps, policies, errors)
+
+  AdapterSet:
+    properties:
+      path:
+        type: string
+        required: true
+        description: Path to .parlay/adapter-set.yaml
+      name:
+        type: string
+        required: true
+      targets:
+        type: string
+        required: true
+        description: Map keyed by kind; each entry is {adapter, root}
+      links:
+        type: string
+        required: false
+        description: Optional list of {from, relation, to} cross-kind link rules
+
+  CapabilitiesArtifact:
+    properties:
+      path:
+        type: string
+        required: true
+      schema_version:
+        type: number
+        required: true
+      feature:
+        type: string
+        required: true
+      operations:
+        type: string
+        required: true
+        description: List of CapabilityOperation; ids feature-local in source, normalized to @feature/operation:id in buildfile
+
+  CapabilityOperation:
+    properties:
+      id:
+        type: string
+        required: true
+      kind:
+        type: enum
+        enum: [command, query]
+        required: true
+      subject:
+        type: string
+        required: true
+      input:
+        type: string
+        required: false
+      output:
+        type: string
+        required: false
+      errors:
+        type: string
+        required: false
+      policies:
+        type: string
+        required: false
+      steps:
+        type: string
+        required: true
+
+  Buildfile:
+    properties:
+      path:
+        type: string
+        required: true
+      operations:
+        type: string
+        required: false
+        description: Map keyed by normalized operation id
+      targets:
+        type: string
+        required: false
+        description: Map keyed by kind, carrying per-target projection metadata
+      plan:
+        type: string
+        required: false
+
+  TestcasesFile:
+    properties:
+      schema_version:
+        type: number
+        required: true
+      suites:
+        type: string
+        required: true
+        description: Each suite has kind=presentation|operation and source_refs[]
+
+  CoverageReview:
+    properties:
+      path:
+        type: string
+        required: true
+      feature:
+        type: string
+        required: true
+      reviewed_at:
+        type: string
+        required: true
+      reviewed_by:
+        type: string
+        required: true
+      review_method:
+        type: string
+        required: true
+      buildfile_hash:
+        type: string
+        required: true
+      testcases_hash:
+        type: string
+        required: true
+      approved_suites:
+        type: string
+        required: true
+      exemptions:
+        type: string
+        required: false
+
+  Blueprint:
+    properties:
+      path:
+        type: string
+        required: true
+      data:
+        type: string
+        required: false
+      auth:
+        type: string
+        required: false
+      errors:
+        type: string
+        required: false
+      state:
+        type: string
+        required: false
+      navigation:
+        type: string
+        required: false
+      platform:
+        type: string
+        required: false
+
+  ValidationOutcome:
+    properties:
+      mode:
+        type: enum
+        enum: [authoring, build]
+        required: true
+      code:
+        type: string
+        required: true
+      severity:
+        type: enum
+        enum: [warning, error]
+        required: true
+      message:
+        type: string
+        required: true
+      fix:
+        type: string
+        required: false
+
+  MigrationReport:
+    properties:
+      feature:
+        type: string
+        required: true
+      counts:
+        type: string
+        required: true
+      entries:
+        type: string
+        required: true
+        description: Per-fragment outcomes — line range, detected shape, suggested destination
+
+  Preset:
+    properties:
+      name:
+        type: enum
+        enum: [react-antd-only, angular-clarity-only, react-nest-prisma, angular-nest-prisma, custom]
+        required: true
+      kinds-filled:
+        type: string
+        required: true
+
+fixtures:
+  full-stack-adapter-set:
+    description: A four-kind adapter set with all slots filled and explicit links — the v1 first preset
+    data:
+      AdapterSet:
+        - path: .parlay/adapter-set.yaml
+          name: my-app
+          targets:
+            presentation: {adapter: react-antd, root: apps/web}
+            transport: {adapter: openapi-rest, root: apps/api}
+            application: {adapter: nestjs-application, root: apps/api}
+            persistence: {adapter: prisma-postgres, root: apps/api}
+          links:
+            - {from: presentation, relation: calls, to: transport}
+            - {from: transport, relation: dispatches, to: application}
+            - {from: application, relation: persists, to: persistence}
+
+  presentation-only-adapter-set:
+    description: A presentation-only adapter set — typical for back-compat projects
+    data:
+      AdapterSet:
+        - path: .parlay/adapter-set.yaml
+          name: my-app
+          targets:
+            presentation: {adapter: react-antd, root: apps/web}
+
+  adapter-with-unknown-kind:
+    description: An adapter file declaring an out-of-vocab kind
+    data:
+      AdapterFile:
+        - path: .parlay/adapters/storage.adapter.yaml
+          name: storage
+          kind: storage
+
+  adapter-without-kind:
+    description: "A pre-feature adapter file with no kind: field — legacy default applies"
+    data:
+      AdapterFile:
+        - path: .parlay/adapters/react-antd.adapter.yaml
+          name: react-antd
+
+  capabilities-task-create:
+    description: A capabilities.yaml declaring a single command operation
+    data:
+      CapabilitiesArtifact:
+        - path: spec/intents/task-list/capabilities.yaml
+          schema_version: 1
+          feature: task-list
+          operations:
+            - id: task.create
+              kind: command
+              subject: {entity: Task}
+              input: {type: CreateTaskInput}
+              output: {shape: one, entity: Task}
+              errors: [validation-failed, conflict]
+              policies: [transaction-required]
+              steps:
+                - {type: validate-input}
+                - {type: create-one, entity: Task, identity: generated}
+                - {type: return-one, entity: Task}
+
+  capabilities-with-unknown-step:
+    description: A capabilities operation referencing a step outside the closed vocabulary
+    data:
+      CapabilitiesArtifact:
+        - path: spec/intents/task-list/capabilities.yaml
+          schema_version: 1
+          feature: task-list
+          operations:
+            - id: task.search
+              kind: query
+              steps: [{type: telepathy}]
+
+  legacy-buildfile-presentation-only:
+    description: A pre-multi-target buildfile with top-level adapter:, components:, routes:, plan.creates
+    data:
+      Buildfile:
+        - path: .parlay/build/task-list/buildfile.yaml
+          targets: null
+          operations: null
+
+  matching-coverage-review:
+    description: A coverage-review.yaml whose hashes match the on-disk buildfile and testcases
+    data:
+      CoverageReview:
+        - path: .parlay/build/task-list/coverage-review.yaml
+          feature: task-list
+          reviewed_at: "2026-01-15T10:00:00Z"
+          reviewed_by: designer@example.com
+          review_method: cli
+          buildfile_hash: "sha256:abc...current"
+          testcases_hash: "sha256:def...current"
+          approved_suites: [task-create-form-presentation, task-create-operation]
+          exemptions: []
+
+  drifted-coverage-review:
+    description: A coverage-review.yaml whose recorded buildfile_hash no longer matches the on-disk buildfile
+    data:
+      CoverageReview:
+        - path: .parlay/build/task-list/coverage-review.yaml
+          feature: task-list
+          buildfile_hash: "sha256:stale-value"
+          testcases_hash: "sha256:def...current"
+          approved_suites: [task-create-form-presentation, task-create-operation]
+
+  preset-react-nest-prisma:
+    description: The v1 first preset
+    data:
+      Preset:
+        - name: react-nest-prisma
+          kinds-filled: [presentation, transport, application, persistence]
+
+  preset-react-antd-only:
+    description: A presentation-only preset
+    data:
+      Preset:
+        - name: react-antd-only
+          kinds-filled: [presentation]
+
+  blueprint-jwt-stale-while-revalidate:
+    description: A blueprint declaring data.fetching and auth.strategy strategies
+    data:
+      Blueprint:
+        - path: .parlay/blueprint.yaml
+          data: {fetching: stale-while-revalidate, caching: per-route}
+          auth: {strategy: jwt}
+          errors: {retry: writes}
+
+  blueprint-with-targets-block:
+    description: A blueprint that illegally declares topology
+    data:
+      Blueprint:
+        - path: .parlay/blueprint.yaml
+          data: {fetching: on-mount}
+
+  domain-model-with-legacy-operations:
+    description: A domain-model.yaml with a non-empty deprecated operations field
+    data: {}
+
+routes:
+  - path: init
+    page: init
+    flow-pattern: sequential-prompts
+    regions:
+      main:
+        components: [project-setup-preset-selection]
+
+  - path: validate
+    page: validate
+    flow-pattern: cobra-subcommands
+    regions:
+      main:
+        components:
+          - adapter-set-validation-failure
+          - capabilities-validation-output
+          - blueprint-validation-output
+          - testcases-validation-output
+          - domain-model-validation-output
+          - surface-validation-output
+          - buildfile-canonical-validation-output
+
+  - path: build-feature
+    page: build-feature
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components:
+          - pre-codegen-support-gate-failure
+          - buildfile-normalization-review
+      dialog:
+        components: [routes-disambiguation-prompt]
+
+  - path: migrate-domain-operations
+    page: migrate-domain-operations
+    flow-pattern: sequential-prompts
+    regions:
+      main:
+        components: [domain-operations-migration-prompt]
+
+  - path: migrate-spec
+    page: migrate-spec
+    flow-pattern: cobra-command
+    regions:
+      main:
+        components: [spec-migration-report]
+
+  - path: migrate-capabilities
+    page: migrate-capabilities
+    flow-pattern: cobra-command
+    regions:
+      main:
+        components:
+          - capabilities-migration-operations-extraction
+          - pattern-fragment-migration-report
+
+  - path: migrate-config
+    page: migrate-config
+    flow-pattern: cobra-command
+    regions:
+      main:
+        components: [config-migration-result]
+
+  - path: generate-code
+    page: generate-code
+    flow-pattern: watch-loop
+    regions:
+      main:
+        components:
+          - coverage-review-gate-failure
+          - codegen-pipeline-progress
+
+  - path: review-coverage
+    page: review-coverage
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components: [coverage-review-authoring]
+
+  - path: upgrade
+    page: upgrade
+    flow-pattern: sequential-prompts
+    regions:
+      main:
+        components: [adapter-kind-field-opt-in-prompt]
+
+components:
+  project-setup-preset-selection:
+    source: "@multi-adapter/project-setup-preset-selection"
+    widget: cobra-command
+    description: Run by `parlay init <project>`. Lists the four bundled presets plus custom; copies the chosen preset's adapter-set and adapter files into .parlay/.
+    data:
+      inputs:
+        - name: presets
+          model: Preset
+          field: name
+          from: fixture
+        - name: project-name
+          from: command-argument
+      computed:
+        - name: kinds-filled-summary
+          from: preset.kinds-filled joined with comma
+          type: string
+    elements:
+      - name: presets-banner
+        widget: fmt.Println
+        bind: "Pick a starting preset for <project-name>:"
+        visible-when: always
+      - name: presets-list
+        widget: bulleted-list
+        bind: presets
+        format: "<name> — fills <kinds-filled-summary>"
+        visible-when: always
+      - name: first-preset-annotation
+        widget: prefixed-message
+        bind: "[INFO] react-nest-prisma is the v1 first preset (exercised end-to-end in CI)."
+        visible-when: presets-list rendered
+      - name: post-write-summary
+        widget: headed-section
+        bind: "Files written"
+        format: "Adapter set + N adapter files copied"
+        visible-when: selection != custom
+      - name: custom-empty-state
+        widget: fmt.Println
+        bind: "No files written — author .parlay/adapter-set.yaml from scratch."
+        visible-when: selection == custom
+    actions:
+      - name: pick-preset
+        widget: lettered-prompt
+        enabled-when: always
+        effect: mutate
+        target: Preset.name
+      - name: continue-to-add-feature
+        widget: cobra-command
+        enabled-when: post-write-summary visible
+        effect: navigate
+        target: parlay-add-feature
+
+  adapter-set-validation-failure:
+    source: "@multi-adapter/adapter-set-validation-failure"
+    widget: cobra-command
+    description: Output for `parlay validate` when .parlay/adapter-set.yaml or a referenced adapter file is malformed.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        format: '"[ERR]" or "[WARN]"'
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: fix-hint
+        widget: fmt.Println
+        bind: outcome.fix
+        visible-when: outcome.fix is set
+    actions:
+      - name: open-relevant-artifact
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: cited-file
+
+  pre-codegen-support-gate-failure:
+    source: "@multi-adapter/pre-codegen-support-gate-failure"
+    widget: cobra-command
+    description: Output for `parlay build-feature` when a feature's resolved capability operations use a term outside the relevant adapter's supports. Fails before any AI invocation.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+        - name: operation
+          from: computed
+        - name: adapter-name
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: "[ERR]"
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        format: "operation <operation>: <adapter> does not support <term> (<term-kind>)"
+        visible-when: always
+      - name: fix-paths
+        widget: bulleted-list
+        bind: ["remove the term from this operation", "use an adapter that supports it"]
+        visible-when: always
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: emit
+        target: build-feature-aborted
+
+  capabilities-validation-output:
+    source: "@multi-adapter/capabilities-validation-output"
+    widget: cobra-command
+    description: Output when validating spec/intents/<feature>/capabilities.yaml.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: v2-deferral-note
+        widget: fmt.Println
+        bind: "deferred to v2 — use kind: command or kind: query for v1"
+        visible-when: outcome.code == "capabilities-unknown-term" AND term in [subscription, job]
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: capabilities.yaml
+
+  domain-operations-migration-prompt:
+    source: "@multi-adapter/domain-operations-migration-prompt"
+    widget: cobra-command
+    description: Run by `parlay migrate-domain-operations`. Walks each entry under domain-model.operations[*] and writes stubs into the appropriate feature's capabilities.yaml.
+    data:
+      inputs:
+        - name: legacy-entries
+          from: file-read
+        - name: candidate-features
+          from: computed
+    elements:
+      - name: per-entry-quote
+        widget: indented-block
+        bind: legacy-entry.prose
+        visible-when: always
+      - name: candidate-features-list
+        widget: bulleted-list
+        bind: candidate-features
+        format: "<feature> (owns entity <entity>)"
+        visible-when: target-feature ambiguous
+      - name: per-entry-result
+        widget: headed-section
+        bind: "Stub written"
+        format: "<feature>.capabilities.yaml gained kind: unknown stub"
+        visible-when: stub written
+      - name: post-run-summary
+        widget: headed-section
+        bind: "Summary"
+        format: "Migrated <count> entries; cleared domain-model.operations"
+        visible-when: all-entries processed
+    actions:
+      - name: pick-feature
+        widget: lettered-prompt
+        enabled-when: target-feature ambiguous
+        effect: mutate
+        target: stub.feature
+      - name: invoke
+        widget: cobra-command
+        enabled-when: post-run-summary visible
+        effect: navigate
+        target: parlay-validate-capabilities
+
+  spec-migration-report:
+    source: "@multi-adapter/spec-migration-report"
+    widget: cobra-command
+    description: Output for `parlay migrate-spec`. Walks each feature's surface.md and writes surface.yaml alongside.
+    data:
+      inputs:
+        - name: features
+          from: computed
+        - name: report
+          model: MigrationReport
+          from: computed
+    elements:
+      - name: summary
+        widget: headed-section
+        bind: report.counts
+        format: "Migrated <N>; already-migrated <M>; with unrouted content <K>"
+        visible-when: always
+      - name: per-feature-list
+        widget: bulleted-list
+        bind: report.entries
+        format: "<feature> — wrote surface.yaml; unrouted lines: <ranges>"
+        visible-when: always
+      - name: retain-md-message
+        widget: fmt.Println
+        bind: "surface.md left in place — delete after reviewing the YAML and the unrouted-content report."
+        visible-when: always
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: parlay-validate-surface
+
+  blueprint-validation-output:
+    source: "@multi-adapter/blueprint-validation-output"
+    widget: cobra-command
+    description: Output when validating blueprint.yaml (or implicit defaults when no file is present).
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+        - name: resolved-values
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: outcome present
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: outcome present
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: outcome present
+      - name: resolved-values-table
+        widget: tabwriter
+        bind: resolved-values
+        format: "setting | value | source-layer"
+        visible-when: validation passed
+      - name: error-no-mapping-detail
+        widget: fmt.Println
+        bind: "operation <op>: error <err> has no mapping at <missing-layer>"
+        visible-when: outcome.code == "error-no-mapping"
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: blueprint.yaml
+
+  buildfile-normalization-review:
+    source: "@multi-adapter/buildfile-normalization-review"
+    widget: cobra-command
+    description: Designer-visible diff/review surface for `parlay build-feature` when a legacy buildfile is being normalized.
+    data:
+      inputs:
+        - name: legacy-buildfile
+          model: Buildfile
+          from: file-read
+        - name: relocations
+          from: computed
+    elements:
+      - name: summary
+        widget: headed-section
+        bind: "Relocations"
+        format: "top-level adapter: → adapter-set; components: → targets.presentation.components; routes: → targets.<chosen>; plan.creates → plan.targets.<kind>.creates"
+        visible-when: always
+      - name: diff
+        widget: diff-output
+        bind: relocations
+        format: "+ targets.presentation.components.<name>: ...\n- components.<name>: ..."
+        visible-when: always
+      - name: ambiguous-flag
+        widget: prefixed-message
+        bind: "[WARN] route /<path> collides with transport HTTP exposure — disambiguation required"
+        visible-when: legacy.routes contains a path also exposed by targets.transport
+      - name: models-deprecated-flag
+        widget: prefixed-message
+        bind: "[WARN] models: is deprecated — entity declarations belong in domain-model.yaml"
+        visible-when: legacy.models is non-empty
+      - name: wiring-bindings-untouched-note
+        widget: fmt.Println
+        bind: "wiring.rules and bindings sections left byte-equivalent."
+        visible-when: legacy has wiring or bindings
+    actions:
+      - name: confirm
+        widget: yn-prompt
+        enabled-when: always
+        effect: mutate
+        target: Buildfile.path
+      - name: dismiss
+        widget: os.Exit
+        enabled-when: always
+        effect: emit
+        target: normalization-aborted
+
+  routes-disambiguation-prompt:
+    source: "@multi-adapter/routes-disambiguation-prompt"
+    widget: lettered-prompt
+    description: Sub-flow of Buildfile Normalization Review when a legacy routes path collides with transport HTTP exposure.
+    data:
+      inputs:
+        - name: collision-path
+          from: computed
+        - name: candidate-targets
+          from: computed
+    elements:
+      - name: collision-message
+        widget: fmt.Println
+        bind: "Path <collision-path> could land in either targets.presentation.routes (client-side) or targets.transport (HTTP exposure)."
+        visible-when: always
+      - name: candidates-list
+        widget: bulleted-list
+        bind: candidate-targets
+        format: "<target> — <description>"
+        visible-when: always
+    actions:
+      - name: pick-target
+        widget: lettered-prompt
+        enabled-when: always
+        effect: mutate
+        target: Buildfile.routes-target
+      - name: cancel
+        widget: os.Exit
+        enabled-when: always
+        effect: emit
+        target: routes-ambiguous-error
+
+  testcases-validation-output:
+    source: "@multi-adapter/testcases-validation-output"
+    widget: cobra-command
+    description: Output when validating testcases.yaml (v2 schema with discriminated suite kinds).
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: legacy-warning-note
+        widget: fmt.Println
+        bind: "Legacy v1 suite without source_refs — auto-populated from intent string. Regenerate v2 testcases to clear this warning."
+        visible-when: outcome.code == "testcases-source-refs-missing-legacy"
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: testcases.yaml
+
+  coverage-review-authoring:
+    source: "@multi-adapter/coverage-review-authoring"
+    widget: cobra-command
+    description: Run by `parlay review-coverage <feature>`. Designer reads each suite, approves or rejects, and optionally records exemptions.
+    data:
+      inputs:
+        - name: suites
+          from: computed
+        - name: missing-coverage-items
+          from: computed
+        - name: hashes
+          from: computed
+    elements:
+      - name: suites-list
+        widget: bulleted-list
+        bind: suites
+        format: "<id> — kind=<presentation|operation> — refs=<source_refs>"
+        visible-when: always
+      - name: coverage-summary
+        widget: headed-section
+        bind: "Coverage"
+        format: "<approved>/<total> suites approved; <covered>/<required> ops covered; buildfile_hash=<hash>"
+        visible-when: always
+      - name: exemption-prompt
+        widget: text-prompt
+        bind: missing-coverage-items
+        format: "Reason for exempting <suite>:<item>?"
+        visible-when: missing-coverage-items not empty
+    actions:
+      - name: confirm-suite
+        widget: yn-prompt
+        enabled-when: always
+        effect: mutate
+        target: CoverageReview.approved_suites
+      - name: dismiss
+        widget: os.Exit
+        enabled-when: always
+        effect: emit
+        target: review-aborted
+      - name: provide-exemption-reason
+        widget: text-prompt
+        enabled-when: missing-coverage-items not empty
+        effect: mutate
+        target: CoverageReview.exemptions
+
+  coverage-review-gate-failure:
+    source: "@multi-adapter/coverage-review-gate-failure"
+    widget: cobra-command
+    description: Output for `parlay generate-code` when the coverage-review gate refuses the run.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+        - name: drifted-hash
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: "[ERR]"
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: hash-detail
+        widget: fmt.Println
+        bind: "drifted hash: <drifted-hash>"
+        visible-when: outcome.code == "coverage-review-stale"
+      - name: directive
+        widget: fmt.Println
+        bind: "Run `parlay review-coverage <feature>` to re-record approval."
+        visible-when: always
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: parlay-review-coverage
+
+  codegen-pipeline-progress:
+    source: "@multi-adapter/codegen-pipeline-progress"
+    widget: cobra-command
+    description: Streaming output for `parlay generate-code` after the coverage-review gate passes.
+    data:
+      inputs:
+        - name: layers
+          from: computed
+        - name: emitted-files
+          from: computed
+    elements:
+      - name: layer-progress
+        widget: progress-line
+        bind: layers
+        format: "<layer>: <status> (<files-count> files)"
+        visible-when: always
+      - name: per-file-line
+        widget: fmt.Println
+        bind: emitted-files
+        format: "  + <path>"
+        visible-when: layer succeeded
+      - name: read-violation
+        widget: prefixed-message
+        bind: "[ERR] codegen-spec-read-forbidden: <path>"
+        visible-when: read attempt outside allowed set detected
+      - name: final-summary
+        widget: headed-section
+        bind: "Summary"
+        format: "Total files: <N>; hash drift versus prior run: <M>; tests live at: <path>"
+        visible-when: pipeline completed successfully
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: emit
+        target: codegen-finished
+
+  capabilities-migration-operations-extraction:
+    source: "@multi-adapter/capabilities-migration-operations-extraction"
+    widget: cobra-command
+    description: First-pass output of `parlay migrate-capabilities` — operation-shaped fragments extracted from infrastructure.md into capabilities.yaml.
+    data:
+      inputs:
+        - name: features
+          from: computed
+        - name: extracted-operations
+          from: computed
+    elements:
+      - name: summary
+        widget: headed-section
+        bind: "Operations extracted"
+        format: "<feature>: <count> operations written to capabilities.yaml"
+        visible-when: always
+      - name: per-feature-list
+        widget: bulleted-list
+        bind: extracted-operations
+        format: "<feature>/<op-id> — kind=<command|query|unknown> (lines <range>)"
+        visible-when: always
+      - name: ambiguous-kind-warning
+        widget: prefixed-message
+        bind: "[WARN] kind: unknown — set kind: explicitly before build mode"
+        visible-when: "any operation has kind: unknown"
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: capabilities.yaml
+
+  pattern-fragment-migration-report:
+    source: "@multi-adapter/pattern-fragment-migration-report"
+    widget: cobra-command
+    description: Per-feature report from `parlay migrate-capabilities` for engineering-pattern fragments the operation-shaped extractor did not consume.
+    data:
+      inputs:
+        - name: fragments
+          from: computed
+    elements:
+      - name: per-fragment-list
+        widget: bulleted-list
+        bind: fragments
+        format: "<feature> lines <range> — shape=<detected> — destination=<suggested>"
+        visible-when: always
+      - name: fragment-quotes
+        widget: indented-block
+        bind: fragments[].verbatim
+        visible-when: always
+      - name: unrouted-flag
+        widget: prefixed-message
+        bind: "[WARN] unrouted; designer review required"
+        visible-when: any fragment classifier-failed
+      - name: v2-deferred-flag
+        widget: prefixed-message
+        bind: "[INFO] v2-deferred — fragment preserved verbatim"
+        visible-when: any fragment classifier=v2-deferred
+      - name: report-only-message
+        widget: fmt.Println
+        bind: "Migrator only writes the report — capabilities.yaml, domain-model.yaml, blueprint.yaml are unchanged."
+        visible-when: always
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: suggested-destination
+
+  config-migration-result:
+    source: "@multi-adapter/config-migration-result"
+    widget: cobra-command
+    description: Output for `parlay migrate-config`. Converts the legacy prototype-framework field into a single-target presentation adapter-set.
+    data:
+      inputs:
+        - name: legacy-field
+          from: file-read
+        - name: written-adapter-set
+          from: computed
+    elements:
+      - name: summary
+        widget: headed-section
+        bind: "Conversion"
+        format: "<legacy-field> → adapter-set with <adapter-slug>"
+        visible-when: legacy-field present
+      - name: no-op-message
+        widget: fmt.Println
+        bind: "no legacy fields detected; nothing to migrate"
+        visible-when: legacy-field absent
+      - name: deprecation-note
+        widget: fmt.Println
+        bind: "prototype-framework is deprecated; outright removal is owned by a separate deprecation feature"
+        visible-when: legacy-field present
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: parlay-migrate-spec
+
+  domain-model-validation-output:
+    source: "@multi-adapter/domain-model-validation-output"
+    widget: cobra-command
+    description: Output when validating domain-model.yaml.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: stub-pointer
+        widget: fmt.Println
+        bind: "fill kind: in <feature>/capabilities.yaml before build mode"
+        visible-when: outcome.code == "capabilities-stub-unfilled"
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: domain-model.yaml-or-capabilities.yaml
+
+  surface-validation-output:
+    source: "@multi-adapter/surface-validation-output"
+    widget: cobra-command
+    description: Output when validating surface.yaml (preferred) or surface.md (legacy).
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: superseded-pair
+        widget: fmt.Println
+        bind: "surface.yaml is being used; surface.md is now inert documentation."
+        visible-when: outcome.code == "surface-md-superseded"
+      - name: legacy-format-note
+        widget: fmt.Println
+        bind: "[INFO] surface.md is legacy migration input — run parlay migrate-spec to convert"
+        visible-when: only surface.md present
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: surface-file
+
+  buildfile-canonical-validation-output:
+    source: "@multi-adapter/buildfile-canonical-validation-output"
+    widget: cobra-command
+    description: Output when validating .parlay/build/<feature>/buildfile.yaml against the multi-target canonical shape.
+    data:
+      inputs:
+        - name: outcome
+          model: ValidationOutcome
+          from: computed
+    elements:
+      - name: status-prefix
+        widget: prefixed-message
+        bind: outcome.severity
+        visible-when: always
+      - name: code
+        widget: indented-block
+        bind: outcome.code
+        visible-when: always
+      - name: message
+        widget: fmt.Println
+        bind: outcome.message
+        visible-when: always
+      - name: target-restate-detail
+        widget: fmt.Println
+        bind: "field <field> appears under both operations: and targets.<kind>: — keep it under operations: only"
+        visible-when: outcome.code == "buildfile-target-restates-canonical"
+      - name: missing-ref-detail
+        widget: fmt.Println
+        bind: "ref <ref> does not resolve to a key under operations:"
+        visible-when: outcome.code in [buildfile-binding-operation-missing, buildfile-target-operation-missing]
+    actions:
+      - name: invoke
+        widget: cobra-command
+        enabled-when: always
+        effect: navigate
+        target: buildfile.yaml
+
+  adapter-kind-field-opt-in-prompt:
+    source: "@multi-adapter/adapter-kind-field-opt-in-prompt"
+    widget: cobra-command
+    description: "Triggered during `parlay upgrade` when one or more adapter files lack an explicit kind: field."
+    data:
+      inputs:
+        - name: missing-kind-files
+          from: computed
+    elements:
+      - name: explainer
+        widget: fmt.Println
+        bind: "These adapter files predate the multi-adapter feature; the validator already treats them as kind: presentation."
+        visible-when: always
+      - name: file-list
+        widget: bulleted-list
+        bind: missing-kind-files
+        format: "<path> — inferred default: kind: presentation"
+        visible-when: always
+      - name: post-write-summary
+        widget: headed-section
+        bind: "Updated"
+        format: "<count> file(s) gained an explicit kind: presentation line"
+        visible-when: confirmation accepted AND files chosen
+    actions:
+      - name: select-files
+        widget: checkbox-prompt
+        enabled-when: missing-kind-files not empty
+        effect: mutate
+        target: AdapterFile.kind
+      - name: confirm
+        widget: yn-prompt
+        enabled-when: select-files made a non-empty pick
+        effect: mutate
+        target: AdapterFile.kind
+      - name: dismiss
+        widget: os.Exit
+        enabled-when: always
+        effect: emit
+        target: opt-in-prompt-dismissed
+
+cross-cutting:
+  - id: adapter-kind-discriminator
+    source: "@multi-adapter/adapter-kinds-and-adapter-set-topology"
+    target-files:
+      - internal/embedded/schemas/adapter.schema.md
+      - internal/agent/validate.go
+    target-creates:
+      - internal/embedded/schemas/adapter-set.schema.md
+      - internal/agent/validate_adapter_set.go
+      - internal/parser/adapter_set.go
+    transform: |
+      Add a closed-vocabulary kind: field to the adapter file schema with the closed set
+      {presentation, transport, application, persistence}, treating an absent field as the
+      legacy presentation default. Define .parlay/adapter-set.yaml with required keys name and
+      targets (map keyed by kind, each entry {adapter, root}). Validate adapter-set entries
+      reference real adapter files, that each entry's slot kind matches the referenced
+      adapter's declared kind, and that no two entries share a kind.
+    introduces:
+      - kind closed-set declaration in adapter.schema.md
+      - new schema file adapter-set.schema.md
+      - ValidateAdapterSet(ctx, path, content) -> []ValidationOutcome
+      - parser.AdapterSet struct with Targets map and optional Links list
+      - error codes adapter-kind-unknown, adapter-set-duplicate-kind, adapter-set-adapter-missing, adapter-set-kind-mismatch
+    backward-compatible: true
+
+  - id: adapter-set-link-enforcement
+    source: "@multi-adapter/adapter-set-links-enforce-cross-kind-boundaries"
+    target-files:
+      - internal/agent/validate.go
+    target-creates:
+      - internal/agent/validate_adapter_set_links.go
+    transform: |
+      Define a closed link-relation vocabulary {calls, dispatches, persists}. Walk every
+      cross-kind reference recorded in the buildfile's targets: block and reject any edge
+      whose (from-kind, to-kind) pair is not present in adapter-set.yaml's links: block.
+      Authoring mode emits warnings; build mode fails. An edge to an unfilled slot fails
+      earlier as an unresolved target.
+    introduces:
+      - linkRelations closed set {calls, dispatches, persists}
+      - WalkCrossKindEdges(buildfile, adapterSet) iterator
+      - error codes adapter-set-link-violated, adapter-set-link-missing, adapter-set-link-unfilled-slot
+    backward-compatible: true
+
+  - id: adapter-supports-contract
+    source: "@multi-adapter/adapter-supports-contract-gates-codegen-pre-ai"
+    target-files:
+      - internal/embedded/schemas/adapter.schema.md
+      - internal/agent/validate.go
+    target-creates:
+      - internal/agent/validate_supports.go
+    transform: |
+      Add a supports: block to the adapter file schema for non-presentation kinds with
+      sub-keys operation_kinds, steps, policies, errors — each a list drawn from the
+      corresponding closed vocabulary. During build-feature, walk every operation in the
+      resolved capabilities.yaml against the adapter occupying the relevant slot's
+      supports: declarations. Fail before any AI invocation when a feature requires a
+      term the adapter does not declare. Pattern descriptions live alongside supports:
+      but are AI prompt material, not validator input.
+    introduces:
+      - ValidateSupports(adapter, capabilities) -> []ValidationOutcome
+      - error codes adapter-supports-missing-operation-kind, adapter-supports-missing-step, adapter-supports-missing-policy, adapter-supports-missing-error, adapter-supports-unknown-term, adapter-supports-shape-mismatch
+    backward-compatible: true
+
+  - id: closed-vocabulary-schemas
+    source: "@multi-adapter/v1-closed-vocabularies-and-v2-deferrals"
+    target-creates:
+      - internal/embedded/schemas/operation-kinds.schema.md
+      - internal/embedded/schemas/steps.schema.md
+      - internal/embedded/schemas/errors.schema.md
+      - internal/embedded/schemas/policies.schema.md
+    transform: |
+      Author four closed-vocabulary schema files enumerating exactly the v1 contents:
+      operation_kinds = {command, query}; steps (write group) = {validate-input, authorize,
+      create-one, update-one, delete-one}; steps (read group) = {read-one, read-many,
+      search}; steps (return group) = {return-one, return-many, return-empty}; errors =
+      {validation-failed, unauthorized, forbidden, not-found, conflict, server-error};
+      policies = {auth-required, permission-required, transaction-required}. Mark
+      subscriptions and jobs as v2-deferred for kind-aware fix messages.
+    introduces:
+      - operation-kinds.schema.md, steps.schema.md, errors.schema.md, policies.schema.md
+      - v2-deferral annotations in operation-kinds.schema.md
+    backward-compatible: true
+
+  - id: bundled-adapter-set-presets
+    source: "@multi-adapter/bundled-adapter-set-presets"
+    target-files:
+      - internal/commands/init.go
+    target-creates:
+      - internal/embedded/presets/react-antd-only.adapter-set.yaml
+      - internal/embedded/presets/angular-clarity-only.adapter-set.yaml
+      - internal/embedded/presets/react-nest-prisma.adapter-set.yaml
+      - internal/embedded/presets/angular-nest-prisma.adapter-set.yaml
+      - internal/embedded/adapters/openapi-rest.adapter.yaml
+      - internal/embedded/adapters/nestjs-application.adapter.yaml
+      - internal/embedded/adapters/prisma-postgres.adapter.yaml
+      - internal/embedded/presets.go
+    transform: |
+      Ship four bundled adapter-set templates inside the tool — react-antd-only,
+      angular-clarity-only, react-nest-prisma, angular-nest-prisma — each consisting of a
+      .parlay/adapter-set.yaml plus the adapter files it references. Designate
+      react-nest-prisma as the v1 first preset. Extend `parlay init` to prompt for a
+      preset by name (or custom) and copy the chosen preset's files. Custom mode skips
+      the copy. Add embedded.ReadPreset and a //go:embed presets/*.adapter-set.yaml.
+    introduces:
+      - embedded.ReadPreset(name) and embedded.PresetNames()
+      - init flow's preset selection prompt
+      - error code preset-adapter-missing for preset-completeness check
+    backward-compatible: true
+
+  - id: capabilities-artifact
+    source: "@multi-adapter/capabilities-yaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact"
+    target-files:
+      - internal/agent/validate.go
+      - internal/agent/validate_infrastructure.go
+    target-creates:
+      - internal/embedded/schemas/capabilities.schema.md
+      - internal/parser/capabilities.go
+      - internal/agent/validate_capabilities.go
+    transform: |
+      Define spec/intents/<feature>/capabilities.yaml with top-level schema_version,
+      feature, and operations:. Each operation has id (feature-local), kind, subject,
+      input, output, errors, policies, steps. Parse, validate every term against the
+      closed vocabularies, normalize the operation id to @<feature>/operation:<id> on
+      the way into the buildfile. Reject prose-only fragments in build mode; warn in
+      authoring mode.
+    introduces:
+      - capabilities.schema.md
+      - parser.Capabilities and parser.CapabilityOperation types
+      - parser.NormalizeOperationID(feature, id) -> "@feature/operation:id"
+      - ValidateCapabilities(ctx, path, content) -> []ValidationOutcome
+      - error codes capabilities-unknown-term, capabilities-not-closed-form, capabilities-duplicate-operation-id, capabilities-stub-unfilled, buildfile-operation-ref-unnormalized
+    backward-compatible: true
+
+  - id: domain-model-operations-deprecation
+    source: "@multi-adapter/domain-model-yaml-operations-field-is-deprecated-in-favor-of-capabilities"
+    target-files:
+      - internal/embedded/schemas/domain-model.schema.md
+      - internal/agent/validate.go
+    target-creates:
+      - internal/commands/migrate_domain_operations.go
+      - internal/embedded/skills/migrate-domain-operations.skill.md
+    transform: |
+      Mark operations: in the domain-model.yaml schema as deprecated. Validation emits
+      domain-operations-deprecated as a warning in authoring mode and an error in build
+      mode for any project whose domain-model.yaml populates the field. Build-feature
+      stops consuming the field for routing or codegen. Add `parlay migrate-domain-operations`
+      that walks each entry, asks the designer which feature owns it, and writes a stub
+      with kind: unknown into the chosen feature's capabilities.yaml.
+    introduces:
+      - migrateDomainOperationsCmd cobra command
+      - migrate-domain-operations skill source
+      - error code domain-operations-deprecated
+    backward-compatible: true
+
+  - id: surface-yaml-and-migrator
+    source: "@multi-adapter/surface-yaml-replaces-surface-md-as-the-closed-presentation-artifact-format"
+    target-files:
+      - internal/embedded/schemas/surface.schema.md
+      - internal/parser/surface.go
+      - internal/agent/validate.go
+    target-creates:
+      - internal/parser/surface_yaml.go
+      - internal/commands/migrate_spec.go
+      - internal/embedded/skills/migrate-spec.skill.md
+    transform: |
+      Add surface.yaml to the spec layer as the target format alongside the existing
+      surface.md legacy form. Both formats parse to the same in-memory surface model,
+      so the build pipeline does not branch on serialization. `parlay migrate-spec`
+      walks each feature's surface.md, parses via the legacy parser, emits surface.yaml,
+      writes a per-feature migration report listing free text with no closed-schema
+      destination. Migrator is idempotent.
+    introduces:
+      - parser.LoadSurfaceYAML(path) returning the same in-memory model as surface.md
+      - migrateSpecCmd cobra command
+      - migrate-spec skill source
+      - error codes surface-md-superseded (warning), surface-md-legacy-format (informational)
+    backward-compatible: true
+
+  - id: blueprint-scope-and-precedence
+    source: "@multi-adapter/blueprint-scope-override-precedence-and-strategy-selection"
+    target-files:
+      - internal/embedded/schemas/blueprint.schema.md
+      - internal/agent/validate.go
+    target-creates:
+      - internal/agent/validate_blueprint_scope.go
+      - internal/agent/blueprint_resolver.go
+    transform: |
+      Pin blueprint's owned scope to data, auth, errors, state, navigation, platform.
+      Reject any targets: block in blueprint. Resolve any layered setting through the
+      precedence blueprint > adapter-set > adapter default. Validate strategy choices
+      against the relevant adapter's declared support. Walk every canonical operation
+      error and confirm a mapping exists at adapter, adapter-set, or blueprint level.
+    introduces:
+      - ResolveLayeredSetting(blueprint, adapterSet, adapter, key) returning (value, sourceLayer)
+      - ValidateBlueprintScope(blueprint) and strategy-vs-supports check
+      - error codes blueprint-topology-not-allowed, blueprint-strategy-unknown, blueprint-strategy-unsupported, blueprint-scope-violation, blueprint-override-conflict, error-no-mapping
+    backward-compatible: true
+
+  - id: multi-target-buildfile-schema
+    source: "@multi-adapter/multi-target-buildfile-operations-targets-and-target-aware-plan"
+    target-files:
+      - internal/embedded/schemas/buildfile.schema.md
+      - internal/agent/validate.go
+      - internal/embedded/skills/build-feature.skill.md
+    target-creates:
+      - internal/agent/validate_buildfile_canonical.go
+    transform: |
+      Extend buildfile.yaml with two top-level blocks: operations: (canonical declarations
+      keyed by normalized id, carrying every canonical field exactly once) and targets:
+      (one entry per registered adapter, keyed by kind, carrying per-target projection
+      metadata only). Forbid restating canonical fields under any target. Extend plan:
+      with a targets: sub-block. Existing wiring.rules and bindings sections coexist
+      unchanged; their operation refs must resolve to keys under operations:.
+    introduces:
+      - canonical-once validation in ValidateBuildfileDeep
+      - error codes buildfile-target-restates-canonical, buildfile-binding-operation-missing, buildfile-target-operation-missing, buildfile-components-double-declared
+    backward-compatible: true
+
+  - id: legacy-buildfile-normalization
+    source: "@multi-adapter/legacy-buildfile-fields-stay-deprecate-or-repurpose"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+      - internal/agent/validate.go
+    transform: |
+      On first regeneration of a legacy buildfile, the build-feature skill normalizes:
+      top-level adapter: → adapter-set + targets.<kind>.adapter; top-level components: →
+      targets.presentation.components; top-level routes: → targets.presentation
+      (client-side) or targets.transport (HTTP) — disambiguate via designer prompt; plan.creates/modifies
+      → plan.targets.<kind>.creates/modifies; non-empty models: → buildfile-models-deprecated.
+      Surface the diff to the designer for review before any write; abort if cancelled.
+      Reject double-declared shapes. wiring.rules and bindings stay byte-equivalent.
+    introduces:
+      - normalization branches in the build-feature skill
+      - error codes buildfile-models-deprecated, buildfile-routes-ambiguous, buildfile-components-double-declared
+    backward-compatible: true
+
+  - id: testcases-v2
+    source: "@multi-adapter/testcases-yaml-v2-discriminated-suite-kinds-and-source-refs"
+    target-files:
+      - internal/embedded/schemas/testcases.schema.md
+      - internal/agent/validate.go
+    target-creates:
+      - internal/agent/validate_testcases_v2.go
+    transform: |
+      Bump testcases.yaml to schema_version: 2 with a kind discriminator over
+      {presentation, operation}. Operation suites reference the canonical operation key
+      and assert over output, error, and persistence shapes. Walk every canonical
+      operation and confirm at least one operation suite covers it. Validate every new
+      v2 suite's source_refs against real surface fragments and capability operations.
+      Load legacy v1 suites as v2 presentation suites; auto-populate source_refs[0]
+      from the legacy intent string.
+    introduces:
+      - SuiteKind enum {presentation, operation}
+      - ValidateTestcasesV2 and operation-coverage walker
+      - error codes testcases-operation-uncovered, testcases-source-refs-missing, testcases-source-refs-missing-legacy (warning), testcases-suite-kind-unknown, testcases-operation-shape-mismatch
+    backward-compatible: true
+
+  - id: coverage-review-gate
+    source: "@multi-adapter/coverage-review-yaml-gates-codegen-on-human-approval"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    target-creates:
+      - internal/embedded/schemas/coverage-review.schema.md
+      - internal/parser/coverage_review.go
+      - internal/agent/validate_coverage_review.go
+      - internal/agent/coverage_hash.go
+      - internal/commands/review_coverage.go
+      - internal/embedded/skills/review-coverage.skill.md
+    transform: |
+      Add .parlay/build/<feature>/coverage-review.yaml with required keys feature,
+      reviewed_at, reviewed_by, review_method, buildfile_hash, testcases_hash,
+      approved_suites, plus optional exemptions. Compute hashes over canonical-form
+      serializations of buildfile.yaml and testcases.yaml. Add `parlay review-coverage`
+      to walk suites, record approvals, collect exemptions, write the review file.
+      Make `parlay generate-code` refuse to run if the file is missing, either hash
+      drifts, any required suite is unapproved, or any required term lacks both a
+      covering case and an explicit exemption. Cosmetic edits do not invalidate the
+      review because hashes are computed over canonical form.
+    introduces:
+      - reviewCoverageCmd cobra command
+      - review-coverage skill source
+      - parser.CoverageReview struct
+      - canonical-form serializer (sorted keys, normalized whitespace) for hash input
+      - SHA-256 hash computation over canonical form
+      - generate-code coverage-review gate (pre-read)
+      - error codes coverage-review-missing, coverage-review-stale, coverage-review-suite-unapproved, coverage-review-uncovered
+    backward-compatible: true
+
+  - id: codegen-read-set-and-layer-pipeline
+    source: "@multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set"
+    target-files:
+      - internal/embedded/skills/generate-code.skill.md
+    target-creates:
+      - internal/agent/codegen_input_guard.go
+    transform: |
+      Pin generate-code's allowed input set to .parlay/build/<feature>/{buildfile.yaml,
+      testcases.yaml, coverage-review.yaml}, .parlay/adapter-set.yaml, the referenced
+      adapter files, blueprint.yaml, config.yaml, domain-model.yaml, and the source
+      tree under each adapter's declared root. Forbid reads of spec/intents/**.
+      Instrumentation traps any attempt and aborts with codegen-spec-read-forbidden.
+      Default emission order is persistence → application → transport → presentation;
+      each layer fully completes before the next starts; each layer's freshly-emitted
+      outputs feed the next layer's prompt context.
+    introduces:
+      - allowedReadPaths(feature, adapterSet) function
+      - layer-ordering loop with prompt-context plumbing in the generate-code skill
+      - error codes codegen-spec-read-forbidden, codegen-input-out-of-scope
+    caching: per-feature-per-run
+    backward-compatible: true
+
+  - id: validation-mode-dispatch
+    source: "@multi-adapter/validation-modes-authoring-vs-build"
+    target-files:
+      - internal/agent/validate.go
+    target-creates:
+      - internal/agent/validation_mode.go
+    transform: |
+      Define two validation modes — authoring (permissive, warning-rich) and build
+      (strict). Determine the mode from the entry point: parlay validate runs in
+      authoring; parlay build-feature and parlay generate-code run in build. Each
+      rule declares its severity per mode in its schema; rules without an explicit
+      declaration default to error in both modes. Authoring mode never silently passes
+      a build-mode failure. Build mode never downgrades errors.
+    introduces:
+      - ValidationMode enum {authoring, build}
+      - ruleSeverity(code, mode) lookup
+      - rule-schema CI test that fails on rules without explicit per-mode severity
+    backward-compatible: true
+
+  - id: migration-command-family
+    source: "@multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    target-files:
+      - internal/commands/root.go
+      - internal/embedded/skills/build-feature.skill.md
+    target-creates:
+      - internal/commands/migrate_config.go
+      - internal/commands/migrate_capabilities.go
+      - internal/embedded/skills/migrate-config.skill.md
+      - internal/embedded/skills/migrate-capabilities.skill.md
+    transform: |
+      Implement the migration commands as independent entry points: parlay migrate-config
+      (prototype-framework → single-target presentation adapter-set); parlay migrate-spec
+      (surface.md → surface.yaml); parlay migrate-capabilities (infrastructure.md
+      operation-shaped fragments → capabilities.yaml; pattern-shaped fragments to
+      migration report); parlay migrate-domain-operations (domain-model.operations →
+      capabilities stubs); build-feature in-process (legacy buildfile shape →
+      multi-target shape). Each migration is independent and idempotent; no migration
+      silently overwrites a designer-authored file.
+    introduces:
+      - migrateConfigCmd, migrateCapabilitiesCmd cobra commands (migrate-spec and migrate-domain-operations are introduced by their own entries)
+      - migrate-config and migrate-capabilities skill sources
+      - root.go AddCommand entries for each migration command
+    backward-compatible: true
+
+  - id: pattern-fragment-classifier
+    source: "@multi-adapter/pattern-fragment-decomposition-during-capabilities-migration"
+    target-creates:
+      - internal/agent/pattern_fragment_classifier.go
+    transform: |
+      Inside parlay migrate-capabilities, after the operation-shaped extractor consumes
+      operation-shaped fragments, walk the residual paragraphs and classify by detected
+      shape (pipeline/registry/dispatcher/traversal/resolver/validator/aspect/cache/
+      migrator/hook/helper or unrouted). Pair each with a suggested destination from
+      the closed list. Write a per-feature migration report. Never auto-apply a
+      suggestion; the migrator only writes the report.
+    introduces:
+      - PatternShape closed enum
+      - ClassifyPatternFragment(text) -> (PatternShape, suggestedDestination)
+      - WriteMigrationReport(feature, fragments) writer
+    backward-compatible: true
+
+  - id: presentation-only-short-circuit
+    source: "@multi-adapter/presentation-only-projects-continue-to-work-unchanged"
+    target-files:
+      - internal/agent/validate.go
+    transform: |
+      Make every multi-target validation rule consult the project's
+      .parlay/adapter-set.yaml slot composition before applying. When only the
+      presentation slot is filled (or no adapter-set exists), short-circuit backend
+      rules — capabilities.yaml is not required, backend supports validation is
+      skipped, link enforcement walks zero edges, blueprint backend strategies do
+      not validate, operation-suite coverage walks zero operations,
+      coverage-review.yaml is required only once the project has migrated to v2
+      testcases. Adding the first non-presentation slot transitions the project
+      into multi-target mode automatically.
+    introduces:
+      - isMultiTarget(adapterSet) helper guarding every backend rule
+      - per-rule "presentation-only short-circuit" comment in each multi-target rule definition
+    backward-compatible: true
+
+  - id: cli-and-deployer-registration
+    source: "@multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    target-files:
+      - internal/commands/root.go
+      - internal/deployer/generic.go
+      - internal/deployer/claude.go
+    transform: |
+      Register the new commands introduced by this feature — parlay migrate-config,
+      parlay migrate-spec, parlay migrate-capabilities, parlay migrate-domain-operations,
+      parlay review-coverage — in the CLI command registry. Update the generic
+      deployer's hardcoded command list. Add titles to the claude deployer's
+      skillTitle map for the corresponding skills (migrate-config, migrate-spec,
+      migrate-capabilities, migrate-domain-operations, review-coverage). Embedded skill
+      files are auto-discovered via //go:embed; deployer registration is the only
+      manual surface.
+    introduces:
+      - rootCmd.AddCommand entries for each new command
+      - generic.go content lines for each new command
+      - claude.go skillTitle map entries for each new skill
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/embedded/schemas/adapter.schema.md
+      sources: [cross-cutting/adapter-kind-discriminator, cross-cutting/adapter-supports-contract]
+    - path: internal/embedded/schemas/buildfile.schema.md
+      sources: [cross-cutting/multi-target-buildfile-schema]
+    - path: internal/embedded/schemas/blueprint.schema.md
+      sources: [cross-cutting/blueprint-scope-and-precedence]
+    - path: internal/embedded/schemas/domain-model.schema.md
+      sources: [cross-cutting/domain-model-operations-deprecation]
+    - path: internal/embedded/schemas/surface.schema.md
+      sources: [cross-cutting/surface-yaml-and-migrator]
+    - path: internal/embedded/schemas/testcases.schema.md
+      sources: [cross-cutting/testcases-v2]
+    - path: internal/agent/validate.go
+      sources:
+        - cross-cutting/adapter-kind-discriminator
+        - cross-cutting/adapter-set-link-enforcement
+        - cross-cutting/adapter-supports-contract
+        - cross-cutting/capabilities-artifact
+        - cross-cutting/domain-model-operations-deprecation
+        - cross-cutting/surface-yaml-and-migrator
+        - cross-cutting/blueprint-scope-and-precedence
+        - cross-cutting/multi-target-buildfile-schema
+        - cross-cutting/legacy-buildfile-normalization
+        - cross-cutting/testcases-v2
+        - cross-cutting/validation-mode-dispatch
+        - cross-cutting/presentation-only-short-circuit
+        - component/adapter-set-validation-failure
+        - component/capabilities-validation-output
+        - component/blueprint-validation-output
+        - component/testcases-validation-output
+        - component/domain-model-validation-output
+        - component/surface-validation-output
+        - component/buildfile-canonical-validation-output
+    - path: internal/agent/validate_infrastructure.go
+      sources: [cross-cutting/capabilities-artifact]
+    - path: internal/parser/surface.go
+      sources: [cross-cutting/surface-yaml-and-migrator]
+    - path: internal/commands/init.go
+      sources: [cross-cutting/bundled-adapter-set-presets, component/project-setup-preset-selection]
+    - path: internal/commands/root.go
+      sources: [cross-cutting/migration-command-family, cross-cutting/cli-and-deployer-registration]
+    - path: internal/commands/upgrade.go
+      sources: [component/adapter-kind-field-opt-in-prompt]
+    - path: internal/deployer/generic.go
+      sources: [cross-cutting/cli-and-deployer-registration]
+    - path: internal/deployer/claude.go
+      sources: [cross-cutting/cli-and-deployer-registration]
+    - path: internal/embedded/skills/build-feature.skill.md
+      sources:
+        - cross-cutting/multi-target-buildfile-schema
+        - cross-cutting/legacy-buildfile-normalization
+        - cross-cutting/migration-command-family
+        - component/pre-codegen-support-gate-failure
+        - component/buildfile-normalization-review
+        - component/routes-disambiguation-prompt
+    - path: internal/embedded/skills/generate-code.skill.md
+      sources:
+        - cross-cutting/coverage-review-gate
+        - cross-cutting/codegen-read-set-and-layer-pipeline
+        - component/coverage-review-gate-failure
+        - component/codegen-pipeline-progress
+  creates:
+    - path: internal/embedded/schemas/adapter-set.schema.md
+      sources: [cross-cutting/adapter-kind-discriminator]
+    - path: internal/embedded/schemas/capabilities.schema.md
+      sources: [cross-cutting/capabilities-artifact]
+    - path: internal/embedded/schemas/coverage-review.schema.md
+      sources: [cross-cutting/coverage-review-gate]
+    - path: internal/embedded/schemas/operation-kinds.schema.md
+      sources: [cross-cutting/closed-vocabulary-schemas]
+    - path: internal/embedded/schemas/steps.schema.md
+      sources: [cross-cutting/closed-vocabulary-schemas]
+    - path: internal/embedded/schemas/errors.schema.md
+      sources: [cross-cutting/closed-vocabulary-schemas]
+    - path: internal/embedded/schemas/policies.schema.md
+      sources: [cross-cutting/closed-vocabulary-schemas]
+    - path: internal/agent/validate_adapter_set.go
+      sources: [cross-cutting/adapter-kind-discriminator]
+    - path: internal/agent/validate_adapter_set_links.go
+      sources: [cross-cutting/adapter-set-link-enforcement]
+    - path: internal/agent/validate_supports.go
+      sources: [cross-cutting/adapter-supports-contract]
+    - path: internal/agent/validate_capabilities.go
+      sources: [cross-cutting/capabilities-artifact]
+    - path: internal/agent/validate_blueprint_scope.go
+      sources: [cross-cutting/blueprint-scope-and-precedence]
+    - path: internal/agent/blueprint_resolver.go
+      sources: [cross-cutting/blueprint-scope-and-precedence]
+    - path: internal/agent/validate_buildfile_canonical.go
+      sources: [cross-cutting/multi-target-buildfile-schema]
+    - path: internal/agent/validate_testcases_v2.go
+      sources: [cross-cutting/testcases-v2]
+    - path: internal/agent/validate_coverage_review.go
+      sources: [cross-cutting/coverage-review-gate]
+    - path: internal/agent/coverage_hash.go
+      sources: [cross-cutting/coverage-review-gate]
+    - path: internal/agent/codegen_input_guard.go
+      sources: [cross-cutting/codegen-read-set-and-layer-pipeline]
+    - path: internal/agent/validation_mode.go
+      sources: [cross-cutting/validation-mode-dispatch]
+    - path: internal/agent/pattern_fragment_classifier.go
+      sources: [cross-cutting/pattern-fragment-classifier]
+    - path: internal/parser/adapter_set.go
+      sources: [cross-cutting/adapter-kind-discriminator]
+    - path: internal/parser/capabilities.go
+      sources: [cross-cutting/capabilities-artifact]
+    - path: internal/parser/surface_yaml.go
+      sources: [cross-cutting/surface-yaml-and-migrator]
+    - path: internal/parser/coverage_review.go
+      sources: [cross-cutting/coverage-review-gate]
+    - path: internal/commands/migrate_config.go
+      sources: [cross-cutting/migration-command-family, component/config-migration-result]
+    - path: internal/commands/migrate_spec.go
+      sources: [cross-cutting/surface-yaml-and-migrator, component/spec-migration-report]
+    - path: internal/commands/migrate_capabilities.go
+      sources:
+        - cross-cutting/migration-command-family
+        - component/capabilities-migration-operations-extraction
+        - component/pattern-fragment-migration-report
+    - path: internal/commands/migrate_domain_operations.go
+      sources: [cross-cutting/domain-model-operations-deprecation, component/domain-operations-migration-prompt]
+    - path: internal/commands/review_coverage.go
+      sources: [cross-cutting/coverage-review-gate, component/coverage-review-authoring]
+    - path: internal/embedded/skills/migrate-config.skill.md
+      sources: [cross-cutting/migration-command-family]
+    - path: internal/embedded/skills/migrate-spec.skill.md
+      sources: [cross-cutting/surface-yaml-and-migrator]
+    - path: internal/embedded/skills/migrate-capabilities.skill.md
+      sources: [cross-cutting/migration-command-family]
+    - path: internal/embedded/skills/migrate-domain-operations.skill.md
+      sources: [cross-cutting/domain-model-operations-deprecation]
+    - path: internal/embedded/skills/review-coverage.skill.md
+      sources: [cross-cutting/coverage-review-gate]
+    - path: internal/embedded/presets/react-antd-only.adapter-set.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/presets/angular-clarity-only.adapter-set.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/presets/react-nest-prisma.adapter-set.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/presets/angular-nest-prisma.adapter-set.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/adapters/openapi-rest.adapter.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/adapters/nestjs-application.adapter.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/adapters/prisma-postgres.adapter.yaml
+      sources: [cross-cutting/bundled-adapter-set-presets]
+    - path: internal/embedded/presets.go
+      sources: [cross-cutting/bundled-adapter-set-presets]
+
+source-signatures:
+  intents: 064525dc1110931a6989c80c53815619dca57b7e17999cfeca929e8b1ffb033f
+  dialogs: 2d265cc523d354737ac88a3d09140a34b46879c734bb9fb52d5a8bae4889e528
+  surface: 6fb41f9492ac0f59ff9c7aacaefe897b8f56b7fc97b05d819615838c9f6341ce
+  infrastructure: 4950ec442fcd37d4b5abb1288c9c300621ccfe46d83cba73ff57d64d95c03ef5
+  adapter-version: 3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188

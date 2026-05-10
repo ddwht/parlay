@@ -220,11 +220,14 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	// need to know which of the two is present (different validation
 	// paths below), so we keep the per-file probe — but it is the
 	// same low-level os.Stat primitive used by the shared helper.
-	surfacePath := filepath.Join(featurePath, "surface.md")
+	// Multi-adapter v1 prefers surface.yaml over surface.md and
+	// capabilities.yaml over infrastructure.md; legacy forms still count.
+	surfacePath := parser.ResolveSurfacePath(featurePath)
 	infraPath := filepath.Join(featurePath, "infrastructure.md")
+	capabilitiesPath := filepath.Join(featurePath, "capabilities.yaml")
 	hasArtifacts := phaseAtLeast(phase, PhaseArtifacts)
-	hasSurface := fileExistsAt(surfacePath)
-	hasInfra := fileExistsAt(infraPath)
+	hasSurface := surfacePath != ""
+	hasInfra := fileExistsAt(infraPath) || fileExistsAt(capabilitiesPath)
 
 	if !hasArtifacts {
 		issues = append(issues, readinessIssue{

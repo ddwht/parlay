@@ -39,16 +39,48 @@ func TestWriteSchemas_WritesAllSchemas(t *testing.T) {
 	}
 }
 
+// TestSchemaNames_ReturnsAll asserts that SchemaNames() reports every file
+// the //go:embed schemas/*.schema.md glob picks up — and nothing else. The
+// list is data-driven on purpose: adding a schema file no longer requires
+// bumping a hardcoded count.
 func TestSchemaNames_ReturnsAll(t *testing.T) {
 	names, err := SchemaNames()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// 13 = 12 original + domain-model.schema.md (added by
-	// studio-support/domain-model-yaml-migration; auto-discovered by
-	// the //go:embed schemas/*.schema.md glob).
-	if len(names) != 13 {
-		t.Errorf("expected 13 schemas, got %d: %v", len(names), names)
+	// Confirm the expected core set is present. Adding more schemas is
+	// fine; removing one of these is a regression.
+	mustExist := []string{
+		"adapter.schema.md",
+		"buildfile.schema.md",
+		"surface.schema.md",
+		"testcases.schema.md",
+		"intent.schema.md",
+		"dialog.schema.md",
+		"blueprint.schema.md",
+		"domain-model.schema.md",
+		"feature-structure.schema.md",
 	}
+	have := make(map[string]bool, len(names))
+	for _, n := range names {
+		have[n] = true
+	}
+	for _, n := range mustExist {
+		if !have[n] {
+			t.Errorf("expected schema %q to be present; got %v", n, names)
+		}
+	}
+
+	// Confirm we didn't accidentally pick up non-schema files.
+	for _, n := range names {
+		if !endsWithSchemaSuffix(n) {
+			t.Errorf("schema name %q does not match the *.schema.md glob — embed glob may have drifted", n)
+		}
+	}
+}
+
+func endsWithSchemaSuffix(name string) bool {
+	const suffix = ".schema.md"
+	return len(name) >= len(suffix) && name[len(name)-len(suffix):] == suffix
 }

@@ -19,7 +19,8 @@ The buildfile is **framework-specific**: it contains widget names and pattern na
 
 ```yaml
 feature: <feature-slug>
-adapter: <framework-adapter-name from .parlay/adapters/>
+adapter: <framework-adapter-name from .parlay/adapters/>      # legacy single-adapter pointer
+adapter-set: <name from .parlay/adapter-set.yaml>             # multi-target projects (parlay-tool/multi-adapter)
 
 models:
   <EntityName>:
@@ -450,3 +451,86 @@ Two AI agents reading the same buildfile must produce prototypes where:
 - Condition expressions: string values in `visible-when` and `enabled-when`
 - Effect expressions: `type:target` pattern in action effects
 - Adapter reference: `adapter` field links to `.parlay/adapters/<name>.adapter.yaml`
+
+## Top-level `adapter-set:` field
+
+<!-- parlay-extends: parlay-tool/multi-adapter/multi-target-buildfile-schema -->
+
+Multi-target buildfiles declare a top-level `adapter-set:` field naming the project's `.parlay/adapter-set.yaml` (by `name:` value). Codegen reads this to discover which adapter occupies each kind slot and what source roots each emits into.
+
+For backward compatibility, single-adapter projects continue to declare the legacy top-level `adapter:` field. A buildfile may declare both during the migration window — the multi-target normalization (see "Legacy buildfile normalization" below) folds the legacy `adapter:` value into `adapter-set:` plus `targets.<kind>.adapter:` on first regeneration.
+
+## Section: Multi-target operations and targets blocks
+
+<!-- parlay-extends: parlay-tool/multi-adapter/multi-target-buildfile-schema -->
+<!-- parlay-extends: parlay-tool/multi-adapter/legacy-buildfile-normalization -->
+
+Multi-target projects use two top-level blocks in addition to the existing sections:
+
+```yaml
+operations:
+  "@<feature>/operation:<id>":
+    kind: <command | query>
+    subject: { entity: <EntityName> }
+    input:   { type: <InputTypeName> }
+    output:  { shape: <one|many|empty>, entity: <EntityName> }
+    errors:  [...]
+    policies: [...]
+    steps:   [...]
+
+targets:
+  presentation:
+    components: { ... }      # was top-level components: in v1
+    routes:     [...]        # was top-level routes:     in v1 (client-side path)
+  transport:
+    routes:     [...]        # HTTP routes when transport adapter is present
+  application:
+    operations: [...]        # per-target projection metadata only
+  persistence:
+    operations: [...]        # per-target projection metadata only
+
+plan:
+  modifies:  [...]
+  creates:   [...]
+  deletes:   [...]
+  targets:
+    presentation: { creates: [...], modifies: [...] }
+    transport:    { creates: [...], modifies: [...] }
+    application:  { creates: [...], modifies: [...] }
+    persistence:  { creates: [...], modifies: [...] }
+```
+
+### Canonical-once rule
+
+Canonical fields (`kind`, `subject`, `input`, `output`, `errors`, `policies`, `steps`) belong under `operations:` and **only** there. Restating any canonical field under `targets.<kind>:` fails with `buildfile-target-restates-canonical` naming the target, the operation, and the offending field. Targets carry per-target *projection* metadata only (e.g., the HTTP route a transport adapter exposes for an operation, the controller path an application adapter binds, etc.).
+
+### Operation-ref resolution
+
+Every `bindings:` rule and every `targets.<kind>.operations[]` entry references operations by the normalized `@<feature>/operation:<id>` form. References that don't resolve to a key under `operations:` fail with:
+
+| Code | When it fires |
+|---|---|
+| `buildfile-target-restates-canonical` | A `targets.<kind>:` entry restates a canonical field that already lives under `operations:`. |
+| `buildfile-binding-operation-missing` | A `bindings:` rule references an operation that doesn't resolve under `operations:`. |
+| `buildfile-target-operation-missing` | A `targets.<kind>:` entry references an operation that doesn't resolve. |
+| `buildfile-components-double-declared` | Top-level `components:` AND `targets.presentation.components:` are both populated. |
+| `buildfile-models-deprecated` | Top-level `models:` is non-empty (entity declarations belong in `domain-model.yaml`). |
+| `buildfile-routes-ambiguous` | Top-level `routes:` collide with both `targets.presentation` (client-side) and `targets.transport` (HTTP exposure); designer must disambiguate. |
+
+### Legacy buildfile normalization
+
+`parlay build-feature` normalizes legacy buildfiles into the multi-target shape on first regeneration:
+
+| Legacy field | Normalized destination |
+|---|---|
+| top-level `adapter:` | `adapter-set:` (single-target presentation) plus `targets.presentation.adapter:` |
+| top-level `components:` | `targets.presentation.components:` |
+| top-level `routes:` | `targets.presentation.routes:` (client-side) or `targets.transport.routes:` (HTTP) — disambiguated via designer prompt when both are plausible |
+| `plan.creates` / `plan.modifies` | `plan.targets.<kind>.creates` / `plan.targets.<kind>.modifies` |
+| non-empty `models:` | flagged as deprecated; entities belong in `domain-model.yaml` |
+
+The diff is surfaced to the designer for review before any write; cancelling abandons normalization. `wiring.rules` and `bindings` sections stay byte-equivalent through normalization.
+
+### Backward compatibility
+
+Presentation-only projects continue to use the top-level shape (no `operations:`, no `targets:`). The validator's multi-target rules consult `isMultiTarget(adapter-set)` and short-circuit when only the presentation slot is filled. Adding the first non-presentation slot transitions the project into multi-target mode automatically.

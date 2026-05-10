@@ -106,10 +106,12 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 		}
 	}
 
-	if fragments, err := parser.ParseSurfaceFile(filepath.Join(featurePath, "surface.md")); err == nil {
-		baseline.Sources.SurfaceFragments = make(map[string]string)
-		for _, frag := range fragments {
-			baseline.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+	if surfacePath := parser.ResolveSurfacePath(featurePath); surfacePath != "" {
+		if fragments, err := parser.ParseSurfaceFile(surfacePath); err == nil {
+			baseline.Sources.SurfaceFragments = make(map[string]string)
+			for _, frag := range fragments {
+				baseline.Sources.SurfaceFragments[parser.Slugify(frag.Name)] = hashFragmentContent(frag)
+			}
 		}
 	}
 

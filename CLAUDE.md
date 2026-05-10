@@ -9,19 +9,24 @@ All operations are available as /parlay-* slash commands.
 - `/parlay-add-feature` — Create a new feature
 - `/parlay-build-feature` — Generate buildfile and testcases
 - `/parlay-collect-questions` — Collect open questions from intents
-- `/parlay-create-artifacts` — Determine and create surface.md, infrastructure.md, or both
+- `/parlay-create-artifacts` — Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both
 - `/parlay-create-domain-model` — Create domain model from features
 - `/parlay-generate-code` — Generate prototype code from buildfile
 - `/parlay-generate-enggspec` — Generate engineering specification
 - `/parlay-load-domain-model` — Load and integrate external domain model
 - `/parlay-lock-page` — Lock a page layout into a manifest
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
+- `/parlay-migrate-capabilities` — Extract operation-shaped fragments from infrastructure.md into capabilities.yaml
+- `/parlay-migrate-config` — Convert legacy prototype-framework into a single-target presentation adapter-set
 - `/parlay-migrate-domain-model` — Convert domain-model.md to domain-model.yaml
+- `/parlay-migrate-domain-operations` — Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs
+- `/parlay-migrate-spec` — Convert each feature's surface.md to surface.yaml
 - `/parlay-new-initiative` — Create an empty initiative directory
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
 - `/parlay-reference-design-spec` — Extract design spec from Figma
 - `/parlay-register-adapter` — Register a framework adapter
 - `/parlay-repair` — Validate and reconcile the three parallel trees
+- `/parlay-review-coverage` — Walk suites, record approvals, write coverage-review.yaml
 - `/parlay-scaffold-dialogs` — Scaffold dialog templates from intents
 - `/parlay-sync` — Check intent-dialog coverage
 - `/parlay-view-page` — Assemble and display a page view
@@ -38,9 +43,10 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 
 Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
+- **spec/intents/<feature>/** (generated, human-reviewed): surface.yaml (or legacy surface.md), capabilities.yaml (or legacy infrastructure.md), domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
+- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 
 ## Multi-Root Layout
 

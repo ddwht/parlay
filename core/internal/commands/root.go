@@ -278,6 +278,16 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(upgradeCmd)
 
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: cli-and-deployer-registration
+	rootCmd.AddCommand(migrateConfigCmd)
+	rootCmd.AddCommand(migrateSpecCmd)
+	rootCmd.AddCommand(migrateCapabilitiesCmd)
+	rootCmd.AddCommand(migrateDomainOperationsCmd)
+	rootCmd.AddCommand(reviewCoverageCmd)
+	rootCmd.AddCommand(checkSupportsCmd)
+	rootCmd.AddCommand(checkReviewGateCmd)
+
 	// Multi-root commands.
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)

@@ -1,0 +1,51 @@
+# parlay-feature: parlay-tool/multi-adapter
+# parlay-component: bundled-adapter-set-presets
+#
+# Transport adapter — translates capability operations into HTTP exposure
+# via OpenAPI/REST conventions.
+
+name: openapi-rest
+framework: "OpenAPI / REST"
+version: "1.0"
+kind: transport
+
+# --- Supports contract (required for non-presentation kinds) ---
+supports:
+  operation_kinds:
+    - command
+    - query
+  steps:
+    - validate-input
+    - authorize
+    - return-one
+    - return-many
+    - return-empty
+  policies:
+    - auth-required
+    - permission-required
+  errors:
+    - validation-failed
+    - unauthorized
+    - forbidden
+    - not-found
+    - conflict
+    - server-error
+
+# --- File conventions ---
+file-conventions:
+  source-root: "apps/api"
+  component-pattern: "one-file-per-route"
+  naming: "kebab-case"
+  entry-point: "apps/api/src/openapi.yaml"
+
+# --- Conventions ---
+conventions:
+  http-method-mapping:
+    rule: "kind: command -> POST/PUT/PATCH/DELETE per step intent. kind: query -> GET. Operations whose primary step is delete-one map to DELETE. Operations whose primary step is update-one map to PATCH (PUT only when the operation replaces the whole resource)."
+    applies-to: "every operation in operations:"
+  status-code-mapping:
+    rule: "validation-failed -> 400. unauthorized -> 401. forbidden -> 403. not-found -> 404. conflict -> 409. server-error -> 500. Each declared error in operations[].errors must have an entry in the OpenAPI responses block."
+    applies-to: "every operation's errors: list"
+  schema-naming:
+    rule: "Request DTO: <Operation>Request. Response DTO: <Operation>Response. Both live under #/components/schemas in openapi.yaml."
+    applies-to: "operation request/response shapes"

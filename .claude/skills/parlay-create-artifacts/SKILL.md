@@ -1,6 +1,6 @@
 ---
 name: parlay-create-artifacts
-description: "Parlay: Determine and create surface.md, infrastructure.md, or both"
+description: "Parlay: Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both"
 ---
 
 # Create Artifacts

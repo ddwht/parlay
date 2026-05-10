@@ -203,3 +203,22 @@ Unknown identifiers are errors. Missing Actions is allowed (pure display fragmen
 - Page/Region/Order: plain text or integer values
 - Notes: `- ` prefixed lines under `**Notes**:`
 - Feature-to-fragment hierarchy: from file location
+
+## Section: YAML form
+
+<!-- parlay-extends: parlay-tool/multi-adapter/surface-yaml-and-migrator -->
+
+`surface.yaml` is the **target format** for the surface artifact. It coexists with the legacy `surface.md` form during the migration window — both parse to the same in-memory surface model, so the build pipeline does not branch on serialization.
+
+### File resolution
+
+When a feature contains both `surface.yaml` and `surface.md`, the YAML form wins. The MD form gets a `surface-md-superseded` warning until the designer deletes it. When a feature contains only `surface.md`, the validator emits `surface-md-legacy-format` (informational) pointing the designer at `parlay migrate-spec`.
+
+### Migration
+
+`parlay migrate-spec` walks each feature's `surface.md`, parses via the legacy parser, emits an equivalent `surface.yaml`, and writes a per-feature migration report listing free-text content with no closed-schema destination. The migrator is idempotent — re-running on already-migrated content is a no-op. `surface.md` is left in place for the designer to review; the migrator never deletes designer-authored files.
+
+| Code | When it fires |
+|---|---|
+| `surface-md-superseded` (warning) | A feature has both `surface.yaml` and `surface.md`; the YAML wins, the MD is now inert. |
+| `surface-md-legacy-format` (info) | Only `surface.md` is present; suggests `parlay migrate-spec`. |

@@ -14,7 +14,7 @@ import (
 
 var createArtifactsCmdImpl = &cobra.Command{
 	Use:   "create-artifacts <@feature>",
-	Short: "Determine and create surface.md, infrastructure.md, or both (use /parlay-create-artifacts skill)",
+	Short: "Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both (use /parlay-create-artifacts skill)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runCreateArtifactsHandler,
 }

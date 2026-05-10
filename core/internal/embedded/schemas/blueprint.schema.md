@@ -280,3 +280,36 @@ When a blueprint file is loaded, the tool verifies:
 - Platform integration setup from `platform:` (native only)
 
 The codegen boundary is preserved: the blueprint lives in `.parlay/`, so generate-code never needs to read `spec/intents/`.
+
+## Section: Scope, precedence, and strategy selection
+
+<!-- parlay-extends: parlay-tool/multi-adapter/blueprint-scope-and-precedence -->
+
+### Owned scope
+
+Blueprint's owned scope is closed to: `data`, `auth`, `errors`, `state`, `navigation`, `platform`. Any other top-level key fails validation.
+
+Topology — i.e., which adapter occupies which slot, what source roots they emit into, what cross-kind edges are authorized — is **not** in blueprint's scope. Topology lives in `.parlay/adapter-set.yaml`. A blueprint that declares a `targets:` block fails validation with `blueprint-topology-not-allowed`.
+
+### Layered precedence
+
+Settings flow through three layers. Higher layers override lower ones:
+
+```
+blueprint  >  adapter-set  >  adapter default
+```
+
+`internal/agent/blueprint_resolver.go` exposes `ResolveLayeredSetting(blueprint, adapterSet, adapter, key) -> (value, sourceLayer)`. The validation surface uses this resolver to attribute every effective setting to the layer that produced it.
+
+### Strategy validation
+
+Every strategy choice — `data.fetching`, `auth.strategy`, `errors.retry`, etc. — must reference a value the relevant adapter declares it supports. Out-of-vocabulary values fail with `blueprint-strategy-unknown`; values within the closed vocabulary that the adapter doesn't support fail with `blueprint-strategy-unsupported`.
+
+| Code | When it fires |
+|---|---|
+| `blueprint-topology-not-allowed` | Blueprint declares `targets:` (topology is not in scope). |
+| `blueprint-strategy-unknown` | A strategy value is outside its closed vocabulary. |
+| `blueprint-strategy-unsupported` | A strategy value is in vocabulary but the relevant adapter does not declare support. |
+| `blueprint-scope-violation` | A top-level key falls outside the closed scope set. |
+| `blueprint-override-conflict` | Two layers attempt to set the same key with conflicting values that the resolver cannot reconcile. |
+| `error-no-mapping` | A canonical operation error has no mapping at any layer (adapter, adapter-set, blueprint). |

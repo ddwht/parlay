@@ -3,6 +3,8 @@ parlay-section: cross-cutting
 parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-component-vocabulary-section
 parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-tokens-section
 parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-theme-modes
+parlay-extends: parlay-tool/multi-adapter/adapter-kind-discriminator
+parlay-extends: parlay-tool/multi-adapter/adapter-supports-contract
 -->
 
 # Framework Adapter Schema
@@ -25,6 +27,24 @@ The adapter has no knowledge of the project's domain, features, or data. It answ
 name: <adapter name — e.g., go-cli, react-antd, angular-clarity, ios-uikit>
 framework: <human-readable framework name — e.g., "Go CLI", "React + Ant Design">
 version: <adapter version>
+kind: <presentation | transport | application | persistence>   # optional; absent means presentation
+
+# --- Section 0: Kind discriminator ---
+# Declared once per adapter file. Closed set:
+#   presentation — UI-rendering adapters (react-antd, angular-clarity, go-cli)
+#   transport    — protocol/transport adapters (openapi-rest, grpc)
+#   application  — application-layer adapters (nestjs-application, fastapi)
+#   persistence  — persistence-layer adapters (prisma-postgres, typeorm-postgres)
+# A missing kind: field is treated as the legacy presentation default.
+
+# --- Section 0.5: Supports contract (non-presentation kinds only) ---
+# Required when kind is transport, application, or persistence.
+# Forbidden when kind is presentation (or absent).
+supports:
+  operation_kinds: [<entries from operation-kinds.schema.md closed set>]
+  steps:           [<entries from steps.schema.md closed set>]
+  policies:        [<entries from policies.schema.md closed set>]
+  errors:          [<entries from errors.schema.md closed set>]
 
 # --- Section 1: Framework vocabulary (shared baseline) ---
 
@@ -142,6 +162,49 @@ tokens:
       use-site: <one of: heading-page | heading-section | body | caption>
       emit-form: <single mode-invariant emit form>
 ```
+
+## Section 0: Kind discriminator
+
+Every adapter declares which slot it occupies in the adapter-set topology via the top-level `kind:` field. The closed set is:
+
+| Kind | Purpose | Example adapters |
+|---|---|---|
+| `presentation` | UI rendering — translates Shows/Actions/Flows into framework widgets | `react-antd`, `angular-clarity`, `go-cli` |
+| `transport` | Protocol/transport — translates capability operations into wire-level calls | `openapi-rest`, `grpc` |
+| `application` | Application layer — orchestrates operation steps, policies, transactions | `nestjs-application`, `fastapi` |
+| `persistence` | Persistence layer — translates persistence steps into ORM/database calls | `prisma-postgres`, `typeorm-postgres` |
+
+A missing `kind:` field is treated as the legacy `presentation` default — pre-feature adapter files continue to load. `parlay upgrade` offers an opt-in prompt to make the default explicit.
+
+A `kind:` value outside the closed set fails validation with `adapter-kind-unknown` naming the offending value.
+
+## Section 0.5: Supports contract
+
+Adapters whose kind is transport, application, or persistence MUST declare a `supports:` block. The block has four sub-keys; each is a list drawn from a closed vocabulary:
+
+| Sub-key | Closed vocabulary file |
+|---|---|
+| `operation_kinds` | `operation-kinds.schema.md` |
+| `steps` | `steps.schema.md` |
+| `policies` | `policies.schema.md` |
+| `errors` | `errors.schema.md` |
+
+The `supports:` block declares which terms the adapter can fulfill at codegen time. During `parlay build-feature`, every operation in the resolved capabilities.yaml is walked against the supports block of the adapter occupying the relevant slot. The build fails before any AI invocation when a feature requires a term the adapter does not declare.
+
+| Code | When it fires |
+|---|---|
+| `adapter-supports-missing-operation-kind` | Operation declares a `kind:` value not in the adapter's `supports.operation_kinds`. |
+| `adapter-supports-missing-step` | Operation declares a `step.type` not in the adapter's `supports.steps`. |
+| `adapter-supports-missing-policy` | Operation declares a policy not in the adapter's `supports.policies`. |
+| `adapter-supports-missing-error` | Operation declares an error not in the adapter's `supports.errors`. |
+| `adapter-supports-unknown-term` | The adapter declares an entry that falls outside the closed vocabulary file. |
+| `adapter-supports-shape-mismatch` | A `presentation` adapter declares a `supports:` block (forbidden), or a non-presentation adapter omits it (required). |
+
+Pattern descriptions for non-presentation kinds (e.g., describing how an application adapter wires steps to NestJS controllers) live alongside `supports:` but are AI prompt material, not validator input.
+
+## Presentation-only vocabulary
+
+The `shows:`, `actions:`, and `flows:` sections are required ONLY for presentation adapters. Non-presentation adapters (transport, application, persistence) MAY omit them — those vocabularies don't apply to backend layers. The validation rules in section "Validation" below treat presence as required only when `kind:` is `presentation` (or absent).
 
 ## Section 1: Framework vocabulary
 

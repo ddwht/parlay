@@ -413,3 +413,35 @@ The fix is structural: the baseline and code-hashes are written together by a si
 - `stale-buildfile` — the freshness gate (step 11.6) detected that the buildfile's `source-signatures:` no longer match current source state. The error message format is `stale-buildfile at <feature>: buildfile reflects <prior-signature>; current sources are <current-signature>. To fix: run `parlay build-feature <feature>` to refresh the buildfile, then re-run codegen.` Process exit code is non-zero. No new files are written for the affected feature, but other features in the same run continue. This is the **only codegen-owned content-error category** — missing bindings inside a buildfile are also surfaced as `stale-buildfile`, not as a separate "missing-binding" class.
 - `precheck-refusal` — the layout-validation precheck (step 11.7) refused a layout-bearing page. Codegen surfaces the precheck's message **verbatim**, refuses for that page only, lets other pages in the same project continue, and exits non-zero overall. The precheck refusal wins over `stale-buildfile` when both apply for the same page.
 - `spec-leak` — if you (the agent) find yourself wanting to read a file under `spec/intents/`, **do not**. Stop and report which buildfile field is missing the information you need. This is a buildfile schema bug, not an excuse to cross the boundary.
+
+## Section: Coverage-review gate (multi-target only)
+
+<!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
+<!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
+
+When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
+
+| Code | When it fires |
+|---|---|
+| `coverage-review-missing` | The file does not exist. |
+| `coverage-review-stale` | `buildfile_hash` or `testcases_hash` differs from the canonical-form hash of the on-disk file. |
+| `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
+| `coverage-review-uncovered` | A canonical-form-required term lacks both a covering testcase and an explicit exemption. |
+
+Hashes are computed over canonical form (sorted keys, normalized whitespace) — cosmetic edits don't drift the hash. Run `/parlay-review-coverage @<feature>` to record approval; codegen does NOT auto-record.
+
+### Codegen read-set
+
+The skill is permitted to read ONLY:
+
+- `.parlay/build/<feature>/{buildfile,testcases,coverage-review}.yaml`
+- `.parlay/{config,blueprint,adapter-set}.yaml`
+- `.parlay/adapters/<slug>.adapter.yaml` (referenced from adapter-set)
+- `.parlay/domain-model.yaml`
+- The source tree under each adapter's declared root
+
+Reads of `spec/intents/**` are forbidden — `internal/agent/codegen_input_guard.go` enforces this. Attempts surface `codegen-spec-read-forbidden`. Reads of paths outside the read-set surface `codegen-input-out-of-scope`.
+
+### Layered emission order
+
+Default emission order: persistence → application → transport → presentation. Each layer fully completes before the next starts; freshly-emitted outputs feed the next layer's prompt context. This ordering ensures that downstream layers can consult the shape upstream layers committed to.

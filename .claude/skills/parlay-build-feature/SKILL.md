@@ -281,3 +281,34 @@ When `parlay validate --type buildfile --deep --json` returns errors:
 - `invalid-yaml` / `invalid-adapter-yaml` — YAML syntax error. Show the error to the user and ask them to fix or regenerate.
 
 For all errors: parse the JSON `errors` array, apply each error's `fix` automatically when possible (e.g., regenerating a section), or present the error and fix to the user when human input is required.
+
+## Section: Multi-target buildfile awareness
+
+<!-- parlay-extends: parlay-tool/multi-adapter/multi-target-buildfile-schema -->
+<!-- parlay-extends: parlay-tool/multi-adapter/legacy-buildfile-normalization -->
+<!-- parlay-extends: parlay-tool/multi-adapter/migration-command-family -->
+
+When the project has a `.parlay/adapter-set.yaml` with more than the presentation slot filled, build-feature emits the multi-target buildfile shape: a top-level `operations:` block (canonical declarations keyed by normalized id) plus a `targets:` block (per-target projection metadata). Canonical fields (`kind`, `subject`, `input`, `output`, `errors`, `policies`, `steps`) live under `operations:` and only there — restating them under `targets.<kind>:` fails with `buildfile-target-restates-canonical`.
+
+### Pre-codegen support gate
+
+Before any AI invocation, run `parlay check-supports @{feature}`. The CLI walks every operation in the resolved `capabilities.yaml` against each non-presentation adapter's `supports:` block, emits structured JSON, and exits non-zero on any failure. Skill MUST stop on non-zero — surface the `issues[]` array to the designer with the relevant `adapter-supports-missing-<kind|step|policy|error>` codes; do NOT proceed to emit the buildfile. The check is mechanical: signature comparison only, no AI invocation. Presentation-only projects (no `.parlay/adapter-set.yaml` with non-presentation slots) get `ready: true` automatically.
+
+### Legacy normalization
+
+On first regeneration of a legacy buildfile, normalize:
+- top-level `adapter:` → `targets.<kind>.adapter`
+- top-level `components:` → `targets.presentation.components:`
+- top-level `routes:` → `targets.presentation` (client-side) or `targets.transport` (HTTP) — disambiguate via designer prompt when both are plausible
+- `plan.creates`/`plan.modifies` → `plan.targets.<kind>.creates`/`plan.targets.<kind>.modifies`
+- non-empty `models:` → flagged as `buildfile-models-deprecated` (entities belong in `domain-model.yaml`)
+
+Surface the diff to the designer for review before any write. `wiring.rules` and `bindings` sections stay byte-equivalent through normalization.
+
+### Migration entry points
+
+For projects upgrading FROM the legacy single-adapter shape:
+- `/parlay-migrate-config` — converts `prototype-framework:` into a single-target presentation adapter-set
+- `/parlay-migrate-spec` — converts each feature's `surface.md` into `surface.yaml`
+- `/parlay-migrate-capabilities` — extracts operation-shaped fragments from `infrastructure.md` into `capabilities.yaml`
+- `/parlay-migrate-domain-operations` — migrates deprecated `domain-model.operations:` into per-feature capabilities stubs

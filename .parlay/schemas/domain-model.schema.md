@@ -178,3 +178,22 @@ both `.md` and `.yaml` has the YAML as the sole live source.
   inference.
 - Newer-than-binary YAML refuses to load with an actionable error
   pointing at `parlay upgrade`.
+
+## Deprecated: `operations:` field
+
+<!-- parlay-extends: parlay-tool/multi-adapter/domain-model-operations-deprecation -->
+
+The top-level `operations:` field is **deprecated** in favor of per-feature `spec/intents/<feature>/capabilities.yaml`. The new artifact carries the full closed-vocabulary contract (`kind`, `subject`, `input`, `output`, `errors`, `policies`, `steps`); the legacy `operations:` field cannot express most of those terms.
+
+| Mode | Severity |
+|---|---|
+| authoring (`parlay validate`) | warning |
+| build (`parlay build-feature`, `parlay generate-code`) | error |
+
+Validation surfaces `domain-operations-deprecated` whenever `operations:` is non-empty. `parlay build-feature` stops consuming the field for routing or codegen; the value is preserved in the file but ignored.
+
+### Migration
+
+`parlay migrate-domain-operations` walks each entry under `operations:`, asks the designer which feature owns it, and writes a stub with `kind: unknown` into the chosen feature's `capabilities.yaml`. After the migration, the designer fills in the real `kind:` (`command` or `query`) and the rest of the operation shape. The `kind: unknown` stub fails the build-mode `capabilities-stub-unfilled` rule until that's done.
+
+The migration command does not delete the deprecated field automatically. The designer reviews the per-entry migration outcomes and clears the field manually once the new capabilities are correct.

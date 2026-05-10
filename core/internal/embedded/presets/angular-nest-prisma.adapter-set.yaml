@@ -1,0 +1,26 @@
+# parlay-section: cross-cutting
+# parlay-feature: parlay-tool/multi-adapter
+#
+# Four-slot preset with Angular + Clarity on the presentation slot.
+# Same backend stack as react-nest-prisma.
+
+name: angular-nest-prisma
+
+targets:
+  presentation:
+    adapter: angular-clarity
+    root: apps/web
+  transport:
+    adapter: openapi-rest
+    root: apps/api
+  application:
+    adapter: nestjs-application
+    root: apps/api
+  persistence:
+    adapter: prisma-postgres
+    root: apps/api
+
+links:
+  - { from: presentation, relation: calls,      to: transport   }
+  - { from: transport,    relation: dispatches, to: application }
+  - { from: application,  relation: persists,   to: persistence }

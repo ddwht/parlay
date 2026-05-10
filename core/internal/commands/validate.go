@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/spf13/cobra"
@@ -93,7 +95,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// --type is required for the non-project paths.
 	if validateType == "" {
-		return fmt.Errorf("--type is required (one of: surface, buildfile, blueprint, yaml, infrastructure, domain-model)")
+		return fmt.Errorf("--type is required (one of: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review)")
 	}
 
 	var validator agent.Validator
@@ -112,8 +114,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// parlay-feature: studio-support/domain-model-yaml-migration
 		// parlay-component: validate (extends domain-model-validate-cli-type)
 		validator = agent.ValidateDomainModel
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: cli-and-deployer-registration
+	case "adapter-set":
+		validator = wrapOutcomeValidator(agent.ValidateAdapterSet)
+	case "capabilities":
+		validator = wrapOutcomeValidator(agent.ValidateCapabilities)
+	case "coverage-review":
+		// coverage-review validation is hash-aware and needs full inputs;
+		// surface a minimal YAML-shape check here.
+		validator = agent.ValidateYAML
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model", validateType)
+		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review", validateType)
 	}
 
 	if err := validator(path, content); err != nil {
@@ -158,6 +170,38 @@ func runValidateProject() error {
 	verdicts, err := agent.ValidateBuildfilesProjectStructured(root)
 	if err != nil {
 		return fmt.Errorf("project-pass walk failed: %s", err)
+	}
+
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: cli-and-deployer-registration
+	//
+	// Multi-target gate: when the project carries an adapter-set with a
+	// non-presentation slot, also walk the capabilities + supports +
+	// blueprint rules. Presentation-only projects short-circuit inside
+	// ValidateProjectMultiTarget and contribute zero outcomes here.
+	multiOutcomes := agent.ValidateProjectMultiTarget(agent.ModeBuild, root)
+	if len(multiOutcomes) > 0 {
+		// Attribute them to a synthetic "_project" feature so they
+		// surface alongside per-feature verdicts.
+		var errs []agent.ValidationError
+		for _, o := range multiOutcomes {
+			if o.Severity != agent.SeverityError {
+				continue
+			}
+			errs = append(errs, agent.ValidationError{
+				Code:    o.Code,
+				Message: o.Message,
+				Context: o.Context,
+				Fix:     o.Fix,
+			})
+		}
+		if len(errs) > 0 {
+			verdicts = append(verdicts, agent.FeatureVerdict{
+				Feature:       "_project",
+				BuildfilePath: filepath.Join(root, ".parlay", "adapter-set.yaml"),
+				Errors:        errs,
+			})
+		}
 	}
 
 	totalErrors := 0
@@ -207,6 +251,29 @@ func runValidateProject() error {
 	}
 	os.Exit(1)
 	return nil
+}
+
+// wrapOutcomeValidator adapts an agent.ValidationOutcome-returning
+// validator to the legacy agent.Validator signature. Outcomes with severity
+// error are joined into a single error string; warnings are dropped silently
+// (the structured JSON path uses ValidationOutcome directly when needed).
+//
+// parlay-feature: parlay-tool/multi-adapter
+// parlay-component: cli-and-deployer-registration
+func wrapOutcomeValidator(fn func(agent.ValidationMode, string, []byte) []agent.ValidationOutcome) agent.Validator {
+	return func(path string, content []byte) error {
+		outcomes := fn(agent.ModeAuthoring, path, content)
+		var msgs []string
+		for _, o := range outcomes {
+			if o.Severity == agent.SeverityError {
+				msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
+			}
+		}
+		if len(msgs) == 0 {
+			return nil
+		}
+		return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+	}
 }
 
 func outputValidate(path string, errors []agent.ValidationError) error {

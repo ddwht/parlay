@@ -70,6 +70,15 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "- `parlay status` — Show active root, features, and child roots\n"
 	content += "- `parlay promote-root` — Promote an orphaned child to standalone\n"
 	content += "- `parlay migrate-domain-model [--dry-run] [--force] [--root <name>]` — Convert domain-model.md to domain-model.yaml\n"
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: cli-and-deployer-registration
+	content += "- `parlay migrate-config` — Convert legacy prototype-framework into a single-target presentation adapter-set\n"
+	content += "- `parlay migrate-spec` — Convert each feature's surface.md to surface.yaml\n"
+	content += "- `parlay migrate-capabilities` — Extract operation-shaped fragments from infrastructure.md into capabilities.yaml\n"
+	content += "- `parlay migrate-domain-operations` — Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs\n"
+	content += "- `parlay review-coverage <@feature>` — Walk suites, record approvals, write coverage-review.yaml\n"
+	content += "- `parlay check-supports <@feature>` — Pre-codegen support gate (JSON output for skill consumption)\n"
+	content += "- `parlay check-review-gate <@feature>` — Coverage-review gate before generate-code (JSON output)\n"
 
 	if section := renderMultiRootSection(projectRoot); section != "" {
 		content += section

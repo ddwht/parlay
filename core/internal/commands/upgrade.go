@@ -7,10 +7,12 @@
 package commands
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
@@ -138,5 +140,119 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
 	}
 
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: adapter-kind-field-opt-in-prompt
+	//
+	// After re-deploying skills + schemas, offer the kind: opt-in for any
+	// adapter file that predates the multi-adapter feature. The validator
+	// already treats absent kind: as the legacy presentation default; this
+	// prompt makes the default explicit.
+	if err := offerAdapterKindOptIn(rootPath); err != nil {
+		fmt.Printf("  Note: adapter kind opt-in skipped (%v)\n", err)
+	}
+
 	return nil
+}
+
+// offerAdapterKindOptIn scans .parlay/adapters/ under rootPath for adapter
+// files lacking an explicit kind: field, and offers to add `kind: presentation`
+// to each. Skipping is non-blocking; files keep working without explicit
+// kind: per the legacy default.
+func offerAdapterKindOptIn(rootPath string) error {
+	adaptersDir := filepath.Join(rootPath, ".parlay", "adapters")
+	entries, err := os.ReadDir(adaptersDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var missing []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".adapter.yaml") {
+			continue
+		}
+		path := filepath.Join(adaptersDir, name)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if !hasKindField(content) {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	stat, err := os.Stdin.Stat()
+	if err != nil || (stat.Mode()&os.ModeCharDevice) == 0 {
+		// Non-TTY upgrade — print informational note, don't prompt.
+		fmt.Printf("  Note: %d adapter file(s) lack explicit kind: presentation; run `parlay upgrade` interactively to opt in.\n", len(missing))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println("These adapter files predate the multi-adapter feature; the validator already treats them as kind: presentation.")
+	for _, p := range missing {
+		fmt.Printf("  - %s — inferred default: kind: presentation\n", p)
+	}
+	fmt.Print("Add explicit `kind: presentation` to all of them? [y/N] ")
+
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(strings.ToLower(line)) != "y" {
+		return nil
+	}
+
+	updated := 0
+	for _, p := range missing {
+		content, _ := os.ReadFile(p)
+		newContent := injectKindPresentation(content)
+		if err := os.WriteFile(p, newContent, 0644); err == nil {
+			updated++
+		}
+	}
+	fmt.Printf("Updated\n  %d file(s) gained an explicit kind: presentation line\n", updated)
+	return nil
+}
+
+// hasKindField reports whether the supplied adapter YAML content declares a
+// top-level kind: field. The check is line-based rather than YAML-aware so
+// it tolerates malformed adapter files (which are validated separately).
+func hasKindField(content []byte) bool {
+	for _, line := range strings.Split(string(content), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "kind:") || strings.HasPrefix(t, "kind ") {
+			// Top-level only — ignore indented occurrences.
+			if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// injectKindPresentation inserts `kind: presentation` after the existing
+// top-level name: line (or at the top of the file when no name: is found).
+func injectKindPresentation(content []byte) []byte {
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "name:") && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			out := append([]string{}, lines[:i+1]...)
+			out = append(out, "kind: presentation")
+			out = append(out, lines[i+1:]...)
+			return []byte(strings.Join(out, "\n"))
+		}
+	}
+	return []byte("kind: presentation\n" + string(content))
 }

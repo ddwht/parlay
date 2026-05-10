@@ -112,6 +112,18 @@ func (c *Context) AdaptersPath() string {
 	return filepath.Join(c.Root.Path, ParlayDir, AdaptersDir)
 }
 
+// AdapterSetPath is the active root's .parlay/adapter-set.yaml — the file
+// that pins which adapter occupies each adapter-kind slot in a project,
+// declares per-target source roots, and authorizes cross-kind link
+// relations. The file is optional; presentation-only projects need not
+// declare one.
+//
+// parlay-feature: parlay-tool/multi-adapter
+// parlay-component: adapter-kind-discriminator
+func (c *Context) AdapterSetPath() string {
+	return filepath.Join(c.Root.Path, ParlayDir, "adapter-set.yaml")
+}
+
 // PagesPath is the active root's spec/pages/.
 func (c *Context) PagesPath() string {
 	return filepath.Join(c.Root.Path, SpecDir, PagesDir)

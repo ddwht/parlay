@@ -1,0 +1,12 @@
+# parlay-section: cross-cutting
+# parlay-feature: parlay-tool/multi-adapter
+#
+# Presentation-only preset. Single slot; no supports/links validation.
+# Suitable for back-compat projects whose codegen target is purely UI.
+
+name: react-antd-only
+
+targets:
+  presentation:
+    adapter: react-antd
+    root: src

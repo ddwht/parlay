@@ -231,10 +231,85 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  skills                      — %d skills deployed for %s\n", len(skills), dep.Name())
 	}
 
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: project-setup-preset-selection
+	//
+	// After the existing single-adapter init completes, offer to copy a
+	// bundled adapter-set preset. Default flow leaves the project
+	// presentation-only with the chosen adapter; the preset prompt is the
+	// opt-in path into multi-target topology.
+	if err := offerPresetSelection(); err != nil {
+		fmt.Printf("  Note: preset selection skipped (%v)\n", err)
+	}
+
 	// Element: next-step
 	fmt.Println()
 	fmt.Println("Ready. Run: parlay add-feature <name>")
 
+	return nil
+}
+
+// offerPresetSelection presents the bundled adapter-set presets, asks the
+// user to pick one (or skip), and copies the chosen preset's
+// adapter-set.yaml + the adapter files it references into .parlay/. Skipping
+// (or selecting "custom") leaves .parlay/adapter-set.yaml absent for the
+// user to author from scratch.
+func offerPresetSelection() error {
+	presetNames, err := embedded.PresetNames()
+	if err != nil {
+		return fmt.Errorf("list presets: %w", err)
+	}
+	if len(presetNames) == 0 {
+		return nil
+	}
+
+	// Skip the prompt entirely when stdin is not a TTY (CI mode).
+	stat, err := os.Stdin.Stat()
+	if err != nil || (stat.Mode()&os.ModeCharDevice) == 0 {
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println("Pick a starting preset (optional — adds backend slots beyond presentation):")
+	for i, name := range presetNames {
+		marker := ""
+		if name == "react-nest-prisma" {
+			marker = "  [INFO] react-nest-prisma is the v1 first preset (exercised end-to-end in CI)"
+		}
+		fmt.Printf("  %d. %s%s\n", i+1, name, marker)
+	}
+	fmt.Printf("  %d. custom (skip — author .parlay/adapter-set.yaml from scratch)\n", len(presetNames)+1)
+	fmt.Print("> ")
+
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil // accept default = skip
+	}
+
+	var idx int
+	if _, err := fmt.Sscanf(line, "%d", &idx); err != nil || idx < 1 || idx > len(presetNames)+1 {
+		return nil
+	}
+	if idx == len(presetNames)+1 {
+		fmt.Println("No files written — author .parlay/adapter-set.yaml from scratch.")
+		return nil
+	}
+
+	chosen := presetNames[idx-1]
+	content, err := embedded.ReadPreset(chosen)
+	if err != nil {
+		return fmt.Errorf("read preset: %w", err)
+	}
+	dest := filepath.Join(".parlay", "adapter-set.yaml")
+	if err := os.WriteFile(dest, content, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+	fmt.Printf("Files written\n  %s — preset %s\n", dest, chosen)
 	return nil
 }
 

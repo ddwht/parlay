@@ -1,6 +1,7 @@
 // parlay-feature: infrastructure-layer
 // parlay-component: InfrastructureValidationResult
 // parlay-extends: infrastructure-layer/portability-lint
+// parlay-extends: parlay-tool/multi-adapter/capabilities-artifact
 
 package agent
 
@@ -104,8 +105,42 @@ func ValidateInfrastructureDeep(path string) ([]ValidationError, []PortabilityWa
 		}
 	}
 
+	// Multi-adapter Tier-2 layer: surface a deprecation warning when an
+	// infrastructure.md has zero operation-shaped fragments. The legacy
+	// artifact is being replaced by capabilities.yaml; prose-only files
+	// should be migrated via `parlay migrate-capabilities`. Architecture
+	// §13 + cross-cutting/capabilities-artifact.
+	if !hasOperationShapedFragment(fragments) {
+		errors = append(errors, ValidationError{
+			Code:    "capabilities-prose-only",
+			Message: fmt.Sprintf("%s contains no operation-shaped fragments (no closed-vocabulary step verbs detected)", path),
+			Context: path,
+			Fix:     "run `parlay migrate-capabilities` to extract operation-shaped fragments into spec/intents/<feature>/capabilities.yaml; pattern-shaped fragments are reported separately for designer review",
+		})
+	}
+
 	warnings := lintPortability(fragments)
 	return errors, warnings
+}
+
+// hasOperationShapedFragment reports whether any fragment in the supplied
+// list contains a closed-vocabulary step verb. The detection mirrors what
+// `parlay migrate-capabilities` uses to decide which fragments auto-extract
+// into capabilities.yaml — a deliberately conservative heuristic.
+func hasOperationShapedFragment(fragments []parser.InfraFragment) bool {
+	verbs := []string{
+		"validate-input", "create-one", "update-one", "delete-one",
+		"read-one", "read-many", "search",
+	}
+	for _, frag := range fragments {
+		corpus := strings.ToLower(frag.Behavior + " " + frag.Affects)
+		for _, v := range verbs {
+			if strings.Contains(corpus, v) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var (

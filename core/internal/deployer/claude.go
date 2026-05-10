@@ -163,9 +163,10 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 
 Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
+- **spec/intents/<feature>/** (generated, human-reviewed): surface.yaml (or legacy surface.md), capabilities.yaml (or legacy infrastructure.md), domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
+- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 %s%s`, parlayMarkerBegin, commands, multiRootBlock, parlayMarkerEnd)
 
 	claudePath := filepath.Join(projectRoot, "CLAUDE.md")
@@ -198,7 +199,7 @@ func skillTitle(name string) string {
 	titles := map[string]string{
 		"add-feature":          "Create a new feature",
 		"scaffold-dialogs":     "Scaffold dialog templates from intents",
-		"create-artifacts":     "Determine and create surface.md, infrastructure.md, or both",
+		"create-artifacts":     "Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both",
 		"build-feature":        "Generate buildfile and testcases",
 		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",
@@ -215,6 +216,13 @@ func skillTitle(name string) string {
 		"new-initiative":       "Create an empty initiative directory",
 		"repair":              "Validate and reconcile the three parallel trees",
 		"loop":                "Walk a feature end-to-end through the parlay design pipeline",
+		// parlay-feature: parlay-tool/multi-adapter
+		// parlay-component: cli-and-deployer-registration
+		"migrate-config":          "Convert legacy prototype-framework into a single-target presentation adapter-set",
+		"migrate-spec":            "Convert each feature's surface.md to surface.yaml",
+		"migrate-capabilities":    "Extract operation-shaped fragments from infrastructure.md into capabilities.yaml",
+		"migrate-domain-operations": "Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs",
+		"review-coverage":         "Walk suites, record approvals, write coverage-review.yaml",
 	}
 	if t, ok := titles[name]; ok {
 		return t

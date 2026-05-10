@@ -1,0 +1,26 @@
+# parlay-section: cross-cutting
+# parlay-feature: parlay-tool/multi-adapter
+#
+# v1 first preset — exercised end-to-end in CI.
+# Four slots filled with explicit cross-kind link relations.
+
+name: react-nest-prisma
+
+targets:
+  presentation:
+    adapter: react-antd
+    root: apps/web
+  transport:
+    adapter: openapi-rest
+    root: apps/api
+  application:
+    adapter: nestjs-application
+    root: apps/api
+  persistence:
+    adapter: prisma-postgres
+    root: apps/api
+
+links:
+  - { from: presentation, relation: calls,      to: transport   }
+  - { from: transport,    relation: dispatches, to: application }
+  - { from: application,  relation: persists,   to: persistence }

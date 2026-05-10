@@ -1,0 +1,55 @@
+# parlay-feature: parlay-tool/multi-adapter
+# parlay-component: bundled-adapter-set-presets
+#
+# Persistence adapter — translates persistence steps into Prisma client
+# calls against a PostgreSQL database.
+
+name: prisma-postgres
+framework: "Prisma + PostgreSQL"
+version: "1.0"
+kind: persistence
+
+# --- Supports contract (required for non-presentation kinds) ---
+supports:
+  operation_kinds:
+    - command
+    - query
+  steps:
+    - create-one
+    - update-one
+    - delete-one
+    - read-one
+    - read-many
+    - search
+    - return-one
+    - return-many
+    - return-empty
+  policies:
+    - transaction-required
+  errors:
+    - validation-failed
+    - not-found
+    - conflict
+    - server-error
+
+# --- File conventions ---
+file-conventions:
+  source-root: "apps/api"
+  component-pattern: "schema-and-repository"
+  naming: "kebab-case"
+  entry-point: "apps/api/prisma/schema.prisma"
+
+# --- Conventions ---
+conventions:
+  schema-organization:
+    rule: "All entity models declared in apps/api/prisma/schema.prisma. One Prisma model per domain entity. Generated types live alongside the schema."
+    applies-to: "domain entities"
+  step-to-prisma-mapping:
+    rule: "create-one -> prisma.<entity>.create. update-one -> prisma.<entity>.update. delete-one -> prisma.<entity>.delete. read-one -> prisma.<entity>.findUnique. read-many -> prisma.<entity>.findMany. search -> prisma.<entity>.findMany with where filter."
+    applies-to: "every persistence step"
+  transaction-handling:
+    rule: "Operations declaring transaction-required wrap their persistence calls in prisma.$transaction(...). Operations without the policy run each step in its own implicit transaction."
+    applies-to: "every operation policies: list"
+  error-mapping:
+    rule: "Prisma P2002 (unique violation) -> conflict. P2025 (record not found) -> not-found. Validation errors raised inside the repository -> validation-failed. Anything else -> server-error wrapped via fmt.Errorf-style chain."
+    applies-to: "repository error returns"

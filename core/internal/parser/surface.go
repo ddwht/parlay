@@ -20,7 +20,17 @@ type Fragment struct {
 	Feature string // populated during scanning, not from file
 }
 
+// ParseSurfaceFile reads a surface artifact at the supplied path. When the
+// file's basename ends in .yaml, the YAML form is loaded via
+// LoadSurfaceYAML; otherwise the legacy markdown parser runs. Both forms
+// produce identical []Fragment output, so callers do not branch on
+// serialization.
+//
+// parlay-extends: parlay-tool/multi-adapter/surface-yaml-and-migrator
 func ParseSurfaceFile(path string) ([]Fragment, error) {
+	if strings.HasSuffix(path, ".yaml") {
+		return LoadSurfaceYAML(path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

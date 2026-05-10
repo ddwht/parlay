@@ -1,0 +1,61 @@
+# parlay-feature: parlay-tool/multi-adapter
+# parlay-component: bundled-adapter-set-presets
+#
+# Application adapter — orchestrates capability operation steps into
+# NestJS controllers, services, and dependency wiring.
+
+name: nestjs-application
+framework: "NestJS"
+version: "1.0"
+kind: application
+
+# --- Supports contract (required for non-presentation kinds) ---
+supports:
+  operation_kinds:
+    - command
+    - query
+  steps:
+    - validate-input
+    - authorize
+    - create-one
+    - update-one
+    - delete-one
+    - read-one
+    - read-many
+    - search
+    - return-one
+    - return-many
+    - return-empty
+  policies:
+    - auth-required
+    - permission-required
+    - transaction-required
+  errors:
+    - validation-failed
+    - unauthorized
+    - forbidden
+    - not-found
+    - conflict
+    - server-error
+
+# --- File conventions ---
+file-conventions:
+  source-root: "apps/api"
+  component-pattern: "module-controller-service"
+  naming: "kebab-case"
+  entry-point: "apps/api/src/main.ts"
+
+# --- Conventions ---
+conventions:
+  module-organization:
+    rule: "One feature module per parlay feature. Each module exports its controller and service. main.ts imports every feature module."
+    applies-to: "all generated modules"
+  step-to-method-mapping:
+    rule: "validate-input -> class-validator pipes on the controller method param. authorize -> guard decorator. create-one/update-one/delete-one/read-one/read-many/search -> service method named after the step. return-* steps map to the controller method's return value."
+    applies-to: "every operation step"
+  policy-to-decorator-mapping:
+    rule: "auth-required -> @UseGuards(AuthGuard). permission-required -> @UseGuards(PermissionGuard) with the operation id passed as metadata. transaction-required -> service method wrapped in TypeORM/Prisma transaction."
+    applies-to: "every operation policies: list"
+  error-to-exception-mapping:
+    rule: "validation-failed -> BadRequestException. unauthorized -> UnauthorizedException. forbidden -> ForbiddenException. not-found -> NotFoundException. conflict -> ConflictException. server-error -> InternalServerErrorException."
+    applies-to: "every operation's errors: list"

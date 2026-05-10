@@ -115,7 +115,11 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 }
 
 func checkChain(cfg *config.Context, featurePath, slug string, intents []parser.Intent) *chainCoverage {
-	surfacePath := filepath.Join(featurePath, "surface.md")
+	// Prefer surface.yaml; fall back to surface.md.
+	surfacePath := parser.ResolveSurfacePath(featurePath)
+	if surfacePath == "" {
+		surfacePath = filepath.Join(featurePath, "surface.md") // for has-not check below
+	}
 	buildPath := cfg.BuildPath(slug)
 	buildfilePath := filepath.Join(buildPath, "buildfile.yaml")
 	testcasesPath := filepath.Join(buildPath, "testcases.yaml")

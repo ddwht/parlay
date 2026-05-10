@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 // FeaturePhase is the furthest pipeline phase whose required on-disk
@@ -67,8 +68,9 @@ func computeFeaturePhaseAtPaths(featurePath, buildPath string) FeaturePhase {
 	buildfile := filepath.Join(buildPath, "buildfile.yaml")
 	hasBuild := fileExistsAt(buildfile)
 
-	hasSurface := fileExistsAt(filepath.Join(featurePath, "surface.md"))
-	hasInfra := fileExistsAt(filepath.Join(featurePath, "infrastructure.md"))
+	hasSurface := parser.ResolveSurfacePath(featurePath) != ""
+	hasInfra := fileExistsAt(filepath.Join(featurePath, "infrastructure.md")) ||
+		fileExistsAt(filepath.Join(featurePath, "capabilities.yaml"))
 	hasArtifacts := hasSurface || hasInfra
 
 	hasDialogs := fileExistsAt(filepath.Join(featurePath, "dialogs.md"))

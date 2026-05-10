@@ -151,9 +151,10 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 
 Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): surface.md, domain-model.md, *.page.md
+- **spec/intents/<feature>/** (generated, human-reviewed): surface.yaml (or legacy surface.md), capabilities.yaml (or legacy infrastructure.md), domain-model.md, *.page.md
 - **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, .baseline.yaml — never user-facing
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
+- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 %s`, commands, renderMultiRootSection(projectRoot))
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")

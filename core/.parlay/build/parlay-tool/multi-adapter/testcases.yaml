@@ -1,0 +1,934 @@
+feature: parlay-tool/multi-adapter
+framework: Go test (testing.T) with adapter-set + capabilities fixtures
+
+suites:
+  - name: project-setup-preset-selection-renders-presets
+    component: project-setup-preset-selection
+    fixture: preset-react-nest-prisma
+    intent: "@parlay-tool/multi-adapter/bundled-adapter-set-presets"
+    cases:
+      - name: lists exactly the four bundled presets plus custom
+        description: "parlay init lists react-antd-only, angular-clarity-only, react-nest-prisma, angular-nest-prisma, and custom in that order"
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: element
+            target: presets-list
+          - verify: count
+            target: presets-list
+            expected: 5
+          - verify: text
+            target: presets-list
+            expected: "react-nest-prisma"
+      - name: react-nest-prisma is annotated as the v1 first preset
+        description: "A note marks react-nest-prisma as the v1 first preset (informational, does not steer the choice)"
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: visible
+            target: first-preset-annotation
+            expected: true
+      - name: picking react-nest-prisma writes a four-kind adapter-set and four adapter files
+        description: The chosen preset's .parlay/adapter-set.yaml plus the four corresponding adapter files land in the project
+        steps:
+          - action: select
+            target: pick-preset
+            value: react-nest-prisma
+          - verify: file-exists
+            target: .parlay/adapter-set.yaml
+          - verify: file-content
+            target: .parlay/adapter-set.yaml
+            expected: "targets:\n  presentation:\n  transport:\n  application:\n  persistence:"
+          - verify: file-exists
+            target: .parlay/adapters/react-antd.adapter.yaml
+          - verify: file-exists
+            target: .parlay/adapters/openapi-rest.adapter.yaml
+          - verify: file-exists
+            target: .parlay/adapters/nestjs-application.adapter.yaml
+          - verify: file-exists
+            target: .parlay/adapters/prisma-postgres.adapter.yaml
+      - name: picking custom skips the copy entirely
+        description: The custom option leaves .parlay/adapter-set.yaml absent for the user to author from scratch
+        steps:
+          - action: select
+            target: pick-preset
+            value: custom
+          - verify: visible
+            target: custom-empty-state
+            expected: true
+
+  - name: adapter-set-validation-rejects-unknown-kind
+    component: adapter-set-validation-failure
+    fixture: adapter-with-unknown-kind
+    intent: "@parlay-tool/multi-adapter/adapter-kinds-and-adapter-set-topology"
+    cases:
+      - name: "kind: storage fails with adapter-kind-unknown"
+        description: An adapter file declaring a kind outside the closed set fails with adapter-kind-unknown naming the offending value
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-kind-unknown
+          - verify: text
+            target: message
+            expected: "storage"
+      - name: "missing kind: defaults to presentation and validates clean"
+        description: "An adapter file without an explicit kind: validates and is treated as presentation"
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: visible
+            target: code
+            expected: false
+
+  - name: adapter-set-validation-rejects-duplicate-kind
+    component: adapter-set-validation-failure
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/adapter-kinds-and-adapter-set-topology"
+    cases:
+      - name: two adapters under the same kind fails with adapter-set-duplicate-kind
+        description: targets.presentation listing two adapters fails validation
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-set-duplicate-kind
+      - name: slot kind contradicts adapter's declared kind
+        description: "targets.application referencing an adapter whose kind: persistence fails with adapter-set-kind-mismatch naming both the slot and the actual kind"
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-set-kind-mismatch
+
+  - name: adapter-set-link-enforcement
+    component: adapter-set-validation-failure
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/adapter-set-links-enforce-cross-kind-boundaries"
+    cases:
+      - name: presentation-to-persistence direct call fails with adapter-set-link-violated
+        description: A presentation component referencing a persistence repository directly fails with adapter-set-link-violated naming both slots
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-set-link-violated
+      - name: "omitted links: rejects every cross-kind edge with adapter-set-link-missing"
+        description: "An adapter-set with no links: block rejects any cross-kind edge"
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-set-link-missing
+      - name: "links: entry referencing an unfilled slot fails with adapter-set-link-unfilled-slot"
+        description: "A links: entry whose target slot is not declared in targets: fails"
+        steps:
+          - action: render
+            target: adapter-set-validation-failure
+          - verify: text
+            target: code
+            expected: adapter-set-link-unfilled-slot
+
+  - name: pre-codegen-support-gate-fires-pre-AI
+    component: pre-codegen-support-gate-failure
+    fixture: capabilities-with-unknown-step
+    intent: "@parlay-tool/multi-adapter/adapter-supports-contract-gates-codegen-pre-ai"
+    cases:
+      - name: unsupported step fails build with adapter-supports-missing-step
+        description: An operation step the relevant adapter's supports.steps lacks fails build before any AI invocation
+        steps:
+          - action: render
+            target: pre-codegen-support-gate-failure
+          - verify: text
+            target: code
+            expected: adapter-supports-missing-step
+          - verify: text
+            target: message
+            expected: "telepathy"
+      - name: adapter declares a term outside the closed vocabulary
+        description: "An adapter declaring supports.steps: [foo-bar] fails with adapter-supports-unknown-term"
+        steps:
+          - action: render
+            target: pre-codegen-support-gate-failure
+          - verify: text
+            target: code
+            expected: adapter-supports-unknown-term
+      - name: presentation adapter declaring backend supports shape fails
+        description: "A presentation adapter with supports.steps: [...] fails with adapter-supports-shape-mismatch"
+        steps:
+          - action: render
+            target: pre-codegen-support-gate-failure
+          - verify: text
+            target: code
+            expected: adapter-supports-shape-mismatch
+
+  - name: capabilities-validation-output
+    component: capabilities-validation-output
+    fixture: capabilities-task-create
+    intent: "@parlay-tool/multi-adapter/capabilities-yaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact"
+    cases:
+      - name: closed-form capability validates clean and emits canonical operation
+        description: A capabilities.yaml declaring task.create with closed-vocabulary terms validates and the buildfile gains @task-list/operation:task.create
+        steps:
+          - action: render
+            target: capabilities-validation-output
+          - verify: visible
+            target: code
+            expected: false
+      - name: prose-only fragment fails build mode with capabilities-not-closed-form
+        description: A capabilities.yaml of prose paragraphs fails build mode with capabilities-not-closed-form citing line ranges
+        steps:
+          - action: render
+            target: capabilities-validation-output
+          - verify: text
+            target: code
+            expected: capabilities-not-closed-form
+      - name: subscription kind triggers v2-deferred fix message
+        description: "kind: subscription fails with capabilities-unknown-term and the fix message names it as v2-deferred"
+        steps:
+          - action: render
+            target: capabilities-validation-output
+          - verify: text
+            target: code
+            expected: capabilities-unknown-term
+          - verify: visible
+            target: v2-deferral-note
+            expected: true
+      - name: duplicate operation id within one feature fails with capabilities-duplicate-operation-id
+        description: Two operations sharing an id within one capabilities.yaml fail
+        steps:
+          - action: render
+            target: capabilities-validation-output
+          - verify: text
+            target: code
+            expected: capabilities-duplicate-operation-id
+      - name: bare local id reference downstream fails with buildfile-operation-ref-unnormalized
+        description: "A buildfile reference using bare local id (without the @feature/operation: prefix) fails"
+        steps:
+          - action: render
+            target: capabilities-validation-output
+          - verify: text
+            target: code
+            expected: buildfile-operation-ref-unnormalized
+
+  - name: domain-operations-migration-prompt-walks-each-entry
+    component: domain-operations-migration-prompt
+    fixture: domain-model-with-legacy-operations
+    intent: "@parlay-tool/multi-adapter/domain-model-yaml-operations-field-is-deprecated-in-favor-of-capabilities"
+    cases:
+      - name: ambiguous target feature prompts the designer
+        description: "When multiple features could own an entry, the candidate features list is rendered for selection"
+        steps:
+          - action: render
+            target: domain-operations-migration-prompt
+          - verify: visible
+            target: candidate-features-list
+            expected: true
+      - name: "stub written with kind: unknown"
+        description: "Each stub lands with kind: unknown and prose carried over verbatim under notes:"
+        steps:
+          - action: select
+            target: pick-feature
+            value: task-list
+          - verify: file-content
+            target: spec/intents/task-list/capabilities.yaml
+            expected: "kind: unknown"
+      - name: post-run summary reports per-entry destinations
+        description: "After all entries process, summary shows count of entries migrated and clears domain-model.operations"
+        steps:
+          - action: render
+            target: domain-operations-migration-prompt
+          - verify: visible
+            target: post-run-summary
+            expected: true
+      - name: re-running on no-legacy-field is a no-op
+        description: Idempotent — second run produces no diff
+        steps:
+          - action: render
+            target: domain-operations-migration-prompt
+          - verify: text
+            target: per-entry-result
+            expected: ""
+
+  - name: spec-migration-walks-and-emits-yaml
+    component: spec-migration-report
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/surface-yaml-replaces-surface-md-as-the-closed-presentation-artifact-format"
+    cases:
+      - name: writes surface.yaml byte-equivalent to surface.md's parsed model
+        description: "For each feature with surface.md, surface.yaml is emitted alongside; both forms produce the same in-memory model"
+        steps:
+          - action: render
+            target: spec-migration-report
+          - verify: file-exists
+            target: spec/intents/task-list/surface.yaml
+      - name: free-text content lands in the migration report
+        description: "Paragraphs without closed-schema destinations appear in the per-feature unrouted list, not in surface.yaml"
+        steps:
+          - action: render
+            target: spec-migration-report
+          - verify: visible
+            target: per-feature-list
+            expected: true
+      - name: re-running produces no-op
+        description: Migrator is idempotent — second run reports no changes
+        steps:
+          - action: render
+            target: spec-migration-report
+          - verify: text
+            target: summary
+            expected: "no changes"
+
+  - name: blueprint-validation-resolved-values
+    component: blueprint-validation-output
+    fixture: blueprint-jwt-stale-while-revalidate
+    intent: "@parlay-tool/multi-adapter/blueprint-scope-override-precedence-and-strategy-selection"
+    cases:
+      - name: resolved-values report attributes each setting to its source layer
+        description: "For each layered setting, value plus source layer (blueprint, adapter-set, adapter default) is shown"
+        steps:
+          - action: render
+            target: blueprint-validation-output
+          - verify: visible
+            target: resolved-values-table
+            expected: true
+      - name: unsupported strategy fails with blueprint-strategy-unsupported
+        description: "data.fetching: stale-while-revalidate against an adapter that lacks support fails"
+        steps:
+          - action: render
+            target: blueprint-validation-output
+          - verify: text
+            target: code
+            expected: blueprint-strategy-unsupported
+      - name: out-of-vocabulary value fails with blueprint-strategy-unknown
+        description: "data.fetching: telepathy fails because the value is outside the closed vocabulary"
+        steps:
+          - action: render
+            target: blueprint-validation-output
+          - verify: text
+            target: code
+            expected: blueprint-strategy-unknown
+      - name: "targets: block in blueprint fails with blueprint-topology-not-allowed"
+        description: Blueprint may not declare or modify topology
+        steps:
+          - action: render
+            target: blueprint-validation-output
+          - verify: text
+            target: code
+            expected: blueprint-topology-not-allowed
+      - name: error with no mapping fails with error-no-mapping
+        description: A canonical error left without a mapping at any level fails naming the missing layer
+        steps:
+          - action: render
+            target: blueprint-validation-output
+          - verify: text
+            target: code
+            expected: error-no-mapping
+          - verify: visible
+            target: error-no-mapping-detail
+            expected: true
+
+  - name: buildfile-normalization-review
+    component: buildfile-normalization-review
+    fixture: legacy-buildfile-presentation-only
+    intent: "@parlay-tool/multi-adapter/legacy-buildfile-fields-stay-deprecate-or-repurpose"
+    cases:
+      - name: relocations are surfaced before any write
+        description: Top-level adapter:/components:/routes:/plan.creates relocate under targets.<kind>; the diff appears for review before any write
+        steps:
+          - action: render
+            target: buildfile-normalization-review
+          - verify: visible
+            target: diff
+            expected: true
+      - name: confirm writes the normalized buildfile
+        description: After designer confirmation the new shape is written
+        steps:
+          - action: click
+            target: confirm
+          - verify: file-content
+            target: .parlay/build/task-list/buildfile.yaml
+            expected: "targets:"
+      - name: dismiss leaves the buildfile untouched
+        description: Cancelling abandons normalization; build fails with the relevant legacy-field error
+        steps:
+          - action: click
+            target: dismiss
+          - verify: error
+            target: dismiss
+            expected: buildfile-routes-ambiguous
+      - name: components double-declared fails with buildfile-components-double-declared
+        description: "Both top-level components: and targets.presentation.components: populated fails"
+        steps:
+          - action: render
+            target: buildfile-normalization-review
+          - verify: visible
+            target: ambiguous-flag
+            expected: true
+      - name: "non-empty models: warns in authoring and errors in build"
+        description: "Legacy models: surfaces buildfile-models-deprecated; severity differs by mode"
+        steps:
+          - action: render
+            target: buildfile-normalization-review
+          - verify: visible
+            target: models-deprecated-flag
+            expected: true
+      - name: wiring.rules and bindings stay byte-equivalent
+        description: Normalization makes zero changes inside wiring.rules and bindings sections
+        steps:
+          - action: render
+            target: buildfile-normalization-review
+          - verify: visible
+            target: wiring-bindings-untouched-note
+            expected: true
+
+  - name: routes-disambiguation-prompt
+    component: routes-disambiguation-prompt
+    fixture: legacy-buildfile-presentation-only
+    intent: "@parlay-tool/multi-adapter/legacy-buildfile-fields-stay-deprecate-or-repurpose"
+    cases:
+      - name: collision triggers the disambiguation sub-flow
+        description: A legacy routes path that collides with a transport HTTP exposure prompts for the target
+        steps:
+          - action: render
+            target: routes-disambiguation-prompt
+          - verify: visible
+            target: collision-message
+            expected: true
+      - name: cancellation aborts with buildfile-routes-ambiguous
+        description: "If the designer cancels, normalization fails and the legacy routes block remains"
+        steps:
+          - action: click
+            target: cancel
+          - verify: error
+            target: cancel
+            expected: buildfile-routes-ambiguous
+
+  - name: testcases-validation-output
+    component: testcases-validation-output
+    fixture: capabilities-task-create
+    intent: "@parlay-tool/multi-adapter/testcases-yaml-v2-discriminated-suite-kinds-and-source-refs"
+    cases:
+      - name: canonical operation without covering suite fails with testcases-operation-uncovered
+        description: "capabilities.yaml declares task.delete but no kind: operation suite covers it"
+        steps:
+          - action: render
+            target: testcases-validation-output
+          - verify: text
+            target: code
+            expected: testcases-operation-uncovered
+      - name: new v2 suite without source_refs fails with testcases-source-refs-missing
+        description: A new v2 suite must cite at least one source_refs entry
+        steps:
+          - action: render
+            target: testcases-validation-output
+          - verify: text
+            target: code
+            expected: testcases-source-refs-missing
+      - name: legacy v1 suite without source_refs warns rather than fails
+        description: Legacy v1 suites loaded as v2 presentation produce testcases-source-refs-missing-legacy as a warning
+        steps:
+          - action: render
+            target: testcases-validation-output
+          - verify: text
+            target: code
+            expected: testcases-source-refs-missing-legacy
+          - verify: visible
+            target: legacy-warning-note
+            expected: true
+      - name: unknown suite kind fails with testcases-suite-kind-unknown
+        description: "kind: integration is not in the v2 set {presentation, operation}"
+        steps:
+          - action: render
+            target: testcases-validation-output
+          - verify: text
+            target: code
+            expected: testcases-suite-kind-unknown
+      - name: shape mismatch on operation suite
+        description: An operation suite asserting output.entity that does not match the canonical operation fails
+        steps:
+          - action: render
+            target: testcases-validation-output
+          - verify: text
+            target: code
+            expected: testcases-operation-shape-mismatch
+
+  - name: coverage-review-authoring
+    component: coverage-review-authoring
+    fixture: matching-coverage-review
+    intent: "@parlay-tool/multi-adapter/coverage-review-yaml-gates-codegen-on-human-approval"
+    cases:
+      - name: writes review file with current canonical-form hashes
+        description: "On approval, the review file is written with current buildfile_hash, testcases_hash, reviewer identity, timestamp, approved_suites"
+        steps:
+          - action: click
+            target: confirm-suite
+          - verify: file-content
+            target: .parlay/build/task-list/coverage-review.yaml
+            expected: "buildfile_hash:"
+      - name: missing coverage prompts for an exemption reason
+        description: A required term without a covering suite collects free-text via provide-exemption-reason
+        steps:
+          - action: render
+            target: coverage-review-authoring
+          - verify: visible
+            target: exemption-prompt
+            expected: true
+      - name: dismiss halts review without writing the file
+        description: Cancelling leaves the previous review file (if any) intact
+        steps:
+          - action: click
+            target: dismiss
+          - verify: error
+            target: dismiss
+            expected: review-aborted
+
+  - name: coverage-review-gate-failure
+    component: coverage-review-gate-failure
+    fixture: drifted-coverage-review
+    intent: "@parlay-tool/multi-adapter/coverage-review-yaml-gates-codegen-on-human-approval"
+    cases:
+      - name: missing review file fails with coverage-review-missing
+        description: parlay generate-code with no coverage-review.yaml fails before any other read
+        steps:
+          - action: render
+            target: coverage-review-gate-failure
+          - verify: text
+            target: code
+            expected: coverage-review-missing
+      - name: drifted hash fails with coverage-review-stale naming the drifted hash
+        description: Editing buildfile.yaml without re-reviewing fails with coverage-review-stale and names buildfile_hash
+        steps:
+          - action: render
+            target: coverage-review-gate-failure
+          - verify: text
+            target: code
+            expected: coverage-review-stale
+          - verify: visible
+            target: hash-detail
+            expected: true
+      - name: unapproved suite fails with coverage-review-suite-unapproved
+        description: "A suite present in testcases.yaml but absent from approved_suites: blocks generate-code"
+        steps:
+          - action: render
+            target: coverage-review-gate-failure
+          - verify: text
+            target: code
+            expected: coverage-review-suite-unapproved
+      - name: uncovered required term without exemption fails with coverage-review-uncovered
+        description: A canonical operation with declared error without a covering case and no exemption blocks codegen
+        steps:
+          - action: render
+            target: coverage-review-gate-failure
+          - verify: text
+            target: code
+            expected: coverage-review-uncovered
+      - name: cosmetic edit does not invalidate review (canonical-form hashing)
+        description: Whitespace or key-order changes do not drift the hash
+        steps:
+          - action: render
+            target: coverage-review-gate-failure
+          - verify: visible
+            target: code
+            expected: false
+
+  - name: codegen-pipeline-progress
+    component: codegen-pipeline-progress
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set"
+    cases:
+      - name: layer order is persistence then application then transport then presentation
+        description: Default emission order is persistence → application → transport → presentation; each layer fully completes before the next
+        steps:
+          - action: render
+            target: codegen-pipeline-progress
+          - verify: text
+            target: layer-progress
+            expected: "persistence"
+          - verify: text
+            target: layer-progress
+            expected: "presentation"
+      - name: spec/intents read attempt aborts with codegen-spec-read-forbidden
+        description: A read of spec/intents/<feature>/capabilities.yaml at codegen time aborts naming the path
+        steps:
+          - action: render
+            target: codegen-pipeline-progress
+          - verify: text
+            target: read-violation
+            expected: codegen-spec-read-forbidden
+      - name: out-of-scope path read aborts with codegen-input-out-of-scope
+        description: A path outside any target's declared root aborts with codegen-input-out-of-scope
+        steps:
+          - action: render
+            target: codegen-pipeline-progress
+          - verify: text
+            target: read-violation
+            expected: codegen-input-out-of-scope
+      - name: layer-informs-next visible in prompt context
+        description: A persistence-shape change is visible in the application layer's prompt-context section
+        steps:
+          - action: render
+            target: codegen-pipeline-progress
+          - verify: visible
+            target: layer-progress
+            expected: true
+      - name: missing review halts before any read
+        description: "A run with stale or missing coverage-review.yaml halts at the gate, before the layered pipeline begins"
+        steps:
+          - action: render
+            target: codegen-pipeline-progress
+          - verify: visible
+            target: per-file-line
+            expected: false
+
+  - name: capabilities-migration-operations-extraction
+    component: capabilities-migration-operations-extraction
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    cases:
+      - name: operation-shaped fragments are extracted into capabilities.yaml
+        description: Paragraphs in legacy infrastructure.md that match the operation pattern produce closed-vocabulary operations under the chosen feature's capabilities.yaml
+        steps:
+          - action: render
+            target: capabilities-migration-operations-extraction
+          - verify: visible
+            target: per-feature-list
+            expected: true
+      - name: "ambiguous kind cases produce a warning and kind: unknown"
+        description: "When the extractor cannot infer kind, the operation is written with kind: unknown and the user is warned to set it manually"
+        steps:
+          - action: render
+            target: capabilities-migration-operations-extraction
+          - verify: visible
+            target: ambiguous-kind-warning
+            expected: true
+
+  - name: pattern-fragment-classifier
+    component: pattern-fragment-migration-report
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/pattern-fragment-decomposition-during-capabilities-migration"
+    cases:
+      - name: registry-shaped fragment routes to domain entity destination
+        description: A "router registry that lists registered handlers" classifies as registry-shaped with suggested destination "domain entity plus register/list/lookup operations"
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: text
+            target: per-fragment-list
+            expected: "registry"
+      - name: pipeline-shaped fragment routes to command operation
+        description: "A \"validate text length, then trim whitespace, then enforce uniqueness\" classifies as pipeline-shaped → \"command operation in capabilities\""
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: text
+            target: per-fragment-list
+            expected: "pipeline"
+      - name: ambiguous fragment routes to unrouted designer review
+        description: A fragment the classifier cannot confidently route lands in "unrouted; designer review" with the fragment quoted verbatim
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: visible
+            target: unrouted-flag
+            expected: true
+      - name: v2-deferred fragment is preserved verbatim
+        description: A subscription-shaped fragment is tagged v2-deferred in the report
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: visible
+            target: v2-deferred-flag
+            expected: true
+      - name: helper/utility fragments routed to adapter-level
+        description: A "string trimmer" fragment is tagged "adapter-level pattern (not spec-layer)"
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: text
+            target: per-fragment-list
+            expected: "helper"
+      - name: re-running produces an identical report
+        description: Idempotent — re-running on unchanged input is a no-op
+        steps:
+          - action: render
+            target: pattern-fragment-migration-report
+          - verify: visible
+            target: report-only-message
+            expected: true
+
+  - name: config-migration-result
+    component: config-migration-result
+    fixture: presentation-only-adapter-set
+    intent: "@parlay-tool/multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    cases:
+      - name: prototype-framework converts to a single-target presentation adapter-set
+        description: "parlay migrate-config writes .parlay/adapter-set.yaml with only the presentation slot filled, citing the matching adapter"
+        steps:
+          - action: render
+            target: config-migration-result
+          - verify: file-content
+            target: .parlay/adapter-set.yaml
+            expected: "targets:\n  presentation:"
+      - name: no legacy field is a no-op
+        description: "When prototype-framework is absent, the command exits cleanly with the no-op message"
+        steps:
+          - action: render
+            target: config-migration-result
+          - verify: visible
+            target: no-op-message
+            expected: true
+      - name: deprecation note surfaces; field stays parseable
+        description: prototype-framework remains parseable in v1 with a prototype-framework-deprecated warning
+        steps:
+          - action: render
+            target: config-migration-result
+          - verify: visible
+            target: deprecation-note
+            expected: true
+
+  - name: domain-model-validation-output
+    component: domain-model-validation-output
+    fixture: domain-model-with-legacy-operations
+    intent: "@parlay-tool/multi-adapter/domain-model-yaml-operations-field-is-deprecated-in-favor-of-capabilities"
+    cases:
+      - name: populated domain-model.operations triggers domain-operations-deprecated
+        description: Authoring mode emits warning; build mode emits error with the same code
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: text
+            target: code
+            expected: domain-operations-deprecated
+      - name: "capability stub with kind: unknown is rejected in build mode"
+        description: capabilities-stub-unfilled blocks build until the designer fills in the real kind
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: text
+            target: code
+            expected: capabilities-stub-unfilled
+          - verify: visible
+            target: stub-pointer
+            expected: true
+      - name: domain-model entities and relationships continue to validate unchanged
+        description: "Only the operations: field is affected by this intent; entities/relationships/states/enums/value objects work as before"
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: visible
+            target: code
+            expected: false
+
+  - name: surface-validation-output
+    component: surface-validation-output
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/surface-yaml-replaces-surface-md-as-the-closed-presentation-artifact-format"
+    cases:
+      - name: both forms present prefers YAML and warns surface-md-superseded
+        description: "surface.yaml (recently authored) and surface.md (legacy) coexist; YAML wins, surface.md gets a warning"
+        steps:
+          - action: render
+            target: surface-validation-output
+          - verify: text
+            target: code
+            expected: surface-md-superseded
+          - verify: visible
+            target: superseded-pair
+            expected: true
+      - name: legacy markdown only emits informational note
+        description: "When only surface.md is present, the surface-md-legacy-format note points to parlay migrate-spec"
+        steps:
+          - action: render
+            target: surface-validation-output
+          - verify: visible
+            target: legacy-format-note
+            expected: true
+      - name: surface.yaml alone validates clean
+        description: A feature with surface.yaml only validates without warnings
+        steps:
+          - action: render
+            target: surface-validation-output
+          - verify: visible
+            target: code
+            expected: false
+
+  - name: buildfile-canonical-validation
+    component: buildfile-canonical-validation-output
+    fixture: full-stack-adapter-set
+    intent: "@parlay-tool/multi-adapter/multi-target-buildfile-operations-targets-and-target-aware-plan"
+    cases:
+      - name: target restating canonical field fails with buildfile-target-restates-canonical
+        description: "targets.application repeating errors: from operations: fails naming the target, the operation, and the offending field"
+        steps:
+          - action: render
+            target: buildfile-canonical-validation-output
+          - verify: text
+            target: code
+            expected: buildfile-target-restates-canonical
+          - verify: visible
+            target: target-restate-detail
+            expected: true
+      - name: binding referencing absent operation fails with buildfile-binding-operation-missing
+        description: "A bindings: rule whose operation ref does not resolve under operations: fails"
+        steps:
+          - action: render
+            target: buildfile-canonical-validation-output
+          - verify: text
+            target: code
+            expected: buildfile-binding-operation-missing
+          - verify: visible
+            target: missing-ref-detail
+            expected: true
+      - name: target effect referencing absent operation fails with buildfile-target-operation-missing
+        description: A target's effect.operation referencing an absent operation fails
+        steps:
+          - action: render
+            target: buildfile-canonical-validation-output
+          - verify: text
+            target: code
+            expected: buildfile-target-operation-missing
+      - name: components double-declared fails with buildfile-components-double-declared
+        description: "Top-level components: and targets.presentation.components: simultaneously populated fails"
+        steps:
+          - action: render
+            target: buildfile-canonical-validation-output
+          - verify: text
+            target: code
+            expected: buildfile-components-double-declared
+      - name: plan rows are routed by target during codegen
+        description: plan.targets.presentation.creates and plan.targets.persistence.modifies route to the correct target during emission
+        steps:
+          - action: render
+            target: buildfile-canonical-validation-output
+          - verify: visible
+            target: code
+            expected: false
+
+  - name: adapter-kind-field-opt-in-prompt
+    component: adapter-kind-field-opt-in-prompt
+    fixture: adapter-without-kind
+    intent: "@parlay-tool/multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    cases:
+      - name: "prompt only fires for adapter files lacking kind:"
+        description: "parlay upgrade scans .parlay/adapters/ and lists files missing kind:; files that already declare kind: are not surfaced"
+        steps:
+          - action: render
+            target: adapter-kind-field-opt-in-prompt
+          - verify: visible
+            target: file-list
+            expected: true
+      - name: "opt-in writes explicit kind: presentation"
+        description: "After confirmation, the chosen files gain \"kind: presentation\" at top level"
+        steps:
+          - action: click
+            target: confirm
+          - verify: file-content
+            target: .parlay/adapters/react-antd.adapter.yaml
+            expected: "kind: presentation"
+      - name: dismiss leaves files unchanged; warning resurfaces next upgrade
+        description: "The opt-in is non-blocking; files keep working without explicit kind:"
+        steps:
+          - action: click
+            target: dismiss
+          - verify: error
+            target: dismiss
+            expected: opt-in-prompt-dismissed
+
+  - name: presentation-only-end-to-end
+    component: project-setup-preset-selection
+    fixture: preset-react-antd-only
+    intent: "@parlay-tool/multi-adapter/presentation-only-projects-continue-to-work-unchanged"
+    cases:
+      - name: presentation-only project skips all backend rules
+        description: "A project with only the presentation slot filled does not require capabilities.yaml, backend supports validation, link enforcement, or coverage-review for legacy v1 testcases"
+        steps:
+          - action: select
+            target: pick-preset
+            value: react-antd-only
+          - verify: file-exists
+            target: .parlay/adapter-set.yaml
+          - verify: visible
+            target: post-write-summary
+            expected: true
+      - name: "presentation-only build emits empty operations: block"
+        description: "parlay build-feature on a presentation-only feature produces a buildfile whose operations: block is empty"
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: visible
+            target: post-write-summary
+            expected: true
+      - name: adding first non-presentation slot transitions to multi-target automatically
+        description: "Editing .parlay/adapter-set.yaml to add targets.persistence: activates multi-target rules on the next build with no explicit migration step"
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: visible
+            target: post-write-summary
+            expected: true
+
+  - name: validation-mode-dispatch
+    component: domain-model-validation-output
+    fixture: domain-model-with-legacy-operations
+    intent: "@parlay-tool/multi-adapter/validation-modes-authoring-vs-build"
+    cases:
+      - name: same code, different severity by mode
+        description: parlay validate emits domain-operations-deprecated as a warning; parlay build-feature emits the same code as an error
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: text
+            target: code
+            expected: domain-operations-deprecated
+      - name: authoring mode never silently passes a build-mode failure
+        description: Every build-mode error rule surfaces at minimum as a warning in authoring mode
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: visible
+            target: status-prefix
+            expected: true
+      - name: build mode never downgrades errors
+        description: Partial success is not a build outcome; build fails on any violation
+        steps:
+          - action: render
+            target: domain-model-validation-output
+          - verify: text
+            target: status-prefix
+            expected: "[ERR]"
+
+  - name: cli-and-deployer-registration
+    component: project-setup-preset-selection
+    fixture: preset-react-nest-prisma
+    intent: "@parlay-tool/multi-adapter/migration-of-legacy-artifacts-to-the-new-shape"
+    cases:
+      - name: each new command appears in parlay --help
+        description: "parlay migrate-config, migrate-spec, migrate-capabilities, migrate-domain-operations, review-coverage are all registered"
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: file-content
+            target: core/internal/commands/root.go
+            expected: "rootCmd.AddCommand(reviewCoverageCmd)"
+      - name: generic deployer's hardcoded command list contains every new command
+        description: AGENT_INSTRUCTIONS.md content contains a line for each new command
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: file-content
+            target: core/internal/deployer/generic.go
+            expected: "parlay review-coverage"
+      - name: claude deployer's skillTitle map contains entries for the new skills
+        description: The claude deployer materializes /parlay-migrate-* and /parlay-review-coverage with informative titles
+        steps:
+          - action: render
+            target: project-setup-preset-selection
+          - verify: file-content
+            target: core/internal/deployer/claude.go
+            expected: "review-coverage"

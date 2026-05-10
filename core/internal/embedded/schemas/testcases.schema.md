@@ -109,3 +109,53 @@ The test code may differ (assertion syntax, selector strategy), but the test cov
 - Element references: match `elements[].name` in buildfile components
 - Action references: match `actions[].name` in buildfile components
 - Model references: `EntityName.field` dot notation for state verification
+
+## Schema version 2: discriminated suite kinds
+
+<!-- parlay-extends: parlay-tool/multi-adapter/testcases-v2 -->
+
+Multi-target projects bump `testcases.yaml` to `schema_version: 2` with a `kind:` discriminator over the closed set `{presentation, operation}`.
+
+```yaml
+schema_version: 2
+feature: <feature-slug>
+framework: <test framework name>
+
+suites:
+  - kind: presentation
+    name: <suite id>
+    component: <component reference into buildfile.components>
+    source_refs:
+      - "@<feature>/<surface-fragment>"
+    fixture: <fixture reference>
+    cases: [...]
+
+  - kind: operation
+    name: <suite id>
+    operation: "@<feature>/operation:<id>"
+    source_refs:
+      - "@<feature>/operation:<id>"
+    output_assertions: [...]
+    error_assertions: [...]
+    persistence_assertions: [...]
+```
+
+### Coverage walker
+
+For every canonical operation declared in the feature's `capabilities.yaml`, at least one `kind: operation` suite must reference it. The walker fires `testcases-operation-uncovered` for each missing operation. Coverage is computed against the `@<feature>/operation:<id>` normalized form.
+
+### Source refs requirement
+
+Every v2 suite must declare at least one `source_refs:` entry citing a real surface fragment (presentation suites) or capability operation (operation suites). Missing source_refs fail with `testcases-source-refs-missing`.
+
+### Legacy v1 ingestion
+
+Legacy v1 suites without explicit `kind:` load as `kind: presentation` and auto-populate `source_refs[0]` from the legacy `intent` string. The validator emits `testcases-source-refs-missing-legacy` as a warning so the designer knows to regenerate the v2 form.
+
+| Code | When it fires |
+|---|---|
+| `testcases-operation-uncovered` | A canonical operation has no covering `kind: operation` suite. |
+| `testcases-source-refs-missing` | A new v2 suite lacks `source_refs:`. |
+| `testcases-source-refs-missing-legacy` (warning) | A legacy v1 suite was loaded as v2 presentation; auto-populated source_refs would be approximate. |
+| `testcases-suite-kind-unknown` | A suite declares `kind:` outside `{presentation, operation}`. |
+| `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |

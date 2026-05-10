@@ -104,7 +104,10 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	// removed."
 	currentIntents, _ := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	currentDialogs, _ := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md"))
-	currentFragments, _ := parser.ParseSurfaceFile(filepath.Join(featurePath, "surface.md"))
+	var currentFragments []parser.Fragment
+	if surfacePath := parser.ResolveSurfacePath(featurePath); surfacePath != "" {
+		currentFragments, _ = parser.ParseSurfaceFile(surfacePath)
+	}
 
 	currentIntentHashes := make(map[string]string, len(currentIntents))
 	for _, intent := range currentIntents {
@@ -429,7 +432,10 @@ func runProjectDiff(cmd *cobra.Command, cfg *config.Context) error {
 		// Parse current sources
 		currentIntents, _ := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 		currentDialogs, _ := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md"))
-		currentFragments, _ := parser.ParseSurfaceFile(filepath.Join(featurePath, "surface.md"))
+		var currentFragments []parser.Fragment
+		if surfacePath := parser.ResolveSurfacePath(featurePath); surfacePath != "" {
+			currentFragments, _ = parser.ParseSurfaceFile(surfacePath)
+		}
 
 		currentIntentHashes := make(map[string]string)
 		for _, intent := range currentIntents {
