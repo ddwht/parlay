@@ -1,11 +1,41 @@
-generated-at: "2026-05-11T10:29:06Z"
+generated-at: "2026-05-11T14:00:28Z"
 files:
     studio/docs/figma-mcp-setup.md:
         component: cross-cutting/figma-mcp-startup-probe
         hash: 128c624e6b04ab83
     studio/go.mod:
         component: cross-cutting/official-mcp-sdk-adoption
-        hash: a315b919df732e2b
+        hash: 4e4205dd0b81d13b
+    studio/internal/config/config.go:
+        component: cross-cutting/layered-studio-configuration-loader
+        hash: 3f43057c5675cf73
+    studio/internal/config/config_test.go:
+        component: cross-cutting/layered-studio-configuration-loader
+        hash: 570ee24c88a5e2bf
+    studio/internal/config/figma.go:
+        component: cross-cutting/figma-mcp-connection-configuration-keys
+        hash: 10abfc83f4c4dc24
+    studio/internal/config/figma_test.go:
+        component: cross-cutting/figma-mcp-connection-configuration-keys
+        hash: 5457c31d0cdb19d0
+    studio/internal/config/loader.go:
+        component: cross-cutting/layered-studio-configuration-loader
+        hash: ca2f49ffe841f7f0
+    studio/internal/config/loader_test.go:
+        component: cross-cutting/layered-studio-configuration-loader
+        hash: e071edbc4c206618
+    studio/internal/config/project_root.go:
+        component: cross-cutting/studio-project-root-resolution
+        hash: 59403d61d9d41308
+    studio/internal/config/project_root_test.go:
+        component: cross-cutting/studio-project-root-resolution
+        hash: e28c0a380b4dcbbd
+    studio/internal/config/web_server.go:
+        component: cross-cutting/web-server-runtime-configuration-keys
+        hash: 82fb4a2acc5881b2
+    studio/internal/config/web_server_test.go:
+        component: cross-cutting/web-server-runtime-configuration-keys
+        hash: abd74de7975150a9
     studio/internal/mcpclient/boundary_test.go:
         component: cross-cutting/official-mcp-sdk-adoption
         hash: 14c528afb73ade5d

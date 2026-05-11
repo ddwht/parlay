@@ -1,3 +1,37 @@
-generated-at: "2026-05-11T10:29:06Z"
-intents: {}
-sources: {}
+generated-at: "2026-05-11T14:00:28Z"
+intents:
+    figma-mcp-connection-configuration:
+        content-hash: b79461d6d27eccc2
+        goal-hash: e6dfef4e76234a8e
+        constraints-hash: a75f7d88843b6fbd
+        verify-hash: 7db1f24357de0833
+        objects-hash: dc65dc37d0f095ca
+    studio-configuration-sources-precedence-and-file-layout:
+        content-hash: bdbcf46b2d9bfcf1
+        goal-hash: 39a492c589356567
+        constraints-hash: 4fa649789eb23370
+        verify-hash: 16b30d97333eb01a
+        objects-hash: eca90367f4e1db53
+    studio-project-root-resolution:
+        content-hash: e73c05f6e8a43cc1
+        goal-hash: 7b9a00e12ff6aeb2
+        constraints-hash: 94400c68f91e40e7
+        verify-hash: f4cdddcc933cbf27
+        objects-hash: 384f982ccea9a4d8
+    web-server-runtime-configuration:
+        content-hash: 7f3e4811fefdc1a8
+        goal-hash: 9901d3df229bde40
+        constraints-hash: e735f6728af1c74c
+        verify-hash: 3e2d63b4694e2343
+        objects-hash: c50daab2f74c5d5a
+sources:
+    intents:
+        figma-mcp-connection-configuration: 40f857577792d3c4
+        studio-configuration-sources-precedence-and-file-layout: 1ec5297988f43b87
+        studio-project-root-resolution: 3c20770ff1fb0295
+        web-server-runtime-configuration: b598be5ddd407a46
+    dialogs:
+        figma-mcp-connection-configuration: 0b7b69ecbc1493cd
+        studio-configuration-sources-precedence-and-file-layout: df2bc17be4e3606c
+        studio-project-root-resolution: e19234541b0cf55d
+        web-server-runtime-configuration: 33a21d04de05f5aa

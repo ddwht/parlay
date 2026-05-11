@@ -1,0 +1,400 @@
+feature: studio-foundation/studio-config
+adapter-set: parlay-studio
+
+# Infrastructure-only feature: no surface.md, no domain operations.
+# All emissions are cross-cutting entries targeting the `application` slot
+# (the Go backend). The configuration loader package does not yet exist on
+# disk (studio/internal/config/ is absent), so every fragment is
+# purely-introducing. No presentation-side files are touched.
+#
+# Multi-target buildfile note: this project's adapter-set fills the
+# `application` slot, so plan: is emitted in BOTH the legacy flat shape
+# (plan.creates) AND the multi-target shape (plan.targets.application.creates)
+# — the check-buildfile validator currently reads only the flat form, while
+# downstream multi-target tooling expects the targets-keyed form. The two
+# shapes carry identical entries.
+#
+# Cross-file layout within studio/internal/config:
+#   config.go           — the merged Studio config struct (all four fragments
+#                         contribute typed fields here at struct-definition
+#                         time; one file owns the struct so the package has
+#                         a single canonical type to read).
+#   loader.go           — five-source precedence merge (CLI > env > project
+#                         file > user file > defaults), source-tracing, and
+#                         secret-redacted startup log line.
+#   figma.go            — Figma-key helpers: token-file pointer resolution,
+#                         secret-in-project-file invariant, secret redaction.
+#   web_server.go       — Web-server-key helpers: port autoselect sentinel,
+#                         negative-duration rejection, user-file-source warning.
+#   project_root.go     — Three-source project root resolution; runs BEFORE
+#                         the loader (the project-scoped config path depends
+#                         on it).
+# Each .go file has a sibling _test.go covering its Invariants.
+
+cross-cutting:
+  - id: layered-studio-configuration-loader
+    source: "@studio-foundation/studio-config/studio-configuration-sources-precedence-and-file-layout"
+    target-files:
+      - studio/internal/config/config.go
+      - studio/internal/config/loader.go
+      - studio/internal/config/config_test.go
+      - studio/internal/config/loader_test.go
+    transform: |
+      Introduce the dedicated Studio configuration package under
+      studio/internal/config. config.go declares the merged Studio
+      configuration struct (Config) — the single typed shape that every
+      caller reads. Fragment-specific fields (Figma keys, web-server keys)
+      are added to this same struct at struct-definition time by the
+      figma-keys and web-server-keys cross-cuttings below; the loader
+      knows about all keys because they all live on Config.
+
+      loader.go implements the five-source precedence merge:
+        CLI flags > STUDIO_* env vars > project-scoped YAML file
+          > user-scoped YAML file > built-in defaults.
+
+      The loader's entry point is Load(ctx, args) (*Config, []Trace, error).
+      The Trace slice records, per resolved key, which source supplied the
+      value — this is what drives the startup INFO log line in main.
+
+      Project-scoped file path: <resolved-project-root>/.parlay-studio/config.yaml.
+      The project root is supplied by project_root.go (separate cross-cutting);
+      the loader does NOT perform its own walk-up.
+
+      User-scoped file path: $XDG_CONFIG_HOME/parlay-studio/config.yaml when
+      XDG_CONFIG_HOME is set, otherwise ~/.config/parlay-studio/config.yaml.
+
+      Env-var namespace: exactly the STUDIO_ prefix. The loader does NOT
+      read STUDIO_CONFIG_PATH (no escape hatch — tests redirect by pointing
+      the project-root resolver at a fixture project root). Unrecognized
+      STUDIO_* env vars produce a WARN log line and are otherwise ignored.
+
+      Unknown keys in either YAML file produce a WARN log line naming the
+      file, line, and key, and are otherwise ignored (forward compatibility).
+
+      Secret keys: every Config field tagged as secret (the figma_token
+      field family from the next cross-cutting) is rejected at startup if
+      it appears in the project-scoped file, with the stable code
+      studio-config-secret-in-project-file. The user-scoped file and the
+      environment are the only legal homes for secrets.
+
+      Startup log line: after a successful merge, the loader emits one
+      INFO line per resolved key with the source labeled (default,
+      user-file, project-file, env, flag) and every secret-typed value
+      redacted as `***`. Non-secret values appear verbatim.
+
+      Single-import rule: this package is the only supported home for
+      reading Studio configuration. Direct os.Getenv("STUDIO_*") calls
+      and direct YAML loads of either config path from any other package
+      are rejected on review. The package's import-boundary test (in
+      loader_test.go) walks studio/ and asserts the import boundary.
+
+      Conventions (from go-studio-app adapter):
+        - snake_case file naming
+        - standard-library testing only (no testify, no gomega)
+        - table-driven tests via t.Run subtests
+        - context.Context as first param on exported I/O functions
+        - error wrapping via fmt.Errorf("...: %w", err)
+        - sentinel errors as package-level vars (e.g.
+            ErrSecretInProjectFile, ErrUnknownEnvPrefix) so callers
+            errors.Is against them
+    introduces:
+      - "package studio/internal/config — single supported home for reading Studio configuration"
+      - "type Config struct — merged Studio configuration; fields are added by figma-keys and web-server-keys cross-cuttings"
+      - "type Trace struct { Key, Source string } — per-key source attribution"
+      - "type Source string — closed set: SourceDefault, SourceUserFile, SourceProjectFile, SourceEnv, SourceFlag"
+      - "func Load(ctx context.Context, args []string, projectRoot string) (*Config, []Trace, error)"
+      - "func LogMerged(ctx context.Context, cfg *Config, traces []Trace) — emits the redacted INFO log line"
+      - "stable error codes: studio-config-secret-in-project-file, studio-config-unknown-env-var (warn)"
+      - "package sentinels: ErrSecretInProjectFile"
+      - "import-boundary test that walks studio/ and asserts no other package reads STUDIO_* env vars or the two config paths directly"
+    caching: none
+    backward-compatible: yes
+
+  - id: figma-mcp-connection-configuration-keys
+    source: "@studio-foundation/studio-config/figma-mcp-connection-configuration"
+    target-files:
+      - studio/internal/config/figma.go
+      - studio/internal/config/figma_test.go
+    transform: |
+      Add two Figma-specific keys to the merged Config struct (declared in
+      config.go from the loader cross-cutting) and the helpers that resolve
+      them:
+
+        Config.FigmaMCPURL string         — project-scoped, non-secret
+        Config.FigmaToken  secret string  — user-scoped, secret-tagged
+
+      Source mapping (highest-precedence first):
+        FigmaMCPURL:
+          - flag:        --figma-mcp-url <url>
+          - env:         STUDIO_FIGMA_MCP_URL
+          - project file: figma_mcp_url:
+          (no user-file source — project-scoped; no default — fails fast)
+        FigmaToken:
+          - flag:        not exposed (secrets do not flow through flags)
+          - env:         STUDIO_FIGMA_TOKEN
+          - user file:   figma_token: (inline form)
+                         OR figma_token_file: <path> (pointer form;
+                                                       contents of the file
+                                                       are the token)
+          (no project-file source — secret-tagged; no default — fails fast)
+
+      Inline-vs-pointer mutual exclusion: declaring both figma_token: and
+      figma_token_file: in the same user-scoped file fails startup with the
+      stable code studio-config-figma-token-double-source.
+
+      Pointer-path resolution: relative paths in figma_token_file: are
+      resolved against the user-scoped config file's directory; absolute
+      paths are honored verbatim. The pointed-to file is read at startup
+      only; its contents are trimmed of trailing whitespace.
+
+      Missing-source stable codes (fail fast at Load time):
+        FigmaMCPURL absent → studio-config-figma-mcp-url-missing
+                              (message names env + project-file sources and
+                              points at studio/docs/figma-mcp-setup.md)
+        FigmaToken absent → studio-config-figma-token-missing
+                              (message names env + user-file inline + user-file
+                              pointer sources)
+
+      Secret-in-project-file invariant (delegated to the loader): the
+      figma_token / figma_token_file keys appearing in the project-scoped
+      file fire studio-config-secret-in-project-file via the loader's
+      secret-tagging mechanism.
+
+      Redaction: FigmaToken is tagged secret on the Config struct so the
+      loader's LogMerged redacts it as `***`. The figma.go file declares
+      the secret-tag and the loader honors it — there is no per-call
+      redaction at the wrapper boundary; the secret never leaves Config.
+
+      Per-feature Figma URL absence test: figma_test.go grep-asserts that
+      no symbol named FigmaFileURL, no constant figma_file_url, and no
+      env var STUDIO_FIGMA_FILE_URL appears anywhere in
+      studio/internal/config/. Per-feature Figma URLs belong with the
+      layout artifact, not Studio's global config.
+
+      v1 token-only auth: figma.go does not declare any OAuth-related
+      field, env var, or config key. OAuth is a v2-or-later spec revision,
+      not a runtime fallback.
+    introduces:
+      - "Config field: FigmaMCPURL string"
+      - "Config field: FigmaToken string (secret-tagged)"
+      - "func loadFigmaKeys(env map[string]string, projFile, userFile *fileSnapshot) (figmaResolved, []Trace, error)"
+      - "func resolveTokenSource(userFile *fileSnapshot) (string, Source, error) — implements inline + pointer + mutex"
+      - "stable error codes: studio-config-figma-mcp-url-missing, studio-config-figma-token-missing, studio-config-figma-token-double-source"
+      - "test: figma_test.go covers env-beats-file precedence, missing-source error codes, pointer-form resolution, double-source rejection, log redaction, no-per-feature-url grep"
+    caching: none
+    backward-compatible: yes
+
+  - id: web-server-runtime-configuration-keys
+    source: "@studio-foundation/studio-config/web-server-runtime-configuration"
+    target-files:
+      - studio/internal/config/web_server.go
+      - studio/internal/config/web_server_test.go
+    transform: |
+      Add three web-server-specific keys to the merged Config struct and
+      the helpers that resolve them:
+
+        Config.ServerPort   int            — project-scoped, default 0
+                                              (0 = ask OS for free port)
+        Config.IdleTimeout  time.Duration  — project-scoped, default 30m
+                                              (0 = disabled; <0 = error)
+        Config.OpenBrowser  bool           — project-scoped, default true
+
+      Source mapping (highest-precedence first):
+        ServerPort:
+          - flag:        --server-port <int>
+          - env:         STUDIO_SERVER_PORT (integer)
+          - project file: server_port:
+          - default:     0
+        IdleTimeout:
+          - flag:        --idle-timeout <duration>
+          - env:         STUDIO_IDLE_TIMEOUT (Go duration string)
+          - project file: idle_timeout:
+          - default:     30m
+        OpenBrowser:
+          - flag:        --no-browser (equivalent to OpenBrowser=false at
+                         flag precedence; --browser sets it true)
+          - env:         STUDIO_OPEN_BROWSER (boolean: true/false/1/0)
+          - project file: open_browser:
+          - default:     true
+
+      Validation (fail fast at Load time):
+        ServerPort < 0 or > 65535 → studio-config-server-port-invalid
+        IdleTimeout < 0           → studio-config-idle-timeout-invalid
+
+      Note: the port-conflict failure (studio-config-server-port-conflict)
+      is NOT a Load-time error — it fires when the web-server-harness tries
+      to bind. This package only validates the value's shape.
+
+      Project-scope warning: all three keys are project-scoped. If any of
+      them resolves with Source == SourceUserFile (i.e., the value lives
+      ONLY in the user-scoped file with no other override), the loader
+      emits a WARN log line recommending the project-scoped file as the
+      canonical home. The value still applies — it is a warning, not an
+      error.
+
+      Port-autoselect log contract: this package does NOT log the bound
+      port. That is the web-server-harness's responsibility (it knows the
+      resolved port after Listen() returns). This package guarantees the
+      value shape; the harness guarantees the bound port is logged with a
+      stable line shape (per the Invariants in web-server-runtime-config).
+
+      Idle-timeout semantics: this package owns the duration knob only.
+      What "idle" means (last request, last keyboard activity, last disk
+      mutation) is web-server-harness's call — referenced in the dialog as
+      a cross-feature deferred question.
+    introduces:
+      - "Config field: ServerPort int (default 0)"
+      - "Config field: IdleTimeout time.Duration (default 30m)"
+      - "Config field: OpenBrowser bool (default true)"
+      - "func loadWebServerKeys(env map[string]string, projFile, userFile *fileSnapshot) (webResolved, []Trace, error)"
+      - "func warnIfUserFileOnly(traces []Trace) []logEntry — emits the user-file-only WARN line"
+      - "stable error codes: studio-config-server-port-invalid, studio-config-idle-timeout-invalid"
+      - "test: web_server_test.go covers default values, env parsing for all three types, negative-duration rejection, zero-disables-timeout semantics, user-file-only WARN"
+    caching: none
+    backward-compatible: yes
+
+  - id: studio-project-root-resolution
+    source: "@studio-foundation/studio-config/studio-project-root-resolution"
+    target-files:
+      - studio/internal/config/project_root.go
+      - studio/internal/config/project_root_test.go
+    transform: |
+      Introduce the project-root resolver in studio/internal/config. This
+      runs BEFORE the loader (the project-scoped config file path depends
+      on the resolved root, so the loader cannot run until the root is
+      known).
+
+      Entry point:
+        func ResolveProjectRoot(args []string, env map[string]string,
+                                cwd, home string) (root string,
+                                                    source Source,
+                                                    err error)
+
+      Precedence (highest first):
+        1. --project <path> CLI flag
+        2. STUDIO_PROJECT_ROOT environment variable
+        3. cwd walk-up: walk from cwd toward / looking for an ancestor
+           whose direct .parlay/ subdirectory exists. Terminate at $HOME
+           (when cwd was inside $HOME at entry) and at / always.
+
+      Strict-root for explicit overrides: --project and
+      STUDIO_PROJECT_ROOT MUST point at a directory that directly contains
+      .parlay/. Pointing them at a subdirectory of a project fails startup
+      with studio-config-project-root-invalid — the explicit-override
+      branch does NOT walk up, even if the parent IS a parlay project. The
+      rationale is in the intent: explicit invocations should be
+      unambiguous.
+
+      Relative-path resolution: both --project and STUDIO_PROJECT_ROOT
+      accept absolute or relative paths; relative paths are resolved
+      against cwd at startup.
+
+      Non-existent path: an explicit override pointing at a path that
+      does not exist on disk fails startup with
+      studio-config-project-root-invalid naming the override source.
+
+      Walk-up termination semantics: when cwd is INSIDE $HOME at entry,
+      the walk-up stops at $HOME (it never crosses into /home or /). When
+      cwd is OUTSIDE $HOME at entry, the walk-up proceeds all the way to
+      / — the "stop at $HOME" terminator does not engage. This matches
+      the dialog branches for "Walk-up finds nothing", "$HOME terminates
+      the walk-up", and "cwd already outside $HOME walks all the way up".
+
+      Failure shape: when no source resolves a project root, fail with
+      studio-config-project-root-not-found. The error message MUST name
+      every source that was tried (in precedence order) and point at the
+      setup doc.
+
+      Logging: on a successful resolution, log one INFO line of the form
+      "project root: <abs-path> (source: <source-label>)" before the
+      loader runs. The source-label vocabulary is: "--project flag",
+      "STUDIO_PROJECT_ROOT", "cwd-walkup".
+
+      Project-scoped config path derivation: ResolveProjectRoot's caller
+      (the loader cross-cutting) derives the project-scoped config file
+      path as <root>/.parlay-studio/config.yaml. This derivation does NOT
+      happen inside ResolveProjectRoot — it is the loader's responsibility
+      and the boundary is documented in both files.
+    introduces:
+      - "func ResolveProjectRoot(args []string, env map[string]string, cwd, home string) (string, Source, error)"
+      - "package sentinels: ErrProjectRootNotFound, ErrProjectRootInvalid"
+      - "stable error codes: studio-config-project-root-not-found, studio-config-project-root-invalid"
+      - "test: project_root_test.go covers all six dialog branches (flag, env, walk-up found, walk-up not-found, $HOME terminator, cwd-outside-HOME walks-all-the-way, explicit-at-subdir rejected, explicit-at-nonexistent rejected)"
+    caching: none
+    backward-compatible: yes
+
+# Plan section: every cross-cutting is purely-introducing (studio/internal/config/
+# does not exist on disk). Emitted in both the flat shape (plan.creates) and
+# the multi-target shape (plan.targets.application.creates) per the
+# multi-target precedent established by figma-mcp-client.
+plan:
+  creates:
+    - path: studio/internal/config/config.go
+      sources:
+        - cross-cutting/layered-studio-configuration-loader
+    - path: studio/internal/config/loader.go
+      sources:
+        - cross-cutting/layered-studio-configuration-loader
+    - path: studio/internal/config/config_test.go
+      sources:
+        - cross-cutting/layered-studio-configuration-loader
+    - path: studio/internal/config/loader_test.go
+      sources:
+        - cross-cutting/layered-studio-configuration-loader
+    - path: studio/internal/config/figma.go
+      sources:
+        - cross-cutting/figma-mcp-connection-configuration-keys
+    - path: studio/internal/config/figma_test.go
+      sources:
+        - cross-cutting/figma-mcp-connection-configuration-keys
+    - path: studio/internal/config/web_server.go
+      sources:
+        - cross-cutting/web-server-runtime-configuration-keys
+    - path: studio/internal/config/web_server_test.go
+      sources:
+        - cross-cutting/web-server-runtime-configuration-keys
+    - path: studio/internal/config/project_root.go
+      sources:
+        - cross-cutting/studio-project-root-resolution
+    - path: studio/internal/config/project_root_test.go
+      sources:
+        - cross-cutting/studio-project-root-resolution
+  targets:
+    application:
+      creates:
+        - path: studio/internal/config/config.go
+          sources:
+            - cross-cutting/layered-studio-configuration-loader
+        - path: studio/internal/config/loader.go
+          sources:
+            - cross-cutting/layered-studio-configuration-loader
+        - path: studio/internal/config/config_test.go
+          sources:
+            - cross-cutting/layered-studio-configuration-loader
+        - path: studio/internal/config/loader_test.go
+          sources:
+            - cross-cutting/layered-studio-configuration-loader
+        - path: studio/internal/config/figma.go
+          sources:
+            - cross-cutting/figma-mcp-connection-configuration-keys
+        - path: studio/internal/config/figma_test.go
+          sources:
+            - cross-cutting/figma-mcp-connection-configuration-keys
+        - path: studio/internal/config/web_server.go
+          sources:
+            - cross-cutting/web-server-runtime-configuration-keys
+        - path: studio/internal/config/web_server_test.go
+          sources:
+            - cross-cutting/web-server-runtime-configuration-keys
+        - path: studio/internal/config/project_root.go
+          sources:
+            - cross-cutting/studio-project-root-resolution
+        - path: studio/internal/config/project_root_test.go
+          sources:
+            - cross-cutting/studio-project-root-resolution
+
+source-signatures:
+  intents: "sha256:c05c8d1e071089edeeee0276a64ef1345c26d9ab3fec49f0fbff6ae2ff8cf48d"
+  dialogs: "sha256:4a9b0212f8998fb678d9934259e439316d9d72d2fa0b3568acce1e5e7495acfa"
+  infrastructure: "sha256:60883b7c2ed00331b1cca1f022f7eb2fb843224111c897f2f32419fce5f9eb93"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"

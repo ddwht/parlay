@@ -1,0 +1,11 @@
+feature: studio-foundation/studio-config
+reviewed_at: "2026-05-11T13:42:30Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:21ecb62e4c3c99e7ebf2f7c8fab1d5f9a4653408a6e216acd1fb0349ba0c83bf
+testcases_hash: sha256:ad9470bb69773e1ae4c7206493291cfbaa14f1b18c35df6f31dc8bebd634cc53
+approved_suites:
+    - layered-studio-configuration-loader
+    - figma-mcp-connection-configuration-keys
+    - web-server-runtime-configuration-keys
+    - studio-project-root-resolution

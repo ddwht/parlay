@@ -1,0 +1,595 @@
+feature: studio-foundation/studio-config
+framework: "Go testing (standard library, table-driven)"
+
+# Infrastructure-only feature: no UI components. Each suite below validates
+# one cross-cutting entry from buildfile.yaml by mapping its Invariants:
+# bullets into testable cases. Verification primitives used: file-exists,
+# file-content, state, error.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio) so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. Neither kind fits a cross-cutting infrastructure suite, so these
+# suites are emitted in the v1 shape; the v2 validator treats them as
+# kind: presentation with a testcases-source-refs-missing-legacy warning,
+# which is acceptable for an infrastructure-only feature (same pattern as
+# figma-mcp-client).
+
+suites:
+  - name: layered-studio-configuration-loader
+    component: cross-cutting/layered-studio-configuration-loader
+    fixture: config-merge-scenarios
+    intent: "@studio-foundation/studio-config/studio-configuration-sources-precedence-and-file-layout"
+    cases:
+      - name: config package files exist
+        description: The dedicated config package is introduced at studio/internal/config with the loader's four source files.
+        steps:
+          - verify: directory-exists
+            target: studio/internal/config
+          - verify: file-exists
+            target: studio/internal/config/config.go
+          - verify: file-exists
+            target: studio/internal/config/loader.go
+          - verify: file-exists
+            target: studio/internal/config/config_test.go
+          - verify: file-exists
+            target: studio/internal/config/loader_test.go
+
+      - name: five-source precedence — env beats project file
+        description: STUDIO_IDLE_TIMEOUT=10m + project-file idle_timeout=30m resolves to 10m.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { STUDIO_IDLE_TIMEOUT: "10m" }
+              project-file: { idle_timeout: "30m" }
+          - verify: state
+            target: Config.IdleTimeout
+            expected: "10m"
+          - verify: state
+            target: Trace.IdleTimeout.Source
+            expected: "env"
+
+      - name: five-source precedence — project file beats user file
+        description: figma_mcp_url=https://a in user-file and =https://b in project-file resolves to https://b.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              user-file: { figma_mcp_url: "https://a" }
+              project-file: { figma_mcp_url: "https://b" }
+          - verify: state
+            target: Config.FigmaMCPURL
+            expected: "https://b"
+          - verify: state
+            target: Trace.FigmaMCPURL.Source
+            expected: "project-file"
+
+      - name: secret key in project-scoped file fails fast
+        description: figma_token in the project-scoped config file fails Load with studio-config-secret-in-project-file.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              project-file: { figma_token: "==token==" }
+          - verify: error
+            target: Load
+            expected: studio-config-secret-in-project-file
+
+      - name: startup log redacts secret-tagged keys
+        description: The INFO log line listing merged config redacts FigmaToken as `***` while preserving non-secret keys verbatim.
+        steps:
+          - action: invoke
+            target: LogMerged
+            value:
+              fixture: merged-with-token-and-non-secret-keys
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains-all:
+                - "figma_token=***"
+                - "figma_mcp_url=https://mcp.figma.com/v1"
+              does-not-contain: "==actual-token-value=="
+
+      - name: startup log labels every key with its source
+        description: Each key in the merged config log line is annotated with the source that supplied it.
+        steps:
+          - action: invoke
+            target: LogMerged
+            value:
+              fixture: merged-from-mixed-sources
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains-all:
+                - "(source: env)"
+                - "(source: project-file)"
+                - "(source: user-file)"
+                - "(source: default)"
+
+      - name: unknown key in config file emits WARN and continues
+        description: An unrecognized key in either YAML file produces a WARN log line and does not block startup.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              project-file: { figma_team_url: "https://figma.com/team/x" }
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains: "unknown key `figma_team_url`"
+              contains-pattern: "WARN.*figma_team_url"
+          - verify: state
+            target: Load.exit-status
+            expected: success
+
+      - name: STUDIO_CONFIG_PATH escape hatch is rejected
+        description: The loader does not honor STUDIO_CONFIG_PATH; setting it produces a WARN and the project-scoped path remains derived from the resolved project root.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { STUDIO_CONFIG_PATH: "/tmp/test-config.yaml" }
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains: "unknown env var `STUDIO_CONFIG_PATH`"
+          - verify: state
+            target: Load.project-config-path
+            expected: "<resolved-project-root>/.parlay-studio/config.yaml"
+
+      - name: XDG_CONFIG_HOME overrides the default user-file path
+        description: When XDG_CONFIG_HOME is set, the user-scoped config file is loaded from $XDG_CONFIG_HOME/parlay-studio/config.yaml.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { XDG_CONFIG_HOME: "/custom/xdg" }
+              fs:
+                "/custom/xdg/parlay-studio/config.yaml": { figma_mcp_url: "https://from-xdg" }
+          - verify: state
+            target: Config.FigmaMCPURL
+            expected: "https://from-xdg"
+          - verify: state
+            target: Trace.FigmaMCPURL.Source
+            expected: "user-file"
+
+      - name: import-boundary forbids direct STUDIO_ env reads outside the package
+        description: A grep across studio/ for os.Getenv("STUDIO_ returns matches only inside studio/internal/config.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/loader_test.go
+            expected:
+              describes: "import-boundary test that walks studio/ and asserts os.Getenv(\"STUDIO_ and direct YAML loads of the two config paths appear only inside studio/internal/config"
+
+      - name: import-boundary forbids direct YAML loads of the two config paths
+        description: A grep across studio/ for direct yaml.Unmarshal against the .parlay-studio/config.yaml paths returns matches only inside studio/internal/config.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/loader_test.go
+            expected:
+              contains-all:
+                - ".parlay-studio/config.yaml"
+                - "parlay-studio/config.yaml"
+
+  - name: figma-mcp-connection-configuration-keys
+    component: cross-cutting/figma-mcp-connection-configuration-keys
+    fixture: figma-key-scenarios
+    intent: "@studio-foundation/studio-config/figma-mcp-connection-configuration"
+    cases:
+      - name: figma key files exist
+        description: The Figma-key helpers and their tests live in studio/internal/config.
+        steps:
+          - verify: file-exists
+            target: studio/internal/config/figma.go
+          - verify: file-exists
+            target: studio/internal/config/figma_test.go
+
+      - name: missing figma_mcp_url fails with studio-config-figma-mcp-url-missing
+        description: No STUDIO_FIGMA_MCP_URL and no figma_mcp_url in either file fails Load with the stable code.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: {}
+              project-file: {}
+              user-file: {}
+          - verify: error
+            target: Load
+            expected: studio-config-figma-mcp-url-missing
+
+      - name: missing figma_token fails with studio-config-figma-token-missing
+        description: No STUDIO_FIGMA_TOKEN, no figma_token, no figma_token_file in the user-scoped file fails Load with the stable code.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { STUDIO_FIGMA_MCP_URL: "https://mcp.figma.com/v1" }
+              user-file: {}
+          - verify: error
+            target: Load
+            expected: studio-config-figma-token-missing
+
+      - name: figma_token in project file fires secret-in-project-file
+        description: Placing figma_token in the project-scoped file fails Load with studio-config-secret-in-project-file (delegated to the loader's secret-tagging mechanism).
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              project-file: { figma_token: "==token==" }
+          - verify: error
+            target: Load
+            expected: studio-config-secret-in-project-file
+
+      - name: figma_token_file pointer resolves to the file contents
+        description: "figma_token_file: /tmp/figma-token loads the token from disk and sets Config.FigmaToken to its contents."
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              user-file: { figma_token_file: "/tmp/figma-token" }
+              fs:
+                "/tmp/figma-token": "==loaded-token-value=="
+          - verify: state
+            target: Config.FigmaToken
+            expected: "==loaded-token-value=="
+          - verify: state
+            target: Trace.FigmaToken.Source
+            expected: "user-file"
+
+      - name: figma_token_file relative path resolves against the user-file directory
+        description: "A relative figma_token_file: ./figma-token is resolved against ~/.config/parlay-studio/."
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              user-file:
+                path: "/home/dev/.config/parlay-studio/config.yaml"
+                content: { figma_token_file: "./figma-token" }
+              fs:
+                "/home/dev/.config/parlay-studio/figma-token": "==relative-resolved=="
+          - verify: state
+            target: Config.FigmaToken
+            expected: "==relative-resolved=="
+
+      - name: figma_token and figma_token_file both present rejected
+        description: Declaring both inline and pointer forms in the user-scoped file fails Load with studio-config-figma-token-double-source.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              user-file:
+                figma_token: "==inline=="
+                figma_token_file: "/run/secrets/figma-token"
+          - verify: error
+            target: Load
+            expected: studio-config-figma-token-double-source
+
+      - name: resolved token never appears in any log line
+        description: A full Load + LogMerged pass produces no log line containing the resolved token value.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { STUDIO_FIGMA_TOKEN: "==unique-token-marker==" }
+          - action: invoke
+            target: LogMerged
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              does-not-contain: "==unique-token-marker=="
+              contains: "figma_token=***"
+
+      - name: no per-feature Figma URL symbols in the config package
+        description: A grep across studio/internal/config/ for FigmaFileURL, figma_file_url, and STUDIO_FIGMA_FILE_URL returns zero matches — per-feature URLs belong with the layout artifact.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/figma_test.go
+            expected:
+              contains-all:
+                - "FigmaFileURL"
+                - "figma_file_url"
+                - "STUDIO_FIGMA_FILE_URL"
+              describes: "test grep-asserts these three symbols return zero matches under studio/internal/config/"
+
+      - name: v1 has no OAuth-shaped fields, keys, or env vars
+        description: figma.go declares no OAuth-related field, key, or env var; v1 supports token auth only.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/figma.go
+            expected:
+              does-not-contain-pattern: "OAuth|oauth_client|STUDIO_FIGMA_OAUTH"
+
+  - name: web-server-runtime-configuration-keys
+    component: cross-cutting/web-server-runtime-configuration-keys
+    fixture: web-server-key-scenarios
+    intent: "@studio-foundation/studio-config/web-server-runtime-configuration"
+    cases:
+      - name: web-server key files exist
+        description: The web-server-key helpers and their tests live in studio/internal/config.
+        steps:
+          - verify: file-exists
+            target: studio/internal/config/web_server.go
+          - verify: file-exists
+            target: studio/internal/config/web_server_test.go
+
+      - name: defaults produce ServerPort=0, IdleTimeout=30m, OpenBrowser=true
+        description: An empty environment with no flags and no config files resolves to the documented defaults.
+        steps:
+          - action: invoke
+            target: Load
+            value: { env: {}, project-file: {}, user-file: {} }
+          - verify: state
+            target: Config.ServerPort
+            expected: 0
+          - verify: state
+            target: Config.IdleTimeout
+            expected: "30m"
+          - verify: state
+            target: Config.OpenBrowser
+            expected: true
+
+      - name: STUDIO_SERVER_PORT parses as integer
+        description: STUDIO_SERVER_PORT=18080 resolves to ServerPort=18080.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: { STUDIO_SERVER_PORT: "18080" }
+          - verify: state
+            target: Config.ServerPort
+            expected: 18080
+
+      - name: ServerPort out of range fails with studio-config-server-port-invalid
+        description: A port value below 0 or above 65535 fails Load with the stable code.
+        steps:
+          - action: invoke
+            target: Load
+            value: { env: { STUDIO_SERVER_PORT: "70000" } }
+          - verify: error
+            target: Load
+            expected: studio-config-server-port-invalid
+
+      - name: STUDIO_IDLE_TIMEOUT=-1s rejected
+        description: A negative duration fails Load with studio-config-idle-timeout-invalid.
+        steps:
+          - action: invoke
+            target: Load
+            value: { env: { STUDIO_IDLE_TIMEOUT: "-1s" } }
+          - verify: error
+            target: Load
+            expected: studio-config-idle-timeout-invalid
+
+      - name: STUDIO_IDLE_TIMEOUT=0 disables the timeout
+        description: A zero duration is the explicit "disabled" sentinel — Load succeeds and Config.IdleTimeout is 0.
+        steps:
+          - action: invoke
+            target: Load
+            value: { env: { STUDIO_IDLE_TIMEOUT: "0" } }
+          - verify: state
+            target: Config.IdleTimeout
+            expected: 0
+          - verify: state
+            target: Load.exit-status
+            expected: success
+
+      - name: STUDIO_OPEN_BROWSER=false disables auto-open
+        description: STUDIO_OPEN_BROWSER=false resolves to Config.OpenBrowser=false.
+        steps:
+          - action: invoke
+            target: Load
+            value: { env: { STUDIO_OPEN_BROWSER: "false" } }
+          - verify: state
+            target: Config.OpenBrowser
+            expected: false
+
+      - name: user-file-only value for web-server key emits WARN
+        description: A web-server key present only in the user-scoped file applies but generates a WARN recommending the project file.
+        steps:
+          - action: invoke
+            target: Load
+            value:
+              env: {}
+              project-file: {}
+              user-file: { server_port: 18080 }
+          - verify: state
+            target: Config.ServerPort
+            expected: 18080
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains-pattern: "WARN.*server_port.*user-scoped.*recommend"
+
+      - name: port autoselect log responsibility belongs to web-server-harness
+        description: web_server.go does not emit the bound-port log line; that is the web-server-harness's responsibility. This package only validates the value shape.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/web_server.go
+            expected:
+              does-not-contain-pattern: "bound to.*127\\.0\\.0\\.1"
+              describes: "config package does not log the bound port; harness owns the bind-and-log line"
+
+  - name: studio-project-root-resolution
+    component: cross-cutting/studio-project-root-resolution
+    fixture: project-root-scenarios
+    intent: "@studio-foundation/studio-config/studio-project-root-resolution"
+    cases:
+      - name: project_root files exist
+        description: The project-root resolver and its tests live in studio/internal/config.
+        steps:
+          - verify: file-exists
+            target: studio/internal/config/project_root.go
+          - verify: file-exists
+            target: studio/internal/config/project_root_test.go
+
+      - name: --project flag has highest precedence
+        description: --project /tmp/has-parlay/ wins over env and cwd.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: ["--project", "/tmp/has-parlay"]
+              env: { STUDIO_PROJECT_ROOT: "/tmp/other-parlay" }
+              cwd: "/tmp/yet-another-parlay"
+              fs: { "/tmp/has-parlay/.parlay": "directory" }
+          - verify: state
+            target: ResolveProjectRoot.root
+            expected: "/tmp/has-parlay"
+          - verify: state
+            target: ResolveProjectRoot.source
+            expected: "--project flag"
+
+      - name: STUDIO_PROJECT_ROOT used when no flag
+        description: With no --project flag, STUDIO_PROJECT_ROOT wins over cwd walk-up.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: { STUDIO_PROJECT_ROOT: "/tmp/has-parlay" }
+              cwd: "/tmp/some-other-dir"
+              fs: { "/tmp/has-parlay/.parlay": "directory" }
+          - verify: state
+            target: ResolveProjectRoot.root
+            expected: "/tmp/has-parlay"
+          - verify: state
+            target: ResolveProjectRoot.source
+            expected: "STUDIO_PROJECT_ROOT"
+
+      - name: cwd walk-up finds nearest ancestor with .parlay/
+        description: Walk-up from a deeply nested cwd finds the first ancestor containing .parlay/.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: {}
+              cwd: "/home/dev/myapp/some/deeply/nested/subdir"
+              home: "/home/dev"
+              fs: { "/home/dev/myapp/.parlay": "directory" }
+          - verify: state
+            target: ResolveProjectRoot.root
+            expected: "/home/dev/myapp"
+          - verify: state
+            target: ResolveProjectRoot.source
+            expected: "cwd-walkup"
+
+      - name: walk-up failure produces studio-config-project-root-not-found
+        description: No --project, no env, no .parlay/ ancestor fails with the stable not-found code naming all three sources.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: {}
+              cwd: "/tmp/scratch"
+              fs: {}
+          - verify: error
+            target: ResolveProjectRoot
+            expected: studio-config-project-root-not-found
+
+      - name: $HOME terminates the walk-up
+        description: When cwd is inside $HOME at entry, the walk-up stops at $HOME without crossing into /home or /.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: {}
+              cwd: "/home/dev/scratch"
+              home: "/home/dev"
+              fs: {}
+          - verify: error
+            target: ResolveProjectRoot
+            expected: studio-config-project-root-not-found
+          - verify: state
+            target: ResolveProjectRoot.walk-stopped-at
+            expected: "/home/dev"
+
+      - name: cwd outside $HOME walks all the way to /
+        description: When cwd is outside $HOME at entry, the walk-up proceeds past /home and continues to /.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: {}
+              cwd: "/var/lib/parlay-projects/team-app/some-subdir"
+              home: "/home/dev"
+              fs: { "/var/lib/parlay-projects/team-app/.parlay": "directory" }
+          - verify: state
+            target: ResolveProjectRoot.root
+            expected: "/var/lib/parlay-projects/team-app"
+          - verify: state
+            target: ResolveProjectRoot.source
+            expected: "cwd-walkup"
+
+      - name: explicit --project at a subdirectory rejected
+        description: --project pointed at a subdirectory of a real parlay project fails with studio-config-project-root-invalid; the explicit branch never walks up.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: ["--project", "/home/dev/myapp/some/subdir"]
+              env: {}
+              cwd: "/tmp"
+              fs: { "/home/dev/myapp/.parlay": "directory" }
+          - verify: error
+            target: ResolveProjectRoot
+            expected: studio-config-project-root-invalid
+
+      - name: explicit --project at a non-existent path rejected
+        description: --project /nonexistent/path fails with studio-config-project-root-invalid.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: ["--project", "/nonexistent/path"]
+              env: {}
+              cwd: "/tmp"
+              fs: {}
+          - verify: error
+            target: ResolveProjectRoot
+            expected: studio-config-project-root-invalid
+
+      - name: STUDIO_PROJECT_ROOT at a subdirectory also rejected
+        description: The strict-root invariant applies to STUDIO_PROJECT_ROOT identically to --project.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: []
+              env: { STUDIO_PROJECT_ROOT: "/home/dev/myapp/some/subdir" }
+              cwd: "/tmp"
+              fs: { "/home/dev/myapp/.parlay": "directory" }
+          - verify: error
+            target: ResolveProjectRoot
+            expected: studio-config-project-root-invalid
+
+      - name: relative paths in --project resolve against cwd
+        description: --project ./myapp from cwd=/home/dev resolves to /home/dev/myapp.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: ["--project", "./myapp"]
+              env: {}
+              cwd: "/home/dev"
+              fs: { "/home/dev/myapp/.parlay": "directory" }
+          - verify: state
+            target: ResolveProjectRoot.root
+            expected: "/home/dev/myapp"
+
+      - name: successful resolution logged with source
+        description: A successful ResolveProjectRoot emits one INFO line containing the absolute path and the source label.
+        steps:
+          - action: invoke
+            target: ResolveProjectRoot
+            value:
+              args: ["--project", "/home/dev/myapp"]
+              env: {}
+              cwd: "/tmp"
+              fs: { "/home/dev/myapp/.parlay": "directory" }
+          - verify: file-content
+            target: captured-log-output
+            expected:
+              contains-pattern: "project root: /home/dev/myapp \\(source: --project flag\\)"
