@@ -1,9 +1,22 @@
 # Infrastructure Schema
 
 File: `spec/intents/<feature-name>/infrastructure.md`
-Contains one or more infrastructure fragments separated by `---`. Describes behind-the-scenes behavioral capabilities — classifiers, validation guards, traversal changes, caching strategies, shared resolvers — that intent constraints require but that produce no user-facing surface.
+Contains one or more infrastructure fragments separated by `---`. Each fragment is **architectural prose for concerns that do not reduce to operations**: boundaries the codebase must respect, probes it must run, allowlists it must enforce, dependency pins it must hold, and other shape constraints on the source tree, the build pipeline, or the runtime environment.
 
-Infrastructure fragments are the behind-the-scenes counterpart to surface fragments. Surface fragments describe what the user sees; infrastructure fragments describe what behavioral capabilities the codebase needs. Both feed the buildfile: surface → `components:`, infrastructure → `cross-cutting:`. Both are **framework-agnostic** — concrete file paths, function signatures, and language keywords are resolved at build-feature time by consulting the adapter and scanning the existing source tree.
+Architectural prose is the co-equal counterpart to the operation-shaped content that lives in `capabilities.yaml`. The two artifacts cover orthogonal concerns and neither is a stand-in for the other: `capabilities.yaml` declares what the backend *does* (commands and queries against domain entities), and `infrastructure.md` declares what shape the codebase *holds* (architectural prose that constrains how those operations can be implemented). See `capabilities.schema.md` for the operation-shaped artifact.
+
+Infrastructure fragments are also the behind-the-scenes counterpart to surface fragments. Surface fragments describe what the user sees; infrastructure fragments describe what shape the codebase needs. Both feed the buildfile: surface → `components:`, infrastructure → `cross-cutting:`. All four spec artifacts (surface, capabilities, infrastructure, domain-model) are **framework-agnostic** — concrete file paths, function signatures, and language keywords are resolved at build-feature time by consulting the adapter and scanning the existing source tree.
+
+## When to use infrastructure.md vs capabilities.yaml
+
+The two artifacts answer different questions about the feature; the choice is not enforced by a validator and the schema does not auto-classify. Use prose judgment, guided by the question the fragment is trying to answer.
+
+- **`capabilities.yaml`** answers "what command or query does the backend expose?" — a closed-vocabulary operation against a domain entity, with input, steps, output shape, and allowed errors. If the fragment can be expressed as `kind: command | query` plus a subject entity, it belongs in `capabilities.yaml`.
+- **`infrastructure.md`** answers "what shape must the codebase hold for those operations to work safely?" — a constraint on imports, a check that must run at startup, a bounded vocabulary of external calls, a pinned library version, a feature-stable error code outside the closed errors vocabulary, a build-time invariant. If the fragment describes a property of the source tree, the build pipeline, or the runtime environment rather than an operation a caller triggers, it belongs in `infrastructure.md`.
+
+Many features have both. A feature that introduces a new operation typically also introduces architectural constraints around it (which package the operation lives in, which external services it may call, which library versions are required) — the operation lands in `capabilities.yaml`, the constraints in `infrastructure.md`, and the buildfile composes both.
+
+Four representative architectural categories are worked through in the examples below: **boundary**, **probe**, **allowlist**, and **dependency pin**. These categories are illustrative, not exhaustive — other architectural concerns also belong in `infrastructure.md`. Authors of new fragments may extend the list freely; the schema is advisory and does not enforce a closed taxonomy.
 
 ## Template
 
@@ -14,8 +27,8 @@ Infrastructure fragments are the behind-the-scenes counterpart to surface fragme
 
 ## <Fragment Name>
 
-**Affects**: <abstract scope — domain-level labels like "feature resolution", "validation pipeline">
-**Behavior**: <human-readable description of the capability, framework-agnostic>
+**Affects**: <abstract scope — domain-level labels like "package import boundary", "startup probe">
+**Behavior**: <human-readable description of the constraint, framework-agnostic>
 **Invariants**:
 - <testable property that must hold after implementation>
 - <another invariant>
@@ -32,9 +45,9 @@ Infrastructure fragments are the behind-the-scenes counterpart to surface fragme
 | Field | Required | Parse rule |
 |---|---|---|
 | Fragment Name | Yes | `## ` heading. Must be unique within feature. |
-| Affects | Yes | `**Affects**:` single-line description of the abstract scope of the change. Domain-level labels (e.g., `feature resolution`, `validation pipeline`), not file paths or function names. |
-| Behavior | Yes | `**Behavior**:` human-readable description of what the capability does, in framework-agnostic terms. Tells the agent WHAT the code must do; the adapter and the agent decide HOW at build-feature and generate-code time. |
-| Invariants | No | `**Invariants**:` followed by `- ` prefixed lines. Each bullet is one declarative, testable property (e.g., "A fragment missing Affects fails validation with an error naming the fragment"). Used by build-feature to seed testcases. |
+| Affects | Yes | `**Affects**:` single-line description of the abstract scope of the constraint. Domain-level labels (e.g., `package import boundary`, `startup probe`), not file paths or function names. |
+| Behavior | Yes | `**Behavior**:` human-readable description of what the constraint requires, in framework-agnostic terms. Tells the agent WHAT the codebase shape must guarantee; the adapter and the agent decide HOW at build-feature and generate-code time. |
+| Invariants | No | `**Invariants**:` followed by `- ` prefixed lines. Each bullet is one declarative, testable property (e.g., "A package outside internal/sdk that imports the upstream SDK fails the build with a named lint"). Used by build-feature to seed testcases. |
 | Source | Yes | `**Source**:` comma-separated `@feature/slug` references. Every fragment must trace back to its source intent(s). |
 | Caching | No | `**Caching**:` abstract caching strategy. Values: `on-first-access`, `none`, `per-process`, or a custom description. |
 | Backward-Compatible | No | `**Backward-Compatible**:` `yes` or `no`. Whether existing callers must continue working without changes. |
@@ -48,22 +61,80 @@ Infrastructure fragments are the behind-the-scenes counterpart to surface fragme
 - Concrete `target-files:`, `target-pattern:`, and `introduces:` values do **not** belong in infrastructure.md. They are generated at build-feature time by the adapter bridge (see Buildfile mapping below).
 - Fragment names must be unique within the feature's infrastructure.md.
 
+## Worked examples
+
+Four fragments drawn from real architectural categories. Each populates the field set above without changing the field semantics; together they illustrate the breadth of content that belongs in `infrastructure.md` rather than `capabilities.yaml`. The set is representative, not exhaustive — other architectural concerns also belong here. Parlay's own historical infrastructure.md fragments (skill deployment, registry traversal, validation pipeline) are excluded from this example set by design so that the schema documentation stays project-agnostic.
+
+```
+# Example feature — Infrastructure
+
+---
+
+## SDK import boundary
+
+**Affects**: package import boundary
+**Behavior**: Only the dedicated SDK wrapper package may import the upstream SDK directly. Every other package goes through the wrapper, so swapping the underlying SDK is a single-file change.
+**Invariants**:
+- A package outside the wrapper that imports the upstream SDK fails the build with a named lint that points at the offending import line.
+- The wrapper exports a stable surface that does not leak SDK-specific types into callers.
+**Source**: @example/sdk-boundary
+**Backward-Compatible**: yes
+
+---
+
+## External-system startup probe
+
+**Affects**: startup probe
+**Behavior**: At process startup, the application probes every required external system once and either records a healthy result or aborts startup with a structured error that names the failed system and the probe's URL.
+**Invariants**:
+- A failed probe aborts startup before any request handler is registered.
+- The probe result is recorded in a process-wide status surface visible to readiness handlers.
+- Startup logs name the probed system, the URL, and the outcome on every run.
+**Source**: @example/startup-probe
+**Caching**: per-process
+
+---
+
+## Wrapper API allowlist
+
+**Affects**: bounded vocabulary of wrapper calls
+**Behavior**: The SDK wrapper exposes a closed allowlist of operations to callers. Any wrapper method not on the allowlist is unreachable; adding a method requires a deliberate allowlist edit.
+**Invariants**:
+- Calling a wrapper method outside the allowlist produces a build error naming the method and the allowlist file.
+- The allowlist is the single source of truth — no per-caller exception flags exist.
+- The allowlist is reviewable as one file, not scattered across call sites.
+**Source**: @example/wrapper-allowlist
+**Backward-Compatible**: yes
+
+---
+
+## Library version pin
+
+**Affects**: dependency version baseline
+**Behavior**: The project pins the upstream library to a minimum version compatible with the feature's API surface; older versions fail the build at dependency resolution time rather than at runtime.
+**Invariants**:
+- Lowering the pinned version below the documented floor fails the build with a named error that points at the manifest line.
+- The pin is documented adjacent to the manifest entry so a reader sees both the version and the rationale together.
+**Source**: @example/version-pin
+**Backward-Compatible**: yes
+```
+
 ## Buildfile mapping
 
 Infrastructure fragments are translated into `cross-cutting:` entries by the **adapter bridge** at build-feature time. The translation is not a 1:1 field rename — it is a resolution step that consults the adapter and the existing source tree:
 
-1. Build-feature reads `Affects:` to determine what area of the codebase the capability touches.
+1. Build-feature reads `Affects:` to determine what area of the codebase the constraint touches.
 2. It consults the adapter's `file-conventions` and `coding-conventions` to know how that area is organized in the current framework (e.g., a Go CLI puts shared resolvers in `internal/<area>/`; a Python service puts them in `<area>/__init__.py`).
 3. It scans the existing source tree to find concrete files matching the abstract scope, producing the buildfile entry's `target-files:` (explicit paths) or `target-pattern:` (a grep pattern for fan-out).
-4. It reads `Behavior:` to understand the capability and emits a framework-specific `transform:` describing what the code must do.
-5. It infers `introduces:` (new functions, types, constants) from `Behavior:` plus the adapter's naming and structure conventions.
+4. It reads `Behavior:` to understand the constraint and emits a framework-specific `transform:` describing what the code must do.
+5. It infers `introduces:` (new functions, types, constants, lints) from `Behavior:` plus the adapter's naming and structure conventions.
 6. `Source:` carries through verbatim as `source:`.
 7. `Invariants:` seed the testcases generated for the cross-cutting entry.
 8. `Caching:`, `Backward-Compatible:`, and `Notes:` carry through as hints embedded in `transform:` or as separate buildfile fields.
 
 When `Affects:` cannot be resolved to any file in the source tree, build-feature pauses and asks the designer which files are affected — it never guesses.
 
-The same infrastructure.md combined with a different adapter produces different `cross-cutting:` entries appropriate to that adapter's framework. The fragment provides the WHAT (capability + invariants); the adapter provides the HOW.
+The same infrastructure.md combined with a different adapter produces different `cross-cutting:` entries appropriate to that adapter's framework. The fragment provides the WHAT (constraint + invariants); the adapter provides the HOW.
 
 ## Validation
 
@@ -75,13 +146,15 @@ When an infrastructure file is loaded, the tool verifies:
 - Source references point to existing intents (when `--deep` validation is enabled)
 - If `Backward-Compatible` is present, its value is `yes` or `no`
 
+The schema is **advisory** with respect to operation-shaped content: no validator rule rejects a fragment in `infrastructure.md` simply because it looks operation-shaped. The `migrate-capabilities` command is the only enforcement path and is opt-in; running it moves operation-shaped fragments into `capabilities.yaml` while leaving architectural prose in place. Authors who keep operation-shaped fragments in `infrastructure.md` accept that the migrator will move them on the next opt-in run.
+
 Portability lint (warnings, non-blocking) scans `Affects` and `Behavior` for:
 - Function signatures (parenthesized parameter lists with type annotations)
 - File extensions (`.go`, `.py`, `.ts`, `.js`, `.rs`, `.java`, `.rb`, `.swift`, `.kt`)
 - Language keywords (`func`, `def`, `class`, `interface`, `struct`, `impl`, `enum`, `trait`, `module`)
 - Qualified import paths
 
-Each warning names the fragment, quotes the offending content, and suggests rephrasing in domain terms.
+Each warning names the fragment, quotes the offending content, and suggests rephrasing in domain terms. Portability lint is unchanged by the architectural-scope clarification — fragments that already pass the lint continue to pass.
 
 ## Parsing
 

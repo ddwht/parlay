@@ -163,7 +163,12 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 
 Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): surface.yaml (or legacy surface.md), capabilities.yaml (or legacy infrastructure.md), domain-model.md, *.page.md
+- **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts —
+  - **surface.yaml** (or surface.md) — visible output, page assemblies, dialog turns
+  - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
+  - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
+  - **domain-model.yaml** (or domain-model.md) — entities, relationships, and shared vocabulary
+  - Plus *.page.md for per-page layouts. A feature picks whichever artifacts it needs; capabilities.yaml and infrastructure.md are co-equal, not stand-ins for each other.
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
 - **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
@@ -199,7 +204,7 @@ func skillTitle(name string) string {
 	titles := map[string]string{
 		"add-feature":          "Create a new feature",
 		"scaffold-dialogs":     "Scaffold dialog templates from intents",
-		"create-artifacts":     "Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both",
+		"create-artifacts":     "Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs",
 		"build-feature":        "Generate buildfile and testcases",
 		"generate-code":        "Generate prototype code from buildfile",
 		"generate-enggspec":    "Generate engineering specification",
@@ -220,7 +225,7 @@ func skillTitle(name string) string {
 		// parlay-component: cli-and-deployer-registration
 		"migrate-config":          "Convert legacy prototype-framework into a single-target presentation adapter-set",
 		"migrate-spec":            "Convert each feature's surface.md to surface.yaml",
-		"migrate-capabilities":    "Extract operation-shaped fragments from infrastructure.md into capabilities.yaml",
+		"migrate-capabilities":    "Move operation-shaped fragments from infrastructure.md into capabilities.yaml; retain architectural prose in place (partial migration is the success case)",
 		"migrate-domain-operations": "Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs",
 		"review-coverage":         "Walk suites, record approvals, write coverage-review.yaml",
 	}

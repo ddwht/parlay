@@ -5,7 +5,9 @@ parlay-feature: parlay-tool/multi-adapter
 
 # Capabilities Schema
 
-File: `spec/intents/<feature>/capabilities.yaml`. The closed-vocabulary backend artifact declaring the operations a feature exposes. Replaces the prose-shaped operation fragments that used to live in `infrastructure.md`.
+File: `spec/intents/<feature>/capabilities.yaml`. The closed-vocabulary backend artifact declaring the operations a feature exposes — commands and queries against domain entities, with input, steps, output shape, and allowed errors.
+
+Operation-shaped content lives here. Architectural prose for boundaries, probes, allowlists, and dependency pins lives in `infrastructure.md` — see `infrastructure.schema.md`. The two artifacts are co-equal and cover orthogonal concerns: `capabilities.yaml` answers "what does the backend do?" and `infrastructure.md` answers "what shape must the codebase hold for those operations to work safely?" Neither artifact is a stand-in for the other; many features have both.
 
 ## Structure
 
@@ -63,4 +65,4 @@ The validator in `internal/agent/validate_capabilities.go` enforces:
 
 ## Backward compatibility
 
-Features without `capabilities.yaml` continue to work — capability validation walks zero operations. Multi-target rules that consult `capabilities.yaml` short-circuit when the file is absent. The migration commands `parlay migrate-capabilities` and `parlay migrate-domain-operations` produce the file from legacy `infrastructure.md` and `domain-model.operations` content respectively.
+Features without `capabilities.yaml` continue to work — capability validation walks zero operations. Multi-target rules that consult `capabilities.yaml` short-circuit when the file is absent. The migration commands `parlay migrate-capabilities` and `parlay migrate-domain-operations` produce the file by moving operation-shaped content from `infrastructure.md` and `domain-model.operations` respectively; architectural-prose fragments in `infrastructure.md` are retained in place by design.

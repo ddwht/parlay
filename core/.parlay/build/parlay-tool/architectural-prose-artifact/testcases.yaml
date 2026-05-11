@@ -1,0 +1,622 @@
+feature: parlay-tool/architectural-prose-artifact
+framework: Go stdlib testing + golden files
+
+# Three suites, one per cross-cutting fragment. Suites validate the
+# fragment's invariants: documentation invariants are checked via file-
+# content greps and structural inspection; command-behavior invariants
+# are checked by exec'ing the built parlay binary against golden feature
+# folders and asserting on stdout and on-disk effects.
+#
+# Single-target legacy buildfile shape (no schema_version: 2, no kind:
+# discriminator) — this matches the project topology (no adapter-set.yaml,
+# presentation-only project from go-cli's perspective).
+
+suites:
+  # ---------------------------------------------------------------------------
+  # Suite 1: Co-equal spec-artifact framing
+  # Traces to cross-cutting/co-equal-spec-artifact-framing
+  # ---------------------------------------------------------------------------
+  - name: co-equal-spec-artifact-framing
+    component: cross-cutting/co-equal-spec-artifact-framing
+    intent: "@parlay-tool/architectural-prose-artifact/restore-infrastructuremd-to-co-equal-spec-artifact-status"
+
+    cases:
+      - name: CLAUDE.md describes four co-equal spec artifacts
+        description: >
+          Invariant from fragment 1: "CLAUDE.md's spec-layer description
+          names exactly four co-equal artifacts: surface, capabilities,
+          infrastructure, domain-model."
+        steps:
+          - verify: file-exists
+            target: CLAUDE.md
+          - verify: file-content
+            target: CLAUDE.md
+            expected:
+              contains-all:
+                - "surface.md"
+                - "capabilities.yaml"
+                - "infrastructure.md"
+                - "domain-model.yaml"
+
+      - name: CLAUDE.md File Ownership section names all four artifacts side-by-side
+        description: >
+          The four-artifact framing must appear in the File Ownership /
+          spec-layer description, not only in scattered references. The
+          current line 46 ("(or legacy infrastructure.md)") must be
+          rewritten to name the four artifacts explicitly.
+        steps:
+          - verify: file-content
+            target: CLAUDE.md
+            expected:
+              not-contains: "or legacy infrastructure.md"
+
+      - name: No tool-surface text frames infrastructure.md as legacy
+        description: >
+          Invariant: "A repository-wide search of CLAUDE.md, the deployed
+          skill prompts the AI agent reads, and the deployed schema docs
+          finds no line that frames infrastructure.md as legacy,
+          deprecated, or to-be-replaced."
+        steps:
+          - verify: file-content
+            target: CLAUDE.md
+            expected:
+              no-line-matches: "legacy.*infrastructure\\.md|infrastructure\\.md.*legacy|infrastructure\\.md.*deprecated|infrastructure\\.md.*to.be.replaced"
+          - verify: file-content
+            target: core/internal/embedded/skills/create-artifacts.skill.md
+            expected:
+              no-line-matches: "legacy.*infrastructure\\.md|infrastructure\\.md.*legacy"
+          - verify: file-content
+            target: core/internal/embedded/skills/build-feature.skill.md
+            expected:
+              no-line-matches: "legacy.*infrastructure\\.md|infrastructure\\.md.*legacy"
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              no-line-matches: "legacy|deprecated|to.be.replaced"
+          - verify: file-content
+            target: core/internal/embedded/schemas/capabilities.schema.md
+            expected:
+              no-line-matches: "Replaces the prose-shaped operation fragments that used to live"
+
+      - name: claude.go template mirrors CLAUDE.md four-artifact framing
+        description: >
+          The embedded CLAUDE.md template in claude.go must match the
+          rewritten CLAUDE.md (so `parlay upgrade` regenerates the same
+          four-artifact framing) and the create-artifacts skill title must
+          not steer users away from any of the three feature-local
+          artifacts.
+        steps:
+          - verify: file-content
+            target: core/internal/deployer/claude.go
+            expected:
+              not-contains: "or legacy infrastructure.md"
+          - verify: file-content
+            target: core/internal/deployer/claude.go
+            expected:
+              contains-all:
+                - "surface"
+                - "capabilities"
+                - "infrastructure"
+                - "domain-model"
+
+      - name: create-artifacts skill recognizes architectural patterns
+        description: >
+          Invariant: "The deployed parlay-create-artifacts skill prompt
+          classifies a feature with architectural-only intents into
+          infrastructure.md and does not author capabilities.yaml for that
+          feature." The skill text must document the architectural
+          recognition triggers (boundary, probe, allowlist, dependency pin,
+          feature-stable error codes, build-time constraints).
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/skills/create-artifacts.skill.md
+            expected:
+              contains-any:
+                - "boundary"
+                - "probe"
+                - "allowlist"
+                - "dependency pin"
+          - verify: file-content
+            target: core/internal/embedded/skills/create-artifacts.skill.md
+            expected:
+              contains: "architectural"
+
+      - name: check-readiness already admits non-empty subsets — runtime confirms
+        description: >
+          Invariant: "The build-feature readiness rule continues to admit
+          any non-empty subset of {surface, infrastructure, capabilities}
+          — behavior is documented as already-correct; no validator or
+          readiness-checker code change is introduced." This case runs
+          check-readiness against a temp feature with only infrastructure.md
+          and asserts ready: true, AND verifies the source code in
+          check_readiness.go was NOT modified by this feature.
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/infra-only
+            value:
+              intents.md: "# Infra only\n\n## Some intent\n\n**Goal**: x\n**Persona**: Developer\n**Priority**: P1\n**Context**: x\n**Action**: x\n**Verify**:\n- y\n"
+              dialogs.md: "# Infra only — Dialogs\n\n---\n\n### Some intent\n\n**Trigger**: x\n\nUser: y\nSystem: z\n"
+              infrastructure.md: "# Infra only — Infrastructure\n\n---\n\n## Some fragment\n\n**Affects**: x\n**Behavior**: y\n**Source**: @test-only/infra-only/some-intent\n"
+          - action: invoke
+            target: parlay check-readiness --stage build-feature @test-only/infra-only
+          - verify: text
+            target: stdout
+            expected: '"ready": true'
+          - verify: file-content
+            target: core/internal/commands/check_readiness.go
+            expected:
+              contains: "hasInfra := fileExistsAt(infraPath) || fileExistsAt(capabilitiesPath)"
+
+      - name: build-feature skill names capabilities.yaml co-equal in readiness wording
+        description: >
+          The build-feature skill's step 5 currently says "A feature
+          needs at least one of surface.md or infrastructure.md" — the
+          rewrite must acknowledge capabilities.yaml as a co-equal
+          backend artifact alongside infrastructure.md.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/skills/build-feature.skill.md
+            expected:
+              contains-all:
+                - "surface.md"
+                - "capabilities.yaml"
+                - "infrastructure.md"
+
+      - name: Existing infrastructure.md files are byte-identical
+        description: >
+          Invariant: "Every existing infrastructure.md file in the
+          repository is byte-identical before and after this feature
+          ships." Verified by hashing every infrastructure.md under
+          core/spec/intents/ and studio/spec/intents/ before the code
+          phase begins, then re-hashing after. Hashes match.
+        steps:
+          - action: hash-all
+            target: "**/spec/intents/**/infrastructure.md"
+            value: pre-code-phase
+          - action: run-code-phase
+            target: parlay-tool/architectural-prose-artifact
+          - action: hash-all
+            target: "**/spec/intents/**/infrastructure.md"
+            value: post-code-phase
+          - verify: state
+            target: hash-comparison
+            expected: identical
+
+  # ---------------------------------------------------------------------------
+  # Suite 2: Partial-migration semantics in migrate-capabilities
+  # Traces to cross-cutting/partial-migration-semantics-in-migrate-capabilities
+  # ---------------------------------------------------------------------------
+  - name: partial-migration-semantics-in-migrate-capabilities
+    component: cross-cutting/partial-migration-semantics-in-migrate-capabilities
+    intent: "@parlay-tool/architectural-prose-artifact/make-migrate-capabilities-partial-migration-semantics-explicit"
+
+    cases:
+      - name: --help text names both extracted and retained outputs
+        description: >
+          Invariant: "The command's --help text states explicitly that
+          operation-shaped fragments are extracted and architectural
+          fragments are retained; a developer reading the help text
+          alone understands the partial-migration semantics."
+        steps:
+          - action: invoke
+            target: parlay migrate-capabilities --help
+          - verify: text
+            target: stdout
+            expected:
+              contains-all:
+                - "extracted"
+                - "retained"
+                - "infrastructure.md"
+                - "capabilities.yaml"
+
+      - name: Mixed-content feature emits both partitions to stdout
+        description: >
+          Invariant: "On a feature with mixed infrastructure.md content,
+          the command emits a capabilities.yaml with the operations,
+          leaves an infrastructure.md with the architectural fragments,
+          and prints both lists to stdout."
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/mixed
+            value:
+              infrastructure.md: |
+                # Mixed — Infrastructure
+
+                ---
+
+                ## Task storage boundary
+
+                **Affects**: package import boundary
+                **Behavior**: tasks package may not import internal/storage directly
+                **Source**: @test-only/mixed/boundary
+
+                ---
+
+                ## Task create-one operation
+
+                **Affects**: task entity persistence
+                **Behavior**: validate-input then create-one Task in storage
+                **Source**: @test-only/mixed/create
+          - action: invoke
+            target: parlay migrate-capabilities
+          - verify: text
+            target: stdout
+            expected:
+              contains-all:
+                - "Extracted to capabilities.yaml"
+                - "Retained in infrastructure.md"
+                - "Task storage boundary"
+          - verify: file-exists
+            target: spec/intents/test-only/mixed/capabilities.yaml
+          - verify: file-exists
+            target: spec/intents/test-only/mixed/infrastructure.md
+          - verify: file-content
+            target: spec/intents/test-only/mixed/infrastructure.md
+            expected:
+              contains: "Task storage boundary"
+
+      - name: Architecture-only feature leaves infrastructure.md in place
+        description: >
+          Invariant: "On a feature with only architectural fragments,
+          the command emits no capabilities.yaml and prints 'no
+          operation-shaped fragments to migrate; infrastructure.md left
+          in place'; the exit code is zero."
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/arch-only
+            value:
+              infrastructure.md: |
+                # Arch only — Infrastructure
+
+                ---
+
+                ## SDK import boundary
+
+                **Affects**: package import boundary
+                **Behavior**: only internal/sdk may import the upstream SDK
+                **Source**: @test-only/arch-only/boundary
+          - action: invoke
+            target: parlay migrate-capabilities
+          - verify: text
+            target: stdout
+            expected:
+              contains: "no operation-shaped fragments to migrate"
+          - verify: text
+            target: exit-code
+            expected: 0
+          - verify: file-exists
+            target: spec/intents/test-only/arch-only/infrastructure.md
+
+      - name: Operation-only feature deletes now-empty infrastructure.md
+        description: >
+          Invariant: "On a feature where every fragment in
+          infrastructure.md is operation-shaped, the command emits
+          capabilities.yaml, deletes the now-empty infrastructure.md,
+          and prints 'Deleted: infrastructure.md (was empty after
+          extraction)'; no zero-byte file is left on disk."
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/op-only
+            value:
+              infrastructure.md: |
+                # Op only — Infrastructure
+
+                ---
+
+                ## Task create operation
+
+                **Affects**: task entity persistence
+                **Behavior**: validate-input then create-one Task
+                **Source**: @test-only/op-only/create
+          - action: invoke
+            target: parlay migrate-capabilities
+          - verify: text
+            target: stdout
+            expected:
+              contains: "Deleted: infrastructure.md"
+          - verify: file-exists
+            target: spec/intents/test-only/op-only/capabilities.yaml
+          - verify: visible
+            target: spec/intents/test-only/op-only/infrastructure.md
+            expected: false
+
+      - name: Exit code is zero on any successful migration
+        description: >
+          Invariant: "The command exits zero on any successful migration
+          regardless of how the fragments partitioned; retained
+          fragments are never reported as warnings or errors."
+        steps:
+          - action: invoke
+            target: parlay migrate-capabilities
+            value: against-mixed-feature
+          - verify: text
+            target: exit-code
+            expected: 0
+          - action: invoke
+            target: parlay migrate-capabilities
+            value: against-arch-only-feature
+          - verify: text
+            target: exit-code
+            expected: 0
+          - action: invoke
+            target: parlay migrate-capabilities
+            value: against-op-only-feature
+          - verify: text
+            target: exit-code
+            expected: 0
+
+      - name: --dry-run prints the partition without writing
+        description: >
+          Invariant: "The --dry-run flag produces the same partition
+          output as a real run with a '(dry run — no files written)'
+          header; after the dry run, the on-disk state of the feature
+          folder is byte-identical to before the dry run."
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/mixed-dryrun
+            value:
+              infrastructure.md: |
+                # Mixed — Infrastructure
+
+                ---
+
+                ## Some boundary
+
+                **Affects**: package import boundary
+                **Behavior**: y
+                **Source**: @test-only/mixed-dryrun/boundary
+
+                ---
+
+                ## Some create-one
+
+                **Affects**: task entity persistence
+                **Behavior**: validate-input then create-one Task
+                **Source**: @test-only/mixed-dryrun/create
+          - action: hash-all
+            target: spec/intents/test-only/mixed-dryrun
+            value: pre-dryrun
+          - action: invoke
+            target: parlay migrate-capabilities --dry-run
+          - verify: text
+            target: stdout
+            expected:
+              contains-all:
+                - "dry run"
+                - "Extracted to capabilities.yaml"
+                - "Retained in infrastructure.md"
+          - action: hash-all
+            target: spec/intents/test-only/mixed-dryrun
+            value: post-dryrun
+          - verify: state
+            target: hash-comparison
+            expected: identical
+          - verify: visible
+            target: spec/intents/test-only/mixed-dryrun/capabilities.yaml
+            expected: false
+
+      - name: Skill doc references four-artifact spec layer
+        description: >
+          Invariant: "The deployed parlay-migrate-capabilities skill
+          documentation references the four-artifact spec layer and
+          characterizes the migration as moving operation-shaped content
+          between two co-equal artifacts; it does not describe
+          infrastructure.md as legacy or as a target for total
+          replacement."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/skills/migrate-capabilities.skill.md
+            expected:
+              contains-all:
+                - "surface.md"
+                - "capabilities.yaml"
+                - "infrastructure.md"
+                - "domain-model.yaml"
+          - verify: file-content
+            target: core/internal/embedded/skills/migrate-capabilities.skill.md
+            expected:
+              no-line-matches: "legacy.*infrastructure\\.md|infrastructure\\.md.*legacy|deprecat"
+
+      - name: Idempotent re-runs are preserved
+        description: >
+          Note from fragment 2: "Idempotent re-runs are preserved:
+          running the command twice in succession produces the same
+          result as running it once."
+        steps:
+          - action: invoke
+            target: parlay migrate-capabilities
+            value: against-mixed-feature
+          - action: hash-all
+            target: spec/intents/test-only/mixed
+            value: after-first-run
+          - action: invoke
+            target: parlay migrate-capabilities
+            value: against-mixed-feature
+          - action: hash-all
+            target: spec/intents/test-only/mixed
+            value: after-second-run
+          - verify: state
+            target: hash-comparison
+            expected: identical
+
+      - name: claude.go skillTitle for migrate-capabilities names both outputs
+        description: >
+          The agent surface lists each command with a one-line title
+          (claude.go skillTitle map). The new title for
+          "migrate-capabilities" must describe the partial-by-design
+          shape, not just the extraction.
+        steps:
+          - verify: file-content
+            target: core/internal/deployer/claude.go
+            expected:
+              not-contains-line-matching: "migrate-capabilities.*Extract operation-shaped fragments from infrastructure\\.md into capabilities\\.yaml\""
+
+  # ---------------------------------------------------------------------------
+  # Suite 3: Architectural scope in infrastructure.schema.md
+  # Traces to cross-cutting/architectural-scope-in-infrastructure-schema
+  # ---------------------------------------------------------------------------
+  - name: architectural-scope-in-infrastructure-schema
+    component: cross-cutting/architectural-scope-in-infrastructure-schema
+    intent: "@parlay-tool/architectural-prose-artifact/clarify-architectural-scope-in-infrastructureschema-md"
+
+    cases:
+      - name: Schema intro describes architectural prose, not operational behavior
+        description: >
+          Invariant: "The introduction of infrastructure.schema.md
+          describes the artifact's purpose as architectural prose, not
+          operational behavior."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-any:
+                - "architectural prose"
+                - "concerns that do not reduce to operations"
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              not-contains: "classifiers, validation guards, traversal changes, caching strategies, shared resolvers"
+
+      - name: Schema includes boundary worked example
+        description: >
+          Invariant: "The schema includes at least one worked example for
+          each of the four documented architectural categories: boundary,
+          probe, allowlist, and dependency pin." This case checks the
+          boundary example.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-all:
+                - "SDK import boundary"
+                - "**Affects**"
+                - "**Behavior**"
+                - "**Invariants**"
+                - "**Source**"
+
+      - name: Schema includes probe worked example
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains: "startup probe"
+
+      - name: Schema includes allowlist worked example
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-any:
+                - "Wrapper API allowlist"
+                - "allowlist"
+
+      - name: Schema includes dependency-pin worked example
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-any:
+                - "Library version pin"
+                - "dependency pin"
+
+      - name: Schema has a When-to-use prose section
+        description: >
+          Invariant: "The schema includes a 'When to use
+          infrastructure.md vs capabilities.yaml' section with prose
+          guidance and concrete examples; this section is not a closed
+          decision table and the schema does not auto-classify."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains: "When to use infrastructure.md vs capabilities.yaml"
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-all:
+                - "infrastructure.md"
+                - "capabilities.yaml"
+
+      - name: Capabilities schema carries symmetric cross-reference
+        description: >
+          Invariant: "capabilities.schema.md carries a complementary
+          cross-reference at its introduction pointing back to
+          infrastructure.schema.md for architectural prose."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/capabilities.schema.md
+            expected:
+              contains-all:
+                - "infrastructure.md"
+                - "infrastructure.schema.md"
+          - verify: file-content
+            target: core/internal/embedded/schemas/capabilities.schema.md
+            expected:
+              not-contains: "Replaces the prose-shaped operation fragments that used to live in"
+
+      - name: Fragment field set unchanged
+        description: >
+          Invariant: "The existing fragment field set (Name, Source
+          intent, Affects, Behavior, Invariants) is unchanged; the
+          existing portability lint is unchanged."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/infrastructure.schema.md
+            expected:
+              contains-all:
+                - "**Affects**"
+                - "**Behavior**"
+                - "**Invariants**"
+                - "**Source**"
+                - "Portability lint"
+
+      - name: Schema remains advisory — no new validator rejection
+        description: >
+          Invariant: "The schema remains advisory — no validator rule
+          fails when an operation-shaped fragment is authored in
+          infrastructure.md; the migrator remains the only enforcement
+          path and remains opt-in." Verified by running
+          `parlay validate --type infrastructure` against a feature
+          whose infrastructure.md contains an operation-shaped fragment
+          and asserting OK.
+        steps:
+          - action: setup-temp-feature
+            target: spec/intents/test-only/op-in-infra
+            value:
+              infrastructure.md: |
+                # Op-in-infra — Infrastructure
+
+                ---
+
+                ## Task create-one
+
+                **Affects**: task entity persistence
+                **Behavior**: validate-input then create-one Task
+                **Source**: @test-only/op-in-infra/create
+          - action: invoke
+            target: parlay validate --type infrastructure spec/intents/test-only/op-in-infra/infrastructure.md
+          - verify: text
+            target: exit-code
+            expected: 0
+
+      - name: AI agent classifies the figma-mcp-client intents to infrastructure.md
+        description: >
+          Invariant: "An AI agent that ingests only the two schema docs
+          (no other project context) classifies the figma-mcp-client
+          intents correctly: SDK import boundary → infrastructure.md,
+          startup probe → infrastructure.md, bounded tool allowlist →
+          infrastructure.md, and zero capabilities.yaml authored." This
+          is verified offline (in the code-phase review) by giving an
+          agent only the two schemas and the three intents and asking
+          for the artifact classification.
+        steps:
+          - action: present-agent-schemas-only
+            target:
+              - core/internal/embedded/schemas/infrastructure.schema.md
+              - core/internal/embedded/schemas/capabilities.schema.md
+              - studio/spec/intents/studio-foundation/figma-mcp-client/intents.md
+          - verify: state
+            target: classifier-output
+            expected:
+              all-three-intents: infrastructure.md
+              capabilities-yaml: false
