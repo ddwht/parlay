@@ -1,0 +1,20 @@
+# Parlay Studio adapter-set.
+# Two slots filled: presentation (React+Vite+Radix+Tailwind, embedded as the
+# UI bundle) and application (Go backend covering HTTP serving, domain editor,
+# design loop, MCP client, and YAML I/O).
+# transport and persistence slots are intentionally unfilled — Studio's HTTP
+# surface is small enough to live inside the application adapter, and Studio
+# has no database (file I/O is folded into application).
+
+name: parlay-studio
+
+targets:
+  presentation:
+    adapter: react-vite-radix-tailwind
+    root: studio/internal/ui
+  application:
+    adapter: go-studio-app
+    root: studio
+
+links:
+  - { from: presentation, relation: calls, to: application }

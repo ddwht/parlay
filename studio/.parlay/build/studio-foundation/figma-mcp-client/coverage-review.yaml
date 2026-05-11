@@ -1,0 +1,10 @@
+feature: studio-foundation/figma-mcp-client
+reviewed_at: "2026-05-11T08:59:08Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:efd712f3ab9586bd66b2d6dfaa4c418ba22d48529c2098fc251a66bab568102f
+testcases_hash: sha256:ab77d6fef9fcbe3b7f1c0b269740f28d0ee35dc77308c74dc442e45dd778230e
+approved_suites:
+    - official-mcp-sdk-adoption
+    - figma-mcp-startup-probe
+    - bounded-figma-tool-surface

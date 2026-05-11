@@ -1,0 +1,220 @@
+feature: studio-foundation/figma-mcp-client
+adapter-set: parlay-studio
+
+# Infrastructure-only feature: no surface.md, no domain operations.
+# All emissions are cross-cutting entries targeting the `application` slot
+# (the Go backend) — purely-introducing, since Studio's Go module does not
+# yet exist on disk. No presentation-side files are touched.
+
+cross-cutting:
+  - id: official-mcp-sdk-adoption
+    source: "@studio-foundation/figma-mcp-client/adopt-the-official-go-mcp-sdk-as-the-client-library"
+    target-files:
+      - studio/internal/mcpclient/client.go
+      - studio/internal/mcpclient/tools.go
+      - studio/internal/mcpclient/boundary_test.go
+      - studio/go.mod
+    transform: |
+      Introduce the dedicated MCP client package under studio/internal/mcpclient
+      that owns the sole import of github.com/modelcontextprotocol/go-sdk.
+      Studio's go.mod declares the SDK at an exact version (no caret/tilde
+      range semantics) per the adapter's go-module convention. The package
+      exposes one named method per supported Figma tool — no generic
+      CallTool(name, args) passthrough.
+
+      An import-boundary test (boundary_test.go) asserts that the SDK import
+      appears only inside this package by walking the Studio source tree and
+      grepping for the SDK import path. The test fails the build when any
+      other Studio package imports the SDK directly.
+
+      Hand-rolled MCP client implementations or substitutions of alternative
+      MCP libraries (e.g. mark3labs/mcp-go) are rejected on review with a
+      citation to this intent — escape-hatch behaviour is a v2-or-later spec
+      revision, not a runtime fallback.
+    introduces:
+      - "package studio/internal/mcpclient — sole importer of the official MCP SDK"
+      - "type Client struct — wraps the SDK's mcp.Client and exposes named per-tool methods"
+      - "exact-version pin of github.com/modelcontextprotocol/go-sdk in studio/go.mod"
+      - "import-boundary test that fails when the SDK is imported outside studio/internal/mcpclient"
+    caching: none
+    backward-compatible: yes
+
+  - id: figma-mcp-startup-probe
+    source: "@studio-foundation/figma-mcp-client/require-figmas-remote-mcp-server-not-the-desktop-variant"
+    target-files:
+      - studio/internal/mcpclient/probe.go
+      - studio/internal/mcpclient/probe_test.go
+      - studio/internal/mcpclient/errors.go
+      - studio/docs/figma-mcp-setup.md
+    transform: |
+      Inside studio/internal/mcpclient, add a startup probe that calls Figma's
+      whoami tool once at Studio startup against the configured MCP endpoint
+      and inspects the response. The probe enforces three preconditions:
+
+        1. The endpoint shape must match the remote-server variant — desktop
+           variants (localhost addresses, the desktop signature in the whoami
+           response) are rejected with the stable code
+           figma-mcp-endpoint-unsupported.
+        2. The endpoint must respond at the transport layer — DNS failure,
+           network drop, transport-level error, or a non-MCP response are
+           rejected with the stable code figma-mcp-endpoint-unreachable.
+        3. The whoami response's plans[] array must contain at least one
+           entry whose seat is Dev or Full (the canvas-write-capable seats)
+           — otherwise reject with figma-mcp-seat-insufficient.
+
+      The three stable codes are package-level sentinels declared in
+      errors.go (ErrEndpointUnsupported, ErrEndpointUnreachable,
+      ErrSeatInsufficient) so callers can errors.Is against them, per the
+      adapter's error-handling convention.
+
+      On success, the probe records (in order) the resolved endpoint URL,
+      the authenticated user's email from the whoami response, and the seat
+      tier — never the auth token or any other secret. The recording goes
+      through the server's structured logger when wired up; for now the
+      probe returns the resolved (endpoint, email, seat) tuple for the caller
+      to log.
+
+      Studio's setup doc lives at studio/docs/figma-mcp-setup.md and is the
+      canonical landing page for users hitting any of the three failure
+      modes. Every error message produced by the probe includes a "See
+      studio/docs/figma-mcp-setup.md" tail. The setup doc explains the
+      Studio-side configuration (env var name, expected endpoint shape) and
+      links out to Figma's docs for Figma-side prerequisites (remote MCP
+      server enablement, OAuth or token setup, seat-tier requirements).
+    introduces:
+      - "func Probe(ctx context.Context, endpoint string) (ProbeResult, error) — single-shot whoami probe"
+      - "type ProbeResult struct { Endpoint, Email, Seat string }"
+      - "package sentinels: ErrEndpointUnsupported, ErrEndpointUnreachable, ErrSeatInsufficient"
+      - "stable error code strings: figma-mcp-endpoint-unsupported, figma-mcp-endpoint-unreachable, figma-mcp-seat-insufficient"
+      - "doc: studio/docs/figma-mcp-setup.md — canonical setup landing page for all three failure codes"
+    caching: none
+    backward-compatible: yes
+
+  - id: bounded-figma-tool-surface
+    source: "@studio-foundation/figma-mcp-client/pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call"
+    target-files:
+      - studio/internal/mcpclient/tools.go
+      - studio/internal/mcpclient/tools_test.go
+    transform: |
+      Inside studio/internal/mcpclient/tools.go, enumerate the bounded
+      Figma MCP tool surface Studio is allowed to call, and expose exactly
+      one named wrapper method per supported tool. The supported set is:
+
+        Write tools:
+          - UseFigma                  -> use_figma
+          - CreateNewFile             -> create_new_file
+          - AddCodeConnectMap         -> add_code_connect_map
+          - SendCodeConnectMappings   -> send_code_connect_mappings
+        Read tools:
+          - GetMetadata               -> get_metadata
+          - GetCodeConnectMap         -> get_code_connect_map
+          - GetCodeConnectSuggestions -> get_code_connect_suggestions
+        Probe tool:
+          - Whoami                    -> whoami
+
+      Each method takes typed input and output structs co-located in
+      tools.go (or split as the package grows); these structs are wrapper-
+      domain types only — they MUST NOT reference Studio-domain types like
+      typed-tree nodes. Callers (in internal/designloop and elsewhere)
+      translate between wrapper types and Studio-domain types at the
+      boundary.
+
+      The wrapper maintains an enumerated allowlist of supported tool names
+      (the eight above). An internal dispatch helper that receives a tool
+      name not on the allowlist returns the stable error code
+      figma-mcp-tool-unsupported. The underlying SDK would happily call any
+      tool name — the wrapper is the enforcement boundary.
+
+      Explicitly excluded in v1 (no wrapper method, listed in a rejection
+      comment that cites this intent):
+        - get_design_context   (lossy React+Tailwind output; breaks
+                                component-identity round-trip)
+        - get_screenshot       (visual-only, not load-bearing)
+        - generate_diagram, get_figjam            (FigJam, out of scope)
+        - create_design_system_rules, search_design_system
+                               (authoring helpers, out of scope)
+        - generate_figma_design                   (overlaps use_figma;
+                                use_figma is the v1 write entry — switching
+                                is a v2+ spec revision)
+
+      tools_test.go asserts: (a) every supported tool has a wrapper method
+      with the expected signature shape, (b) the dispatch helper rejects
+      "get_design_context" and other excluded names with
+      figma-mcp-tool-unsupported, (c) wrapper input/output types do not
+      import any Studio-domain package.
+    introduces:
+      - "named wrapper methods: UseFigma, CreateNewFile, AddCodeConnectMap, SendCodeConnectMappings, GetMetadata, GetCodeConnectMap, GetCodeConnectSuggestions, Whoami"
+      - "supportedTools allowlist constant — the enumerated tool-name set"
+      - "stable error code: figma-mcp-tool-unsupported"
+      - "rejection comment block citing this intent and listing every v1-excluded tool"
+      - "test: wrapper input/output types do not import any Studio-domain package"
+    caching: none
+    backward-compatible: yes
+
+plan:
+  creates:
+    - path: studio/internal/mcpclient/client.go
+      sources:
+        - cross-cutting/official-mcp-sdk-adoption
+    - path: studio/internal/mcpclient/tools.go
+      sources:
+        - cross-cutting/official-mcp-sdk-adoption
+        - cross-cutting/bounded-figma-tool-surface
+    - path: studio/internal/mcpclient/boundary_test.go
+      sources:
+        - cross-cutting/official-mcp-sdk-adoption
+    - path: studio/go.mod
+      sources:
+        - cross-cutting/official-mcp-sdk-adoption
+    - path: studio/internal/mcpclient/probe.go
+      sources:
+        - cross-cutting/figma-mcp-startup-probe
+    - path: studio/internal/mcpclient/probe_test.go
+      sources:
+        - cross-cutting/figma-mcp-startup-probe
+    - path: studio/internal/mcpclient/errors.go
+      sources:
+        - cross-cutting/figma-mcp-startup-probe
+    - path: studio/docs/figma-mcp-setup.md
+      sources:
+        - cross-cutting/figma-mcp-startup-probe
+    - path: studio/internal/mcpclient/tools_test.go
+      sources:
+        - cross-cutting/bounded-figma-tool-surface
+  targets:
+    application:
+      creates:
+        - path: studio/internal/mcpclient/client.go
+          sources:
+            - cross-cutting/official-mcp-sdk-adoption
+        - path: studio/internal/mcpclient/tools.go
+          sources:
+            - cross-cutting/official-mcp-sdk-adoption
+            - cross-cutting/bounded-figma-tool-surface
+        - path: studio/internal/mcpclient/boundary_test.go
+          sources:
+            - cross-cutting/official-mcp-sdk-adoption
+        - path: studio/go.mod
+          sources:
+            - cross-cutting/official-mcp-sdk-adoption
+        - path: studio/internal/mcpclient/probe.go
+          sources:
+            - cross-cutting/figma-mcp-startup-probe
+        - path: studio/internal/mcpclient/probe_test.go
+          sources:
+            - cross-cutting/figma-mcp-startup-probe
+        - path: studio/internal/mcpclient/errors.go
+          sources:
+            - cross-cutting/figma-mcp-startup-probe
+        - path: studio/docs/figma-mcp-setup.md
+          sources:
+            - cross-cutting/figma-mcp-startup-probe
+        - path: studio/internal/mcpclient/tools_test.go
+          sources:
+            - cross-cutting/bounded-figma-tool-surface
+
+source-signatures:
+  intents: "sha256:c72b0502b0ab602c9f59fa69a8ff24c2c6c9a0191b9d4d2f953c6ca6f55dae75"
+  dialogs: "sha256:43c98004fd28bb5a1ccc7a26d796639f4031c80b1b60b17381818338692ea49e"
+  infrastructure: "sha256:668caeebc05696a5e13f13251bef81574099088ed31297f3be215acd664434b9"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"

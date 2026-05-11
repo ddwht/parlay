@@ -1,0 +1,379 @@
+name: react-vite-radix-tailwind
+framework: "React + Vite + Radix UI + Tailwind CSS"
+version: "1.0"
+kind: presentation
+
+shows:
+  data-value:
+    widget: "span+Tailwind"
+    description: "Plain span styled via Tailwind utilities; for labeled values pair a <Label> from Radix with the value span"
+    import: "@radix-ui/react-label"
+  data-list:
+    widget: "ul/li+Tailwind"
+    description: "Native list rendered with Tailwind spacing/divider utilities; virtualize via @tanstack/react-virtual for long lists"
+    import: "@tanstack/react-virtual"
+  data-table:
+    widget: "TanStack Table+Tailwind"
+    description: "Headless table from @tanstack/react-table with Tailwind-styled th/tr/td; sort/filter via the table API"
+    import: "@tanstack/react-table"
+  data-tree:
+    widget: "Custom tree+Radix Collapsible"
+    description: "Hand-built recursive tree using Radix Collapsible per node; no headless tree primitive in Radix"
+    import: "@radix-ui/react-collapsible"
+    requires: "custom-implementation"
+  data-chart:
+    widget: "Recharts"
+    description: "Composable React charts; styled via props rather than Tailwind"
+    import: "recharts"
+  status:
+    widget: "Tailwind badge span"
+    description: "Span with Tailwind tone classes (bg-emerald-100 text-emerald-700 etc.); tone derives from the status enum"
+    import: "tailwindcss"
+  progress:
+    widget: "Radix Progress"
+    description: "Radix Progress primitive styled with Tailwind; indicator width bound to value"
+    import: "@radix-ui/react-progress"
+  message:
+    widget: "Radix Toast+Tailwind"
+    description: "Radix Toast for transient feedback; for persistent inline messages use a Tailwind-styled div with role=alert"
+    import: "@radix-ui/react-toast"
+  media:
+    widget: "img+Tailwind"
+    description: "Native img with Tailwind sizing/object-fit utilities; lazy-load via loading=lazy"
+    import: "tailwindcss"
+  empty-state:
+    widget: "Custom empty-state component"
+    description: "Centered Tailwind-styled div with icon (lucide-react) and message; one project-local component reused across views"
+    import: "lucide-react"
+    requires: "custom-implementation"
+  summary:
+    widget: "Tailwind grid of cards"
+    description: "Tailwind grid layout with bordered cards; each card pairs a <Label> with a value"
+    import: "tailwindcss"
+  diff:
+    widget: "react-diff-viewer-continued"
+    description: "Third-party diff viewer; wrap in a Tailwind-bordered container"
+    import: "react-diff-viewer-continued"
+    requires: "custom-implementation"
+  timeline:
+    widget: "Custom timeline+Tailwind"
+    description: "Vertical timeline built from a Tailwind-styled ul with left rail and dots; no Radix primitive"
+    import: "tailwindcss"
+    requires: "custom-implementation"
+  code:
+    widget: "pre+Tailwind+Shiki"
+    description: "Pre/code with Shiki syntax highlighting; inline code uses <code> with Tailwind background utilities"
+    import: "shiki"
+
+actions:
+  provide-text:
+    widget: "Native input+Tailwind"
+    description: "Plain <input>/<textarea> styled with Tailwind; pair with Radix Label for accessibility"
+    import: "@radix-ui/react-label"
+  provide-rich-text:
+    widget: "Tiptap"
+    description: "Tiptap editor (ProseMirror-based) with Tailwind-styled toolbar; deferred until a feature requires rich text"
+    import: "@tiptap/react"
+    requires: "custom-implementation"
+  provide-value:
+    widget: "Native input+Radix DatePicker?+Tailwind"
+    description: "Number/date/time inputs use native <input type=\"number|date|time\"> styled with Tailwind; Radix has no built-in date picker, defer to react-day-picker if richer needed"
+    import: "react-day-picker"
+  provide-file:
+    widget: "Native input[type=file]+Tailwind"
+    description: "Hidden native file input triggered by a Radix Button; drag-and-drop uses react-dropzone"
+    import: "react-dropzone"
+  provide-structured-input:
+    widget: "react-hook-form+Radix Form"
+    description: "react-hook-form for state/validation, Radix Form for accessibility primitives, Zod for schema; Tailwind for layout"
+    import: "react-hook-form,@radix-ui/react-form,zod"
+  select-one:
+    widget: "Radix Select / Radio Group"
+    description: "Radix Select for dropdowns, Radix RadioGroup for visible options"
+    import: "@radix-ui/react-select,@radix-ui/react-radio-group"
+  select-many:
+    widget: "Radix Checkbox group"
+    description: "Multiple Radix Checkbox primitives in a Tailwind-laid-out group; for large sets use a multi-select via @radix-ui/react-select with checkable items"
+    import: "@radix-ui/react-checkbox"
+  select-toggle:
+    widget: "Radix Switch"
+    description: "Radix Switch primitive styled via Tailwind data-state variants"
+    import: "@radix-ui/react-switch"
+  select-range:
+    widget: "Radix Slider"
+    description: "Radix Slider for numeric ranges; for date ranges defer to react-day-picker range mode"
+    import: "@radix-ui/react-slider,react-day-picker"
+  confirm:
+    widget: "Radix AlertDialog"
+    description: "Radix AlertDialog for confirmation; visually distinguished from regular dialogs via Tailwind classes"
+    import: "@radix-ui/react-alert-dialog"
+  dismiss:
+    widget: "Radix Dialog/Sheet onOpenChange"
+    description: "Dialog/Sheet onOpenChange handler closes the surface; ESC handled by Radix automatically"
+    import: "@radix-ui/react-dialog"
+  acknowledge:
+    widget: "Radix Dialog with single OK"
+    description: "Radix Dialog with one action button that closes the dialog"
+    import: "@radix-ui/react-dialog"
+  navigate:
+    widget: "React Router+Radix NavigationMenu"
+    description: "React Router for routing, Radix NavigationMenu for top-level nav; sidebar uses a hand-built nav with Tailwind"
+    import: "react-router-dom,@radix-ui/react-navigation-menu"
+  navigate-back:
+    widget: "useNavigate(-1)+Button"
+    description: "React Router useNavigate hook bound to a Tailwind-styled back button with lucide-react ArrowLeft icon"
+    import: "react-router-dom,lucide-react"
+  navigate-drill:
+    widget: "Row click+useNavigate"
+    description: "Table row onClick fires useNavigate to a detail route; for inline drill use Radix Collapsible"
+    import: "react-router-dom"
+  navigate-tab:
+    widget: "Radix Tabs"
+    description: "Radix Tabs primitive with Tailwind styling for the trigger and content panels"
+    import: "@radix-ui/react-tabs"
+  navigate-search:
+    widget: "Native input+Radix Command"
+    description: "Native input for simple search; for typeahead/cmd-k surfaces use cmdk (React command palette)"
+    import: "cmdk"
+  reorder:
+    widget: "@dnd-kit/sortable"
+    description: "Sortable list/tree via dnd-kit with Tailwind drag handles; deferred until a feature requires reorder"
+    import: "@dnd-kit/sortable"
+    requires: "custom-implementation"
+  move:
+    widget: "@dnd-kit/core+two lists"
+    description: "Two Tailwind-styled lists with dnd-kit drag-between; deferred until needed"
+    import: "@dnd-kit/core"
+    requires: "custom-implementation"
+  edit-inline:
+    widget: "Custom inline edit+Tailwind"
+    description: "Toggle between read-mode span and edit-mode input on click; commit on blur/Enter, cancel on ESC"
+    import: "tailwindcss"
+    requires: "custom-implementation"
+  invoke:
+    widget: "Native button+Tailwind"
+    description: "Plain <button> styled via Tailwind; variants (primary/secondary/ghost) are utility-class compositions, not separate components"
+    import: "tailwindcss"
+  invoke-destructive:
+    widget: "Native button+Radix AlertDialog"
+    description: "Tailwind danger-styled button that opens a Radix AlertDialog; confirmation copy names the destructive consequence"
+    import: "@radix-ui/react-alert-dialog"
+    requires-confirmation: true
+  invoke-batch:
+    widget: "Selection+toolbar"
+    description: "TanStack Table row selection drives a Tailwind-styled toolbar that appears when count > 0"
+    import: "@tanstack/react-table"
+  undo:
+    widget: "Custom undo button"
+    description: "Application-level undo via a Zustand store with a history stack; Tailwind button with lucide Undo icon"
+    import: "zustand,lucide-react"
+    requires: "custom-implementation"
+  redo:
+    widget: "Custom redo button"
+    description: "Pairs with undo above; same store, opposite direction"
+    import: "zustand,lucide-react"
+    requires: "custom-implementation"
+  export:
+    widget: "Native button+Blob download"
+    description: "Tailwind button that triggers a Blob URL download; for server-driven exports point to a backend endpoint"
+    import: "tailwindcss"
+  hand-off:
+    widget: "Radix Dialog+Select"
+    description: "Radix Dialog containing a Radix Select for picking the recipient/system"
+    import: "@radix-ui/react-dialog,@radix-ui/react-select"
+  expand:
+    widget: "Radix Collapsible / Accordion"
+    description: "Radix Collapsible for single panels; Radix Accordion for grouped expand/collapse sections"
+    import: "@radix-ui/react-collapsible,@radix-ui/react-accordion"
+  collapse:
+    widget: "Same as expand"
+    description: "Same Radix primitives manage both states via data-state"
+    import: "@radix-ui/react-collapsible,@radix-ui/react-accordion"
+  filter:
+    widget: "TanStack Table column filters / native input"
+    description: "TanStack Table built-in column filters for tabular data; standalone filters use native inputs styled with Tailwind"
+    import: "@tanstack/react-table"
+  sort:
+    widget: "TanStack Table column sorter"
+    description: "TanStack Table built-in sorting; click header to toggle"
+    import: "@tanstack/react-table"
+  inspect:
+    widget: "Radix Dialog as Sheet"
+    description: "Radix Dialog with a Tailwind side-sheet style for inspecting an item without leaving the list view"
+    import: "@radix-ui/react-dialog"
+
+flows:
+  guided-flow:
+    pattern: "Custom Steps+react-hook-form"
+    description: "Tailwind-styled step indicator, react-hook-form with stepwise validation, prev/next buttons. Each step validates before advancing."
+    regions: [steps, content, actions]
+  crud-collection:
+    pattern: "TanStack Table+Radix Dialog+react-hook-form+Radix AlertDialog"
+    description: "TanStack Table for the list, Radix Dialog containing a react-hook-form for create/edit, Radix AlertDialog for delete confirmation."
+    regions: [toolbar, table, dialog]
+  search-and-act:
+    pattern: "cmdk+TanStack Table+Radix DropdownMenu"
+    description: "cmdk command palette or native search input, TanStack Table for results, Radix DropdownMenu for per-row actions."
+    regions: [search, results, actions]
+  review-and-approve:
+    pattern: "Tailwind detail panel+Radix AlertDialog"
+    description: "Two-column layout with detail on the left, history on the right, Radix AlertDialog for the approve/reject decision."
+    regions: [detail, history, actions, outcome]
+  bulk-operation:
+    pattern: "TanStack Table selection+Tailwind toolbar+Radix Progress"
+    description: "Selection-aware toolbar appears on row select, Radix Progress shows execution, Radix AlertDialog confirms before run."
+    regions: [toolbar, table, progress]
+  configure:
+    pattern: "react-hook-form+Radix Tabs+Radix Accordion"
+    description: "Single form scopes all settings, Radix Tabs group categories, Radix Accordion hides advanced sections."
+    regions: [tabs, form, actions]
+  monitor:
+    pattern: "Tailwind cards+Recharts+Radix toast"
+    description: "Tailwind grid of stat cards, Recharts for trends, Radix Toast for live alerts. Polling or SSE for refresh."
+    regions: [metrics, charts, activity]
+  import-export:
+    pattern: "react-dropzone+TanStack Table+Radix Progress"
+    description: "react-dropzone for upload, TanStack Table for preview, Radix Progress for processing, Tailwind buttons for confirm/download."
+    regions: [upload, preview, actions]
+  onboarding:
+    pattern: "Custom Steps+react-hook-form"
+    description: "Same shape as guided-flow; deferred unless a feature requires distinct onboarding ergonomics."
+    regions: [steps, content, actions]
+  compare:
+    pattern: "Two-column Tailwind layout+highlighted diff"
+    description: "Side-by-side Tailwind columns with cell-level highlight on differing fields; uses tone classes from the design tokens."
+    regions: [left, right, actions]
+
+compositions:
+  domain-model-er-diagram:
+    trigger: "component renders the domain model relationship graph"
+    state: [nodes, edges, selectedNodeId]
+    wiring: "React Flow holds nodes/edges; node click sets selectedNodeId which a side panel renders. Edge add/delete dispatches a save action through the editor store."
+    description: "ER-diagram view backed by React Flow with a side-panel for node details"
+  entity-form-panel:
+    trigger: "component edits a single domain entity"
+    state: [formInstance, isDirty]
+    wiring: "react-hook-form holds the entity; field changes set isDirty. Save button validates via Zod schema and posts to the Studio backend; cancel resets the form."
+    description: "Side-panel form for editing an entity's fields, types, and required flags"
+  editor-with-save-bar:
+    trigger: "any editor component with provide-structured-input"
+    state: [isDirty, isSaving, lastSavedAt]
+    wiring: "Form mutations set isDirty. The save bar (sticky bottom) shows a Save button when isDirty, a spinner when isSaving, a relative timestamp from lastSavedAt otherwise. Beforeunload listener warns on dirty state."
+    description: "Sticky bottom save bar with dirty-state tracking; reused across the domain model editor and any future editor surfaces"
+  toast-async-feedback:
+    trigger: "any component triggering a backend mutation"
+    state: []
+    wiring: "Mutation success/failure dispatches to a Radix Toast viewport mounted at the app root; success toasts auto-dismiss in 3s, failure toasts persist until acknowledged."
+    description: "Centralized async feedback channel via Radix Toast; no per-feature toast plumbing"
+
+conventions:
+  state-management:
+    rule: "useState for component-local state. Zustand for cross-component editor state (current document, dirty flag, undo history). React Context only for theme and routing primitives. No Redux."
+    applies-to: "all components"
+  event-naming:
+    rule: "Callback props use on{Action}{Target} (onSaveModel, onAddEntity). Internal handlers use handle{Action}{Target}. Form submit handlers use onSubmit only when bound directly to a <form>."
+    applies-to: "all components"
+  data-fetching:
+    rule: "Use native fetch wrapped in a thin client (src/lib/api.ts) returning typed promises. TanStack Query is permitted for cache/refetch heavy surfaces but not required. Loading state renders a Tailwind spinner; error renders a Tailwind alert with retry."
+    applies-to: "components that load Studio backend data"
+  error-handling:
+    rule: "Form validation surfaces inline below the field via react-hook-form + Zod. Async mutation failures dispatch a Radix Toast (failure variant). Never use window.alert. Unrecoverable errors render an error boundary with the failing surface name and a reload button."
+    applies-to: "all components"
+  file-structure:
+    rule: "One component per file in PascalCase.tsx. Shared hooks in src/hooks (camelCase.ts). Shared types in src/types. API client in src/lib/api.ts. Feature pages in src/features/<feature>/. No barrel files (index.ts re-exports)."
+    applies-to: "file generation"
+  component-exports:
+    rule: "Named exports for components. Default export only for the App root and route-level page components (so they integrate with React.lazy). One component per file."
+    applies-to: "all components"
+  styling:
+    rule: "Tailwind utility classes only. No CSS files, no CSS-in-JS, no inline style objects except for dynamic numeric values (width/height bound to data). Component variants are utility-class compositions, optionally extracted via clsx/tailwind-variants."
+    applies-to: "all components"
+  accessibility:
+    rule: "Use Radix primitives wherever a primitive exists — they handle focus, keyboard, ARIA. Custom components MUST set role/aria-* attributes; visible labels via Radix Label. All interactive elements reachable by keyboard."
+    applies-to: "all components"
+  typescript:
+    rule: "Strict mode (strict: true). No `any` — use `unknown` and narrow. Prefer type inference; only annotate when the inferred type is wrong or unclear. Zod schemas are the single source of truth for runtime-validated shapes."
+    applies-to: "all .ts/.tsx files"
+
+design-system:
+  colors:
+    source: framework
+    format: "Tailwind theme (tailwind.config.ts) — semantic tokens via CSS variables: --color-bg, --color-fg, --color-muted, --color-accent, --color-success, --color-warning, --color-danger, --color-info"
+    usage: "Reference via Tailwind utilities (bg-*, text-*, border-*). Never hardcode hex. Tone-bearing data (status enums with tone metadata) maps directly to the matching semantic token."
+  spacing:
+    source: framework
+    format: "Tailwind spacing scale (0, 1, 2, 4, 8 ... mapping to 0/4px/8px/16px/32px). Use Tailwind utilities (p-*, m-*, gap-*, space-x/y-*)."
+    usage: "Use scale tokens. Avoid arbitrary spacing values (p-[13px]) — surface a missing token as an issue rather than working around it."
+  border-radius:
+    source: framework
+    format: "Tailwind rounded-* utilities backed by --radius CSS variable (sm/md/lg)."
+    usage: "Use rounded-md as the default surface radius; rounded-sm for chips/badges; rounded-lg for cards/dialogs."
+  typography:
+    source: framework
+    format: "Tailwind text-* and font-* utilities. Custom font via @font-face in src/styles/fonts.css. Sizes follow the Tailwind scale; weights limited to 400/500/600/700."
+    usage: "Headings use h1-h4 with text-xl/lg/base font-semibold. Body uses text-sm leading-relaxed. Captions use text-xs text-muted-foreground."
+  shadows:
+    source: framework
+    format: "Tailwind shadow-* utilities (shadow-sm/md/lg/xl)."
+    usage: "shadow-sm for borders/cards. shadow-lg for floating surfaces (Radix Dialog content, Popover). No custom shadow values."
+  icons:
+    source: framework
+    format: "lucide-react — named imports (Save, Plus, Trash, Edit, ChevronRight, etc.). Sized via Tailwind w-/h-* utilities."
+    usage: "Use lucide-react icons exclusively. No raw SVG. No emoji. Icon size follows the host component (w-4 h-4 in buttons, w-5 h-5 in headers)."
+  motion:
+    source: framework
+    format: "Tailwind transition-* utilities + Radix data-state animations. Optional: framer-motion for complex sequenced animations."
+    usage: "Default transitions use transition-colors duration-150. Radix primitives expose data-state attributes (open/closed/checked) that Tailwind variants animate. Defer framer-motion until a feature requires it."
+  layout:
+    source: framework
+    format: "Tailwind flex/grid utilities. Container widths via max-w-* and px-*. No CSS grid templates outside utilities."
+    usage: "Use flex or grid utilities. Page-level layout: flex flex-col h-screen with header/main/footer. Sidebars: fixed-width column with overflow handling."
+
+file-conventions:
+  source-root: "studio/internal/ui/src/"
+  component-pattern: "feature-modules"
+  naming: "PascalCase"
+  entry-point: "studio/internal/ui/src/main.tsx"
+  packages:
+    components: "studio/internal/ui/src/components/"
+    features: "studio/internal/ui/src/features/"
+    models: "studio/internal/ui/src/types/"
+    hooks: "studio/internal/ui/src/hooks/"
+    utils: "studio/internal/ui/src/lib/"
+
+patterns:
+  interaction:
+    prefer: [side-sheet-for-detail, dialog-for-creation, inline-edit-for-quick-changes, toast-for-async-feedback]
+    avoid: [full-page-forms-for-simple-edits, alert-dialogs-for-non-errors, nested-dialogs, blocking-spinners-for-fast-operations]
+  information-density:
+    default: medium
+    rationale: "Studio's persona is a designer; dense enough for power use, but with explicit visual hierarchy via Tailwind spacing tokens. Avoid CRUD-app density (high) and consumer-app density (low)."
+  error-placement:
+    default: inline
+    rationale: "Form errors render inline below the field via react-hook-form + Zod. Async mutation errors use Radix Toast. System-wide errors render an error boundary surface."
+  confirmation:
+    required-for: [invoke-destructive, bulk-operation]
+    style: dialog
+  content:
+    timestamps: relative
+    empty-states: message
+
+mount-strategies:
+  spa-route:
+    detection: "<Route"
+    template: |
+      <Route path="{{path}}" element={<{{Component}} />} />
+    description: "Add a new route to the React Router route list in src/App.tsx"
+  sidebar-nav-item:
+    detection: "data-nav-target"
+    template: |
+      <NavLink to="{{path}}" data-nav-target>
+        <{{Icon}} className="w-4 h-4" />
+        <span>{{label}}</span>
+      </NavLink>
+    description: "Add a new item to the Studio sidebar navigation"
+  feature-tab:
+    detection: "<Tabs.Trigger"
+    template: |
+      <Tabs.Trigger value="{{key}}">{{label}}</Tabs.Trigger>
+    description: "Add a new tab trigger inside an existing Radix Tabs surface"

@@ -1,0 +1,29 @@
+generated-at: "2026-05-11T10:29:06Z"
+files:
+    studio/docs/figma-mcp-setup.md:
+        component: cross-cutting/figma-mcp-startup-probe
+        hash: 128c624e6b04ab83
+    studio/go.mod:
+        component: cross-cutting/official-mcp-sdk-adoption
+        hash: a315b919df732e2b
+    studio/internal/mcpclient/boundary_test.go:
+        component: cross-cutting/official-mcp-sdk-adoption
+        hash: 14c528afb73ade5d
+    studio/internal/mcpclient/client.go:
+        component: cross-cutting/official-mcp-sdk-adoption
+        hash: 880ef31a6d763d67
+    studio/internal/mcpclient/errors.go:
+        component: cross-cutting/figma-mcp-startup-probe
+        hash: 3c2fa2fbcc6b9c9c
+    studio/internal/mcpclient/probe.go:
+        component: cross-cutting/figma-mcp-startup-probe
+        hash: f25e877fe97d70f2
+    studio/internal/mcpclient/probe_test.go:
+        component: cross-cutting/figma-mcp-startup-probe
+        hash: c30b27a5e50c5660
+    studio/internal/mcpclient/tools.go:
+        component: cross-cutting/bounded-figma-tool-surface
+        hash: a99658026e71adf7
+    studio/internal/mcpclient/tools_test.go:
+        component: cross-cutting/bounded-figma-tool-surface
+        hash: ce51146131d1bc8f

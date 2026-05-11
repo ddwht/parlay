@@ -1,0 +1,267 @@
+feature: studio-foundation/figma-mcp-client
+framework: "Go testing (standard library, table-driven)"
+
+# Infrastructure-only feature: no UI components. Each suite below validates
+# one cross-cutting entry from buildfile.yaml by mapping its Invariants:
+# bullets into testable cases. Verification primitives used: file-exists,
+# file-content, error.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio) so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. Neither kind fits a cross-cutting infrastructure suite, so these
+# suites are emitted in the v1 shape; the v2 validator treats them as
+# kind: presentation with a testcases-source-refs-missing-legacy warning,
+# which is acceptable for an infrastructure-only feature.
+
+suites:
+  - name: official-mcp-sdk-adoption
+    component: cross-cutting/official-mcp-sdk-adoption
+    fixture: source-tree
+    intent: "@studio-foundation/figma-mcp-client/adopt-the-official-go-mcp-sdk-as-the-client-library"
+    cases:
+      - name: mcpclient package directory exists
+        description: The dedicated MCP client package is introduced at studio/internal/mcpclient.
+        steps:
+          - verify: directory-exists
+            target: studio/internal/mcpclient
+
+      - name: go.mod declares the official SDK at an exact version
+        description: studio/go.mod pins github.com/modelcontextprotocol/go-sdk with no range semantics.
+        steps:
+          - verify: file-exists
+            target: studio/go.mod
+          - verify: file-content
+            target: studio/go.mod
+            expected:
+              contains: "github.com/modelcontextprotocol/go-sdk"
+              matches-pattern: "github.com/modelcontextprotocol/go-sdk v[0-9]+\\.[0-9]+\\.[0-9]+"
+              does-not-contain-pattern: "github.com/modelcontextprotocol/go-sdk[[:space:]]+[\\^~]"
+
+      - name: SDK import is confined to studio/internal/mcpclient
+        description: A grep across studio/ for the SDK import path returns matches only inside the dedicated client package.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/boundary_test.go
+            expected:
+              contains: "modelcontextprotocol/go-sdk"
+              describes: "import-boundary test that walks studio/ and asserts the SDK import appears only inside studio/internal/mcpclient"
+
+      - name: wrapper rejects generic name+args passthrough
+        description: The package exposes one named method per supported tool; no generic CallTool(name, args) entry point exists.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/tools.go
+            expected:
+              does-not-contain-pattern: "func[[:space:]]+(\\(c \\*Client\\)[[:space:]]+)?CallTool[[:space:]]*\\("
+
+      - name: alternative MCP libraries are not imported
+        description: No Studio package imports mark3labs/mcp-go or any other alternative MCP client library.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/boundary_test.go
+            expected:
+              describes: "boundary test also fails when any alternative MCP library (e.g. mark3labs/mcp-go) is imported anywhere under studio/"
+
+  - name: figma-mcp-startup-probe
+    component: cross-cutting/figma-mcp-startup-probe
+    fixture: probe-responses
+    intent: "@studio-foundation/figma-mcp-client/require-figmas-remote-mcp-server-not-the-desktop-variant"
+    cases:
+      - name: probe source files exist
+        description: The probe lives in studio/internal/mcpclient alongside its sentinels and tests.
+        steps:
+          - verify: file-exists
+            target: studio/internal/mcpclient/probe.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/probe_test.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/errors.go
+
+      - name: desktop endpoint shape fails with figma-mcp-endpoint-unsupported
+        description: A configured endpoint matching the desktop variant fails startup with the stable code figma-mcp-endpoint-unsupported.
+        steps:
+          - action: invoke
+            target: probe
+            value: { endpoint-shape: "desktop", fixture: desktop-endpoint }
+          - verify: error
+            target: probe
+            expected: figma-mcp-endpoint-unsupported
+
+      - name: transport failure surfaces figma-mcp-endpoint-unreachable
+        description: A remote endpoint that does not respond at the transport layer fails startup with figma-mcp-endpoint-unreachable.
+        steps:
+          - action: invoke
+            target: probe
+            value: { endpoint-shape: "remote", fixture: unreachable-endpoint }
+          - verify: error
+            target: probe
+            expected: figma-mcp-endpoint-unreachable
+
+      - name: seat tier without canvas-write fails with figma-mcp-seat-insufficient
+        description: A whoami response whose plans[] entries all carry View or Collab seats fails startup with figma-mcp-seat-insufficient.
+        steps:
+          - action: invoke
+            target: probe
+            value: { endpoint-shape: "remote", fixture: view-seat-only }
+          - verify: error
+            target: probe
+            expected: figma-mcp-seat-insufficient
+
+      - name: dev seat succeeds and records endpoint, email, seat tier
+        description: A successful probe returns the resolved endpoint, the authenticated user's email, and the seat tier — and never the auth token.
+        steps:
+          - action: invoke
+            target: probe
+            value: { endpoint-shape: "remote", fixture: dev-seat }
+          - verify: state
+            target: ProbeResult.Endpoint
+            expected: "https://mcp.figma.example/v1"
+          - verify: state
+            target: ProbeResult.Email
+            expected: "maintainer@example.com"
+          - verify: state
+            target: ProbeResult.Seat
+            expected: "Dev"
+          - verify: state
+            target: ProbeResult.contains-secrets
+            expected: false
+
+      - name: probe runs exactly once per startup
+        description: The probe invokes whoami exactly once at Studio startup, regardless of how many subsequent tool calls are made.
+        steps:
+          - action: invoke
+            target: probe
+            value: { endpoint-shape: "remote", fixture: dev-seat }
+          - action: invoke
+            target: any-supported-tool
+            value: { fixture: dev-seat }
+          - action: invoke
+            target: any-supported-tool
+            value: { fixture: dev-seat }
+          - verify: count
+            target: whoami-invocations
+            expected: 1
+
+      - name: every stable error message links to the setup doc
+        description: Every error produced by the three stable codes carries a "See studio/docs/figma-mcp-setup.md" tail.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/errors.go
+            expected:
+              contains: "studio/docs/figma-mcp-setup.md"
+
+      - name: setup doc exists at the canonical Studio-side path
+        description: studio/docs/figma-mcp-setup.md is the canonical landing page for the three failure codes.
+        steps:
+          - verify: file-exists
+            target: studio/docs/figma-mcp-setup.md
+          - verify: file-content
+            target: studio/docs/figma-mcp-setup.md
+            expected:
+              contains: "figma-mcp-endpoint-unsupported"
+          - verify: file-content
+            target: studio/docs/figma-mcp-setup.md
+            expected:
+              contains: "figma-mcp-endpoint-unreachable"
+          - verify: file-content
+            target: studio/docs/figma-mcp-setup.md
+            expected:
+              contains: "figma-mcp-seat-insufficient"
+
+  - name: bounded-figma-tool-surface
+    component: cross-cutting/bounded-figma-tool-surface
+    fixture: tool-dispatch
+    intent: "@studio-foundation/figma-mcp-client/pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call"
+    cases:
+      - name: all eight supported wrapper methods are declared
+        description: tools.go exposes exactly one named wrapper method per supported Figma tool.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/tools.go
+            expected:
+              contains-all:
+                - "func (c *Client) UseFigma("
+                - "func (c *Client) CreateNewFile("
+                - "func (c *Client) AddCodeConnectMap("
+                - "func (c *Client) SendCodeConnectMappings("
+                - "func (c *Client) GetMetadata("
+                - "func (c *Client) GetCodeConnectMap("
+                - "func (c *Client) GetCodeConnectSuggestions("
+                - "func (c *Client) Whoami("
+
+      - name: dispatch rejects get_design_context with figma-mcp-tool-unsupported
+        description: The internal dispatch helper rejects the v1-excluded React+Tailwind context tool even though the SDK would accept it.
+        steps:
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "get_design_context" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+
+      - name: dispatch rejects every other excluded tool name
+        description: get_screenshot, generate_diagram, get_figjam, create_design_system_rules, search_design_system, and generate_figma_design are all rejected with figma-mcp-tool-unsupported.
+        steps:
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "get_screenshot" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "generate_diagram" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "get_figjam" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "create_design_system_rules" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "search_design_system" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+          - action: invoke
+            target: dispatch
+            value: { tool-name: "generate_figma_design" }
+          - verify: error
+            target: dispatch
+            expected: figma-mcp-tool-unsupported
+
+      - name: rejection comment in tools.go cites the intent and excluded tools
+        description: tools.go carries a comment block enumerating every v1-excluded tool and citing this intent as the spec-change gate.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/tools.go
+            expected:
+              contains-all:
+                - "get_design_context"
+                - "figma-mcp-client"
+                - "v1-excluded"
+
+      - name: wrapper types are isolated from Studio-domain types
+        description: tools_test.go asserts that wrapper input/output structs do not import any Studio-domain package.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/tools_test.go
+            expected:
+              describes: "asserts wrapper input/output types do not import studio/internal/domain or studio/internal/designloop types"
+
+      - name: use_figma remains the canonical v1 write entry point
+        description: There is no wrapper method named GenerateFigmaDesign; switching the write entry is a v2-or-later spec revision.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/tools.go
+            expected:
+              does-not-contain-pattern: "func[[:space:]]+\\(c \\*Client\\)[[:space:]]+GenerateFigmaDesign[[:space:]]*\\("

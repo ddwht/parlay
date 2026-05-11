@@ -1,0 +1,29 @@
+generated-at: "2026-05-11T10:29:06Z"
+intents:
+    adopt-the-official-go-mcp-sdk-as-the-client-library:
+        content-hash: 623514f0dd63a434
+        goal-hash: ec3136e9d0fbf89b
+        constraints-hash: 5b21e342db969d84
+        verify-hash: 77d02dad752ed081
+        objects-hash: 8487c02f8d266842
+    pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call:
+        content-hash: 99dce95e1ae44f69
+        goal-hash: 4bd90f3717166224
+        constraints-hash: a2bc3fcdc33593a9
+        verify-hash: 054f0169f0b309e8
+        objects-hash: 76e27cf362a257ab
+    require-figmas-remote-mcp-server-not-the-desktop-variant:
+        content-hash: b4b54ce1279d9cd7
+        goal-hash: 1e6656ae848b3848
+        constraints-hash: 45ec899c93549a63
+        verify-hash: f5cc05a4d7d3fa04
+        objects-hash: 72d7ae26d89881dc
+sources:
+    intents:
+        adopt-the-official-go-mcp-sdk-as-the-client-library: 00fd290b597c7a34
+        pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call: 535df9a263d9a521
+        require-figmas-remote-mcp-server-not-the-desktop-variant: 443479682d7f4acf
+    dialogs:
+        adopt-the-official-go-mcp-sdk-as-the-client-library: ab365e3ccafe49f5
+        pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call: 35f84deeca1438a6
+        require-figmas-remote-mcp-server-not-the-desktop-variant: e76f26141088ea90
