@@ -1,0 +1,196 @@
+feature: studio-foundation/figma-mcp-via-host-agent
+framework: "Go testing + repository-wide grep/find gates"
+
+# This feature is infrastructure-only with no UI surface and no domain
+# operations — every suite is verification-shaped, asserting either a
+# file/directory absence, a grep zero-match, or the post-retraction
+# build/test pass. The suites are organized by cross-cutting entry so
+# that `parlay diff`'s component/cross-cutting routing maps cleanly.
+
+suites:
+  - name: host-agent-mediation-invariants
+    component: cross-cutting/host-agent-mediation-invariants
+    fixture: post-retraction-tree
+    intent: "@studio-foundation/figma-mcp-via-host-agent/studio-defers-figma-mcp-to-the-host-agent"
+    cases:
+      - name: project-root-error-no-longer-references-deleted-doc
+        description: |
+          After the retraction lands, studio/internal/config/project_root.go's
+          ErrProjectRootNotFound message no longer ends with the dangling
+          "See studio/docs/figma-mcp-setup.md" sentence.
+        steps:
+          - verify: file-content
+            target: studio/internal/config/project_root.go
+            expected:
+              not-contains: "studio/docs/figma-mcp-setup.md"
+
+      - name: no-mcp-figma-com-references-under-studio-code
+        description: |
+          Repository-wide search for `mcp.figma.com` under the binary's
+          source directories returns zero matches. Matches inside
+          studio/spec/intents/ are expected (spec text describing the
+          history) and explicitly out of scope for this gate.
+        steps:
+          - verify: command-output
+            target: "git grep -nE 'mcp\\.figma\\.com' -- studio/internal/ studio/cmd/ studio/go.mod studio/go.sum studio/docs/"
+            expected:
+              exit-code: 1     # git grep exits 1 on zero matches
+              stdout: ""
+
+      - name: no-mcp-go-sdk-import-references-under-studio-code
+        description: |
+          Repository-wide search for the upstream MCP SDK import path under
+          the binary's source directories returns zero matches.
+        steps:
+          - verify: command-output
+            target: "git grep -nE 'modelcontextprotocol/go-sdk' -- studio/internal/ studio/cmd/ studio/go.mod studio/go.sum studio/docs/"
+            expected:
+              exit-code: 1
+              stdout: ""
+
+      - name: studio-binary-startup-has-no-mcp-probe-step
+        description: |
+          Studio's boot sequence (post-retraction) is a contiguous
+          1..10 step sequence with no MCP-probe step and no construct-
+          authenticated-MCP-client step. The 10-step list matches the
+          intent's Verify bullet.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/boot.go
+            expected:
+              not-contains:
+                - "MCP probe"
+                - "mcpclient.Prober"
+                - "mcpclient.Client"
+
+      - name: studio-server-deps-has-no-mcp-field
+        description: |
+          studio/internal/server/server.go no longer imports the mcpclient
+          package and the ServerDeps struct no longer has an MCP field.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/server.go
+            expected:
+              not-contains:
+                - "studio/internal/mcpclient"
+                - "mcpclient.Client"
+
+  - name: retract-studio-direct-mcp-source-tree
+    component: cross-cutting/retract-studio-direct-mcp-source-tree
+    fixture: post-retraction-tree
+    intent: "@studio-foundation/figma-mcp-via-host-agent/retract-the-studio-direct-mcp-code"
+    cases:
+      - name: mcpclient-package-directory-is-gone
+        description: |
+          The dedicated MCP-client package directory no longer exists.
+          The deletion is not a stub-leaving rename or a comment-out;
+          the directory is gone.
+        steps:
+          - verify: directory-exists
+            target: studio/internal/mcpclient
+            expected: false
+
+      - name: no-mcpclient-files-remain
+        description: |
+          Belt-and-braces over the directory-gone check — recursive find
+          for any file under the package path returns zero results.
+        steps:
+          - verify: command-output
+            target: "find studio/internal/mcpclient/ -type f"
+            expected:
+              exit-code: 1     # ENOENT bubbles through find
+              stderr-contains: "No such file or directory"
+
+      - name: figma-config-files-deleted
+        description: |
+          studio/internal/config/figma.go and figma_test.go are deleted.
+          The remaining config package retains its loader, web-server
+          keys, and project-root resolver.
+        steps:
+          - verify: file-exists
+            target: studio/internal/config/figma.go
+            expected: false
+          - verify: file-exists
+            target: studio/internal/config/figma_test.go
+            expected: false
+
+      - name: figma-mcp-setup-doc-deleted
+        description: |
+          studio/docs/figma-mcp-setup.md no longer exists.
+        steps:
+          - verify: file-exists
+            target: studio/docs/figma-mcp-setup.md
+            expected: false
+
+      - name: config-package-no-longer-references-figma-fields
+        description: |
+          grep for the removed Figma-specific configuration field names
+          and the removed environment-variable binding under the
+          configuration directory returns zero matches.
+        steps:
+          - verify: command-output
+            target: "grep -rn 'FigmaMCPURL\\|FigmaToken\\|figma_mcp_url\\|figma_token\\|STUDIO_FIGMA_TOKEN' studio/internal/config/"
+            expected:
+              exit-code: 1
+              stdout: ""
+
+      - name: main-and-boot-no-longer-reference-mcpclient
+        description: |
+          studio/cmd/parlay-studio/main.go and studio/internal/server/boot.go
+          do not import the mcpclient package and do not mention
+          mcp.figma anywhere.
+        steps:
+          - verify: command-output
+            target: "grep -n 'mcpclient\\|mcp.figma' studio/cmd/parlay-studio/main.go studio/internal/server/boot.go studio/internal/server/server.go"
+            expected:
+              exit-code: 1
+              stdout: ""
+
+      - name: go-mod-no-longer-requires-mcp-go-sdk
+        description: |
+          studio/go.mod's direct-require block no longer lists
+          github.com/modelcontextprotocol/go-sdk. The post-tidy go.sum
+          also has no entries for the SDK or its indirect dependencies.
+        steps:
+          - verify: command-output
+            target: "grep 'modelcontextprotocol/go-sdk' studio/go.mod"
+            expected:
+              exit-code: 1
+              stdout: ""
+          - verify: command-output
+            target: "grep -E 'modelcontextprotocol/go-sdk|google/jsonschema-go|yosida95/uritemplate|golang.org/x/oauth2' studio/go.sum"
+            expected:
+              exit-code: 1
+              stdout: ""
+
+      - name: studio-module-still-builds
+        description: |
+          After the retraction lands, the Studio module builds cleanly.
+          CGO is disabled to match the adapter's build convention.
+        steps:
+          - verify: command-output
+            target: "cd studio && CGO_ENABLED=0 go build ./..."
+            expected:
+              exit-code: 0
+
+      - name: studio-module-tests-pass
+        description: |
+          The remaining test suite is green. Total test count is lower
+          than before the retraction (the figma-related tests are gone)
+          and every remaining test passes.
+        steps:
+          - verify: command-output
+            target: "cd studio && CGO_ENABLED=0 go test ./..."
+            expected:
+              exit-code: 0
+
+      - name: second-go-mod-tidy-is-a-no-op
+        description: |
+          A second `go mod tidy` after the retraction makes no changes
+          to go.mod or go.sum — confirming the indirect-dependency
+          cleanup was complete in the coordinated change.
+        steps:
+          - verify: command-output
+            target: "cd studio && go mod tidy && git diff --exit-code -- go.mod go.sum"
+            expected:
+              exit-code: 0

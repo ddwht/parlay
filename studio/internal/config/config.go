@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/studio-config
 // parlay-component: cross-cutting/layered-studio-configuration-loader
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/retract-studio-direct-mcp-source-tree
 //
 // Package config is the single supported home for reading Parlay Studio
 // configuration. Every other Studio package reads the merged *Config returned
@@ -9,7 +10,6 @@
 //
 // Field-ownership split:
 //   - config.go declares the merged Config struct and the source-trace shape.
-//   - figma.go    populates Config.FigmaMCPURL and Config.FigmaToken.
 //   - web_server.go populates Config.ServerPort, IdleTimeout, OpenBrowser.
 //   - project_root.go resolves the project root BEFORE the loader runs.
 //   - loader.go    performs the five-source precedence merge and emits the
@@ -22,18 +22,10 @@ import "time"
 
 // Config is the merged Studio configuration: the single typed shape every
 // Studio caller reads. Fields are populated by the per-fragment loaders
-// (figma.go, web_server.go) at Load time. Secret fields carry the
+// (web_server.go) at Load time. Secret fields carry the
 // `studio:"secret"` struct tag so LogMerged's redaction walker can find them
 // without having to maintain a parallel allow-list.
 type Config struct {
-	// FigmaMCPURL is the remote Figma MCP endpoint. Project-scoped, non-secret.
-	// See figma.go.
-	FigmaMCPURL string `studio:"figma_mcp_url"`
-
-	// FigmaToken is the Figma personal-access token. User-scoped, secret-tagged
-	// so LogMerged redacts it as `***`. See figma.go.
-	FigmaToken string `studio:"figma_token,secret"`
-
 	// ServerPort is the bind port for Studio's HTTP server. 0 means "ask the OS
 	// for a free port" — the bound port is logged by the web-server harness
 	// after Listen(), not by this package. See web_server.go.
@@ -73,7 +65,7 @@ const (
 // Trace records the source of one resolved key. The loader returns one Trace
 // per key in Config so callers (chiefly the startup log line) can attribute
 // values back to their layer. Key is the snake_case config key (e.g.
-// "figma_mcp_url"), not the Go field name.
+// "server_port"), not the Go field name.
 type Trace struct {
 	Key    string
 	Source Source
@@ -85,10 +77,6 @@ type Trace struct {
 // source supplies the value".
 func defaults() *Config {
 	return &Config{
-		// FigmaMCPURL — no default; fails fast with
-		// studio-config-figma-mcp-url-missing if no source supplies it.
-		// FigmaToken — no default; fails fast with
-		// studio-config-figma-token-missing if no source supplies it.
 		ServerPort:  0,                // 0 = ask OS for free port
 		IdleTimeout: 30 * time.Minute, // documented default
 		OpenBrowser: true,             // documented default

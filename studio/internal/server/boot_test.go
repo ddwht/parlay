@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/web-server-harness
 // parlay-component: cross-cutting/studio-binary-boot-and-shutdown
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/retract-studio-direct-mcp-source-tree
 // parlay-artifact: test
 
 package server_test
@@ -43,14 +44,14 @@ func TestLoopbackBindAddress(t *testing.T) {
 // TestBootStepsReferenced asserts every documented boot step is named in
 // the source so reviewers can audit the orchestration order against the
 // buildfile. The check is intentionally loose — it asserts presence,
-// not order.
+// not order. After the host-agent-mediation retraction the boot sequence
+// has 10 steps; MCP-related step references (Probe, NewMCPClient) have
+// been removed.
 func TestBootStepsReferenced(t *testing.T) {
 	src := readBootGoSource(t)
 	steps := []string{
 		"ResolveProjectRoot",
 		"LoadConfig",
-		"Probe",
-		"NewMCPClient",
 		"Listen",
 		"SignalNotify",
 		"shutdownChan",
@@ -59,16 +60,6 @@ func TestBootStepsReferenced(t *testing.T) {
 		if !strings.Contains(src, step) {
 			t.Errorf("boot.go: missing reference to boot step %q", step)
 		}
-	}
-}
-
-// TestGracefulShutdownCallsMCPClose asserts the graceful-shutdown handler
-// invokes mcpClient.Close — the session-lifetime invariant from
-// figma-mcp-phase-0-wiring.
-func TestGracefulShutdownCallsMCPClose(t *testing.T) {
-	src := readBootGoSource(t)
-	if !strings.Contains(src, "mcpClient.Close") {
-		t.Fatal("boot.go: graceful shutdown does not call mcpClient.Close")
 	}
 }
 

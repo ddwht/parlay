@@ -1,0 +1,21 @@
+generated-at: "2026-05-13T13:35:34Z"
+intents:
+    retract-the-studio-direct-mcp-code:
+        content-hash: b54de495457e9cba
+        goal-hash: 79d98df8be1dc83b
+        constraints-hash: 9eb2e27105ee2fe1
+        verify-hash: c784d4490c2ce071
+        objects-hash: 2f8ee985ff410195
+    studio-defers-figma-mcp-to-the-host-agent:
+        content-hash: f86d0d122957d563
+        goal-hash: 5160b1448a3aa787
+        constraints-hash: 17bb74fe618bb78f
+        verify-hash: 754b02aadaa8924b
+        objects-hash: a20df1c4a9f85789
+sources:
+    intents:
+        retract-the-studio-direct-mcp-code: 31004f62613222d6
+        studio-defers-figma-mcp-to-the-host-agent: 423eae53dabf3e58
+    dialogs:
+        retract-the-studio-direct-mcp-code: 9c29ccdd36f0ea40
+        studio-defers-figma-mcp-to-the-host-agent: ec51e4993625a1c6

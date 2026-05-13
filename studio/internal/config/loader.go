@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/studio-config
 // parlay-component: cross-cutting/layered-studio-configuration-loader
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/retract-studio-direct-mcp-source-tree
 
 package config
 
@@ -23,9 +24,9 @@ import (
 // equality against the stable code.
 
 // ErrSecretInProjectFile (studio-config-secret-in-project-file) — a
-// secret-tagged key (figma_token / figma_token_file) appeared in the
-// project-scoped config file. The project file is shared with collaborators;
-// secrets belong in the user-scoped file or in the environment.
+// secret-tagged key appeared in the project-scoped config file. The
+// project file is shared with collaborators; secrets belong in the
+// user-scoped file or in the environment.
 var ErrSecretInProjectFile = errors.New("studio-config-secret-in-project-file")
 
 // envPrefix is the namespace for Studio-owned environment variables. The
@@ -41,13 +42,11 @@ const envPrefix = "STUDIO_"
 // STUDIO_CONFIG_PATH is intentionally NOT on this list — the loader rejects
 // the escape-hatch idea and surfaces a WARN instead.
 var knownEnvVars = map[string]bool{
-	"STUDIO_FIGMA_MCP_URL":  true,
-	"STUDIO_FIGMA_TOKEN":    true,
-	"STUDIO_SERVER_PORT":    true,
-	"STUDIO_IDLE_TIMEOUT":   true,
-	"STUDIO_OPEN_BROWSER":   true,
-	"STUDIO_PROJECT_ROOT":   true, // consumed by ResolveProjectRoot
-	"XDG_CONFIG_HOME":       true, // consulted for user-file path
+	"STUDIO_SERVER_PORT":  true,
+	"STUDIO_IDLE_TIMEOUT": true,
+	"STUDIO_OPEN_BROWSER": true,
+	"STUDIO_PROJECT_ROOT": true, // consumed by ResolveProjectRoot
+	"XDG_CONFIG_HOME":     true, // consulted for user-file path
 }
 
 // fileSnapshot is the in-memory representation of one config file. Path is
@@ -133,9 +132,6 @@ func Load(ctx context.Context, args []string, projectRoot string, env map[string
 
 	// Per-fragment loaders. Each loader applies its keys to cfg, contributes
 	// per-key Traces, and may return an error with a stable code.
-	if err := loadFigmaKeys(cfg, traces, args, env, projFile, userFile, opts); err != nil {
-		return nil, nil, err
-	}
 	if err := loadWebServerKeys(cfg, traces, args, env, projFile, userFile); err != nil {
 		return nil, nil, err
 	}
@@ -256,15 +252,15 @@ func secretKeySet() map[string]bool {
 // projectFileHasSecret reports the first secret key (if any) present in the
 // project-scoped file. Used to enforce the secret-in-project-file invariant
 // before per-fragment loaders run.
+//
+// The post-retraction Config struct has no secret-tagged fields, but the
+// invariant infrastructure is preserved so future secret fields can be added
+// without re-authoring it.
 func projectFileHasSecret(snap *fileSnapshot) (string, bool) {
 	if !snap.Present {
 		return "", false
 	}
-	// figma_token_file is also secret-bearing (it points at a token file);
-	// the inline figma_token key is tagged directly. Both names must trigger
-	// the invariant.
 	secretKeys := secretKeySet()
-	secretKeys["figma_token_file"] = true
 	for k := range snap.Raw {
 		if secretKeys[k] {
 			return k, true
@@ -293,9 +289,7 @@ func warnUnknownKeys(snap *fileSnapshot, logger *log.Logger) {
 // knownConfigKeys is the union of every snake_case key any fragment loader
 // reads. Add new keys here as new fragments land.
 func knownConfigKeys() map[string]bool {
-	out := map[string]bool{
-		"figma_token_file": true, // pointer form for figma_token
-	}
+	out := map[string]bool{}
 	for k := range secretKeySet() {
 		out[k] = true
 	}

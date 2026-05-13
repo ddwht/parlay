@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/studio-config
 // parlay-component: cross-cutting/studio-project-root-resolution
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/host-agent-mediation-invariants
 
 package config
 
@@ -104,7 +105,6 @@ func resolveProjectRoot(args []string, env map[string]string, cwd, home string, 
 	if stopped != "" {
 		msg += fmt.Sprintf(" (walk stopped at %s)", stopped)
 	}
-	msg += ". See studio/docs/figma-mcp-setup.md"
 	return "", "", fmt.Errorf("%w: %s", ErrProjectRootNotFound, msg)
 }
 

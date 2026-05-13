@@ -1,35 +1,26 @@
-generated-at: "2026-05-11T15:29:52Z"
+generated-at: "2026-05-13T13:35:34Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: c5f7910ff45b500b
-    studio/docs/figma-mcp-setup.md:
-        component: cross-cutting/figma-mcp-startup-probe
-        hash: 128c624e6b04ab83
+        hash: dc8841ba99322815
     studio/go.mod:
         component: cross-cutting/official-mcp-sdk-adoption
-        hash: ddff599a52f449a0
+        hash: f9a481a9f56f9102
     studio/internal/config/config.go:
         component: cross-cutting/layered-studio-configuration-loader
-        hash: 3f43057c5675cf73
+        hash: 2872217de8a8a9c5
     studio/internal/config/config_test.go:
         component: cross-cutting/layered-studio-configuration-loader
-        hash: 570ee24c88a5e2bf
-    studio/internal/config/figma.go:
-        component: cross-cutting/figma-mcp-connection-configuration-keys
-        hash: 10abfc83f4c4dc24
-    studio/internal/config/figma_test.go:
-        component: cross-cutting/figma-mcp-connection-configuration-keys
-        hash: 5457c31d0cdb19d0
+        hash: 6d268a80d222fb18
     studio/internal/config/loader.go:
         component: cross-cutting/layered-studio-configuration-loader
-        hash: ca2f49ffe841f7f0
+        hash: d2de9dec1168c1fb
     studio/internal/config/loader_test.go:
         component: cross-cutting/layered-studio-configuration-loader
-        hash: e071edbc4c206618
+        hash: 175e13ff24fb59d1
     studio/internal/config/project_root.go:
         component: cross-cutting/studio-project-root-resolution
-        hash: 59403d61d9d41308
+        hash: 431d8b13b0658006
     studio/internal/config/project_root_test.go:
         component: cross-cutting/studio-project-root-resolution
         hash: e28c0a380b4dcbbd
@@ -38,43 +29,13 @@ files:
         hash: 82fb4a2acc5881b2
     studio/internal/config/web_server_test.go:
         component: cross-cutting/web-server-runtime-configuration-keys
-        hash: abd74de7975150a9
-    studio/internal/mcpclient/boundary_test.go:
-        component: cross-cutting/official-mcp-sdk-adoption
-        hash: 14c528afb73ade5d
-    studio/internal/mcpclient/client.go:
-        component: cross-cutting/official-mcp-sdk-adoption
-        hash: ece2e7cbd9ae5a36
-    studio/internal/mcpclient/client_test.go:
-        component: cross-cutting/figma-mcp-phase-0-wiring
-        hash: f621ae7f807f5f2b
-    studio/internal/mcpclient/errors.go:
-        component: cross-cutting/figma-mcp-startup-probe
-        hash: 3c2fa2fbcc6b9c9c
-    studio/internal/mcpclient/integration_test.go:
-        component: cross-cutting/figma-mcp-phase-0-wiring
-        hash: 56ca24d388164267
-    studio/internal/mcpclient/probe.go:
-        component: cross-cutting/figma-mcp-startup-probe
-        hash: bd90dc50632b2693
-    studio/internal/mcpclient/probe_test.go:
-        component: cross-cutting/figma-mcp-startup-probe
-        hash: c30b27a5e50c5660
-    studio/internal/mcpclient/tools.go:
-        component: cross-cutting/bounded-figma-tool-surface
-        hash: 3f7d8e1ef316ffaa
-    studio/internal/mcpclient/tools_test.go:
-        component: cross-cutting/bounded-figma-tool-surface
-        hash: ce51146131d1bc8f
-    studio/internal/mcpclient/transport.go:
-        component: cross-cutting/figma-mcp-phase-0-wiring
-        hash: ab5b4daf960a378c
+        hash: dc9f6c935b0b0424
     studio/internal/server/boot.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: 1c5ee8d0c794cb16
+        hash: 83ad45b40e6efff1
     studio/internal/server/boot_test.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: ed107ad1aa328abb
+        hash: fb045c896b7c56e5
     studio/internal/server/envelopes.go:
         component: cross-cutting/http-server-harness
         hash: b69b248741359cac
@@ -104,7 +65,7 @@ files:
         hash: 10cb49364aea45c8
     studio/internal/server/server.go:
         component: cross-cutting/http-server-harness
-        hash: 61cdd7a1743e8d76
+        hash: 16a0da6c73527127
     studio/internal/server/server_test.go:
         component: cross-cutting/http-server-harness
         hash: 99df4e74759ac7cb

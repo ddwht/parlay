@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/web-server-harness
 // parlay-component: cross-cutting/http-server-harness
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/retract-studio-direct-mcp-source-tree
 
 // Package server is Parlay Studio's HTTP harness. It owns the chi router,
 // the middleware stack, the two universal endpoints (/api/health and
@@ -26,7 +27,6 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/parlay-tool/parlay/studio/internal/config"
-	"github.com/parlay-tool/parlay/studio/internal/mcpclient"
 )
 
 // Stable codes surfaced by the harness.
@@ -71,15 +71,8 @@ type UIBundle interface {
 // process-level shutdown channel live in package main / boot.go.
 type Deps struct {
 	// Config is the merged Studio configuration. The harness reads
-	// IdleTimeout to drive the idle-tracker middleware; the URL and token
-	// fields are not consulted here (they flow through mcpclient.Client
-	// supplied below).
+	// IdleTimeout to drive the idle-tracker middleware.
 	Config config.Config
-
-	// MCP is the live MCP client wrapper. Tools that need it pull it from
-	// their own construction; the harness package does NOT call it. The
-	// field is held so the graceful-shutdown path can close it.
-	MCP *mcpclient.Client
 
 	// Tools is the list of registered Studio tools. Order determines the
 	// route-mount order; collisions on Name() are rejected at New().

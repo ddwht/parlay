@@ -1,5 +1,6 @@
 // parlay-feature: studio-foundation/web-server-harness
 // parlay-component: cross-cutting/studio-binary-boot-and-shutdown
+// parlay-extends: studio-foundation/figma-mcp-via-host-agent/cross-cutting/retract-studio-direct-mcp-source-tree
 
 package server
 
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	"github.com/parlay-tool/parlay/studio/internal/config"
-	"github.com/parlay-tool/parlay/studio/internal/mcpclient"
 )
 
 // drainDeadline is the hard-coded graceful-shutdown drain budget. Handlers
@@ -59,15 +59,6 @@ type BootDeps struct {
 	// LoadConfig is the layered-config loader. Defaults to config.Load.
 	LoadConfig func(ctx context.Context, args []string, projectRoot string, env map[string]string, opts config.LoadOptions) (*config.Config, []config.Trace, error)
 
-	// Probe is the Figma MCP startup probe. Defaults to
-	// mcpclient.ProbeWithToken so the probe runs over the same bearer-
-	// token transport the persistent session will use.
-	Probe func(ctx context.Context, endpoint, token string) (mcpclient.ProbeResult, error)
-
-	// NewMCPClient constructs the persistent MCP client. Defaults to
-	// mcpclient.New.
-	NewMCPClient func(ctx context.Context, endpoint, token string) (*mcpclient.Client, error)
-
 	// Listen is the loopback-only listener factory. Defaults to
 	// bind127OnlyListener.
 	Listen func(port int) (net.Listener, error)
@@ -82,8 +73,7 @@ type BootDeps struct {
 
 	// Tools is the list of pre-constructed tool registrations the boot
 	// sequence passes to server.New(). Tools are constructed in main.go
-	// from the MCP client + Config; the harness package does NOT import
-	// them.
+	// from the merged Config; the harness package does NOT import them.
 	Tools []ToolRegistration
 
 	// UIBundle is the optional embedded UI bundle. nil means "not built".
@@ -112,14 +102,27 @@ type BootResult struct {
 }
 
 // Boot is the canonical Studio entry point invoked from main(). It runs the
-// 12-step boot sequence in fixed order and blocks until the unified
+// 10-step boot sequence in fixed order and blocks until the unified
 // shutdown channel fires. The returned error is non-nil when boot fails;
 // success returns nil and a zero exit code.
 //
 // Boot owns the lifecycle of the HTTP server, the idle-tracker goroutine,
-// the signal handlers, and the persistent MCP client. Graceful shutdown
-// drains in-flight handlers within drainDeadline (5 seconds), closes the
-// MCP session, emits one INFO log line naming the trigger, and returns.
+// and the signal handlers. Graceful shutdown drains in-flight handlers
+// within drainDeadline (5 seconds), emits one INFO log line naming the
+// trigger, and returns.
+//
+// The 10 steps are:
+//
+//  1. parse command-line flags (handled inline via the deps surface)
+//  2. resolve the parlay project root
+//  3. load and log the merged configuration with secrets redacted
+//  4. build the chi router with mounted tool route groups
+//  5. start the HTTP server on the resolved port
+//  6. log the bound URL
+//  7. open the operator's browser if OpenBrowser=true
+//  8. install SIGINT/SIGTERM handlers
+//  9. launch the idle-timeout goroutine if IdleTimeout > 0
+//  10. block on the shutdown channel
 func Boot(ctx context.Context, deps BootDeps) error {
 	deps = applyBootDefaults(deps)
 
@@ -147,32 +150,7 @@ func Boot(ctx context.Context, deps BootDeps) error {
 	}
 	config.LogMerged(ctx, deps.Stderr, cfg, traces)
 
-	// Step (4): probe Figma's MCP server. This is the hard gate — failure
-	// terminates boot before any port is bound, browser is opened, or
-	// signal handler is installed.
-	probeRes, err := deps.Probe(ctx, cfg.FigmaMCPURL, cfg.FigmaToken)
-	if err != nil {
-		logger.Printf("ERROR boot: step=mcp-probe code=%s exit=1", stableCode(err))
-		return err
-	}
-	logger.Printf("INFO boot: mcp probe ok endpoint=%s email=%s seat=%s",
-		probeRes.Endpoint, probeRes.Email, probeRes.Seat)
-
-	// Step (5): construct the authenticated MCP client. The token is held
-	// privately on the client; the probe result already validated the
-	// endpoint and seat.
-	mcpClient, err := deps.NewMCPClient(ctx, cfg.FigmaMCPURL, cfg.FigmaToken)
-	if err != nil {
-		logger.Printf("ERROR boot: step=new-mcp-client code=%s exit=1", stableCode(err))
-		return err
-	}
-	defer func() {
-		if cerr := mcpClient.Close(context.Background()); cerr != nil {
-			logger.Printf("WARN boot: mcp client close error: %v", cerr)
-		}
-	}()
-
-	// Step (6): build the chi router with mounted tool route groups.
+	// Step (4): build the chi router with mounted tool route groups.
 	shutdownChan := make(chan string, 4)
 
 	var idleTracker *IdleTracker
@@ -182,7 +160,6 @@ func Boot(ctx context.Context, deps BootDeps) error {
 
 	srv, err := New(Deps{
 		Config:       *cfg,
-		MCP:          mcpClient,
 		Tools:        deps.Tools,
 		IdleTracker:  idleTracker,
 		ShutdownChan: shutdownChan,
@@ -193,28 +170,28 @@ func Boot(ctx context.Context, deps BootDeps) error {
 		return err
 	}
 
-	// Step (7): bind the listener. Loopback-only.
+	// Step (5): bind the listener. Loopback-only.
 	ln, err := deps.Listen(cfg.ServerPort)
 	if err != nil {
 		logger.Printf("ERROR boot: step=bind-listener code=%s exit=1", stableCode(err))
 		return err
 	}
 
-	// Step (8): log the bound URL.
+	// Step (6): log the bound URL.
 	url := fmt.Sprintf("http://%s", ln.Addr().String())
 	logger.Printf("INFO boot: listening url=%s", url)
 
-	// Step (9): open the operator's browser.
+	// Step (7): open the operator's browser.
 	if cfg.OpenBrowser {
 		if oerr := deps.OpenBrowser(url); oerr != nil {
 			logger.Printf("WARN boot: open browser: %v", oerr)
 		}
 	}
 
-	// Step (10): install SIGINT/SIGTERM handlers.
+	// Step (8): install SIGINT/SIGTERM handlers.
 	deps.SignalNotify(shutdownChan)
 
-	// Step (11): launch the idle-timeout goroutine if configured.
+	// Step (9): launch the idle-timeout goroutine if configured.
 	idleCtx, cancelIdle := context.WithCancel(ctx)
 	defer cancelIdle()
 	if idleTracker != nil {
@@ -229,7 +206,7 @@ func Boot(ctx context.Context, deps BootDeps) error {
 		serveErr <- srv.HTTP.Serve(ln)
 	}()
 
-	// Step (12): block on the shutdown channel.
+	// Step (10): block on the shutdown channel.
 	var reason string
 	select {
 	case reason = <-shutdownChan:
@@ -268,12 +245,6 @@ func applyBootDefaults(deps BootDeps) BootDeps {
 	}
 	if deps.LoadConfig == nil {
 		deps.LoadConfig = config.Load
-	}
-	if deps.Probe == nil {
-		deps.Probe = mcpclient.ProbeWithToken
-	}
-	if deps.NewMCPClient == nil {
-		deps.NewMCPClient = mcpclient.New
 	}
 	if deps.Listen == nil {
 		deps.Listen = bind127OnlyListener

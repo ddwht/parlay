@@ -1,0 +1,383 @@
+feature: studio-foundation/figma-mcp-via-host-agent
+adapter-set: parlay-studio
+
+# Retraction feature: zero new files, two cross-cutting entries.
+#
+# Fragment 1 (host-agent-mediation-of-figma-mcp) is documentation-and-
+# constraint-shaped — its enforcement is a set of repository-wide grep
+# invariants, plus a single modification to studio/internal/config/project_root.go
+# (which carries a "See studio/docs/figma-mcp-setup.md" message that becomes
+# a dangling reference once the doc is deleted).
+#
+# Fragment 2 (retraction-of-studio-direct-mcp-source-tree-shape) is the
+# deletion-heavy cross-cutting:
+#   - 10 files under studio/internal/mcpclient/ deleted entirely
+#   - studio/internal/config/figma.go and figma_test.go deleted
+#   - studio/docs/figma-mcp-setup.md deleted
+#   - 9 existing files modified (config struct, loader, server boot, main,
+#     go.mod, go.sum, server.go, config_test.go)
+#
+# All emissions target the `application` slot (the Go backend).
+# Paths are relative to the resolved studio root.
+#
+# This buildfile uses the dual-plan-shape pattern established by prior
+# studio features: a legacy flat plan.{modifies,creates,deletes} block
+# AND a multi-target plan.targets.application.{modifies,creates,deletes}
+# block carrying identical content.
+
+cross-cutting:
+  - id: host-agent-mediation-invariants
+    source: "@studio-foundation/figma-mcp-via-host-agent/studio-defers-figma-mcp-to-the-host-agent"
+    target-files:
+      - internal/config/project_root.go
+    transform: |
+      Update studio/internal/config/project_root.go's ErrProjectRootNotFound
+      message to remove the dangling reference to the deleted setup doc.
+
+      Concretely: the message currently ends with
+      `". See studio/docs/figma-mcp-setup.md"` (line ~107 in the current tree).
+      Drop that sentence entirely. The error message remains informative
+      via its srcLabel listing (flag / env / walkup) and the walk-stopped
+      hint; the doc reference is no longer accurate once
+      studio/docs/figma-mcp-setup.md is removed in this same coordinated
+      change.
+
+      No other code change in this file. The error sentinel, its callers,
+      and the resolver's behavior are unchanged.
+
+      This is the only in-tree-doc-reference modification fragment 1 requires.
+      The remaining enforcement is verification-only — repository-wide grep
+      invariants that the deletion in cross-cutting/retract-studio-direct-mcp-source-tree
+      already satisfies. Those greps become testcase assertions, not
+      buildfile modifications.
+
+      Architecture v4 §7 doc reconciliation is explicitly NOT in scope here
+      (per fragment-1 Notes); a future architecture-doc revision tracks it
+      separately.
+    introduces: []
+    caching: none
+    backward-compatible: yes
+
+  - id: retract-studio-direct-mcp-source-tree
+    source: "@studio-foundation/figma-mcp-via-host-agent/retract-the-studio-direct-mcp-code"
+    target-files:
+      - internal/config/config.go
+      - internal/config/config_test.go
+      - internal/config/loader.go
+      - internal/config/loader_test.go
+      - internal/server/boot.go
+      - internal/server/boot_test.go
+      - internal/server/server.go
+      - cmd/parlay-studio/main.go
+      - go.mod
+      - go.sum
+    transform: |
+      Single coordinated retraction of the Studio-direct-MCP source-tree
+      shape. The change lands as one commit; half-retracted intermediate
+      states are broken-by-construction (per fragment 2 Constraints).
+
+      ============================================================
+      DELETIONS (12 files total — routed to plan.deletes)
+      ============================================================
+
+      Remove the entire studio/internal/mcpclient/ package (10 files):
+        - internal/mcpclient/client.go
+        - internal/mcpclient/tools.go
+        - internal/mcpclient/probe.go
+        - internal/mcpclient/errors.go
+        - internal/mcpclient/transport.go
+        - internal/mcpclient/boundary_test.go
+        - internal/mcpclient/probe_test.go
+        - internal/mcpclient/tools_test.go
+        - internal/mcpclient/client_test.go
+        - internal/mcpclient/integration_test.go
+
+      No stub or scaffolding left behind. If Figma admits Studio to the
+      catalog later, the package is re-authored from the preserved
+      figma-mcp-client spec.
+
+      Remove the Figma-specific config files (2 files):
+        - internal/config/figma.go
+        - internal/config/figma_test.go
+
+      Remove the setup doc (1 file):
+        - docs/figma-mcp-setup.md
+
+      ============================================================
+      MODIFICATIONS (10 files — routed to plan.modifies)
+      ============================================================
+
+      MODIFY studio/internal/config/config.go:
+        Remove the FigmaMCPURL and FigmaToken fields from the Config
+        struct. The struct retains the web-server keys (Port,
+        OpenBrowser, IdleTimeout) and the project-root resolver fields.
+        Remove the per-field tags, doc-comments, and defaults that
+        referenced the two Figma fields.
+
+      MODIFY studio/internal/config/config_test.go:
+        Drop the two test cases asserting FigmaMCPURL and FigmaToken
+        are unset by default (currently at lines ~31-32). Drop or rework
+        the TestSecretKeySetDiscoversFigmaToken test — after retraction
+        the only field that needs secret-key discovery is whatever
+        future secret field is added; for now the secret-key invariant
+        is preserved via a smaller test that asserts the reflection
+        walker still returns an empty set on the post-retraction Config
+        struct (or rename to TestSecretKeySetIsEmpty if that captures
+        the intent better — leave the secret-key invariant infrastructure
+        intact so future secret fields can be added without re-authoring).
+
+      MODIFY studio/internal/config/loader.go:
+        Remove the lines that source FigmaMCPURL / FigmaToken from the
+        STUDIO_FIGMA_MCP_URL and STUDIO_FIGMA_TOKEN environment
+        variables, project-file YAML keys (figma_mcp_url, figma_token,
+        figma_token_file), and user-scoped config keys. The loader
+        retains its layered-precedence machinery (defaults < project
+        file < env < user-scoped) for the remaining keys; only the
+        two Figma-specific bindings disappear.
+
+      MODIFY studio/internal/config/loader_test.go:
+        Remove every test case that drives FigmaMCPURL or FigmaToken
+        sourcing. Tests for the remaining keys (Port, OpenBrowser,
+        IdleTimeout) and the project-root resolver are untouched.
+
+      MODIFY studio/internal/server/boot.go:
+        Remove boot step 4 (probe Figma's MCP server) and boot step 5
+        (construct the authenticated MCP client) from the boot
+        sequence. Renumber the remaining steps as a contiguous 1..10
+        sequence in commentary and stable-code names:
+
+          (1)  parse command-line flags
+          (2)  resolve the parlay project root
+          (3)  load and log the merged configuration with secrets redacted
+          (4)  build the chi router with mounted tool route groups   [was step 6]
+          (5)  start the HTTP server on the resolved port             [was step 7]
+          (6)  log the bound URL                                      [was step 8]
+          (7)  open the operator's browser if OpenBrowser=true        [was step 9]
+          (8)  install SIGINT/SIGTERM handlers                        [was step 10]
+          (9)  launch the idle-timeout goroutine if IdleTimeout > 0   [was step 11]
+          (10) block on the shutdown channel                          [was step 12]
+
+        Drop BootDeps fields that held the mcpclient.Prober and
+        mcpclient.Client constructors (e.g. ProbeMCP, NewMCPClient).
+        Drop the MCP field from the boot-result struct if it existed.
+        The graceful-shutdown helper no longer closes an MCP client —
+        gracefulShutdown's signature drops the *mcpclient.Client
+        parameter; the drain sequence shrinks to: stop accepting new
+        HTTP connections, drain in-flight within the 5s deadline,
+        emit the shutdown reason log line, exit zero.
+
+      MODIFY studio/internal/server/boot_test.go:
+        Drop the MCP-probe boot-step test cases and any cases that
+        injected a fake mcpclient.Prober. Renumber test-case names if
+        they encoded step numbers. The remaining tests cover steps
+        1-10 (new numbering) and the unified shutdown channel.
+
+      MODIFY studio/internal/server/server.go:
+        Remove the `"github.com/parlay-tool/parlay/studio/internal/mcpclient"`
+        import. Remove the `MCP *mcpclient.Client` field from the
+        ServerDeps struct (currently around line 82). Remove the
+        accompanying doc-comment that explained the MCP field is
+        consulted by the mcpclient package rather than the server
+        itself. The constructor's signature drops the *mcpclient.Client
+        parameter; the harness no longer touches MCP plumbing.
+
+      MODIFY studio/cmd/parlay-studio/main.go:
+        Remove the import of studio/internal/mcpclient. Remove all
+        references to MCP-related BootDeps fields (Prober, MCPClient,
+        etc.) and to the mcpclient package in any helper functions
+        that wired Boot. The new main is shorter and only wires the
+        non-MCP boot path.
+
+      MODIFY studio/go.mod:
+        Remove the `require github.com/modelcontextprotocol/go-sdk v1.6.0`
+        line from the direct-require block. Run `go mod tidy` after
+        the deletion to clean the indirect-require block — the SDK's
+        transitive dependencies (github.com/google/jsonschema-go,
+        github.com/segmentio/asm, github.com/yosida95/uritemplate/v3,
+        golang.org/x/oauth2) are removed automatically.
+
+      MODIFY studio/go.sum:
+        Run `go mod tidy` to delete the v1.6.0 SDK entries and the
+        indirect-dependency entries listed above. A second `go mod tidy`
+        after the retraction is a no-op (verifiable as the final test
+        assertion).
+
+      ============================================================
+      POST-DELETION VERIFICATION (becomes testcase assertions, not
+      buildfile operations — see testcases.yaml)
+      ============================================================
+
+      The infrastructure-fragment Invariants seed these testcases:
+        - `find studio/internal/mcpclient/ -type f` returns "no such directory"
+        - `grep -rn 'FigmaMCPURL\|FigmaToken\|figma_mcp_url\|figma_token\|STUDIO_FIGMA_TOKEN' studio/internal/config/`
+          returns zero matches
+        - `grep -n 'mcpclient\|mcp.figma' studio/cmd/parlay-studio/main.go studio/internal/server/boot.go studio/internal/server/server.go`
+          returns zero matches
+        - `grep 'modelcontextprotocol/go-sdk' studio/go.mod` returns no match
+        - `find studio/docs/ -name 'figma-mcp-setup.md'` returns no match
+        - `CGO_ENABLED=0 go build ./...` from studio/ passes
+        - `CGO_ENABLED=0 go test ./...` from studio/ passes
+        - `git grep -nE 'mcp\.figma\.com|modelcontextprotocol/go-sdk' -- studio/internal/ studio/cmd/ studio/go.mod studio/go.sum studio/docs/`
+          returns zero matches
+        - A second `go mod tidy` after the retraction is a no-op
+    introduces: []
+    caching: none
+    backward-compatible: no  # Config struct loses two fields; loader signature unchanged but behavior changed; BootDeps loses MCP fields; ServerDeps loses MCP field; main loses mcpclient wiring; one Go module dependency disappears
+
+plan:
+  modifies:
+    - path: internal/config/project_root.go
+      sources:
+        - cross-cutting/host-agent-mediation-invariants
+    - path: internal/config/config.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/config/config_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/config/loader.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/config/loader_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/server/boot.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/server/boot_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/server/server.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: cmd/parlay-studio/main.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: go.mod
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: go.sum
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+  deletes:
+    - path: internal/mcpclient/client.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/tools.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/probe.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/errors.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/transport.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/boundary_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/probe_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/tools_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/client_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/mcpclient/integration_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/config/figma.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: internal/config/figma_test.go
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+    - path: docs/figma-mcp-setup.md
+      sources:
+        - cross-cutting/retract-studio-direct-mcp-source-tree
+  targets:
+    application:
+      modifies:
+        - path: internal/config/project_root.go
+          sources:
+            - cross-cutting/host-agent-mediation-invariants
+        - path: internal/config/config.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/config/config_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/config/loader.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/config/loader_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/server/boot.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/server/boot_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/server/server.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: cmd/parlay-studio/main.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: go.mod
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: go.sum
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+      deletes:
+        - path: internal/mcpclient/client.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/tools.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/probe.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/errors.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/transport.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/boundary_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/probe_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/tools_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/client_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/mcpclient/integration_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/config/figma.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: internal/config/figma_test.go
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+        - path: docs/figma-mcp-setup.md
+          sources:
+            - cross-cutting/retract-studio-direct-mcp-source-tree
+
+source-signatures:
+  intents: "sha256:92d5cb96940d69bee5809c301f8a5e203605de5b8fa09997bbd3a9abf7f096ca"
+  dialogs: "sha256:9a78dc784cb141bf823d8d989f4d3107288d8785d0c3c48297f96940bb643fbe"
+  infrastructure: "sha256:458577118c4ff50afdfd72c5deddcb0604c4ed42c1136d19c53daa5e5dd585fb"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"
