@@ -1,0 +1,538 @@
+feature: studio-foundation/web-server-harness
+adapter-set: parlay-studio
+
+# Infrastructure-only feature: no surface.md, no domain operations.
+# All emissions are cross-cutting entries targeting the `application` slot
+# (the Go backend). Mixed shape — three of the four entries modify existing
+# files alongside creating new ones (two-kinded), so the plan combines
+# plan.modifies (existing files) and plan.creates (new files).
+#
+# Existing files this feature touches (paths relative to the resolved studio
+# root — the buildfile validator joins each plan-path against
+# /workspace/parlay-dev/studio):
+#   cmd/parlay-studio/main.go     — currently a "not yet implemented" stub
+#   internal/mcpclient/client.go  — currently has a stub New() returning &Client{}
+#   internal/mcpclient/tools.go   — currently has stub dispatch() and callTyped()
+#
+# No presentation-side files are touched.
+
+cross-cutting:
+  - id: studio-binary-boot-and-shutdown
+    source: "@studio-foundation/web-server-harness/studio-binary-startup-sequence-and-lifecycle"
+    target-files:
+      - cmd/parlay-studio/main.go
+    target-creates:
+      - internal/server/boot.go
+      - internal/server/boot_test.go
+    transform: |
+      Replace the stub at studio/cmd/parlay-studio/main.go with the real
+      entry point that executes the 12-step boot sequence in fixed order:
+
+        (1)  parse command-line flags
+        (2)  resolve the parlay project root
+        (3)  load and log the merged configuration with secrets redacted
+        (4)  probe Figma's MCP server (hard gate)
+        (5)  construct the authenticated MCP client
+        (6)  build the chi router with mounted tool route groups
+        (7)  start the HTTP server on the resolved port
+        (8)  log the bound URL
+        (9)  open the operator's browser if OpenBrowser=true
+        (10) install SIGINT/SIGTERM handlers
+        (11) launch the idle-timeout goroutine if IdleTimeout > 0
+        (12) block on the shutdown channel
+
+      Each step's failure terminates the process with a non-zero exit code
+      and a structured log line naming the failing step plus the upstream
+      stable code (e.g. studio-config-figma-mcp-url-missing,
+      figma-mcp-endpoint-unsupported, studio-config-server-port-conflict).
+
+      Step 4 (MCP probe) is the hard gate: probe failure terminates boot
+      before any port is bound, any browser is opened, or any signal
+      handler is installed. Steps 7-11 are sequenced so an external
+      observer never sees Studio in a partial-boot state when an
+      earlier step fails.
+
+      The orchestration helper lives in studio/internal/server/boot.go —
+      it exposes a single Boot(ctx, deps) function that main.go calls.
+      Splitting the orchestration out of main keeps main.go small and
+      makes the boot sequence unit-testable via injected fakes
+      (config.Loader, mcpclient.Prober, http.Server.ListenAndServe, etc.).
+
+      The HTTP server binds to 127.0.0.1 only — never 0.0.0.0 or any
+      external interface. The loopback bind is the trust boundary that
+      lets /api/shutdown skip authentication.
+
+      Graceful shutdown collapses three trigger sources (SIGINT/SIGTERM,
+      idle-timeout firing, /api/shutdown) into a single shutdown channel.
+      The shutdown sequence stops accepting new HTTP connections, drains
+      in-flight requests within a hard-coded 5-second deadline (handlers
+      exceeding the deadline are aborted by http.Server.Shutdown), closes
+      the MCP client session, emits a single INFO log line naming the
+      shutdown reason (signal: <name> / idle: no requests for <duration>
+      / explicit: /api/shutdown), and exits zero. Non-zero exits are
+      reserved for boot-step failures and panics that escape the
+      recovery middleware.
+    introduces:
+      - "package main entry: func main() runs Boot(context.Background(), Deps{...})"
+      - "package studio/internal/server: func Boot(ctx context.Context, deps BootDeps) error"
+      - "type BootDeps struct — injection seams for config.Loader, mcpclient.Prober, http.Server, signal.Notify, browser.Open"
+      - "type ShutdownTrigger enum: TriggerSignal, TriggerIdle, TriggerExplicit"
+      - "internal helper: bind127OnlyListener — net.Listen('tcp', '127.0.0.1:<port>') wrapper that rejects non-loopback host/port pairs"
+      - "internal helper: gracefulShutdown(ctx, srv, mcp, reason, deadline=5s) — runs the unified drain sequence"
+      - "structured log shape for boot-step failure: {level: error, step: <name>, code: <upstream-stable-code>, exit: <code>}"
+      - "structured log shape for shutdown: {level: info, shutdown_reason: <reason-string>}"
+    caching: none
+    backward-compatible: yes
+
+  - id: http-server-harness
+    source: "@studio-foundation/web-server-harness/http-server-harness-chi-router-middleware-error-envelopes"
+    target-files:
+      - internal/server/server.go
+      - internal/server/middleware.go
+      - internal/server/envelopes.go
+      - internal/server/registration.go
+      - internal/server/health.go
+      - internal/server/server_test.go
+      - internal/server/middleware_test.go
+      - internal/server/envelopes_test.go
+      - internal/server/registration_test.go
+    transform: |
+      Introduce the HTTP harness package at studio/internal/server. The
+      harness owns the chi router, the middleware stack, the two
+      universal endpoints, the tool-registration interface, and the SPA
+      fallback for the embedded UI bundle.
+
+      Exposed surface:
+
+        func New(cfg config.Config, mcp *mcpclient.Client, regs []ToolRegistration) (*Server, error)
+
+      The constructor builds the chi router with the middleware stack
+      installed in fixed order:
+
+        1. middleware.RequestID         — assigns X-Request-ID per request
+        2. PanicRecovery                — recovers panics, logs detail, returns server-error envelope
+        3. IdleTimeoutReset             — applied via router.Group only on /api/* paths, with a route-level
+                                          exclusion for /api/health (health checks do not advance the timer)
+        4. middleware.Logger            — structured request log: request_id, method, path, status, duration
+        5. ErrorEnvelopeTranslate       — wraps handler errors using errors.Is/errors.As against the closed
+                                          vocabulary (validation-failed, not-found, conflict, server-error)
+                                          and emits the adapter-defined JSON envelope per kind
+
+      Universal endpoints owned by the harness itself:
+
+        GET  /api/health    — returns 200 with {status: "ok", request_id: <id>}; does NOT advance the idle timer
+        POST /api/shutdown  — triggers the explicit-close shutdown trigger (delegated to BootDeps.ShutdownChan)
+
+      Each Studio tool registers via the ToolRegistration interface:
+
+        type ToolRegistration interface {
+            Name() string                  // unique tool subsystem name (e.g. "domain-model", "design-loop")
+            Mount(r chi.Router)            // attaches the tool's handlers under the tool's prefix
+        }
+
+      The harness package does NOT import any tool package directly.
+      Tools are passed in as []ToolRegistration values; each tool's
+      package exports a value that satisfies the interface. The harness
+      invokes each registration's Mount during construction.
+
+      A second registration whose Name() collides with a prior one is
+      rejected at New() time with the stable code
+      studio-tool-name-collision.
+
+      The root path / serves the embedded UI bundle. SPA fallback:
+      paths not matched by any /api/* route serve the UI's index.html.
+      When the bundle is not yet embedded (the current Phase 1 state),
+      the root path returns 503 with code studio-ui-bundle-not-built
+      and a body explaining the UI is not packaged.
+
+      Error-envelope translation per the adapter's error-to-status
+      mapping convention:
+
+        validation-failed -> 400 {code, fields: [...]}
+        not-found         -> 404 {code, target}
+        conflict          -> 409 {code, current_etag, attempted_etag}
+        server-error      -> 500 {code, request_id}
+
+      Unmapped errors fall through to server-error; the internal error
+      is logged with request_id but never returned in the response body.
+
+      Every HTTP response carries X-Request-ID; the header value matches
+      the request_id field in the request's structured log line.
+    introduces:
+      - "type Server struct — wraps *http.Server and the chi router"
+      - "func New(cfg config.Config, mcp *mcpclient.Client, regs []ToolRegistration) (*Server, error)"
+      - "type ToolRegistration interface { Name() string; Mount(r chi.Router) }"
+      - "middleware: RequestID, PanicRecovery, IdleTimeoutReset, Logger, ErrorEnvelopeTranslate"
+      - "universal handlers: /api/health (liveness), /api/shutdown (explicit-close trigger)"
+      - "stable codes: studio-tool-name-collision, studio-ui-bundle-not-built"
+      - "envelope shapes per adapter error-to-status mapping: validation-failed/400, not-found/404, conflict/409, server-error/500"
+      - "SPA fallback handler: serves UI index.html when bundle is embedded; returns 503 studio-ui-bundle-not-built when bundle is absent"
+    caching: none
+    backward-compatible: yes
+
+  - id: idle-timeout-activity-tracking
+    source: "@studio-foundation/web-server-harness/idle-timeout-activity-tracking"
+    target-files:
+      - internal/server/idle.go
+      - internal/server/idle_test.go
+    transform: |
+      Introduce the idle-timeout subsystem inside studio/internal/server.
+      Studio defines "idle" as: no HTTP request received on a path
+      matching /api/* and NOT /api/health for the configured
+      IdleTimeout duration. The harness does NOT track keystrokes,
+      on-disk mutations, or any other signal.
+
+      Components:
+
+        type idleTracker struct {
+            mu        sync.Mutex
+            lastSeen  time.Time
+            timeout   time.Duration
+            checkEvery time.Duration   // hard-coded 10s in production; overridable via test hook
+        }
+
+        func newIdleTracker(timeout time.Duration) *idleTracker
+        func (t *idleTracker) Touch()                                    // called by IdleTimeoutReset middleware
+        func (t *idleTracker) Run(ctx context.Context, fire chan<- string)  // goroutine entry point
+
+      The IdleTimeoutReset middleware from the HTTP harness fragment
+      calls Touch() on every qualifying request. Touch and the goroutine
+      both acquire the tracker's mutex so the goroutine cannot observe
+      a torn read of lastSeen.
+
+      The goroutine wakes every checkEvery (10 seconds in production)
+      and computes (now - lastSeen); when the elapsed time exceeds
+      timeout, the goroutine sends the formatted reason string onto the
+      fire channel and exits.
+
+      Reason string format (exact): "idle: no requests for <duration>"
+      where <duration> is the resolved timeout formatted via Go's
+      time.Duration.String() format (e.g. "30m0s", "100ms").
+
+      Disabled-sentinel handling: when the configured IdleTimeout is
+      zero, Boot does NOT launch the goroutine — newIdleTracker is
+      not invoked, the channel is never fed from this source, and no
+      idle shutdown can ever fire for that invocation.
+
+      First-check delay: the goroutine's first wake-tick fires at least
+      one full timeout window after boot. This prevents false-trigger
+      on a freshly-started harness with zero requests so far. The
+      implementation sets tracker.lastSeen = time.Now() at construction.
+
+      Test-only override: package-internal var newTicker = time.NewTicker
+      so tests can swap the ticker via a build-only seam. The override
+      is NOT exposed via studio-config — production code never touches it.
+    introduces:
+      - "type idleTracker struct (package-internal)"
+      - "func newIdleTracker(timeout time.Duration) *idleTracker"
+      - "func (*idleTracker) Touch() — called by IdleTimeoutReset middleware"
+      - "func (*idleTracker) Run(ctx context.Context, fire chan<- string) — goroutine entry"
+      - "package-internal var newTicker = time.NewTicker — test-only override seam"
+      - "reason-string format: 'idle: no requests for <go-duration-string>'"
+    caching: per-process
+    backward-compatible: yes
+
+  - id: figma-mcp-phase-0-wiring
+    source: "@studio-foundation/web-server-harness/figma-mcp-phase-0-wiring"
+    target-files:
+      - internal/mcpclient/client.go
+      - internal/mcpclient/tools.go
+    target-creates:
+      - internal/mcpclient/transport.go
+      - internal/mcpclient/client_test.go
+      - internal/mcpclient/integration_test.go
+    transform: |
+      Replace the four stubbed pieces of the figma-mcp-client wrapper
+      with real implementations against the v1.6.0 MCP Go SDK.
+
+      MODIFY studio/internal/mcpclient/client.go:
+
+        1. Extend the Client struct to hold the persistent session and
+           the bearer token (private fields only — the token is never
+           exposed via an accessor):
+
+             type Client struct {
+                 sdk     *mcp.Client
+                 session *mcp.ClientSession
+                 token   string  // private — never logged, never exposed
+             }
+
+        2. Change New's signature from
+             New(ctx context.Context, endpoint string) (*Client, error)
+           to
+             New(ctx context.Context, endpoint, token string) (*Client, error)
+           — the token is the second positional argument so callers cannot
+           accidentally pass it as the endpoint. The validation rule still
+           rejects an empty endpoint; an empty token is also rejected
+           (figma-mcp-token-missing).
+
+        3. Implement New as the documented three-step sequence:
+
+             impl := &mcp.Implementation{Name: "parlay-studio", Version: "<build-version>"}
+             sdkClient := mcp.NewClient(impl, nil)
+             httpClient := &http.Client{Transport: &bearerTokenRoundTripper{token: token, base: http.DefaultTransport}}
+             transport := &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
+             session, err := sdkClient.Connect(ctx, transport, nil)
+             if err != nil { return nil, fmt.Errorf("%w: %v", ErrEndpointUnreachable, err) }
+             return &Client{sdk: sdkClient, session: session, token: token}, nil
+
+        4. Add a Close(ctx) method that closes the session; called by
+           the graceful-shutdown path in cross-cutting/studio-binary-boot-and-shutdown.
+
+      CREATE studio/internal/mcpclient/transport.go:
+
+        Defines the bearerTokenRoundTripper — the SOLE mechanism by
+        which the auth token reaches the network:
+
+          type bearerTokenRoundTripper struct {
+              token string
+              base  http.RoundTripper
+          }
+
+          func (rt *bearerTokenRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+              req = req.Clone(req.Context())
+              req.Header.Set("Authorization", "Bearer "+rt.token)
+              return rt.base.RoundTrip(req)
+          }
+
+        The token is never written into the mcp.Implementation struct,
+        the mcp.ClientOptions, or any structured-log field. RoundTrip
+        clones the request before mutating headers (the http.Client
+        contract).
+
+      MODIFY studio/internal/mcpclient/tools.go (dispatch and callTyped):
+
+        Replace the stub dispatch with the real SDK call:
+
+          func (c *Client) dispatch(ctx context.Context, toolName string, in any) (any, error) {
+              if _, ok := supportedTools[toolName]; !ok {
+                  return nil, fmt.Errorf("%w: %q", ErrToolUnsupported, toolName)
+              }
+              if c.session == nil {
+                  return nil, fmt.Errorf("%w: client not connected", ErrEndpointUnreachable)
+              }
+              result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+                  Name:      toolName,
+                  Arguments: in,
+              })
+              if err != nil {
+                  return nil, fmt.Errorf("%w: %v", ErrEndpointUnreachable, err)
+              }
+              if result.IsError {
+                  return nil, fmt.Errorf("%w: tool=%s content=%s", ErrToolCallFailed, toolName, contentText(result.Content))
+              }
+              return result.StructuredContent, nil
+          }
+
+        Replace the stub callTyped with real JSON round-trip:
+
+          func callTyped[Out any](ctx context.Context, c *Client, toolName string, in any) (*Out, error) {
+              raw, err := c.dispatch(ctx, toolName, in)
+              if err != nil { return nil, err }
+              buf, err := json.Marshal(raw)
+              if err != nil {
+                  return nil, fmt.Errorf("%w: tool=%s marshal=%v", ErrResponseMalformed, toolName, err)
+              }
+              var out Out
+              if err := json.Unmarshal(buf, &out); err != nil {
+                  return nil, fmt.Errorf("%w: tool=%s unmarshal=%v", ErrResponseMalformed, toolName, err)
+              }
+              return &out, nil
+          }
+
+        The dispatch return type changes from map[string]any to any
+        (the SDK's StructuredContent is documented as any); the
+        signature change is invisible to the exported wrappers because
+        they all go through callTyped.
+
+      The per-tool input/output structs already defined in tools.go
+      stay as-is for v1 — their JSON field tags are NOT yet validated
+      against Figma's published schemas; schema drift is detected at
+      integration-test time. Codegen from Figma's published schemas
+      is reserved for a later feature.
+
+      CREATE studio/internal/mcpclient/client_test.go:
+
+        Unit tests using httptest.Server returning canned MCP JSON
+        responses. Coverage:
+          - New() with empty endpoint returns figma-mcp-token-missing... wait, empty endpoint
+          - New() with empty token returns figma-mcp-token-missing
+          - New() against a 200 OK fake server returns a *Client whose session is non-nil
+          - Whoami() returns a parsed WhoamiOutput matching the canned response
+          - Authorization: Bearer <token> appears on every outbound request the fake server receives
+          - dispatch("get_design_context") returns figma-mcp-tool-unsupported
+          - dispatch surfaces MCP-level IsError as figma-mcp-tool-call-failed
+          - dispatch surfaces transport failure as figma-mcp-endpoint-unreachable
+          - callTyped surfaces malformed StructuredContent as figma-mcp-response-malformed
+          - Probe() against the fake server returning a Dev-seat whoami returns a valid ProbeResult
+
+      CREATE studio/internal/mcpclient/integration_test.go:
+
+        Build-tagged with //go:build integration. Skipped by default.
+        Coverage:
+          - Probe() against the real Figma remote MCP server returns a
+            ProbeResult with the env-supplied endpoint, email, and a
+            Dev or Full seat
+          - UseFigma round-trip on a fixture file
+          - GetMetadata round-trip on the same fixture
+          - GetCodeConnectSuggestions rejection by name is enforced
+            regardless of SDK acceptance (covered by the unit test)
+
+        Credentials supplied via environment variables (PARLAY_STUDIO_FIGMA_MCP_URL,
+        PARLAY_STUDIO_FIGMA_MCP_TOKEN); test skips if either is unset.
+
+      Three new stable codes are added to errors.go (see existing
+      figma-mcp-startup-probe cross-cutting in figma-mcp-client):
+        - figma-mcp-token-missing
+        - figma-mcp-tool-call-failed
+        - figma-mcp-response-malformed
+
+      These extend the package's existing sentinel set; errors.go is
+      authored by the figma-mcp-client feature (cross-cutting/
+      figma-mcp-startup-probe) — the wiring fragment modifies that
+      file as part of the studio-binary-boot-and-shutdown plan to
+      register the new sentinels.
+
+      The graceful-shutdown handler from boot.go calls (*Client).Close(ctx)
+      to close the persistent session during shutdown — completing the
+      session-lifetime invariant.
+    introduces:
+      - "field Client.session *mcp.ClientSession — persistent session for the process lifetime"
+      - "field Client.token string — private; never logged, never exposed"
+      - "func New(ctx, endpoint, token string) (*Client, error) — signature change adds token"
+      - "func (*Client) Close(ctx context.Context) error — closes the persistent session"
+      - "type bearerTokenRoundTripper struct (package-internal) — sole network-side auth injection point"
+      - "real dispatch impl: session.CallTool routing with IsError check and StructuredContent return"
+      - "real callTyped impl: json.Marshal + json.Unmarshal round-trip through StructuredContent"
+      - "stable codes: figma-mcp-token-missing, figma-mcp-tool-call-failed, figma-mcp-response-malformed"
+      - "integration test suite under //go:build integration — skipped by default; env-driven credentials"
+    caching: none
+    backward-compatible: no  # Client.New signature change; existing callers pass endpoint only
+
+plan:
+  modifies:
+    - path: cmd/parlay-studio/main.go
+      sources:
+        - cross-cutting/studio-binary-boot-and-shutdown
+    - path: internal/mcpclient/client.go
+      sources:
+        - cross-cutting/figma-mcp-phase-0-wiring
+    - path: internal/mcpclient/tools.go
+      sources:
+        - cross-cutting/figma-mcp-phase-0-wiring
+  creates:
+    - path: internal/server/boot.go
+      sources:
+        - cross-cutting/studio-binary-boot-and-shutdown
+    - path: internal/server/boot_test.go
+      sources:
+        - cross-cutting/studio-binary-boot-and-shutdown
+    - path: internal/server/server.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/middleware.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/envelopes.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/registration.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/health.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/server_test.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/middleware_test.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/envelopes_test.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/registration_test.go
+      sources:
+        - cross-cutting/http-server-harness
+    - path: internal/server/idle.go
+      sources:
+        - cross-cutting/idle-timeout-activity-tracking
+    - path: internal/server/idle_test.go
+      sources:
+        - cross-cutting/idle-timeout-activity-tracking
+    - path: internal/mcpclient/transport.go
+      sources:
+        - cross-cutting/figma-mcp-phase-0-wiring
+    - path: internal/mcpclient/client_test.go
+      sources:
+        - cross-cutting/figma-mcp-phase-0-wiring
+    - path: internal/mcpclient/integration_test.go
+      sources:
+        - cross-cutting/figma-mcp-phase-0-wiring
+  targets:
+    application:
+      modifies:
+        - path: cmd/parlay-studio/main.go
+          sources:
+            - cross-cutting/studio-binary-boot-and-shutdown
+        - path: internal/mcpclient/client.go
+          sources:
+            - cross-cutting/figma-mcp-phase-0-wiring
+        - path: internal/mcpclient/tools.go
+          sources:
+            - cross-cutting/figma-mcp-phase-0-wiring
+      creates:
+        - path: internal/server/boot.go
+          sources:
+            - cross-cutting/studio-binary-boot-and-shutdown
+        - path: internal/server/boot_test.go
+          sources:
+            - cross-cutting/studio-binary-boot-and-shutdown
+        - path: internal/server/server.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/middleware.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/envelopes.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/registration.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/health.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/server_test.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/middleware_test.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/envelopes_test.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/registration_test.go
+          sources:
+            - cross-cutting/http-server-harness
+        - path: internal/server/idle.go
+          sources:
+            - cross-cutting/idle-timeout-activity-tracking
+        - path: internal/server/idle_test.go
+          sources:
+            - cross-cutting/idle-timeout-activity-tracking
+        - path: internal/mcpclient/transport.go
+          sources:
+            - cross-cutting/figma-mcp-phase-0-wiring
+        - path: internal/mcpclient/client_test.go
+          sources:
+            - cross-cutting/figma-mcp-phase-0-wiring
+        - path: internal/mcpclient/integration_test.go
+          sources:
+            - cross-cutting/figma-mcp-phase-0-wiring
+
+source-signatures:
+  intents: "sha256:a41608d7fd5889cca8cc36c3d488dd5eb455b7d84d958f840dad2f69a4899830"
+  dialogs: "sha256:1f38bd0671a7f0d8e97ccd8665a23d9fc16077060498d63a38ed86057828f307"
+  infrastructure: "sha256:e3c6d71c64c1cc42ea5d022c17bcad9d683cf5c0aa99f455ecc9aa8ec09d4c38"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"

@@ -1,0 +1,692 @@
+feature: studio-foundation/web-server-harness
+framework: "Go testing (standard library, table-driven)"
+
+# Infrastructure-only feature: no UI components. Each suite below validates
+# one cross-cutting entry from buildfile.yaml by mapping its Invariants:
+# bullets into testable cases. Verification primitives used: file-exists,
+# file-content, error, state, count.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio) so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. Neither kind fits a cross-cutting infrastructure suite, so these
+# suites are emitted in the v1 shape; the v2 validator treats them as
+# kind: presentation with a testcases-source-refs-missing-legacy warning,
+# which is acceptable for an infrastructure-only feature.
+
+suites:
+  - name: studio-binary-boot-and-shutdown
+    component: cross-cutting/studio-binary-boot-and-shutdown
+    fixture: boot-sequence
+    intent: "@studio-foundation/web-server-harness/studio-binary-startup-sequence-and-lifecycle"
+    cases:
+      - name: boot orchestration source files exist
+        description: The boot helper and its tests live in studio/internal/server alongside the new harness package.
+        steps:
+          - verify: file-exists
+            target: studio/internal/server/boot.go
+          - verify: file-exists
+            target: studio/internal/server/boot_test.go
+          - verify: file-exists
+            target: studio/cmd/parlay-studio/main.go
+
+      - name: main.go is no longer the not-yet-implemented stub
+        description: The entry point delegates to server.Boot rather than the placeholder os.Exit(1).
+        steps:
+          - verify: file-content
+            target: studio/cmd/parlay-studio/main.go
+            expected:
+              contains: "server.Boot"
+              does-not-contain: "parlay-studio: not yet implemented"
+
+      - name: config-load failure terminates non-zero before any port is bound
+        description: A studio-config-figma-mcp-url-missing failure at boot step 3 terminates the process with the upstream stable code logged.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: config-load-failure }
+          - verify: error
+            target: Boot
+            expected: studio-config-figma-mcp-url-missing
+          - verify: state
+            target: BootResult.PortBound
+            expected: false
+          - verify: state
+            target: BootResult.BrowserOpened
+            expected: false
+
+      - name: mcp-probe failure is a hard gate
+        description: A figma-mcp-endpoint-unsupported failure at boot step 4 terminates the process before the chi router is built, before any port is bound, and before any signal handler is installed.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: probe-unsupported-endpoint }
+          - verify: error
+            target: Boot
+            expected: figma-mcp-endpoint-unsupported
+          - verify: state
+            target: BootResult.PortBound
+            expected: false
+          - verify: state
+            target: BootResult.BrowserOpened
+            expected: false
+          - verify: state
+            target: BootResult.SignalHandlersInstalled
+            expected: false
+          - verify: state
+            target: BootResult.ChiRouterConstructed
+            expected: false
+
+      - name: SIGTERM triggers graceful shutdown with the expected reason
+        description: A successful boot followed by a SIGTERM signal exits zero and logs the signal shutdown reason.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-then-sigterm }
+          - verify: state
+            target: BootResult.ExitCode
+            expected: 0
+          - verify: state
+            target: BootResult.ShutdownReason
+            expected: "signal: SIGTERM"
+          - verify: state
+            target: BootResult.HTTPServerListening
+            expected: false
+
+      - name: idle-timeout firing triggers graceful shutdown with idle reason
+        description: A successful boot followed by the idle-timeout trigger via the test hook exits zero and logs the idle shutdown reason.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-then-idle-trigger, idle-timeout: 30m0s }
+          - verify: state
+            target: BootResult.ExitCode
+            expected: 0
+          - verify: state
+            target: BootResult.ShutdownReason
+            expected: "idle: no requests for 30m0s"
+
+      - name: explicit /api/shutdown POST triggers graceful shutdown
+        description: A successful boot followed by POST /api/shutdown exits zero and logs the explicit shutdown reason.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-then-explicit-shutdown }
+          - verify: state
+            target: BootResult.ExitCode
+            expected: 0
+          - verify: state
+            target: BootResult.ShutdownReason
+            expected: "explicit: /api/shutdown"
+
+      - name: HTTP server binds to loopback only
+        description: A non-loopback dial against the bound port is refused at the TCP layer.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-then-non-loopback-dial }
+          - verify: state
+            target: BootResult.NonLoopbackDial.ConnectionRefused
+            expected: true
+          - verify: state
+            target: BootResult.BindAddress
+            expected: "127.0.0.1"
+
+      - name: graceful-shutdown drain deadline is hard-coded at 5 seconds
+        description: A handler exceeding the drain deadline is aborted by http.Server.Shutdown; the process still exits zero.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-with-slow-handler-then-sigterm, slow-handler-duration: 10s }
+          - verify: state
+            target: BootResult.ExitCode
+            expected: 0
+          - verify: state
+            target: BootResult.AbortedHandlerCount
+            expected: 1
+          - verify: file-content
+            target: studio/internal/server/boot.go
+            expected:
+              matches-pattern: "Shutdown.*5.*time\\.Second"
+
+      - name: panic in a handler does not exit non-zero on graceful shutdown
+        description: A panic recovered by the harness middleware does not propagate to process exit; non-zero exits are reserved for boot-step failures and unrecovered panics.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: successful-boot-recovered-panic-then-sigterm }
+          - verify: state
+            target: BootResult.ExitCode
+            expected: 0
+
+  - name: http-server-harness
+    component: cross-cutting/http-server-harness
+    fixture: harness-with-fake-tool
+    intent: "@studio-foundation/web-server-harness/http-server-harness-chi-router-middleware-error-envelopes"
+    cases:
+      - name: harness source files exist
+        description: The HTTP harness package files are present at the canonical paths.
+        steps:
+          - verify: file-exists
+            target: studio/internal/server/server.go
+          - verify: file-exists
+            target: studio/internal/server/middleware.go
+          - verify: file-exists
+            target: studio/internal/server/envelopes.go
+          - verify: file-exists
+            target: studio/internal/server/registration.go
+          - verify: file-exists
+            target: studio/internal/server/health.go
+
+      - name: middleware stack runs in the documented five-stage order
+        description: The chi router installs request-ID, panic recovery, idle-timeout reset, logging, error-envelope translation in that order.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/server.go
+            expected:
+              contains-all:
+                - "middleware.RequestID"
+                - "PanicRecovery"
+                - "IdleTimeoutReset"
+                - "middleware.Logger"
+                - "ErrorEnvelopeTranslate"
+              describes: "middleware.RequestID precedes PanicRecovery precedes IdleTimeoutReset precedes middleware.Logger precedes ErrorEnvelopeTranslate"
+
+      - name: tool handler receives a request whose context carries a request ID
+        description: A handler mounted via the registration interface sees a context-bound X-Request-ID value.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/ping" }
+          - verify: state
+            target: HandlerObserved.RequestIDPresent
+            expected: true
+          - verify: state
+            target: HandlerObserved.RequestIDMatchesResponseHeader
+            expected: true
+
+      - name: panic in a handler returns 500 with server-error envelope and request_id
+        description: "PanicRecovery middleware catches the panic, the response is 500 with {code, request_id}, and the panic detail appears in the log but not the response body."
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/panic" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 500
+          - verify: state
+            target: Response.Body.code
+            expected: "server-error"
+          - verify: state
+            target: Response.Body.request_id
+            expected: "*present*"
+          - verify: state
+            target: Response.Body.PanicDetailLeak
+            expected: false
+          - verify: state
+            target: LogLine.PanicDetailPresent
+            expected: true
+
+      - name: not-found sentinel maps to 404 with envelope and request-ID header
+        description: "A handler returning a not-found sentinel produces 404 {code: not-found, target} and the X-Request-ID header matches the logged request ID."
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/missing" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 404
+          - verify: state
+            target: Response.Body.code
+            expected: "not-found"
+          - verify: state
+            target: Response.Headers.X-Request-ID
+            expected: "*matches-log*"
+
+      - name: validation-failed sentinel maps to 400 with {code, fields}
+        description: "A handler returning a validation-failed sentinel produces 400 {code: validation-failed, fields: [...]} per the adapter envelope shape."
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/invalid" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 400
+          - verify: state
+            target: Response.Body.code
+            expected: "validation-failed"
+          - verify: state
+            target: Response.Body.fields
+            expected: "*non-empty-array*"
+
+      - name: conflict sentinel maps to 409 with etag envelope
+        description: "A handler returning a conflict sentinel produces 409 {code: conflict, current_etag, attempted_etag} per the adapter envelope shape."
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/etag-mismatch" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 409
+          - verify: state
+            target: Response.Body.code
+            expected: "conflict"
+          - verify: state
+            target: Response.Body.current_etag
+            expected: "*present*"
+          - verify: state
+            target: Response.Body.attempted_etag
+            expected: "*present*"
+
+      - name: unmapped error falls through to server-error without leaking detail
+        description: "A handler returning an unmapped error produces 500 {code: server-error, request_id} and the internal error message stays in the log only."
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/example-tool/unmapped" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 500
+          - verify: state
+            target: Response.Body.code
+            expected: "server-error"
+          - verify: state
+            target: Response.Body.InternalDetailLeak
+            expected: false
+          - verify: state
+            target: LogLine.InternalDetailPresent
+            expected: true
+
+      - name: idle-timeout-reset middleware fires only on /api/* and not on /api/health
+        description: Requests under /api/* (excluding /api/health) advance the idle tracker; /api/health requests do not.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/domain-model/test" }
+          - verify: state
+            target: IdleTracker.TouchedCount
+            expected: 1
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/domain-model/test" }
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/domain-model/test" }
+          - verify: state
+            target: IdleTracker.TouchedCount
+            expected: 3
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/health" }
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/health" }
+          - verify: state
+            target: IdleTracker.TouchedCount
+            expected: 3
+
+      - name: /api/health returns 200 with minimal liveness envelope
+        description: The universal health endpoint owned by the harness returns 200 and does not advance the idle timer.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/api/health" }
+          - verify: state
+            target: Response.StatusCode
+            expected: 200
+          - verify: state
+            target: Response.Body.status
+            expected: "ok"
+
+      - name: POST /api/shutdown triggers the graceful-shutdown path
+        description: An explicit-close POST against /api/shutdown drives the lifecycle intent's shutdown channel.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { method: POST, path: "/api/shutdown" }
+          - verify: state
+            target: ShutdownChannel.Triggered
+            expected: true
+          - verify: state
+            target: ShutdownChannel.Reason
+            expected: "explicit: /api/shutdown"
+
+      - name: SPA fallback returns 503 with studio-ui-bundle-not-built when bundle is absent
+        description: While the UI bundle is not yet embedded, the root path returns a 503 envelope with the stable code.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/some/unknown/path", ui-bundle-embedded: false }
+          - verify: state
+            target: Response.StatusCode
+            expected: 503
+          - verify: state
+            target: Response.Body.code
+            expected: "studio-ui-bundle-not-built"
+
+      - name: SPA fallback serves index.html when bundle is embedded
+        description: When the UI bundle is embedded, unmatched non-/api paths serve the UI's index.html so client-side routing works.
+        steps:
+          - action: invoke
+            target: harness-request
+            value: { path: "/some/unknown/path", ui-bundle-embedded: true }
+          - verify: state
+            target: Response.StatusCode
+            expected: 200
+          - verify: state
+            target: Response.Body.ContentMatches
+            expected: "ui-bundle-index.html"
+
+      - name: second tool registration with the same name is rejected at construction time
+        description: New() with two ToolRegistration values whose Name() returns the same string fails with the stable code studio-tool-name-collision.
+        steps:
+          - action: invoke
+            target: server.New
+            value: { fixture: two-tools-same-name }
+          - verify: error
+            target: server.New
+            expected: studio-tool-name-collision
+
+      - name: harness package does not import any Studio tool package
+        description: server.go and its siblings do not reach back into studio/internal/domain or studio/internal/designloop — tools plug in via the registration interface.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/server.go
+            expected:
+              does-not-contain-pattern: "studio/internal/(domain|designloop|files)"
+
+  - name: idle-timeout-activity-tracking
+    component: cross-cutting/idle-timeout-activity-tracking
+    fixture: idle-tracker-with-fake-ticker
+    intent: "@studio-foundation/web-server-harness/idle-timeout-activity-tracking"
+    cases:
+      - name: idle subsystem source files exist
+        description: The tracker and its tests live in studio/internal/server.
+        steps:
+          - verify: file-exists
+            target: studio/internal/server/idle.go
+          - verify: file-exists
+            target: studio/internal/server/idle_test.go
+
+      - name: idle fires within one window when no requests arrive
+        description: With IdleTimeout=100ms and no /api/* requests, the idle shutdown trigger fires within 200ms with the expected reason string.
+        steps:
+          - action: invoke
+            target: idleTracker.Run
+            value: { idle-timeout: 100ms, fixture: no-requests }
+          - verify: state
+            target: ShutdownTrigger.Fired
+            expected: true
+          - verify: state
+            target: ShutdownTrigger.Reason
+            expected: "idle: no requests for 100ms"
+          - verify: state
+            target: ShutdownTrigger.ElapsedFromBoot
+            expected: "<= 200ms"
+
+      - name: a single qualifying request defers the idle trigger by one full window
+        description: One request to /api/domain-model/test at the 80ms mark prevents the idle trigger from firing for at least another 100ms.
+        steps:
+          - action: invoke
+            target: idleTracker.Run
+            value: { idle-timeout: 100ms, fixture: one-request-at-80ms }
+          - verify: state
+            target: ShutdownTrigger.FiredBefore
+            expected: ">= 180ms-from-boot"
+
+      - name: /api/health requests do not reset the idle timer
+        description: Repeated /api/health requests every 50ms do not prevent the idle shutdown trigger from firing.
+        steps:
+          - action: invoke
+            target: idleTracker.Run
+            value: { idle-timeout: 100ms, fixture: health-checks-every-50ms }
+          - verify: state
+            target: ShutdownTrigger.Fired
+            expected: true
+          - verify: state
+            target: ShutdownTrigger.Reason
+            expected: "idle: no requests for 100ms"
+
+      - name: IdleTimeout=0 skips the goroutine entirely
+        description: Boot does not launch the idle-check goroutine when IdleTimeout is zero, and no idle shutdown trigger can fire from this source.
+        steps:
+          - action: invoke
+            target: Boot
+            value: { fixture: idle-timeout-zero }
+          - verify: state
+            target: IdleTracker.GoroutineLaunched
+            expected: false
+          - verify: state
+            target: ShutdownTrigger.IdleSourceFired
+            expected: false
+
+      - name: reason string format is exactly the documented shape
+        description: 'The reason string format matches "idle: no requests for <go-duration-string>" verbatim.'
+        steps:
+          - verify: file-content
+            target: studio/internal/server/idle.go
+            expected:
+              matches-pattern: "\"idle: no requests for %s\""
+
+      - name: last-activity timestamp uses a synchronization primitive
+        description: Touch and the goroutine both acquire the tracker mutex (or use sync/atomic) so a torn read is impossible.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/idle.go
+            expected:
+              contains-any:
+                - "sync.Mutex"
+                - "sync.RWMutex"
+                - "atomic.Value"
+                - "atomic.Pointer"
+
+      - name: first idle-check fires at least one full window after boot
+        description: A freshly-started harness with zero requests does not trigger a false idle shutdown earlier than the configured window.
+        steps:
+          - action: invoke
+            target: idleTracker.Run
+            value: { idle-timeout: 100ms, fixture: fresh-start-zero-requests }
+          - verify: state
+            target: ShutdownTrigger.FiredAfter
+            expected: ">= 100ms-from-boot"
+
+      - name: 10-second wake interval is hard-coded and overridable only via the test hook
+        description: The production interval is 10 seconds, not configurable through studio-config, but tests can swap the ticker via newTicker.
+        steps:
+          - verify: file-content
+            target: studio/internal/server/idle.go
+            expected:
+              contains-all:
+                - "10 * time.Second"
+                - "var newTicker"
+              does-not-contain: "config.IdleCheckInterval"
+
+  - name: figma-mcp-phase-0-wiring
+    component: cross-cutting/figma-mcp-phase-0-wiring
+    fixture: fake-mcp-server
+    intent: "@studio-foundation/web-server-harness/figma-mcp-phase-0-wiring"
+    cases:
+      - name: mcpclient source files reflect Phase 0 wiring
+        description: The transport, the rewritten client, and the new tests are present at their canonical paths.
+        steps:
+          - verify: file-exists
+            target: studio/internal/mcpclient/transport.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/client_test.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/integration_test.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/client.go
+          - verify: file-exists
+            target: studio/internal/mcpclient/tools.go
+
+      - name: New constructs the SDK in three documented steps
+        description: New(ctx, endpoint, token) invokes mcp.NewClient, constructs a StreamableClientTransport, and calls sdkClient.Connect; the session is stored on Client.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/client.go
+            expected:
+              contains-all:
+                - "mcp.NewClient"
+                - "mcp.StreamableClientTransport"
+                - ".Connect(ctx"
+                - "session"
+
+      - name: New rejects an empty token with figma-mcp-token-missing
+        description: A New() call with an empty token returns the stable token-missing code.
+        steps:
+          - action: invoke
+            target: mcpclient.New
+            value: { endpoint: "https://mcp.figma.example/v1", token: "" }
+          - verify: error
+            target: mcpclient.New
+            expected: figma-mcp-token-missing
+
+      - name: New succeeds against a 200 OK fake MCP server and returns a non-nil session
+        description: A New() call against the fake server produces a *Client whose session field is initialized; subsequent Whoami() returns a parsed WhoamiOutput.
+        steps:
+          - action: invoke
+            target: mcpclient.New
+            value: { fixture: fake-server-ok }
+          - verify: state
+            target: Client.session
+            expected: "*non-nil*"
+          - action: invoke
+            target: Client.Whoami
+            value: { fixture: dev-seat }
+          - verify: state
+            target: WhoamiOutput.Email
+            expected: "maintainer@example.com"
+          - verify: state
+            target: WhoamiOutput.Plans[0].Seat
+            expected: "Dev"
+
+      - name: bearer token is injected on every outbound request via RoundTripper
+        description: The custom RoundTripper sets Authorization Bearer <token> on every request the SDK makes through the transport.
+        steps:
+          - action: invoke
+            target: mcpclient.New
+            value: { fixture: fake-server-ok, token: "test-token-abc" }
+          - verify: state
+            target: FakeServer.AuthorizationHeader
+            expected: "Bearer test-token-abc"
+          - action: invoke
+            target: Client.Whoami
+            value: { fixture: dev-seat }
+          - verify: state
+            target: FakeServer.LastRequest.Headers.Authorization
+            expected: "Bearer test-token-abc"
+          - verify: count
+            target: FakeServer.RequestsWithoutAuthHeader
+            expected: 0
+
+      - name: bearer token is the sole network-side injection point
+        description: The token never appears in the mcp.Implementation struct, the mcp.ClientOptions, or any logged field.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/transport.go
+            expected:
+              contains: "Authorization"
+              contains-any:
+                - "Bearer"
+          - verify: file-content
+            target: studio/internal/mcpclient/client.go
+            expected:
+              does-not-contain-pattern: "Implementation\\{[^}]*token"
+          - verify: file-content
+            target: studio/internal/mcpclient/client.go
+            expected:
+              does-not-contain-pattern: "log\\..*token"
+
+      - name: dispatch surfaces MCP-level IsError as figma-mcp-tool-call-failed
+        description: When the SDK returns a CallToolResult with IsError=true, dispatch wraps with figma-mcp-tool-call-failed and carries the result's content text.
+        steps:
+          - action: invoke
+            target: Client.dispatch
+            value: { tool-name: "use_figma", fixture: fake-server-tool-error }
+          - verify: error
+            target: Client.dispatch
+            expected: figma-mcp-tool-call-failed
+
+      - name: dispatch surfaces transport-level failure as figma-mcp-endpoint-unreachable
+        description: A transport-level failure (SDK returns a non-nil error) wraps with the existing figma-mcp-endpoint-unreachable code from figma-mcp-client.
+        steps:
+          - action: invoke
+            target: Client.dispatch
+            value: { tool-name: "whoami", fixture: fake-server-transport-failure }
+          - verify: error
+            target: Client.dispatch
+            expected: figma-mcp-endpoint-unreachable
+
+      - name: callTyped surfaces malformed StructuredContent as figma-mcp-response-malformed
+        description: When the SDK returns a StructuredContent value whose shape cannot be JSON-unmarshalled into the typed Out, callTyped wraps with figma-mcp-response-malformed naming the tool.
+        steps:
+          - action: invoke
+            target: Client.Whoami
+            value: { fixture: fake-server-malformed-whoami }
+          - verify: error
+            target: Client.Whoami
+            expected: figma-mcp-response-malformed
+
+      - name: dispatch still rejects excluded tool names with figma-mcp-tool-unsupported
+        description: The Phase 0 wiring preserves the existing allowlist enforcement from cross-cutting/bounded-figma-tool-surface; get_design_context is still rejected before reaching the SDK.
+        steps:
+          - action: invoke
+            target: Client.dispatch
+            value: { tool-name: "get_design_context" }
+          - verify: error
+            target: Client.dispatch
+            expected: figma-mcp-tool-unsupported
+
+      - name: Probe against the fake server returns a valid ProbeResult
+        description: Probe() against the fake server returning a Dev-seat whoami returns a ProbeResult with the resolved endpoint, the email, and the seat string.
+        steps:
+          - action: invoke
+            target: mcpclient.Probe
+            value: { fixture: fake-server-dev-seat }
+          - verify: state
+            target: ProbeResult.Endpoint
+            expected: "https://mcp.figma.example/v1"
+          - verify: state
+            target: ProbeResult.Email
+            expected: "maintainer@example.com"
+          - verify: state
+            target: ProbeResult.Seat
+            expected: "Dev"
+
+      - name: persistent session is closed during graceful shutdown
+        description: Client.Close(ctx) closes the persistent session; the graceful-shutdown handler in boot.go calls it.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/client.go
+            expected:
+              contains-all:
+                - "func (c *Client) Close"
+                - "session.Close"
+          - verify: file-content
+            target: studio/internal/server/boot.go
+            expected:
+              describes: "graceful-shutdown sequence invokes mcpclient.Client.Close(ctx) before exiting"
+
+      - name: integration test suite is build-tagged and skipped by default
+        description: studio/internal/mcpclient/integration_test.go carries the //go:build integration tag and is skipped from the default test run.
+        steps:
+          - verify: file-content
+            target: studio/internal/mcpclient/integration_test.go
+            expected:
+              contains: "//go:build integration"
+          - verify: file-content
+            target: studio/internal/mcpclient/integration_test.go
+            expected:
+              describes: "real-Figma integration test reads PARLAY_STUDIO_FIGMA_MCP_URL and PARLAY_STUDIO_FIGMA_MCP_TOKEN; skips when either is unset"
+
+      - name: bearer-token leak regression — token never appears in captured outbound log
+        description: A regression test captures the outbound-request log and asserts the bearer token string never appears.
+        steps:
+          - action: invoke
+            target: Client.Whoami
+            value: { fixture: fake-server-ok, token: "extremely-distinctive-token-FNORD-xyz" }
+          - verify: state
+            target: OutboundLog.ContainsString
+            expected:
+              string: "extremely-distinctive-token-FNORD-xyz"
+              value: false

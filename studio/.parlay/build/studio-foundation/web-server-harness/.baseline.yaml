@@ -1,3 +1,37 @@
-generated-at: "2026-05-11T14:00:28Z"
-intents: {}
-sources: {}
+generated-at: "2026-05-11T15:29:52Z"
+intents:
+    figma-mcp-phase-0-wiring:
+        content-hash: a7cacd78a9ed4722
+        goal-hash: 71c642936ac8ff0c
+        constraints-hash: 96c23f0f6f20df65
+        verify-hash: 8c9283bb8e17e603
+        objects-hash: b80a959acfa5e3fd
+    http-server-harness-chi-router-middleware-error-envelopes:
+        content-hash: e9f4d5e02e6da4cb
+        goal-hash: 1778c9fa0466648c
+        constraints-hash: c53dfb7bd103031e
+        verify-hash: fa70acaecedf6a3d
+        objects-hash: e8c0cb5b6b969052
+    idle-timeout-activity-tracking:
+        content-hash: 89906ca9b817270f
+        goal-hash: d08e9e95a2efb09b
+        constraints-hash: 8cad3add1303316d
+        verify-hash: 0edfa09ffe4e8b18
+        objects-hash: e5680e9a3fe6c57b
+    studio-binary-startup-sequence-and-lifecycle:
+        content-hash: d93d39a0986a5796
+        goal-hash: 41468ff413be1e54
+        constraints-hash: a208f8721e0aef55
+        verify-hash: 76047617b8b55b15
+        objects-hash: e88db2b28cc83a8c
+sources:
+    intents:
+        figma-mcp-phase-0-wiring: 01453f0a2a32bce4
+        http-server-harness-chi-router-middleware-error-envelopes: 99d64f4c29f5a8ef
+        idle-timeout-activity-tracking: 743cf3a6e6380e83
+        studio-binary-startup-sequence-and-lifecycle: 949ced35e880a785
+    dialogs:
+        figma-mcp-phase-0-wiring: 6808115e97d43857
+        http-server-harness-chi-router-middleware-error-envelopes: 4664bf8f4fef54d9
+        idle-timeout-activity-tracking: 26ad323b3fa81ae4
+        studio-binary-startup-sequence-and-lifecycle: b63d43ab710a5ba7

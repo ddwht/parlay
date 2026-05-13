@@ -1,0 +1,11 @@
+feature: studio-foundation/web-server-harness
+reviewed_at: "2026-05-11T15:03:33Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:79d2a67a50f724a64890497fcbc45fb67b71dc00bdff434d2429caa63ed01e65
+testcases_hash: sha256:57fcdafc8744f30971ea95a220cd3cd7ec56fcc80626532b81d4981062265234
+approved_suites:
+    - studio-binary-boot-and-shutdown
+    - http-server-harness
+    - idle-timeout-activity-tracking
+    - figma-mcp-phase-0-wiring

@@ -1,12 +1,16 @@
 // parlay-feature: studio-foundation/figma-mcp-client
 // parlay-component: cross-cutting/official-mcp-sdk-adoption
 // parlay-component: cross-cutting/bounded-figma-tool-surface
+// parlay-extends: studio-foundation/web-server-harness/cross-cutting/figma-mcp-phase-0-wiring
 
 package mcpclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // supportedTools is the enumerated allowlist of Figma MCP tool names Studio
@@ -186,30 +190,77 @@ func (c *Client) Whoami(ctx context.Context) (*WhoamiOutput, error) {
 
 // dispatch is the internal enforcement helper. It checks the requested tool
 // name against supportedTools and rejects anything outside the allowlist with
-// the stable error ErrToolUnsupported (figma-mcp-tool-unsupported).
+// the stable error ErrToolUnsupported (figma-mcp-tool-unsupported). On
+// success it forwards the call to the persistent MCP session and returns
+// the SDK's StructuredContent verbatim.
 //
 // dispatch is package-internal. The exported wrapper methods above call it
 // with hard-coded tool names — there is no exported generic name+args entry
-// point. The dispatch helper exists primarily so the test suite can assert
-// rejection behaviour for v1-excluded tool names without going through the
-// SDK's transport layer.
-func (c *Client) dispatch(ctx context.Context, toolName string, in any) (map[string]any, error) {
+// point.
+//
+// The return type is `any` to match the SDK's StructuredContent field;
+// callTyped performs the JSON round-trip into the typed Out shape.
+func (c *Client) dispatch(ctx context.Context, toolName string, in any) (any, error) {
 	if _, ok := supportedTools[toolName]; !ok {
 		return nil, fmt.Errorf("%w: %q", ErrToolUnsupported, toolName)
 	}
-	// Prototype stub: Phase 0 wiring hands `in` to the SDK and unpacks the
-	// response. Today the dispatch path is structural only.
-	_ = in
-	return map[string]any{}, nil
+	if c == nil || c.session == nil {
+		return nil, fmt.Errorf("%w: client not connected", ErrEndpointUnreachable)
+	}
+	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: in,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrEndpointUnreachable, err)
+	}
+	if result.IsError {
+		return nil, fmt.Errorf("%w: tool=%s content=%s",
+			ErrToolCallFailed, toolName, contentText(result.Content))
+	}
+	return result.StructuredContent, nil
 }
 
-// callTyped is the typed wrapper around dispatch.
+// callTyped is the typed wrapper around dispatch. It marshals the raw
+// StructuredContent value back to JSON and unmarshals into Out so the
+// wrapper-method callers receive a typed, validated value.
 func callTyped[Out any](ctx context.Context, c *Client, toolName string, in any) (*Out, error) {
 	raw, err := c.dispatch(ctx, toolName, in)
 	if err != nil {
 		return nil, err
 	}
-	_ = raw
+	buf, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: tool=%s marshal=%v",
+			ErrResponseMalformed, toolName, err)
+	}
 	var out Out
+	if err := json.Unmarshal(buf, &out); err != nil {
+		return nil, fmt.Errorf("%w: tool=%s unmarshal=%v",
+			ErrResponseMalformed, toolName, err)
+	}
 	return &out, nil
+}
+
+// contentText flattens a CallToolResult.Content slice into a single
+// human-readable string for inclusion in the wrapped error detail.
+// Non-text content kinds (image, audio) are summarised by their type
+// name so the operator sees something instead of "" when a tool errors
+// with no text content.
+func contentText(content []mcp.Content) string {
+	if len(content) == 0 {
+		return ""
+	}
+	out := ""
+	for i, c := range content {
+		if i > 0 {
+			out += "; "
+		}
+		if t, ok := c.(*mcp.TextContent); ok {
+			out += t.Text
+			continue
+		}
+		out += fmt.Sprintf("<%T>", c)
+	}
+	return out
 }

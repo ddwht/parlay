@@ -1,11 +1,14 @@
-generated-at: "2026-05-11T14:00:28Z"
+generated-at: "2026-05-11T15:29:52Z"
 files:
+    studio/cmd/parlay-studio/main.go:
+        component: cross-cutting/studio-binary-boot-and-shutdown
+        hash: c5f7910ff45b500b
     studio/docs/figma-mcp-setup.md:
         component: cross-cutting/figma-mcp-startup-probe
         hash: 128c624e6b04ab83
     studio/go.mod:
         component: cross-cutting/official-mcp-sdk-adoption
-        hash: 4e4205dd0b81d13b
+        hash: ddff599a52f449a0
     studio/internal/config/config.go:
         component: cross-cutting/layered-studio-configuration-loader
         hash: 3f43057c5675cf73
@@ -41,19 +44,67 @@ files:
         hash: 14c528afb73ade5d
     studio/internal/mcpclient/client.go:
         component: cross-cutting/official-mcp-sdk-adoption
-        hash: 880ef31a6d763d67
+        hash: ece2e7cbd9ae5a36
+    studio/internal/mcpclient/client_test.go:
+        component: cross-cutting/figma-mcp-phase-0-wiring
+        hash: f621ae7f807f5f2b
     studio/internal/mcpclient/errors.go:
         component: cross-cutting/figma-mcp-startup-probe
         hash: 3c2fa2fbcc6b9c9c
+    studio/internal/mcpclient/integration_test.go:
+        component: cross-cutting/figma-mcp-phase-0-wiring
+        hash: 56ca24d388164267
     studio/internal/mcpclient/probe.go:
         component: cross-cutting/figma-mcp-startup-probe
-        hash: f25e877fe97d70f2
+        hash: bd90dc50632b2693
     studio/internal/mcpclient/probe_test.go:
         component: cross-cutting/figma-mcp-startup-probe
         hash: c30b27a5e50c5660
     studio/internal/mcpclient/tools.go:
         component: cross-cutting/bounded-figma-tool-surface
-        hash: a99658026e71adf7
+        hash: 3f7d8e1ef316ffaa
     studio/internal/mcpclient/tools_test.go:
         component: cross-cutting/bounded-figma-tool-surface
         hash: ce51146131d1bc8f
+    studio/internal/mcpclient/transport.go:
+        component: cross-cutting/figma-mcp-phase-0-wiring
+        hash: ab5b4daf960a378c
+    studio/internal/server/boot.go:
+        component: cross-cutting/studio-binary-boot-and-shutdown
+        hash: 1c5ee8d0c794cb16
+    studio/internal/server/boot_test.go:
+        component: cross-cutting/studio-binary-boot-and-shutdown
+        hash: ed107ad1aa328abb
+    studio/internal/server/envelopes.go:
+        component: cross-cutting/http-server-harness
+        hash: b69b248741359cac
+    studio/internal/server/envelopes_test.go:
+        component: cross-cutting/http-server-harness
+        hash: b8fbe0664b530fea
+    studio/internal/server/health.go:
+        component: cross-cutting/http-server-harness
+        hash: b724cc00f50f0a1a
+    studio/internal/server/idle.go:
+        component: cross-cutting/idle-timeout-activity-tracking
+        hash: 5b21a967c0ee2ed9
+    studio/internal/server/idle_test.go:
+        component: cross-cutting/idle-timeout-activity-tracking
+        hash: a920ec2fd38eb772
+    studio/internal/server/middleware.go:
+        component: cross-cutting/http-server-harness
+        hash: 201f3f4577527309
+    studio/internal/server/middleware_test.go:
+        component: cross-cutting/http-server-harness
+        hash: fdc6424107aef69b
+    studio/internal/server/registration.go:
+        component: cross-cutting/http-server-harness
+        hash: ec0f3422f4ef1f71
+    studio/internal/server/registration_test.go:
+        component: cross-cutting/http-server-harness
+        hash: 10cb49364aea45c8
+    studio/internal/server/server.go:
+        component: cross-cutting/http-server-harness
+        hash: 61cdd7a1743e8d76
+    studio/internal/server/server_test.go:
+        component: cross-cutting/http-server-harness
+        hash: 99df4e74759ac7cb

@@ -36,15 +36,31 @@ var canvasWriteSeats = map[string]struct{}{
 //
 // The probe invokes whoami exactly once per Studio startup, regardless of
 // how many subsequent tool calls Studio makes through the wrapper.
+//
+// Probe's signature is endpoint-only for backwards-compatibility with the
+// figma-mcp-client tests; the underlying connection is established via
+// probeConnect, which the boot orchestration overrides to supply the
+// real token. Callers that need authenticated probing should use
+// ProbeWithToken directly.
 func Probe(ctx context.Context, endpoint string) (ProbeResult, error) {
+	return ProbeWithToken(ctx, endpoint, "")
+}
+
+// ProbeWithToken is the authenticated variant of Probe. Boot uses it so
+// the startup whoami runs over the same bearer-token transport the
+// persistent session will use.
+func ProbeWithToken(ctx context.Context, endpoint, token string) (ProbeResult, error) {
 	if isDesktopShape(endpoint) {
 		return ProbeResult{}, ErrEndpointUnsupported
 	}
 
-	c, err := New(ctx, endpoint)
+	c, err := probeConnect(ctx, endpoint, token)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("%w: %v", ErrEndpointUnreachable, err)
 	}
+	defer func() {
+		_ = c.Close(ctx)
+	}()
 
 	resp, err := c.Whoami(ctx)
 	if err != nil {
@@ -67,6 +83,21 @@ func Probe(ctx context.Context, endpoint string) (ProbeResult, error) {
 		Email:    resp.Email,
 		Seat:     seat,
 	}, nil
+}
+
+// probeConnect is the test-overridable bridge between Probe and New.
+// Production probes call New with the supplied token (or a placeholder
+// when the legacy Probe API was used); tests swap probeConnect for a
+// constructor returning a *Client backed by a fake session.
+var probeConnect = func(ctx context.Context, endpoint, token string) (*Client, error) {
+	if token == "" {
+		// Legacy callers (Probe with endpoint-only signature) get a
+		// placeholder token so New does not reject the call. The real
+		// remote will still 401 if the token is wrong; this preserves the
+		// "unreachable" surface area for the original test suite.
+		token = "probe-without-token"
+	}
+	return New(ctx, endpoint, token)
 }
 
 // isDesktopShape detects the Figma desktop MCP server endpoint by URL shape.

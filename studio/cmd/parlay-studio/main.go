@@ -1,12 +1,27 @@
+// parlay-feature: studio-foundation/web-server-harness
+// parlay-component: cross-cutting/studio-binary-boot-and-shutdown
+
+// Command parlay-studio is the Parlay Studio binary. main() is intentionally
+// thin — it constructs the BootDeps with production defaults and delegates
+// to server.Boot, which executes the documented 12-step boot sequence and
+// blocks on the shutdown channel.
+//
+// The boot orchestration helper lives in studio/internal/server/boot.go so
+// that the sequence is unit-testable via injected fakes (config.Loader,
+// mcpclient.Prober, http.Server.ListenAndServe, etc.).
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+
+	"github.com/parlay-tool/parlay/studio/internal/server"
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "parlay-studio: not yet implemented")
-	fmt.Fprintln(os.Stderr, "see docs/architecture/parlay-studio-architecture-v4.md")
-	os.Exit(1)
+	if err := server.Boot(context.Background(), server.BootDeps{}); err != nil {
+		fmt.Fprintf(os.Stderr, "parlay-studio: %v\n", err)
+		os.Exit(1)
+	}
 }
