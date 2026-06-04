@@ -1,3 +1,33 @@
-generated-at: "2026-05-13T13:35:33Z"
-intents: {}
-sources: {}
+generated-at: "2026-06-04T14:35:00Z"
+intents:
+    design-loop-is-a-parlay-skill-executed-by-the-host-agent:
+        content-hash: 6a4a9d6c0d5f7f0c
+        goal-hash: 6b9473ab49adeb4a
+        constraints-hash: 6c2555c890b40b5d
+        verify-hash: e38d68c80747e1b0
+        objects-hash: 54c85031ef7056de
+    on-disk-artifact-contract-between-studio-binary-and-design-loop-skill:
+        content-hash: 66fc05c9347d4d43
+        goal-hash: c49ffbf8ac81e495
+        constraints-hash: 2299b39a6a6385c6
+        verify-hash: 3ed6e58cc6fae931
+        objects-hash: cb82164823db9507
+    tool-call-orchestration-read-back-and-conflict-detection:
+        content-hash: dd01ae711380bf16
+        goal-hash: a3a995b59dbbd9d8
+        constraints-hash: 60dd96b48116ef2c
+        verify-hash: c0e068ab9fa27e2a
+        objects-hash: 75c4261dbc938e38
+sources:
+    intents:
+        design-loop-is-a-parlay-skill-executed-by-the-host-agent: 51a669d84210074d
+        on-disk-artifact-contract-between-studio-binary-and-design-loop-skill: c2601df1ae721bc1
+        tool-call-orchestration-read-back-and-conflict-detection: 645311244f0d16b6
+    dialogs:
+        design-loop-is-a-parlay-skill-executed-by-the-host-agent: 02a1d6b7e72ee058
+        on-disk-artifact-contract-between-studio-binary-and-design-loop-skill: 73a84faf45b6ac25
+        tool-call-orchestration-read-back-and-conflict-detection: ee58fe13ea543601
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819

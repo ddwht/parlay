@@ -1,0 +1,10 @@
+feature: design-loop/design-loop
+reviewed_at: "2026-05-29T06:29:08Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:561f65d46729b4cb357109fe36cd218fd37571e2d254c5f679e83bcb7fb73d03
+testcases_hash: sha256:9b634faca1539b65865491e91f7d86a986ee8f5ceb3ebb060f0a22ca87d06101
+approved_suites:
+    - design-loop-is-a-parlay-skill
+    - on-disk-artifact-contract
+    - tool-call-orchestration

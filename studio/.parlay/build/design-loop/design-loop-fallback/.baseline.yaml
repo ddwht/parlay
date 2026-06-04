@@ -1,3 +1,18 @@
-generated-at: "2026-05-13T13:35:33Z"
-intents: {}
-sources: {}
+generated-at: "2026-06-04T14:35:00Z"
+intents:
+    fallback-mode-when-and-how-to-enter:
+        content-hash: b2cfe14af4dd3d8f
+        goal-hash: 1c12537fca2afd71
+        constraints-hash: d5b65576ed548405
+        verify-hash: 7fb4b92aaa524e8e
+        objects-hash: 51cb1bdfd552d093
+    read-only-sync-path:
+        content-hash: 85eb412f7d37e25a
+        goal-hash: 3f5413aac7ac6ca2
+        constraints-hash: bddf188a17e922fe
+        verify-hash: d6d7447358bd0fab
+        objects-hash: f8405793ae951d10
+sources:
+    intents:
+        fallback-mode-when-and-how-to-enter: 35f375dc1e1a7b6e
+        read-only-sync-path: f720ec9c71364621

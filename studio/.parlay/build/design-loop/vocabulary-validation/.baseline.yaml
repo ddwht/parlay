@@ -1,3 +1,18 @@
-generated-at: "2026-05-13T13:35:33Z"
-intents: {}
-sources: {}
+generated-at: "2026-06-04T14:35:00Z"
+intents:
+    validation-rules-types-tokens-and-shape:
+        content-hash: b0fcd308260a47bb
+        goal-hash: a419843629641c31
+        constraints-hash: e0ab7171a42360a0
+        verify-hash: 11662e55673ad1a0
+        objects-hash: 84ad17f21278c95b
+    vocabulary-source-resolution:
+        content-hash: c9b874c7d8fe5524
+        goal-hash: 7d320e7ef97607a2
+        constraints-hash: ed58477e4b3bd073
+        verify-hash: dffb46401346b59d
+        objects-hash: ccdabc77dca97e01
+sources:
+    intents:
+        validation-rules-types-tokens-and-shape: 549d3664beb8ee7e
+        vocabulary-source-resolution: b47ade7b9173e2ee

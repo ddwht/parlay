@@ -1,0 +1,496 @@
+feature: design-loop/design-loop
+framework: Markdown content invariants + skill-source structural inspection
+
+# Three suites, one per cross-cutting fragment / one per intent. The
+# fragments declare framework-agnostic invariants over the markdown
+# content of the skill source and the two new schema docs; this
+# testcases file translates each Invariant into one or more concrete
+# verifications (file-exists, file-content greps, structural section
+# checks).
+#
+# CROSS-ROOT TEST TARGETS. All three artifacts under test live OUTSIDE
+# the active studio root:
+#   - .claude/skills/parlay-design-loop/SKILL.md (repo-level root)
+#   - core/internal/embedded/schemas/design-loop-result.schema.md (core)
+#   - core/internal/embedded/schemas/design-loop-conflicts.schema.md (core)
+#   - core/internal/embedded/schemas/layout.schema.md (modified, core)
+#
+# This matches the architectural-prose-artifact precedent for cross-root
+# test paths: test targets reference paths from the repo root, prefixed
+# with their root name. Studio-internal verification is irrelevant for
+# this feature — every assertion crosses the studio boundary.
+
+suites:
+  # ---------------------------------------------------------------------------
+  # Suite 1: Design Loop runtime is a parlay-skill
+  # Traces to cross-cutting/design-loop-is-a-parlay-skill
+  # Intent: @design-loop/design-loop/design-loop-is-a-parlay-skill-executed-by-the-host-agent
+  # ---------------------------------------------------------------------------
+  - name: design-loop-is-a-parlay-skill
+    component: cross-cutting/design-loop-is-a-parlay-skill
+    intent: "@design-loop/design-loop/design-loop-is-a-parlay-skill-executed-by-the-host-agent"
+
+    cases:
+      - name: Skill source exists at the expected repo-level path
+        description: >
+          Verify from intent: ".claude/skills/parlay-design-loop/SKILL.md
+          exists, is readable, and contains a description, an arguments
+          section, and a numbered steps list."
+        steps:
+          - verify: file-exists
+            target: .claude/skills/parlay-design-loop/SKILL.md
+
+      - name: Skill source has the three required top-level sections
+        description: >
+          Verify from intent: the skill source contains a description,
+          an arguments section, and a numbered steps list.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "## Arguments"
+                - "## Steps"
+
+      - name: Skill source declares exactly one argument — a feature reference
+        description: >
+          Invariant: "The skill's arguments section names exactly one
+          argument: a feature reference. No Figma URL flag, no token
+          flag, no endpoint flag."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains: "feature"
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              no-line-matches: "--figma-url|--figma-token|--token|--endpoint|FIGMA_URL|FIGMA_TOKEN"
+
+      - name: Skill source references every supported MCP tool name
+        description: >
+          Verify from intent: "The skill source references the supported
+          Figma MCP tool names by their literal MCP names — a grep
+          across the skill source returns matches for every name in the
+          supported subset."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "use_figma"
+                - "create_new_file"
+                - "add_code_connect_map"
+                - "send_code_connect_mappings"
+                - "get_metadata"
+                - "get_code_connect_map"
+                - "get_code_connect_suggestions"
+                - "whoami"
+
+      - name: Skill source contains no Studio Go references
+        description: >
+          Invariant: "The skill source contains zero references to any
+          Studio Go package, zero Go function calls, and zero language
+          keywords — it is pure markdown instructions for the host
+          agent's LLM."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              no-line-matches: "studio/internal/|package main|func [A-Z]|import \"|go.mod"
+
+      - name: Skill source contains no Figma-authentication references
+        description: >
+          Invariant: "The skill source contains zero references to
+          `mcp.figma.com`, OAuth keywords, bearer-token language, or
+          `STUDIO_FIGMA_*` environment variables — all Figma
+          authentication is deferred to the host agent's existing MCP
+          connection."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              no-line-matches: "mcp\\.figma\\.com|oauth|bearer|client_id|client_secret|STUDIO_FIGMA_"
+
+      - name: Skill name resolves to parlay-design-loop (Q1.1 resolution)
+        description: >
+          Branch resolution from dialogs: the skill name is
+          `parlay-design-loop` (unadorned), not a studio-prefixed
+          variant. The directory name reflects this.
+        steps:
+          - verify: file-exists
+            target: .claude/skills/parlay-design-loop/SKILL.md
+          - verify: visible
+            target: .claude/skills/parlay-studio-design-loop/SKILL.md
+            expected: false
+
+      - name: v1-excluded tools appear only inside an explicit Excluded block
+        description: >
+          Invariant: "A grep across the skill source returns at least
+          one match for every tool name in the supported subset and
+          zero matches for the v1-excluded tool names outside an
+          explicit 'excluded in v1' comment block."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "Excluded in v1"
+                - "excluded in v1"
+                - "v1-excluded"
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "get_design_context"
+                - "get_screenshot"
+                - "generate_diagram"
+                - "get_figjam"
+                - "create_design_system_rules"
+                - "search_design_system"
+                - "generate_figma_design"
+
+  # ---------------------------------------------------------------------------
+  # Suite 2: On-disk artifact contract
+  # Traces to cross-cutting/on-disk-artifact-contract
+  # Intent: @design-loop/design-loop/on-disk-artifact-contract-between-studio-binary-and-design-loop-skill
+  # ---------------------------------------------------------------------------
+  - name: on-disk-artifact-contract
+    component: cross-cutting/on-disk-artifact-contract
+    intent: "@design-loop/design-loop/on-disk-artifact-contract-between-studio-binary-and-design-loop-skill"
+
+    cases:
+      - name: Result schema exists at the expected core embedded path
+        description: >
+          Verify from intent: "core/internal/embedded/schemas/
+          design-loop-result.schema.md is added by this feature and
+          documents the result YAML shape."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/design-loop-result.schema.md
+
+      - name: Conflicts schema exists at the expected core embedded path
+        description: >
+          Verify from intent: "core/internal/embedded/schemas/
+          design-loop-conflicts.schema.md is added by this feature and
+          documents the conflicts YAML shape."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/design-loop-conflicts.schema.md
+
+      - name: Result schema documents the required top-level fields
+        description: >
+          The result schema must declare the canonical top-level fields
+          a successful loop writes: loop timestamp, the Figma file URL,
+          and the read-back node list with at least figma-node-id,
+          component-identity, and canonical-layout-path per node.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-result.schema.md
+            expected:
+              contains-all:
+                - "loop-timestamp"
+                - "figma-file-url"
+                - "nodes"
+                - "figma-node-id"
+                - "component-identity"
+                - "canonical-layout-path"
+
+      - name: Conflicts schema documents the kind enum and entries shape
+        description: >
+          The conflicts schema must declare the conflict-kind enum
+          (pre-flight-vocabulary-failure, out-of-vocabulary-node,
+          silent-drop, tool-call-failure) and the entries list shape.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-conflicts.schema.md
+            expected:
+              contains-all:
+                - "loop-timestamp"
+                - "entries"
+                - "pre-flight-vocabulary-failure"
+                - "out-of-vocabulary-node"
+                - "silent-drop"
+                - "tool-call-failure"
+
+      - name: Both new schemas are framework-agnostic prose
+        description: >
+          Invariant: "The schemas at the embedded surface are framework-
+          agnostic: they document YAML shape, not Go types or any other
+          language's representation."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-result.schema.md
+            expected:
+              no-line-matches: "package |func |type [A-Z][a-zA-Z]* struct|import \""
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-conflicts.schema.md
+            expected:
+              no-line-matches: "package |func |type [A-Z][a-zA-Z]* struct|import \""
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-result.schema.md
+            expected:
+              no-line-matches: "interface .* \\{|class [A-Z]|export type"
+          - verify: file-content
+            target: core/internal/embedded/schemas/design-loop-conflicts.schema.md
+            expected:
+              no-line-matches: "interface .* \\{|class [A-Z]|export type"
+
+      - name: Layout schema declares the optional figma block with file_url
+        description: >
+          Verify from intent: "The layout schema's documented shape
+          (added to core/internal/embedded/schemas/layout.schema.md)
+          declares a `figma:` block with at least a `file_url:` field;
+          existing layout YAMLs without the block validate clean (the
+          field is optional for read-only Domain Model Editor use)."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/layout.schema.md
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected:
+              contains-all:
+                - "figma:"
+                - "file_url:"
+
+      - name: Layout figma block is documented as optional
+        description: >
+          Invariant (Q2.1 resolution + intent): "v1's schema makes
+          `figma:` optional so existing layouts without it validate
+          clean (Domain Model Editor read-only use stays unaffected)."
+          The schema text must explicitly mark the block as optional.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected:
+              contains-any:
+                - "optional"
+                - "OPTIONAL"
+                - "may be omitted"
+
+      - name: Skill source enumerates the three input artifacts and three output artifacts
+        description: >
+          Invariant: "The skill source enumerates the three input
+          artifacts and the three output artifacts by name; a grep
+          across the skill source for `design-loop-result.yaml`,
+          `design-loop-conflicts.yaml`, and `figma:` returns matches."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "design-loop-result.yaml"
+                - "design-loop-conflicts.yaml"
+                - "figma:"
+                - "page schema"
+                - "layout YAML"
+                - "vocabulary"
+
+      - name: Skill source instructs atomic writes
+        description: >
+          Invariant: "The skill instructs Claude to write atomically
+          (write-temp + rename); a grep for 'atomic' or 'write-temp' in
+          the skill source returns matches."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "atomic"
+                - "write-temp"
+                - "write-then-rename"
+
+      - name: Per-feature Figma URL convention is documented in the skill
+        description: >
+          Branch resolution from dialogs: the per-feature Figma file
+          URL lives in the layout YAML's `figma:` block, NOT in
+          studio-config or an environment variable. The skill source
+          documents this.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "figma:"
+                - "file_url"
+
+  # ---------------------------------------------------------------------------
+  # Suite 3: Tool-call orchestration — the eight-step round-trip
+  # Traces to cross-cutting/tool-call-orchestration
+  # Intent: @design-loop/design-loop/tool-call-orchestration-read-back-and-conflict-detection
+  # ---------------------------------------------------------------------------
+  - name: tool-call-orchestration
+    component: cross-cutting/tool-call-orchestration
+    intent: "@design-loop/design-loop/tool-call-orchestration-read-back-and-conflict-detection"
+
+    cases:
+      - name: Skill source presents at least 8 numbered steps
+        description: >
+          Invariant: "The skill source contains a numbered list with at
+          least 8 steps; each step names at least one MCP tool or one
+          artifact path."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "1."
+                - "2."
+                - "3."
+                - "4."
+                - "5."
+                - "6."
+                - "7."
+                - "8."
+
+      - name: Steps 3 and 6 both reference get_metadata
+        description: >
+          Invariant: "The read-back (`get_metadata` in step 6) is
+          mandatory — every loop reads back the post-write state, even
+          if the diff in step 4 was empty." Two distinct get_metadata
+          references must appear (one for the pre-write capture in
+          step 3, one for the post-write read-back in step 6).
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              count-at-least:
+                pattern: "get_metadata"
+                count: 2
+
+      - name: Step 5 names the three write tools in the rigid order
+        description: >
+          Branch resolution Q3.1: "Step 5's write order is rigid:
+          `use_figma` is called first, then `add_code_connect_map`,
+          then `send_code_connect_mappings`." The skill source must
+          present them in this order.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-in-order:
+                - "use_figma"
+                - "add_code_connect_map"
+                - "send_code_connect_mappings"
+
+      - name: Pre-flight vocabulary validation gates step 2
+        description: >
+          Invariant: "Pre-flight vocabulary validation is step 2 —
+          before any Figma tool call. A layout that fails pre-flight
+          aborts the loop and writes a `design-loop-conflicts.yaml`
+          documenting the validation failure; no Figma calls are made."
+          The skill source documents this gate.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-all:
+                - "Pre-flight"
+                - "vocabulary"
+                - "abort"
+                - "design-loop-conflicts.yaml"
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "zero Figma calls"
+                - "ZERO Figma"
+                - "no Figma tool"
+                - "skip"
+
+      - name: Skill source references @design-loop/vocabulary-validation as the classifier
+        description: >
+          Invariant: "Conflict classification (step 7) calls
+          `vocabulary-validation` once per designer-authored novelty;
+          the classifier's output drives the merge-back vs refuse-and-
+          warn decision."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "@design-loop/vocabulary-validation"
+                - "vocabulary-validation"
+
+      - name: Skill source contains zero references to v1-excluded tools outside the Excluded block
+        description: >
+          Invariant: "The skill source contains zero references to the
+          v1-excluded tools (`get_design_context`, `get_screenshot`,
+          `generate_diagram`, `get_figjam`, `create_design_system_rules`,
+          `search_design_system`, `generate_figma_design`) except in
+          the explicit 'excluded in v1' comment block."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              tool-mentions-only-in-block:
+                tools:
+                  - "get_design_context"
+                  - "get_screenshot"
+                  - "generate_diagram"
+                  - "get_figjam"
+                  - "create_design_system_rules"
+                  - "search_design_system"
+                  - "generate_figma_design"
+                block-marker: "Excluded in v1"
+
+      - name: Skill source does not instruct batching or skipping
+        description: >
+          Invariant: "The skill prompt does NOT instruct Claude to
+          batch tool calls or to skip steps; the eight-step order is
+          structural to the round-trip's correctness."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              no-line-matches: "batch|skip step|combine step|reorder"
+
+      - name: Step 6 read-back is mandatory even on empty diffs
+        description: >
+          Invariant: "Step 6's read-back is mandatory on every loop
+          that reaches it; the skill does not skip step 6 when step 4's
+          diff was empty."
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "mandatory"
+                - "MANDATORY"
+                - "every loop"
+                - "even when"
+                - "even if"
+
+      - name: Step 5 write order is rigid — no branching to skip use_figma
+        description: >
+          Q3.1 resolution: "Even when `use_figma` has no edits to
+          apply, the skill calls it with an empty edit set rather than
+          skipping." The skill source must document the empty-edit-set
+          path so the determinism contract is explicit.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "empty edit set"
+                - "empty edit"
+                - "rigid order"
+                - "Determinism over smartness"
+                - "determinism"
+
+      - name: Failure-handling paths are documented
+        description: >
+          From the orchestration intent's Notes: a step-3 failure
+          aborts with a conflicts entry and no result write; a step-5
+          partial failure does NOT retry but proceeds to step 6; a
+          step-6 silent-drop produces a separate conflicts entry. The
+          skill source documents these three failure paths.
+        steps:
+          - verify: file-content
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              contains-any:
+                - "tool-call-failure"
+                - "silent-drop"
+                - "silent drop"
+                - "partial failure"
