@@ -1,8 +1,8 @@
-generated-at: "2026-06-16T09:22:02Z"
+generated-at: "2026-06-16T10:44:41Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: dc8841ba99322815
+        hash: 1fd3a9fdc7022db2
     studio/go.mod:
         component: cross-cutting/official-mcp-sdk-adoption
         hash: f9a481a9f56f9102
@@ -30,6 +30,51 @@ files:
     studio/internal/config/web_server_test.go:
         component: cross-cutting/web-server-runtime-configuration-keys
         hash: dc9f6c935b0b0424
+    studio/internal/deployer/agents.go:
+        component: ""
+        hash: df04e442aaea0932
+    studio/internal/deployer/agents_test.go:
+        component: ""
+        hash: 5beda7c63f558c0e
+    studio/internal/deployer/atomic_write.go:
+        component: ""
+        hash: 4ae57e5e9f851c1b
+    studio/internal/deployer/atomic_write_test.go:
+        component: ""
+        hash: 8f79692380845d16
+    studio/internal/deployer/deployer.go:
+        component: ""
+        hash: 3ac343050e3937c7
+    studio/internal/deployer/deployer_test.go:
+        component: ""
+        hash: a24d94e764481729
+    studio/internal/deployer/manifest.go:
+        component: ""
+        hash: 6fe4aa70b1d43636
+    studio/internal/deployer/manifest_test.go:
+        component: ""
+        hash: 8178c23f61775fab
+    studio/internal/deployer/status.go:
+        component: ""
+        hash: 3b7d3337074ebfc7
+    studio/internal/deployer/status_test.go:
+        component: ""
+        hash: e73e883cbbb39a21
+    studio/internal/deployer/subcommands.go:
+        component: ""
+        hash: d6cde3785b741897
+    studio/internal/deployer/subcommands_test.go:
+        component: ""
+        hash: 39db605cd377cdb0
+    studio/internal/embedded/embed.go:
+        component: ""
+        hash: dc2f109455f822ce
+    studio/internal/embedded/embed_test.go:
+        component: ""
+        hash: 5dd243bf49734a46
+    studio/internal/embedded/skills/parlay-design-loop.skill.md:
+        component: cross-cutting/design-loop-is-a-parlay-skill
+        hash: 80d3a2e20ed1e24c
     studio/internal/server/boot.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
         hash: 83ad45b40e6efff1

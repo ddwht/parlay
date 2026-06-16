@@ -1,0 +1,476 @@
+feature: studio-foundation/studio-deployer
+framework: "Go testing (standard library, table-driven)"
+
+# Infrastructure-only feature: no UI components. Each suite below validates
+# one cross-cutting entry from buildfile.yaml by mapping its Invariants:
+# bullets into testable cases. Verification primitives used: file-exists,
+# file-content, error, state, count.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio) so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. Neither kind fits a cross-cutting infrastructure suite, so these
+# suites are emitted in the v1 shape; the v2 validator treats them as
+# kind: presentation with a testcases-source-refs-missing-legacy warning,
+# which is acceptable for an infrastructure-only feature.
+
+suites:
+  - name: embedded-source-and-deployer-subcommands
+    component: cross-cutting/embedded-source-and-deployer-subcommands
+    fixture: deployer-fixture-project
+    intent: "@studio-foundation/studio-deployer/studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands"
+    cases:
+      - name: embedded source files exist at the canonical locations
+        description: The Studio embedded source surface lives at studio/internal/embedded/ with the parlay-design-loop skill source inside skills/.
+        steps:
+          - verify: file-exists
+            target: studio/internal/embedded/embed.go
+          - verify: file-exists
+            target: studio/internal/embedded/skills/parlay-design-loop.skill.md
+          - verify: file-exists
+            target: studio/internal/embedded/embed_test.go
+
+      - name: embed.go uses //go:embed directive against skills subdirectory
+        description: The embedded source surface is baked into the parlay-studio binary at link time via a //go:embed directive on skills/*.skill.md.
+        steps:
+          - verify: file-content
+            target: studio/internal/embedded/embed.go
+            expected:
+              contains: "//go:embed skills/*.skill.md"
+
+      - name: parlay-design-loop skill source has required YAML frontmatter
+        description: Every Studio skill source begins with a YAML frontmatter block declaring name and description keys; the parlay-design-loop source must satisfy this shape check.
+        steps:
+          - verify: file-content
+            target: studio/internal/embedded/skills/parlay-design-loop.skill.md
+            expected:
+              starts-with: "---"
+              contains-all:
+                - "name: parlay-design-loop"
+                - "description:"
+
+      - name: project-local design-loop skill is removed
+        description: The development-convenience copy at .claude/skills/parlay-design-loop/SKILL.md is retracted; the canonical source-of-truth is the embedded location.
+        steps:
+          - verify: file-exists
+            target: .claude/skills/parlay-design-loop/SKILL.md
+            expected: false
+
+      - name: parlay-studio init writes the skill to a Claude Code project
+        description: Running parlay-studio init against a fixture project with .parlay/ and .claude/ markers writes the skill to .claude/skills/parlay-design-loop/SKILL.md.
+        steps:
+          - action: invoke
+            target: deployer.Init
+            value: { fixture: claude-only-fresh-project }
+          - verify: file-exists
+            target: <fixture-root>/.claude/skills/parlay-design-loop/SKILL.md
+          - verify: file-content
+            target: <fixture-root>/.claude/skills/parlay-design-loop/SKILL.md
+            expected:
+              equals-source: studio/internal/embedded/skills/parlay-design-loop.skill.md
+
+      - name: parlay-studio upgrade is idempotent over a fresh init
+        description: Running upgrade immediately after init reports every file as unchanged; no writes occur on the second run.
+        steps:
+          - action: invoke
+            target: deployer.Init
+            value: { fixture: claude-only-fresh-project }
+          - action: invoke
+            target: deployer.Upgrade
+            value: { fixture: claude-only-fresh-project }
+          - verify: state
+            target: SecondRun.AllStatusesUnchanged
+            expected: true
+          - verify: count
+            target: SecondRun.WrittenEntries
+            expected: 0
+
+      - name: deployer refuses to run in a non-parlay directory
+        description: A fixture without a .parlay/ subdirectory fails with the stable code studio-deployer-parlay-not-initialized; zero files written.
+        steps:
+          - action: invoke
+            target: deployer.Init
+            value: { fixture: directory-without-parlay-marker }
+          - verify: error
+            target: deployer.Init
+            expected: studio-deployer-parlay-not-initialized
+          - verify: count
+            target: WrittenFiles
+            expected: 0
+
+      - name: subcommand --help text describes deployer behavior
+        description: Both init --help and upgrade --help mention the per-agent fan-out and the file-ownership rules.
+        steps:
+          - action: invoke
+            target: deployer.Init
+            value: { args: ["--help"] }
+          - verify: state
+            target: Init.HelpText.MentionsPerAgentFanOut
+            expected: true
+          - verify: state
+            target: Init.HelpText.MentionsFileOwnership
+            expected: true
+          - action: invoke
+            target: deployer.Upgrade
+            value: { args: ["--help"] }
+          - verify: state
+            target: Upgrade.HelpText.MentionsPerAgentFanOut
+            expected: true
+          - verify: state
+            target: Upgrade.HelpText.MentionsFileOwnership
+            expected: true
+
+      - name: deployer does not shell out to the parlay binary
+        description: Static analysis of studio/internal/deployer source contains no os/exec import and no parlay-binary path lookup.
+        steps:
+          - verify: file-content
+            target: studio/internal/deployer/subcommands.go
+            expected:
+              does-not-contain-any:
+                - "os/exec"
+                - "exec.LookPath"
+
+      - name: main.go subcommand router dispatches init and upgrade
+        description: The entry point recognises init and upgrade subcommands and delegates to deployer; absent subcommand still boots the server.
+        steps:
+          - verify: file-content
+            target: studio/cmd/parlay-studio/main.go
+            expected:
+              contains-all:
+                - "deployer.Init"
+                - "deployer.Upgrade"
+                - "server.Boot"
+
+      - name: malformed embedded skill source is rejected at read time
+        description: A handcrafted skill source missing required frontmatter is rejected with studio-embedded-skill-frontmatter-invalid via a temporary embed.FS overlay.
+        steps:
+          - action: invoke
+            target: embedded.ReadSkill
+            value: { source: "missing-frontmatter" }
+          - verify: error
+            target: embedded.ReadSkill
+            expected: studio-embedded-skill-frontmatter-invalid
+
+  - name: multi-agent-target-resolution
+    component: cross-cutting/multi-agent-target-resolution
+    fixture: deployer-fixture-project
+    intent: "@studio-foundation/studio-deployer/multi-agent-target-resolution"
+    cases:
+      - name: Claude-only fixture targets only the Claude convention path
+        description: A project with only .claude/ present resolves to a single AgentTarget for Claude; the skill target is .claude/skills/parlay-<slug>/SKILL.md.
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: claude-only }
+          - verify: count
+            target: DetectedAgents
+            expected: 1
+          - verify: state
+            target: DetectedAgents[0].Surface
+            expected: AgentClaude
+          - verify: state
+            target: DetectedAgents[0].SkillTargetPath("parlay-design-loop")
+            expected: ".claude/skills/parlay-design-loop/SKILL.md"
+
+      - name: Cursor-only fixture targets only the Cursor convention path
+        description: A project with only .cursor/ present resolves to a single AgentTarget for Cursor.
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: cursor-only }
+          - verify: count
+            target: DetectedAgents
+            expected: 1
+          - verify: state
+            target: DetectedAgents[0].Surface
+            expected: AgentCursor
+
+      - name: both Claude and Cursor fixture returns both agents in stable order
+        description: A project with both .claude/ and .cursor/ present resolves to two AgentTargets in the documented order (Claude first, then Cursor).
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: claude-and-cursor }
+          - verify: count
+            target: DetectedAgents
+            expected: 2
+          - verify: state
+            target: DetectedAgents[0].Surface
+            expected: AgentClaude
+          - verify: state
+            target: DetectedAgents[1].Surface
+            expected: AgentCursor
+
+      - name: Generic CLI fixture targets the headless convention path
+        description: A project with only parlay's headless marker present (no editor surfaces) resolves to a single AgentTarget for AgentGenericCLI.
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: generic-cli-only }
+          - verify: count
+            target: DetectedAgents
+            expected: 1
+          - verify: state
+            target: DetectedAgents[0].Surface
+            expected: AgentGenericCLI
+
+      - name: no-agent-detected fixture fails with stable error code
+        description: A project with no agent surface markers fails with studio-deployer-no-agent-detected and the error message names every known surface.
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: no-agent-surface }
+          - verify: error
+            target: DetectAgentSurfaces
+            expected: studio-deployer-no-agent-detected
+          - verify: state
+            target: ErrorMessage.MentionsClaudeCode
+            expected: true
+          - verify: state
+            target: ErrorMessage.MentionsCursor
+            expected: true
+          - verify: state
+            target: ErrorMessage.MentionsGenericCLI
+            expected: true
+
+      - name: partial agent surface still detected
+        description: A fixture with .claude/ present but no .claude/skills/ subdirectory is still classified as agent-detected; the deployer creates the subdirectory at write time.
+        steps:
+          - action: invoke
+            target: DetectAgentSurfaces
+            value: { fixture: claude-without-skills-subdir }
+          - verify: count
+            target: DetectedAgents
+            expected: 1
+          - verify: state
+            target: DetectedAgents[0].Surface
+            expected: AgentClaude
+
+      - name: agent detection source imports no parlay-core package
+        description: The duplicate-locally invariant — studio/internal/deployer source contains no import path matching parlay-tool/parlay/core/* .
+        steps:
+          - verify: file-content
+            target: studio/internal/deployer/agents.go
+            expected:
+              does-not-contain-any:
+                - "parlay-tool/parlay/core"
+                - "github.com/parlay-tool/parlay/core/"
+
+  - name: manifest-based-ownership-atomic-writes-idempotency
+    component: cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    fixture: deployer-fixture-project
+    intent: "@studio-foundation/studio-deployer/file-ownership-atomic-writes-and-idempotency"
+    cases:
+      - name: deployer source files exist at the canonical locations
+        description: The deployer's core files live in studio/internal/deployer alongside the subcommands and agent-detection entries.
+        steps:
+          - verify: file-exists
+            target: studio/internal/deployer/deployer.go
+          - verify: file-exists
+            target: studio/internal/deployer/manifest.go
+          - verify: file-exists
+            target: studio/internal/deployer/atomic_write.go
+          - verify: file-exists
+            target: studio/internal/deployer/status.go
+
+      - name: manifest is byte-equivalent across repeated derivations
+        description: DeriveManifest is deterministic — running it twice over the same inputs produces identical Manifest slices.
+        steps:
+          - action: invoke
+            target: DeriveManifest
+            value: { skills: ["parlay-design-loop"], agents: ["Claude"], root: "/tmp/fixture" }
+          - action: invoke
+            target: DeriveManifest
+            value: { skills: ["parlay-design-loop"], agents: ["Claude"], root: "/tmp/fixture" }
+          - verify: state
+            target: ManifestEquality
+            expected: true
+
+      - name: manifest produces the documented set of per-agent target paths
+        description: For each embedded skill and each detected agent, the manifest contains exactly one entry; no extra paths, no missing paths.
+        steps:
+          - action: invoke
+            target: DeriveManifest
+            value: { skills: ["parlay-design-loop"], agents: ["Claude", "Cursor"], root: "/tmp/fixture" }
+          - verify: count
+            target: ManifestEntries
+            expected: 2
+          - verify: state
+            target: ManifestEntries[0].TargetPath
+            expected: "/tmp/fixture/.claude/skills/parlay-design-loop/SKILL.md"
+          - verify: state
+            target: ManifestEntries[1].TargetPath
+            expected: "/tmp/fixture/.cursor/agents/parlay-design-loop.md"
+
+      - name: fresh deployer run reports every file as written
+        description: First Run() against an empty target reports every manifest entry as written and on-disk file hashes match embedded source hashes.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-only-fresh-project }
+          - verify: state
+            target: RunResult.AllEntriesWritten
+            expected: true
+          - verify: state
+            target: RunResult.ExitCode
+            expected: 0
+          - verify: state
+            target: OnDiskHash.MatchesEmbeddedSourceHash
+            expected: true
+
+      - name: second deployer run reports every file as unchanged
+        description: A second Run() over the resulting on-disk state reports every file as unchanged; zero filesystem writes; no .tmp files appear at any point.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-only-after-first-run }
+          - verify: state
+            target: RunResult.AllEntriesUnchanged
+            expected: true
+          - verify: count
+            target: RunResult.WrittenEntries
+            expected: 0
+          - verify: state
+            target: TmpFilesObservedDuringRun
+            expected: false
+
+      - name: user file with non-parlay prefix is not touched
+        description: A user-authored skill at .claude/skills/my-custom/SKILL.md is not on the manifest; the deployer never reads, modifies, or deletes it; the file is absent from the stdout summary.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-with-user-custom-skill }
+          - verify: file-exists
+            target: <fixture-root>/.claude/skills/my-custom/SKILL.md
+          - verify: state
+            target: UserCustomSkillContent.Unchanged
+            expected: true
+          - verify: state
+            target: RunResult.MentionsUserCustomSkill
+            expected: false
+
+      - name: user file with parlay prefix collision is not touched
+        description: A user-authored skill at .claude/skills/parlay-my-custom/SKILL.md (matches Studio's naming convention but is not in the embedded set) is left untouched and does not appear in the summary — ownership is by manifest, not by prefix.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-with-parlay-prefixed-user-skill }
+          - verify: file-exists
+            target: <fixture-root>/.claude/skills/parlay-my-custom/SKILL.md
+          - verify: state
+            target: ParlayPrefixedUserSkill.Unchanged
+            expected: true
+          - verify: state
+            target: RunResult.MentionsParlayPrefixedUserSkill
+            expected: false
+
+      - name: orphan from prior Studio version is reported and left on disk
+        description: A stale skill at .claude/skills/parlay-old-thing/SKILL.md (not on the current manifest) is reported as orphan, logs studio-deployer-orphan-detected at WARN, and is preserved on disk; exit code remains 0.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-with-stale-prior-skill }
+          - verify: state
+            target: RunResult.OrphanEntries[0].Path
+            expected: ".claude/skills/parlay-old-thing/SKILL.md"
+          - verify: state
+            target: RunResult.OrphanEntries[0].Status
+            expected: orphan
+          - verify: state
+            target: Logs.WarnLine
+            expected: "studio-deployer-orphan-detected"
+          - verify: file-exists
+            target: <fixture-root>/.claude/skills/parlay-old-thing/SKILL.md
+          - verify: state
+            target: RunResult.ExitCode
+            expected: 0
+
+      - name: mid-write crash preserves the original target
+        description: An injected rename failure leaves the original target intact and observable as its prior content; the .tmp file is orphan debris cleaned up at the start of the next Run.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: rename-failure-injected }
+          - verify: state
+            target: OriginalTarget.IntactAndUnchanged
+            expected: true
+          - verify: state
+            target: TmpFile.ObservableMidRun
+            expected: true
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: rename-failure-injected, second-run: true }
+          - verify: state
+            target: SecondRun.TmpFile.CleanedUp
+            expected: true
+
+      - name: multi-agent fan-out atomicity per agent
+        description: A fixture with both Claude and Cursor present; a write failure on Claude does not block Cursor writes; ExitCode is non-zero.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-write-failure-cursor-healthy }
+          - verify: state
+            target: RunResult.ClaudeEntries.AnyFailed
+            expected: true
+          - verify: state
+            target: RunResult.CursorEntries.AllWritten
+            expected: true
+          - verify: state
+            target: RunResult.ExitCode
+            expected: non-zero
+
+      - name: partial agent surface creates missing subdirectory on write
+        description: A fixture with .claude/ but no .claude/skills/ subdirectory has the subdirectory created by the per-agent atomic write step before any skill file is written.
+        steps:
+          - action: invoke
+            target: Deployer.Run
+            value: { fixture: claude-without-skills-subdir }
+          - verify: directory-exists
+            target: <fixture-root>/.claude/skills
+          - verify: file-exists
+            target: <fixture-root>/.claude/skills/parlay-design-loop/SKILL.md
+
+      - name: stdout summary uses the documented four-status enum
+        description: PrintSummary's output uses exactly the four status values (written, unchanged, orphan, failed); no other status strings appear.
+        steps:
+          - action: invoke
+            target: PrintSummary
+            value: { fixture: mixed-status-entries }
+          - verify: state
+            target: SummaryOutput.StatusValues
+            expected: ["written", "unchanged", "orphan", "failed"]
+
+      - name: build-time guardrail rejects direct non-atomic write primitives
+        description: A grep across studio/internal/deployer/*.go (excluding atomic_write.go) for os.WriteFile, ioutil.WriteFile, and os.Create returns zero matches.
+        steps:
+          - verify: file-content
+            target: studio/internal/deployer/deployer.go
+            expected:
+              does-not-contain-any:
+                - "os.WriteFile"
+                - "ioutil.WriteFile"
+                - "os.Create("
+          - verify: file-content
+            target: studio/internal/deployer/manifest.go
+            expected:
+              does-not-contain-any:
+                - "os.WriteFile"
+                - "ioutil.WriteFile"
+                - "os.Create("
+          - verify: file-content
+            target: studio/internal/deployer/status.go
+            expected:
+              does-not-contain-any:
+                - "os.WriteFile"
+                - "ioutil.WriteFile"
+
+      - name: atomic write helper uses write-temp + fsync + rename pattern
+        description: writeAtomic creates target.tmp, fsyncs, and renames over the target; the helper is the canonical write primitive.
+        steps:
+          - verify: file-content
+            target: studio/internal/deployer/atomic_write.go
+            expected:
+              contains-all:
+                - ".tmp"
+                - "Sync()"
+                - "os.Rename"

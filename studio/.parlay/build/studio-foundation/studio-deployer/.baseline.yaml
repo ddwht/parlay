@@ -1,0 +1,29 @@
+generated-at: "2026-06-16T10:44:41Z"
+intents:
+    file-ownership-atomic-writes-and-idempotency:
+        content-hash: 798cd882eb140868
+        goal-hash: 854d941db6b68fb3
+        constraints-hash: 0cb3b7d9b77cb48e
+        verify-hash: c0fafe57a5300ef4
+        objects-hash: 0e848b1cc5146e11
+    multi-agent-target-resolution:
+        content-hash: fccf99bcd799e79e
+        goal-hash: ef87437673700df0
+        constraints-hash: 6dfceb50a60f54bb
+        verify-hash: 31c169e4b869278f
+        objects-hash: 8ff25ce243c03a7e
+    studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands:
+        content-hash: 5794433383e3e47d
+        goal-hash: 489e911d9a328a6e
+        constraints-hash: 68784f59ec342e40
+        verify-hash: a8593b061a226739
+        objects-hash: f01e1618a5120dfe
+sources:
+    intents:
+        file-ownership-atomic-writes-and-idempotency: 665251a48853838f
+        multi-agent-target-resolution: 7cfa0250b94b913b
+        studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands: 583f518276003d62
+    dialogs:
+        file-ownership-atomic-writes-and-idempotency: 1f4d32120b012bfd
+        multi-agent-target-resolution: 512ab7cc3dd5317a
+        studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands: 7e75ba6e622cf416

@@ -1,0 +1,10 @@
+feature: studio-foundation/studio-deployer
+reviewed_at: "2026-06-16T10:32:28Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:19ea8122fa3dfc79fa1402bd74379f674978a3a4bf84d684b19d65657f0287d4
+testcases_hash: sha256:e875942e0fc4b706b2cccb9978534d5b8c208a75ea95c4888134a04bd2795a52
+approved_suites:
+    - embedded-source-and-deployer-subcommands
+    - multi-agent-target-resolution
+    - manifest-based-ownership-atomic-writes-idempotency

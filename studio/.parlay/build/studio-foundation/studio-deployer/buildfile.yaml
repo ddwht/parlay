@@ -1,0 +1,728 @@
+feature: studio-foundation/studio-deployer
+adapter-set: parlay-studio
+
+# Infrastructure-only feature: no surface.md, no domain operations.
+# All emissions are cross-cutting entries targeting the `application` slot
+# (the Go backend).
+#
+# Three cross-cutting entries, one per intent:
+#   1. embedded-source-and-deployer-subcommands (two-kinded) —
+#      relocates parlay-design-loop's source-of-truth into the Studio
+#      embedded surface, adds the deployer's init/upgrade subcommands to
+#      cmd/parlay-studio/main.go, AND deletes the project-local
+#      development-convenience copy of the skill at
+#      ../.claude/skills/parlay-design-loop/SKILL.md (cross-root deletion).
+#
+#   2. multi-agent-target-resolution (purely-introducing) —
+#      agent-surface detection + per-agent target-path resolution.
+#
+#   3. manifest-based-ownership-atomic-writes-idempotency
+#      (purely-introducing) — owned-files manifest, atomic-write helper,
+#      content-hash-skip, four-status summary, orphan handling, build-time
+#      guardrail against non-atomic write primitives.
+#
+# Existing files this feature modifies (paths relative to the resolved
+# studio root — the buildfile validator joins each plan-path against
+# /workspace/parlay-dev/studio):
+#   cmd/parlay-studio/main.go            — currently dispatches Boot(); extends with
+#                                          subcommand routing (init / upgrade / default-serve)
+#
+# Cross-root deletion (paths prefixed with `../` are interpreted from the
+# studio root — `../.claude/...` resolves to /workspace/parlay-dev/.claude/...):
+#   ../.claude/skills/parlay-design-loop/SKILL.md
+#                                        — project-local development copy retracted;
+#                                          canonical source moves into the embedded set.
+#
+# After this feature ships, design-loop's historical buildfile (which
+# references the now-retracted .claude/skills/parlay-design-loop/SKILL.md)
+# will fail check-buildfile against the new tree — by design, matching the
+# pattern set by figma-mcp-via-host-agent retracting figma-mcp-client.
+
+cross-cutting:
+  - id: embedded-source-and-deployer-subcommands
+    source: "@studio-foundation/studio-deployer/studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands"
+    target-files:
+      - cmd/parlay-studio/main.go
+    # Cross-root deletion of ../.claude/skills/parlay-design-loop/SKILL.md is
+    # routed through plan.deletes (see below). It is intentionally NOT listed
+    # in target-files: target-files is for paths to modify, not to remove.
+    target-creates:
+      - internal/embedded/embed.go
+      - internal/embedded/embed_test.go
+      - internal/embedded/skills/parlay-design-loop.skill.md
+      - internal/deployer/subcommands.go
+      - internal/deployer/subcommands_test.go
+    transform: |
+      Introduce the Studio embedded source surface and the deployer
+      subcommands that fan its contents out to a parlay project's agent
+      surfaces. This entry is two-kinded: it modifies the existing
+      cmd/parlay-studio/main.go to route the new subcommands, deletes the
+      project-local development-convenience copy of the parlay-design-loop
+      skill at ../.claude/skills/parlay-design-loop/SKILL.md, and creates
+      the embedded source files plus the subcommand wiring.
+
+      CREATE studio/internal/embedded/embed.go:
+
+        Package embedded owns the //go:embed directives that bake the
+        Studio source surface into the parlay-studio binary at link time.
+        Layout mirrors core/internal/embedded/:
+
+          //go:embed skills/*.skill.md
+          var Skills embed.FS
+
+        Future subdirectories (agents/, schemas/, adapters/) are added as
+        sibling embed.FS values when later Studio features need them; this
+        feature ships skills/ only.
+
+        Exposed surface:
+
+          var Skills embed.FS                       // the embedded skills directory tree
+          func ReadSkill(name string) ([]byte, error) // reads skills/<name>.skill.md from the embed.FS
+          func ListSkills() ([]string, error)       // returns the slugs of every embedded skill
+
+        ReadSkill validates that the skill source begins with a YAML
+        frontmatter block declaring a `name:` key and a `description:`
+        key; a source file that fails this shape check fails the call
+        with the stable code studio-embedded-skill-frontmatter-invalid.
+        The shape check runs on every read so the failure surfaces at
+        deployer invocation time even when the binary was built with a
+        malformed source (defense-in-depth on top of the build-time check).
+
+        ListSkills returns slugs in deterministic (lexicographic) order
+        so the manifest derivation downstream is deterministic.
+
+      CREATE studio/internal/embedded/embed_test.go:
+
+        Table-driven tests asserting:
+          - Skills embed.FS is non-empty; ListSkills() returns at least
+            ["parlay-design-loop"] post-relocation.
+          - ReadSkill("parlay-design-loop") returns content whose first
+            line is "---" and that contains "name: parlay-design-loop"
+            and a "description:" key in the frontmatter block.
+          - ReadSkill of a non-existent skill returns a wrapped fs.ErrNotExist.
+          - A handcrafted invalid source (missing frontmatter, missing
+            name, missing description) is rejected with
+            studio-embedded-skill-frontmatter-invalid via a temporary
+            embed.FS overlay (the production embed.FS itself stays valid).
+
+      CREATE studio/internal/embedded/skills/parlay-design-loop.skill.md:
+
+        Verbatim relocation of the current project-local skill source at
+        /workspace/parlay-dev/.claude/skills/parlay-design-loop/SKILL.md.
+        Add (or preserve) a YAML frontmatter block at the top:
+
+          ---
+          name: parlay-design-loop
+          description: <one-line summary of the design-loop skill>
+          ---
+
+        The description line summarizes the skill's purpose
+        ("Run the Design Loop round-trip for a feature — push canonical
+        layout to Figma, read back, classify designer edits, write
+        results to disk." or equivalent — the deployer step in /parlay-code
+        finalizes the exact wording). The remainder of the file is the
+        existing SKILL.md content verbatim, with no edits to logic or
+        structure.
+
+      CREATE studio/internal/deployer/subcommands.go:
+
+        Package deployer owns the init and upgrade subcommands.
+        Cobra is not in Studio's go.mod and is not introduced by this
+        feature — the existing main.go dispatches via os.Args, and the
+        subcommand router stays in that idiom. Exposed surface:
+
+          func Init(ctx context.Context, args []string) error
+          func Upgrade(ctx context.Context, args []string) error
+
+        Both functions:
+
+          1. Parse --project / --help flags off args (--help prints the
+             help text described in the Verify bullets and returns nil).
+          2. Resolve the project root via config.ResolveProjectRoot
+             (reuses studio-config's existing resolver; the --project
+             flag / STUDIO_PROJECT_ROOT env / cwd walk-up precedence is
+             unchanged).
+          3. Verify the project root contains a .parlay/ subdirectory;
+             if not, return the stable error
+             studio-deployer-parlay-not-initialized naming the missing
+             marker.
+          4. Construct a deployer.Deployer with the embedded source
+             surface and the resolved project root (see entry 3 for the
+             Deployer struct).
+          5. Invoke Deployer.Run(ctx); print the resulting status summary
+             to stdout (status enum: written / unchanged / orphan /
+             failed); return Deployer.Run's error verbatim.
+
+        Init differs from Upgrade in exactly two ways:
+          (a) Init may emit a one-time first-run banner before the
+              deployer summary; Upgrade never emits the banner.
+          (b) Init's --help text describes the first-time bootstrap
+              framing; Upgrade's --help text describes the idempotent
+              re-deploy framing. The deployer behavior itself is
+              identical — both subcommands produce the same deployed
+              file set against the same embedded source.
+
+        Both subcommands do NOT shell out to the parlay binary and do
+        NOT import any core/* package. Studio reads its own embedded
+        source and writes directly.
+
+      CREATE studio/internal/deployer/subcommands_test.go:
+
+        Coverage:
+          - Init against a fixture project with .parlay/ + .claude/
+            writes parlay-design-loop to .claude/skills/parlay-design-loop/SKILL.md
+            and the stdout summary lists one `written` line per skill.
+          - Upgrade over the resulting on-disk state reports every file
+            as `unchanged` (idempotency — full coverage lives in entry 3).
+          - Init against a directory with no .parlay/ subdirectory returns
+            studio-deployer-parlay-not-initialized; zero files written.
+          - Init with --help returns nil, writes the documented help text
+            to stdout, performs zero filesystem writes.
+          - Init/Upgrade do NOT invoke the parlay binary (static check:
+            the package source contains no os/exec import nor any
+            exec.LookPath("parlay") call).
+
+      MODIFY studio/cmd/parlay-studio/main.go:
+
+        Extend the entry point to dispatch by subcommand. The existing
+        Boot(ctx, BootDeps{}) call becomes the default action when no
+        subcommand is given (preserves current `parlay-studio` invocation
+        behavior — running the server harness). When os.Args[1] is
+        "init" or "upgrade", the entry point delegates to
+        deployer.Init or deployer.Upgrade, passing os.Args[2:] as the
+        argument slice.
+
+        Sketch:
+
+          func main() {
+              args := os.Args[1:]
+              if len(args) > 0 {
+                  switch args[0] {
+                  case "init":
+                      if err := deployer.Init(context.Background(), args[1:]); err != nil {
+                          fmt.Fprintf(os.Stderr, "parlay-studio init: %v\n", err)
+                          os.Exit(1)
+                      }
+                      return
+                  case "upgrade":
+                      if err := deployer.Upgrade(context.Background(), args[1:]); err != nil {
+                          fmt.Fprintf(os.Stderr, "parlay-studio upgrade: %v\n", err)
+                          os.Exit(1)
+                      }
+                      return
+                  }
+              }
+              // Default: run the server harness.
+              if err := server.Boot(context.Background(), server.BootDeps{}); err != nil {
+                  fmt.Fprintf(os.Stderr, "parlay-studio: %v\n", err)
+                  os.Exit(1)
+              }
+          }
+
+        The parlay-extends header comment on main.go gains an entry for
+        @studio-foundation/studio-deployer.
+
+      DELETE ../.claude/skills/parlay-design-loop/SKILL.md:
+
+        The project-local development-convenience copy at
+        /workspace/parlay-dev/.claude/skills/parlay-design-loop/SKILL.md
+        is removed from the source tree. The canonical source-of-truth
+        moves to studio/internal/embedded/skills/parlay-design-loop.skill.md.
+
+        After this feature ships, the studio repo dogfoods its own
+        deployer — running `parlay-studio init` against this repo
+        regenerates the same path (.claude/skills/parlay-design-loop/SKILL.md)
+        as deployer output. The grep verify in the intent checks the
+        SOURCE surface (and git history for the move), not the
+        working-tree output of a deployed self-install.
+    introduces:
+      - "package studio/internal/embedded: var Skills embed.FS; func ReadSkill(name string) ([]byte, error); func ListSkills() ([]string, error)"
+      - "//go:embed skills/*.skill.md directive in studio/internal/embedded/embed.go"
+      - "studio/internal/embedded/skills/parlay-design-loop.skill.md (canonical source-of-truth for the design-loop skill, with YAML frontmatter)"
+      - "package studio/internal/deployer: func Init(ctx, args) error; func Upgrade(ctx, args) error (subcommand entry points)"
+      - "subcommand router in cmd/parlay-studio/main.go dispatching init / upgrade / default-serve"
+      - "stable code studio-embedded-skill-frontmatter-invalid (build-time shape check, defense-in-depth)"
+      - "stable code studio-deployer-parlay-not-initialized (missing .parlay/ marker)"
+      - "deletion of ../.claude/skills/parlay-design-loop/SKILL.md (cross-root retraction of project-local development copy)"
+    caching: none
+    backward-compatible: no
+
+  - id: multi-agent-target-resolution
+    source: "@studio-foundation/studio-deployer/multi-agent-target-resolution"
+    target-creates:
+      - internal/deployer/agents.go
+      - internal/deployer/agents_test.go
+    transform: |
+      Introduce the agent-surface detection and per-agent target-path
+      resolution that Studio's deployer fans out to. Three agent
+      surfaces are recognized today; the duplicate-locally resolution
+      (per dialog Q2.1) means this package does NOT import any
+      core/pkg/agent/* — the detection logic lives here, matching
+      parlay-core's current conventions exactly. Adding a new agent
+      surface in parlay-core later requires a parlay-studio binary
+      release that adds the surface here.
+
+      CREATE studio/internal/deployer/agents.go:
+
+        Exposed surface:
+
+          type AgentSurface int
+          const (
+              AgentClaude AgentSurface = iota
+              AgentCursor
+              AgentGenericCLI
+          )
+          func (a AgentSurface) String() string  // "claude", "cursor", "generic-cli"
+
+          type AgentTarget struct {
+              Surface AgentSurface
+              MarkerPath string        // .claude/, .cursor/, or the headless marker (resolved against project root)
+              SkillTargetPath func(slug string) string  // returns the per-agent target path for a skill slug
+          }
+
+          func DetectAgentSurfaces(projectRoot string) ([]AgentTarget, error)
+
+        DetectAgentSurfaces walks the three known surfaces and returns
+        the AgentTarget slice for every detected one, in a stable order
+        (Claude first, then Cursor, then Generic CLI — matches parlay's
+        documented precedence). The order is observable in stdout
+        summaries; tests assert it.
+
+        Per-agent SkillTargetPath conventions (matching parlay's
+        current conventions exactly):
+
+          AgentClaude:     .claude/skills/parlay-<slug>/SKILL.md
+          AgentCursor:     .cursor/agents/parlay-<slug>.md
+          AgentGenericCLI: .parlay/cli/skills/parlay-<slug>.md
+                           (parlay's documented Generic CLI convention —
+                           confirm the exact relative path against the
+                           current parlay-core deployer at codegen time
+                           and lock the test fixture against it)
+
+        Detection markers:
+
+          AgentClaude:     .claude/ directory exists at the project root
+          AgentCursor:     .cursor/ directory exists at the project root
+          AgentGenericCLI: parlay's headless-mode marker
+                           (.parlay/cli/ directory or the equivalent
+                           per parlay-core's current convention —
+                           same lock-at-codegen-time note applies)
+
+        When zero surfaces are detected, return the stable error
+        studio-deployer-no-agent-detected wrapping a message naming the
+        three known surfaces (Claude Code via .claude/, Cursor via
+        .cursor/, Generic CLI via the headless marker) so the operator
+        knows what to initialize.
+
+        DetectAgentSurfaces does NOT itself check for .parlay/ at the
+        project root — that check is owned by subcommands.go and runs
+        first (the parlay-not-initialized error surfaces earlier than
+        the no-agent-detected error).
+
+        Partial agent surface handling: when an agent's parent marker
+        is present but its per-skill subdirectory is missing (e.g.
+        .claude/ exists but .claude/skills/ does not), DetectAgentSurfaces
+        still returns the agent as detected. The deployer creates the
+        missing subdirectory as part of the per-agent atomic write
+        step (mkdir -p on the target's parent path is part of the same
+        coordinated write).
+
+      CREATE studio/internal/deployer/agents_test.go:
+
+        Table-driven tests covering every combination from the dialogs:
+          - Claude-only fixture (only .claude/ present) → returns
+            [AgentClaude]; SkillTargetPath("parlay-design-loop") returns
+            ".claude/skills/parlay-design-loop/SKILL.md".
+          - Cursor-only fixture (only .cursor/ present) → returns
+            [AgentCursor]; SkillTargetPath returns the Cursor
+            convention path.
+          - Both Claude and Cursor present → returns
+            [AgentClaude, AgentCursor] in that order.
+          - Generic-CLI-only fixture (parlay's headless marker present,
+            no editor surfaces) → returns [AgentGenericCLI].
+          - No surface markers present → returns the stable error
+            studio-deployer-no-agent-detected; the error message names
+            all three known surfaces.
+          - Partial-surface fixture (.claude/ exists, .claude/skills/
+            does not) → returns [AgentClaude]; the test for the
+            mkdir-p-on-write happens in the deployer-level test
+            (entry 3), not here.
+
+        Static analysis test:
+          - The package source contains no import of any core/* or
+            parlay-tool/parlay/core/* path (duplicate-locally invariant).
+    introduces:
+      - "package studio/internal/deployer: type AgentSurface enum (AgentClaude, AgentCursor, AgentGenericCLI)"
+      - "package studio/internal/deployer: type AgentTarget struct with Surface, MarkerPath, SkillTargetPath fields"
+      - "package studio/internal/deployer: func DetectAgentSurfaces(projectRoot string) ([]AgentTarget, error)"
+      - "per-agent target-path conventions: Claude .claude/skills/parlay-<slug>/SKILL.md; Cursor .cursor/agents/parlay-<slug>.md; Generic CLI parlay's headless convention"
+      - "stable code studio-deployer-no-agent-detected (no agent surface detected; error message names all three known surfaces)"
+      - "duplicate-locally invariant: studio/internal/deployer source contains no import of core/* paths"
+    caching: per-process
+    backward-compatible: no
+
+  - id: manifest-based-ownership-atomic-writes-idempotency
+    source: "@studio-foundation/studio-deployer/file-ownership-atomic-writes-and-idempotency"
+    target-creates:
+      - internal/deployer/deployer.go
+      - internal/deployer/deployer_test.go
+      - internal/deployer/manifest.go
+      - internal/deployer/manifest_test.go
+      - internal/deployer/atomic_write.go
+      - internal/deployer/atomic_write_test.go
+      - internal/deployer/status.go
+      - internal/deployer/status_test.go
+    transform: |
+      Introduce the deployer's core: the owned-files manifest derived
+      from the embedded source surface, the atomic write-temp + rename
+      helper, the content-hash-skip logic for idempotency, the
+      four-status enum + stdout summary, and the orphan-detection
+      WARN-and-leave-alone behavior.
+
+      CREATE studio/internal/deployer/deployer.go:
+
+        Top-level Deployer surface:
+
+          type Deployer struct {
+              ProjectRoot string
+              Agents      []AgentTarget   // from DetectAgentSurfaces
+              SkillReader func(slug string) ([]byte, error)  // wraps embedded.ReadSkill
+              SkillLister func() ([]string, error)           // wraps embedded.ListSkills
+          }
+
+          type RunResult struct {
+              Entries []FileStatusEntry  // one per file on the manifest plus orphans
+              ExitCode int               // 0 on success (no failed), non-zero on any failed
+          }
+
+          func (d *Deployer) Run(ctx context.Context) (RunResult, error)
+
+        Run executes in fixed order:
+
+          1. Derive the owned-files manifest from SkillLister + Agents
+             (manifest.go). Manifest is deterministic and reconstructed
+             on every invocation; never persisted between runs.
+
+          2. For each agent surface, in DetectAgentSurfaces order
+             (Claude → Cursor → Generic CLI), execute the per-agent
+             atomic write step:
+
+                a. mkdir -p the agent's skill parent directory if
+                   missing (e.g. .claude/skills/).
+                b. For each manifest entry on this agent: read the
+                   embedded source, compute its content hash, compare
+                   against the on-disk file's content hash (if the
+                   file exists). When hashes match, record `unchanged`
+                   and skip the write. When they differ (or the file
+                   does not exist), write via the atomic-write helper
+                   and record `written`.
+                c. Clean up any orphan .tmp files adjacent to manifest
+                   paths before any new write begins (.tmp files from
+                   prior crashed runs are removed).
+
+             Per-agent atomicity: failures on one agent's writes do not
+             block writes to other detected agents. Each agent's
+             failures are recorded as `failed` status entries; the
+             overall ExitCode is non-zero when any entry is `failed`.
+
+          3. For each agent surface, scan for orphan files: paths under
+             the agent's skill directory matching the parlay-* naming
+             convention that are NOT on the current manifest. Record
+             each as `orphan`; log studio-deployer-orphan-detected WARN
+             naming the file path (and the previously-owning Studio
+             version when discoverable from the file's header line).
+             Orphans are never deleted; the operator decides.
+
+          4. Print the four-status summary to stdout (status.go).
+
+      CREATE studio/internal/deployer/deployer_test.go:
+
+        End-to-end coverage on a fixture parlay project:
+          - Fresh fixture (no skills on disk) → every manifest entry
+            reports `written`; on-disk file hashes match embedded source
+            hashes.
+          - Second Run() over the resulting state → every entry reports
+            `unchanged`; no .tmp files appear at any point during the run
+            (asserted via a fsnotify-style scan or a directory snapshot
+            before/after).
+          - User-authored file at .claude/skills/my-custom/SKILL.md
+            (non-parlay-prefixed) → not touched, not in summary.
+          - User-authored file at .claude/skills/parlay-my-custom/SKILL.md
+            (parlay-prefixed but not in embedded set) → not touched,
+            not in summary (manifest-not-prefix ownership invariant).
+          - Stale skill at .claude/skills/parlay-old-thing/SKILL.md
+            (was on a prior manifest, not on the current one) → reported
+            as `orphan`, logs studio-deployer-orphan-detected at WARN,
+            file is preserved on disk. ExitCode is 0 (orphan does not
+            count as failed).
+          - Mid-write crash simulation: deployer writes target.tmp,
+            does NOT rename, exits. Original target is intact (byte-equal
+            to its pre-run content). The orphaned .tmp is cleaned up at
+            the start of the next Run.
+          - Multi-agent fixture (.claude/ + .cursor/): one skill produces
+            two manifest entries (one per agent), both written; failure
+            injection on the Claude write produces failed for Claude
+            entries but Cursor entries still write successfully and the
+            overall ExitCode is non-zero.
+          - Partial-surface fixture (.claude/ exists, .claude/skills/
+            does not): deployer creates .claude/skills/ as part of the
+            per-agent atomic write step before any skill file is written.
+
+      CREATE studio/internal/deployer/manifest.go:
+
+        Manifest derivation:
+
+          type ManifestEntry struct {
+              SkillSlug string
+              Agent     AgentSurface
+              TargetPath string  // resolved against ProjectRoot
+              SourceBytes []byte // the embedded source content
+              SourceHash []byte  // sha256 of SourceBytes
+          }
+
+          type Manifest []ManifestEntry
+
+          func DeriveManifest(skills []string, agents []AgentTarget, projectRoot string, read func(string) ([]byte, error)) (Manifest, error)
+
+        DeriveManifest iterates skills × agents in deterministic order
+        (lexicographic skill slug × DetectAgentSurfaces agent order)
+        and produces one ManifestEntry per pair. The byte-equivalence
+        invariant from the intent — "every embedded source produces
+        exactly the documented set of per-agent target paths and no
+        other paths" — is verified by a unit test that derives the
+        manifest twice and asserts identical Entry slices.
+
+      CREATE studio/internal/deployer/manifest_test.go:
+
+        Coverage:
+          - DeriveManifest({parlay-design-loop}, [Claude], root) returns
+            one entry with TargetPath = root + "/.claude/skills/parlay-design-loop/SKILL.md".
+          - DeriveManifest with two skills × two agents returns four
+            entries in the documented order (skill-lexicographic ×
+            agent-detection-order).
+          - The manifest is byte-equivalent across repeated derivations
+            (determinism invariant).
+          - The manifest contains entries for the exact set of paths
+            documented by the intent — no extra paths, no missing paths.
+
+      CREATE studio/internal/deployer/atomic_write.go:
+
+        The canonical atomic-write helper — the SOLE write primitive
+        the deployer is allowed to use:
+
+          func writeAtomic(path string, content []byte) error
+
+        Steps:
+          1. mkdir -p filepath.Dir(path).
+          2. Create path + ".tmp" with the target's intended permissions (0644 for skill files).
+          3. Write content; call f.Sync() to fsync before close.
+          4. Close the file.
+          5. os.Rename(path+".tmp", path).
+
+        The rename is atomic at the filesystem level. A crash between
+        steps 2 and 5 leaves the original target intact; the .tmp file
+        is orphan debris cleaned up at the start of the next Run.
+
+        Helper for cleaning up orphan .tmp files:
+
+          func cleanupOrphanTmpFiles(dir string) error
+
+        Removes any *.tmp file in dir whose corresponding non-tmp path
+        is on the current manifest. The cleanup runs before any new
+        write in the per-agent step.
+
+      CREATE studio/internal/deployer/atomic_write_test.go:
+
+        Coverage:
+          - writeAtomic writes content to the target and never leaves
+            a .tmp file behind on the happy path.
+          - Simulated rename failure (writeAtomic's rename step injected
+            with a failing os.Rename via a test seam) leaves the original
+            target intact; the .tmp is observable mid-run, cleaned up on
+            the next Run.
+          - cleanupOrphanTmpFiles removes .tmp siblings of manifest paths
+            and leaves non-manifest .tmp files alone.
+
+        Build-time guardrail (static analysis test):
+          - A grep across studio/internal/deployer/*.go (excluding
+            atomic_write.go itself) for the patterns `os.WriteFile`,
+            `ioutil.WriteFile`, and `os.Create(` returns zero matches.
+            The test fails the build if any non-atomic write primitive
+            appears outside the canonical helper.
+
+      CREATE studio/internal/deployer/status.go:
+
+        The four-status enum and stdout summary:
+
+          type FileStatus int
+          const (
+              StatusWritten FileStatus = iota
+              StatusUnchanged
+              StatusOrphan
+              StatusFailed
+          )
+          func (s FileStatus) String() string  // "written", "unchanged", "orphan", "failed"
+
+          type FileStatusEntry struct {
+              Path   string
+              Status FileStatus
+              Source string  // for written/unchanged: the embedded source slug; for orphan: empty or prior-version label
+              Err    error   // populated only when Status is StatusFailed
+          }
+
+          func PrintSummary(w io.Writer, entries []FileStatusEntry) error
+
+        PrintSummary emits one line per entry in manifest order
+        followed by the orphan entries:
+
+          <status>: <path> (source: <slug>)
+          <status>: <path> (source: <slug>)
+          ...
+
+        The four-status enum is feature-stable per the intent. External
+        tooling that parses the deployer's stdout may rely on these
+        four values; adding a fifth status is a breaking change to the
+        deployer's output contract.
+
+      CREATE studio/internal/deployer/status_test.go:
+
+        Coverage:
+          - String() returns exactly "written", "unchanged", "orphan",
+            "failed" (no other values).
+          - PrintSummary's output format matches the documented shape
+            (regex-anchored line check; tooling-parseable).
+          - Empty entries slice → PrintSummary writes a single
+            "no files to report" line and returns nil.
+          - One failed entry → PrintSummary's output includes the
+            error text on the failed line.
+    introduces:
+      - "package studio/internal/deployer: type Deployer struct (ProjectRoot, Agents, SkillReader, SkillLister)"
+      - "package studio/internal/deployer: func (*Deployer) Run(ctx context.Context) (RunResult, error)"
+      - "package studio/internal/deployer: type ManifestEntry; type Manifest; func DeriveManifest(...)"
+      - "package studio/internal/deployer: func writeAtomic(path string, content []byte) error (canonical atomic-write helper)"
+      - "package studio/internal/deployer: func cleanupOrphanTmpFiles(dir string) error"
+      - "package studio/internal/deployer: type FileStatus enum (StatusWritten, StatusUnchanged, StatusOrphan, StatusFailed)"
+      - "package studio/internal/deployer: type FileStatusEntry struct; func PrintSummary(io.Writer, []FileStatusEntry) error"
+      - "stable WARN code studio-deployer-orphan-detected (orphan file on disk; left alone)"
+      - "feature-stable stdout four-status enum: written / unchanged / orphan / failed"
+      - "build-time guardrail: zero direct os.WriteFile / ioutil.WriteFile / os.Create writes in studio/internal/deployer outside atomic_write.go"
+    caching: none
+    backward-compatible: no
+
+plan:
+  modifies:
+    - path: cmd/parlay-studio/main.go
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+  creates:
+    - path: internal/embedded/embed.go
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+    - path: internal/embedded/embed_test.go
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+    - path: internal/embedded/skills/parlay-design-loop.skill.md
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+    - path: internal/deployer/subcommands.go
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+    - path: internal/deployer/subcommands_test.go
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+    - path: internal/deployer/agents.go
+      sources:
+        - cross-cutting/multi-agent-target-resolution
+    - path: internal/deployer/agents_test.go
+      sources:
+        - cross-cutting/multi-agent-target-resolution
+    - path: internal/deployer/deployer.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/deployer_test.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/manifest.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/manifest_test.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/atomic_write.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/atomic_write_test.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/status.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+    - path: internal/deployer/status_test.go
+      sources:
+        - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+  deletes:
+    - path: ../.claude/skills/parlay-design-loop/SKILL.md
+      sources:
+        - cross-cutting/embedded-source-and-deployer-subcommands
+  targets:
+    application:
+      modifies:
+        - path: cmd/parlay-studio/main.go
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+      creates:
+        - path: internal/embedded/embed.go
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+        - path: internal/embedded/embed_test.go
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+        - path: internal/embedded/skills/parlay-design-loop.skill.md
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+        - path: internal/deployer/subcommands.go
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+        - path: internal/deployer/subcommands_test.go
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+        - path: internal/deployer/agents.go
+          sources:
+            - cross-cutting/multi-agent-target-resolution
+        - path: internal/deployer/agents_test.go
+          sources:
+            - cross-cutting/multi-agent-target-resolution
+        - path: internal/deployer/deployer.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/deployer_test.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/manifest.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/manifest_test.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/atomic_write.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/atomic_write_test.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/status.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+        - path: internal/deployer/status_test.go
+          sources:
+            - cross-cutting/manifest-based-ownership-atomic-writes-idempotency
+      deletes:
+        - path: ../.claude/skills/parlay-design-loop/SKILL.md
+          sources:
+            - cross-cutting/embedded-source-and-deployer-subcommands
+
+source-signatures:
+  intents: "sha256:855bc27b78affb62ccb32208470c99d5bc35f4090185baa591bd599ff14d5b45"
+  dialogs: "sha256:905e9622be0e1ee84373a22f688d5aa39a0329c25f13215ecd2c3f66c3490839"
+  infrastructure: "sha256:986151952a5b48cd2305be54d84c1a653b36980ad3acfc21b9e5e86c64728a85"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"
