@@ -1,0 +1,11 @@
+feature: design-loop/vocabulary-validation
+reviewed_at: "2026-06-16T08:50:39Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:60c58b3c5776bf8dfe06d1405db388f2e1306cb2a6fc4a468e6eda3b16542dbf
+testcases_hash: sha256:8ce86c94daf68fbc320527111c146af9a5ce11f753dfbd1f36a1cf75b1da6198
+approved_suites:
+    - vocabulary-validator-library
+    - core-cli-wiring
+    - vocabulary-adapter-schema-docs
+    - stable-error-codes-tests

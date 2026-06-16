@@ -1,0 +1,632 @@
+feature: design-loop/vocabulary-validation
+adapter-set: parlay-studio
+
+# Mixed library-plus-CLI feature. The validator is a Go library living
+# inside the studio root (studio/internal/vocabulary/) and is exposed via
+# a new `parlay validate-vocabulary @<feature>` CLI command that lives in
+# the core root (core/internal/commands/). The design-loop skill invokes
+# the CLI via Bash (per @design-loop/design-loop step 2 and step 7); other
+# in-process studio callers (e.g. future Domain Model Editor pre-saves)
+# import the library directly.
+#
+# Source root resolution. This buildfile lives at
+#   studio/.parlay/build/design-loop/vocabulary-validation/buildfile.yaml
+# so `parlay check-buildfile` resolves the active source root to `studio/`.
+# In-root targets live under studio/internal/vocabulary/. Cross-root
+# targets (the CLI command in core, the schema docs in core) use the
+# `../core/...` prefix that filepath.Join cleans into the actual repo
+# layout at validation time — the same pattern the sibling
+# design-loop/design-loop buildfile applies for its three cross-root
+# creates.
+#
+# ---------------------------------------------------------------------
+# Architectural resolution: core CLI -> studio library wiring
+# ---------------------------------------------------------------------
+#
+# Intent 1 pins the validator library at studio/internal/vocabulary/
+# (a studio-owned location). Intent 1 also pins the CLI command as
+# `parlay validate-vocabulary @<feature>` — the `parlay` binary, which
+# is core. core/ and studio/ are separate Go modules
+# (github.com/ddwht/parlay vs github.com/parlay-tool/parlay/studio).
+#
+# Two ways to wire the CLI command to the library:
+#
+#   (a) In-process import — core imports the studio module as a Go
+#       dependency. Requires a `replace` directive in core/go.mod that
+#       maps github.com/parlay-tool/parlay/studio => ../studio, and a
+#       require line for the same. The CLI command in core calls
+#       vocabulary.Validate(...) directly, no process boundary.
+#
+#   (b) Process-IPC — the CLI command exec's a `parlay-studio` subcommand
+#       (forces adding a cobra harness to studio/cmd/parlay-studio/) and
+#       reads its JSON output. Loose coupling but adds a process spawn
+#       per validation.
+#
+# Decision: **(a) in-process import** via a go.mod replace directive.
+#
+# Rationale:
+#   1. The studio adapter forbids studio -> core/internal/ imports
+#      (studio/.parlay/adapters/go-studio-app.adapter.yaml, conventions:
+#      go-module rule). It does NOT constrain the reverse direction.
+#      The asymmetry exists because studio is the leaf binary; core is
+#      the toolkit. Core depending on a specific studio package is the
+#      direction of dependency we already accept conceptually.
+#   2. The validator is pure compute. Spawning a process per validation
+#      is unjustified overhead — the design-loop skill calls the
+#      validator exactly ONCE per pre-flight gate and ONCE per
+#      designer-authored novelty in step 7. A multi-novelty round-trip
+#      could be tens of CLI calls; in-process keeps cost negligible.
+#   3. Testing is simpler: the CLI command's unit test calls the
+#      library directly with table-driven inputs. With (b), the test
+#      would either need a subprocess harness or a separate IPC layer.
+#   4. The `replace` directive scopes the cross-module link to local
+#      development. When core/ ever ships an external release, the
+#      vocabulary library can be promoted to a public location (e.g.
+#      core/pkg/vocabulary/) and the replace directive dropped. The
+#      current arrangement is reversible.
+#
+# Concrete plan: cross-cutting/core-cli-wiring (below) modifies
+# core/go.mod to add the replace directive plus the require line, and
+# core/internal/commands/validate_vocabulary.go imports
+# github.com/parlay-tool/parlay/studio/internal/vocabulary directly.
+# core/internal/commands/root.go gets one new AddCommand registration.
+# ---------------------------------------------------------------------
+
+models: {}
+
+fixtures: {}
+
+routes: []
+
+components: {}
+
+cross-cutting:
+  # ---------------------------------------------------------------------------
+  # Fragment 1 (intent 1, infrastructure 1):
+  # Validator is a pure function with a stable structured report shape.
+  # The vocabulary library lives inside the studio root.
+  # ---------------------------------------------------------------------------
+  - id: vocabulary-validator-library
+    source: "@design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape"
+    target-creates:
+      - "internal/vocabulary/validator.go"
+      - "internal/vocabulary/report.go"
+      - "internal/vocabulary/vocabulary.go"
+      - "internal/vocabulary/validator_test.go"
+      - "internal/vocabulary/vocabulary_test.go"
+    transform: |
+      Introduce a new Go package at studio/internal/vocabulary/ that
+      implements the six-check vocabulary validator as a pure library.
+      The package exposes a Validate(ctx, layout, vocabulary) Report
+      entry point that runs the six closed checks in order and returns
+      a structured report. Callers — the CLI command in core and any
+      future studio in-process callers — consume the same library.
+
+      File layout:
+        internal/vocabulary/report.go
+          Defines the report value type and the Entry record shape.
+          Pure data; zero imports beyond stdlib.
+
+          Required exported names (drive Suite 1 source-grep tests):
+            type Severity string
+                const SeverityError   Severity = "error"
+                const SeverityWarning Severity = "warning"
+            type Rule string
+                const RuleTypeCheck            Rule = "type-check"
+                const RulePropertyCheck        Rule = "property-check"
+                const RuleVariantCheck         Rule = "variant-check"
+                const RuleSpacingTokenCheck    Rule = "spacing-token-check"
+                const RuleColorTokenCheck      Rule = "color-token-check"
+                const RuleLayoutContainerCheck Rule = "layout-container-check"
+            type Entry struct {
+                NodePath string      `json:"node_path" yaml:"node_path"`
+                Rule     Rule        `json:"rule"      yaml:"rule"`
+                Expected any         `json:"expected"  yaml:"expected"`
+                Actual   any         `json:"actual"    yaml:"actual"`
+                Severity Severity    `json:"severity"  yaml:"severity"`
+            }
+            type Report struct {
+                Entries []Entry `json:"report" yaml:"report"`
+            }
+
+          Invariant tracked: the Entry struct's field set is exactly
+          {NodePath, Rule, Expected, Actual, Severity} — no additional
+          fields, no renamed fields. The closed Rule and Severity enums
+          carry the only admissible string values.
+
+        internal/vocabulary/vocabulary.go
+          Loads the vocabulary block from a resolved adapter YAML.
+          Owns the four subfield types and the load path:
+
+            type Vocabulary struct {
+                Components       []ComponentSpec       `yaml:"components"`
+                SpacingTokens    []string              `yaml:"spacing_tokens"`
+                ColorTokens      []string              `yaml:"color_tokens"`
+                LayoutContainers []LayoutContainerSpec `yaml:"layout_containers"`
+            }
+            type ComponentSpec struct {
+                Name       string              `yaml:"name"`
+                Properties []string            `yaml:"properties"`
+                Variants   map[string][]string `yaml:"variants"`
+            }
+            type LayoutContainerSpec struct {
+                ContainerType         string                            `yaml:"container_type"`
+                AdmissibleParameters  []string                          `yaml:"admissible_parameters"`
+                ParameterConstraints  map[string]ParameterConstraint    `yaml:"parameter_constraints"`
+            }
+            type ParameterConstraint struct {
+                Type          string   `yaml:"type"`
+                AllowedValues []string `yaml:"allowed_values"`
+            }
+
+          Exported error sentinels (stable across versions — the wire
+          contract with the design-loop skill matches these strings
+          textually):
+            var ErrVocabularyMissingFromAdapter = errors.New("vocabulary-missing-from-adapter")
+            var ErrVocabularyUnknownAdapter     = errors.New("vocabulary-unknown-adapter")
+
+          Exported loader:
+            func LoadFromAdapterFile(path string) (Vocabulary, error)
+              Reads exactly the named adapter YAML, parses the four
+              subfields, validates the shape (components entries match
+              {name, properties, variants}; layout_containers
+              container_type resolves into components; spacing_tokens
+              and color_tokens are flat []string; the vocabulary: block
+              has exactly the four named subfields). Returns
+              ErrVocabularyMissingFromAdapter when the file lacks a
+              vocabulary: block.
+
+            func ResolveForLayout(layoutComponentVocabulary string, registeredAdapters []string, adapterRootDir string) (Vocabulary, error)
+              Resolves the layout's componentVocabulary: value (e.g.
+              "clarity@17") against the registered adapter set. Returns
+              ErrVocabularyUnknownAdapter wrapped with the referenced
+              value and registered-adapter list when no adapter
+              resolves. Caches the loaded vocabulary process-local on
+              first access (per infrastructure caching: on-first-access).
+
+          Strict file-IO contract: this package opens exactly the
+          resolved adapter YAML; it does NOT look for a sibling
+          <adapter>.vocabulary.yaml file. A unit test in
+          vocabulary_test.go asserts the file-read count.
+
+        internal/vocabulary/validator.go
+          Owns Validate(ctx, layout, vocab) Report and the six per-rule
+          check functions.
+
+          Exported entry point:
+            func Validate(ctx context.Context, layout any, vocab Vocabulary) Report
+
+          The validator walks every node in the layout's typed tree in
+          deterministic walk order and runs the six checks in this
+          order per node:
+            1. type-check       — node.type resolves in vocab.Components
+            2. property-check   — every node.property name is in the
+                                  resolved component's Properties list
+            3. variant-check    — every node.variant value is in the
+                                  resolved component's Variants[axis] enum
+            4. spacing-token-check — every spacing/padding/gap value is
+                                  a token name in vocab.SpacingTokens
+                                  (error on raw literals; warning on
+                                  alias-to-non-canonical-token)
+            5. color-token-check   — every color value is a token name
+                                  in vocab.ColorTokens (error on raw
+                                  hex; warning on alias-to-non-canonical)
+            6. layout-container-check — for clarity.region-shaped
+                                  containers, every layout parameter
+                                  name is in the matching
+                                  LayoutContainerSpec.AdmissibleParameters,
+                                  and each parameter value satisfies
+                                  the ParameterConstraint when present
+
+          Checks 1-3 produce ONLY SeverityError entries. A unit test
+          asserts that no code path in validator.go assigns
+          SeverityWarning to a type/property/variant entry.
+
+          Checks 4-6 produce SeverityError on raw literals and
+          SeverityWarning on resolves-through-alias-but-not-canonical.
+
+          The validator does NOT short-circuit: every check fires
+          against every applicable node. The caller sees the full issue
+          list in one report.
+
+          Validate accepts the layout as either a full typed tree (the
+          pre-flight invocation mode) or a single layout node (the
+          read-back classification mode); both modes produce
+          report.Entry values shaped identically.
+
+          Validate never computes or emits a derived in-vocabulary /
+          out-of-vocabulary signal. That derivation lives in callers.
+          A grep across validator.go for the literal strings
+          "in-vocabulary" or "out-of-vocabulary" outside comments
+          returns zero matches.
+
+          Validate is pure: zero network sockets, zero MCP calls, zero
+          filesystem reads. A unit test exercises a fake context whose
+          dialer/file primitives panic on any call; a successful
+          Validate run with that context proves the no-IO invariant.
+
+        internal/vocabulary/validator_test.go
+          Table-driven tests covering every Invariant from
+          infrastructure fragment 1 plus every Verify bullet in intent
+          1. See testcases.yaml Suite 1 for the enumerated case list;
+          each yaml case corresponds to one or more t.Run subtests in
+          this file.
+
+        internal/vocabulary/vocabulary_test.go
+          Tests covering every Invariant from infrastructure fragment
+          2 plus every Verify bullet in intent 2: adapter-load happy
+          path, missing-block error, unknown-adapter error, schema
+          errors on each malformed subfield, no-network-and-no-sibling-
+          file invariants. See testcases.yaml Suite 2.
+
+      The package has no dependency on core/internal/* (the studio
+      adapter's go-module rule still holds). Its only studio-internal
+      dependency is internal/files for the atomic-read path (if the
+      adapter resolution chooses to surface read-with-context through
+      that package; otherwise stdlib os/io is acceptable since the
+      vocabulary load is read-only and atomicity is not required for
+      reads).
+    introduces:
+      - "studio/internal/vocabulary/ package with Validate(ctx, layout, vocab) Report entry point"
+      - "Report, Entry, Severity, Rule public types and the six rule-name constants"
+      - "Vocabulary, ComponentSpec, LayoutContainerSpec, ParameterConstraint public types"
+      - "ErrVocabularyMissingFromAdapter, ErrVocabularyUnknownAdapter exported error sentinels"
+      - "LoadFromAdapterFile and ResolveForLayout exported loaders"
+    caching: on-first-access
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 2 (intent 1 / infrastructure 1): CLI wiring in core.
+  # `parlay validate-vocabulary @<feature>` is the operator-facing entry
+  # that wraps the library. The CLI command lives in core/internal/commands/
+  # (cross-root) and imports the studio library via a go.mod replace
+  # directive (architectural decision (a); see header rationale).
+  # ---------------------------------------------------------------------------
+  - id: core-cli-wiring
+    source: "@design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape"
+    target-files:
+      - "../core/internal/commands/root.go"
+      - "../go.mod"
+    target-creates:
+      - "../core/internal/commands/validate_vocabulary.go"
+      - "../core/internal/commands/validate_vocabulary_test.go"
+    transform: |
+      Wire the studio vocabulary library into the parlay CLI. Adds the
+      `validate-vocabulary` subcommand and the cross-module dependency
+      that lets the core binary call the library in-process.
+
+      CROSS-ROOT WRITE TARGETS (paths reach into the core sibling root
+      via the `../core/...` prefix that filepath.Join cleans; the code
+      phase MUST author them with the resolved path under the repo-
+      level layout):
+
+      Creates:
+        - core/internal/commands/validate_vocabulary.go
+            Cobra Command definition. Registered against rootCmd via
+            AddCommand in root.go. Command surface:
+
+              parlay validate-vocabulary @<feature>
+                  [--node <node-path>]     # read-back mode (single node)
+                  [--root <root>]          # multi-root active-root override
+                  [--ambiguity-as-signal]  # standard CLI-wrapper flag
+                  [--non-interactive]      # CI signaling
+
+            Behavior:
+              1. Resolve the active root via the standard cwd walk-up /
+                 --root / PARLAY_ROOT order (PersistentPreRunE handles it).
+              2. Resolve @<feature> to the feature's spec directory; read
+                 the layout YAML by walking the feature's page schemas.
+                 Read the componentVocabulary: field.
+              3. Call vocabulary.ResolveForLayout(...) to load the
+                 vocabulary from the resolved adapter. Surface the two
+                 stable error codes verbatim on resolution failure
+                 (vocabulary-missing-from-adapter / vocabulary-unknown-
+                 adapter) on stderr, exit non-zero.
+              4. Call vocabulary.Validate(ctx, layout, vocab) — or, in
+                 read-back mode (`--node` flag set OR a single-node
+                 fragment piped on stdin), call Validate with the named
+                 node only.
+              5. Marshal the Report to JSON on stdout as
+                 `{"report": [...]}`. Exit code 0 when zero error-
+                 severity entries; exit code 1 otherwise.
+
+            The command never computes a derived in-vocabulary /
+            out-of-vocabulary signal — it emits ONLY the structured
+            report and the exit code.
+
+            The command does NOT load schemas from .parlay/schemas/;
+            it does NOT call any AI client; it does NOT prompt
+            interactively. It is a pure transform from (feature, node?)
+            to JSON-report-plus-exit-code.
+
+        - core/internal/commands/validate_vocabulary_test.go
+            Tests covering: the full-layout happy path (empty report,
+            exit 0); each of the six checks producing an entry; the
+            two stable error codes; --node flag mode equivalence with
+            in-process Validate; stdin-piped single-node mode
+            equivalence; CLI-vs-library byte equality of the
+            structured report.
+
+      Modifies:
+        - core/internal/commands/root.go
+            Add exactly ONE new AddCommand registration:
+              rootCmd.AddCommand(validateVocabularyCmd)
+            placed alphabetically near the other validate* / verify*
+            registrations (after `rootCmd.AddCommand(validateCmd)` is
+            a natural slot). No other change to root.go.
+
+        - go.mod (repo-root, the core module's go.mod)
+            Add the cross-module dependency on the studio module:
+              require github.com/parlay-tool/parlay/studio v0.0.0
+              replace github.com/parlay-tool/parlay/studio => ../studio
+            The version is the development zero; the replace pins the
+            actual sources to the sibling directory. Local-only — when
+            studio publishes a tagged release the replace can be
+            dropped.
+
+            Also add yaml.v3 to the require list if it is not already
+            present (the vocabulary loader uses it). It is currently
+            an indirect dependency; promote it to direct.
+
+      Source verbatim — the import in validate_vocabulary.go is:
+        import "github.com/parlay-tool/parlay/studio/internal/vocabulary"
+
+      No change to studio/go.mod is needed — the dependency direction
+      is core -> studio, and studio's own module file is untouched.
+      The studio adapter's "no import of core/internal/*" rule is
+      preserved (this wiring does the reverse).
+    introduces:
+      - "parlay validate-vocabulary subcommand registered against rootCmd"
+      - "core/go.mod require + replace for github.com/parlay-tool/parlay/studio"
+      - "Cross-module import of studio/internal/vocabulary from core/internal/commands"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 3 (intent 2, infrastructure 2):
+  # Vocabulary source resolution + the vocabulary: adapter block schema.
+  # ---------------------------------------------------------------------------
+  - id: vocabulary-adapter-schema-docs
+    source: "@design-loop/vocabulary-validation/vocabulary-source-resolution"
+    target-files:
+      - "../core/internal/embedded/schemas/adapter.schema.md"
+    target-creates:
+      - "../core/internal/embedded/schemas/vocabulary.schema.md"
+    transform: |
+      Document the adapter `vocabulary:` block in the embedded schema
+      surface. The schema docs are framework-agnostic markdown.
+
+      CROSS-ROOT WRITE TARGETS (under ../core/internal/embedded/
+      schemas/):
+
+      Creates:
+        - core/internal/embedded/schemas/vocabulary.schema.md
+            New schema doc owned by this feature. Documents the four
+            subfields of the adapter-yaml `vocabulary:` block:
+
+              components: list of {name, properties, variants} records
+              spacing_tokens: flat list of admissible spacing token names
+              color_tokens:   flat list of admissible color token names
+              layout_containers: list of
+                {container_type, admissible_parameters, parameter_constraints}
+                records
+
+            Required schema-doc content:
+              * A "# Vocabulary Schema" heading
+              * A "File:" pointer noting the block lives inline in
+                <adapter>.adapter.yaml under top-level `vocabulary:`
+                (NOT a sibling vocabulary.yaml file)
+              * One subsection per subfield with field-type, requiredness,
+                and an example YAML snippet
+              * A "Resolution failures" section enumerating exactly the
+                two stable error codes (vocabulary-missing-from-adapter
+                and vocabulary-unknown-adapter) with their exact wire-
+                contract strings and the message templates each carries
+              * An "Inline vs separate file" rationale paragraph that
+                states inline is the only supported placement and
+                names the rejected alternative for designer-archaeology
+              * A "Backward compatibility" line: adapters without the
+                block cannot drive Design Loop vocabulary validation;
+                they remain valid for non-Design-Loop adapter uses
+                (codegen against the adapter still works)
+
+            Determinism contract: any AI that reads this schema
+            produces the same Vocabulary, ComponentSpec, and
+            LayoutContainerSpec field sets — they match the Go types in
+            studio/internal/vocabulary/vocabulary.go one-for-one.
+
+      Modifies:
+        - core/internal/embedded/schemas/adapter.schema.md
+            Add a short cross-reference paragraph (1-2 sentences) in
+            the adapter.schema.md surface pointing at vocabulary.schema.md
+            for the `vocabulary:` block shape. Placement: under the
+            existing block enumeration where other top-level adapter
+            blocks (file-conventions, conventions, supports, etc.) are
+            described, naming `vocabulary:` as an optional top-level
+            block and linking to vocabulary.schema.md for its shape.
+
+            Do NOT inline the full vocabulary subfield documentation
+            here — keep the schema docs single-source. The reference is
+            a forward pointer, not a duplicate.
+
+      File-IO contract: the validator's vocabulary load reads exactly
+      one filesystem input — the resolved adapter YAML. A sibling
+      <adapter>.vocabulary.yaml file is NOT read; a fixture test in
+      vocabulary_test.go places such a sibling and asserts the
+      validator ignores it.
+
+      Vocabulary block contents intentionally exclude pixel values for
+      spacing tokens and resolved hex values for color tokens. The
+      validator checks set membership only; the resolved value lives
+      with the design system, not in the validator's contract.
+
+      Adapter authorship responsibility: the schema doc states that
+      keeping the declared vocabulary in sync with the real Figma
+      source of truth is the adapter author's responsibility. Drift
+      detection between adapter and Figma is reserved for a separate
+      future integration-test feature; the validator does no such
+      comparison and never calls Figma MCP.
+    introduces:
+      - "core/internal/embedded/schemas/vocabulary.schema.md (new schema doc)"
+      - "Cross-reference paragraph in core/internal/embedded/schemas/adapter.schema.md"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 4 (infrastructure 3): Stable error codes for vocabulary
+  # resolution failures. The two codes are surfaced through the library
+  # error sentinels (introduced in cross-cutting/vocabulary-validator-
+  # library) and through the CLI's stderr output (cross-cutting/core-cli-
+  # wiring). This entry contributes test coverage that pins the wire
+  # contract; the implementation paths already live in the prior entries.
+  # ---------------------------------------------------------------------------
+  - id: stable-error-codes-tests
+    source: "@design-loop/vocabulary-validation/vocabulary-source-resolution"
+    target-creates:
+      - "internal/vocabulary/errors_test.go"
+    transform: |
+      Introduce errors_test.go inside studio/internal/vocabulary/ that
+      pins the two stable error code strings textually. The test
+      exists separate from validator_test.go and vocabulary_test.go so
+      that a rename of either code string fails the build immediately
+      with a single dedicated failure — the design-loop skill matches
+      these strings literally in its conflict-classification logic,
+      and the code-string contract is what defines the closed pair.
+
+      Required test cases (drive Suite 4 in testcases.yaml):
+
+        1. The literal string "vocabulary-missing-from-adapter" is the
+           value of ErrVocabularyMissingFromAdapter.Error(). A rename
+           is detected by string comparison, not by errors.Is — the
+           wire contract is the string.
+
+        2. The literal string "vocabulary-unknown-adapter" is the value
+           of ErrVocabularyUnknownAdapter.Error().
+
+        3. Exactly two stable error codes exist in the vocabulary
+           package — no third resolution-failure code. A grep of the
+           package source (using go/parser or go-grep) returns matches
+           only inside the two sentinel declarations and the two
+           returning code paths.
+
+        4. Neither code string appears outside the two sentinel
+           declarations and the two return sites. The CLI's stderr
+           output references the sentinels (not new copies of the
+           string).
+
+        5. Both codes wrap their relevant identifier in the error
+           message: vocabulary-missing-from-adapter names the adapter
+           file; vocabulary-unknown-adapter names the referenced
+           componentVocabulary value AND the registered-adapter list.
+
+      The test file does not call Validate or any other public
+      function — it imports the package, reads the sentinels, and
+      asserts the string values. This keeps the test trivially fast
+      and isolates the wire-contract regression signal from any
+      validator-logic regression.
+    introduces:
+      - "studio/internal/vocabulary/errors_test.go pinning the two stable error code strings"
+    caching: none
+    backward-compatible: true
+
+# No wiring rules (no layout-bearing pages in this feature — the feature
+# is a Go library plus a CLI command; it does not have a Studio UI page).
+# No bindings (no layout-bearing pages in this feature).
+
+plan:
+  # In-root targets (under studio/) are listed directly; cross-root
+  # targets use the ../core/... or similar prefix that filepath.Join
+  # cleans into the actual on-disk path.
+  #
+  # Routing:
+  #   - studio/internal/vocabulary/*.go are all new (purely-introducing)
+  #     → plan.creates under cross-cutting/vocabulary-validator-library
+  #     (and the dedicated errors_test under stable-error-codes-tests)
+  #   - core/internal/commands/validate_vocabulary{.go,_test.go} are new
+  #     → plan.creates under cross-cutting/core-cli-wiring
+  #   - core/internal/commands/root.go exists → plan.modifies
+  #   - core/go.mod exists → plan.modifies
+  #   - core/internal/embedded/schemas/vocabulary.schema.md is new
+  #     → plan.creates under cross-cutting/vocabulary-adapter-schema-docs
+  #   - core/internal/embedded/schemas/adapter.schema.md exists
+  #     → plan.modifies under cross-cutting/vocabulary-adapter-schema-docs
+  modifies:
+    - path: "../core/internal/commands/root.go"
+      sources:
+        - cross-cutting/core-cli-wiring
+    - path: "../go.mod"
+      sources:
+        - cross-cutting/core-cli-wiring
+    - path: "../core/internal/embedded/schemas/adapter.schema.md"
+      sources:
+        - cross-cutting/vocabulary-adapter-schema-docs
+  creates:
+    - path: "internal/vocabulary/validator.go"
+      sources:
+        - cross-cutting/vocabulary-validator-library
+    - path: "internal/vocabulary/report.go"
+      sources:
+        - cross-cutting/vocabulary-validator-library
+    - path: "internal/vocabulary/vocabulary.go"
+      sources:
+        - cross-cutting/vocabulary-validator-library
+    - path: "internal/vocabulary/validator_test.go"
+      sources:
+        - cross-cutting/vocabulary-validator-library
+    - path: "internal/vocabulary/vocabulary_test.go"
+      sources:
+        - cross-cutting/vocabulary-validator-library
+    - path: "internal/vocabulary/errors_test.go"
+      sources:
+        - cross-cutting/stable-error-codes-tests
+    - path: "../core/internal/commands/validate_vocabulary.go"
+      sources:
+        - cross-cutting/core-cli-wiring
+    - path: "../core/internal/commands/validate_vocabulary_test.go"
+      sources:
+        - cross-cutting/core-cli-wiring
+    - path: "../core/internal/embedded/schemas/vocabulary.schema.md"
+      sources:
+        - cross-cutting/vocabulary-adapter-schema-docs
+  deletes: []
+  # Multi-target shape: half of the writes land inside the active studio
+  # root under studio/internal/vocabulary/ (the application slot); the
+  # other half cross into the core root via the ../ prefix. Neither slot
+  # in the adapter-set carries the cross-root writes (presentation =
+  # studio/internal/ui/, application = studio/), so the per-slot block
+  # only enumerates the in-studio writes. The legacy flat block above is
+  # the canonical list and is what check-buildfile validates.
+  targets:
+    presentation:
+      modifies: []
+      creates: []
+      deletes: []
+    application:
+      modifies: []
+      creates:
+        - path: "internal/vocabulary/validator.go"
+          sources:
+            - cross-cutting/vocabulary-validator-library
+        - path: "internal/vocabulary/report.go"
+          sources:
+            - cross-cutting/vocabulary-validator-library
+        - path: "internal/vocabulary/vocabulary.go"
+          sources:
+            - cross-cutting/vocabulary-validator-library
+        - path: "internal/vocabulary/validator_test.go"
+          sources:
+            - cross-cutting/vocabulary-validator-library
+        - path: "internal/vocabulary/vocabulary_test.go"
+          sources:
+            - cross-cutting/vocabulary-validator-library
+        - path: "internal/vocabulary/errors_test.go"
+          sources:
+            - cross-cutting/stable-error-codes-tests
+      deletes: []
+
+source-signatures:
+  intents: "sha256:fb4d88211443e1dde785079e21b107ebc9081d7762bf950c924fe07ceabddcba"
+  dialogs: "sha256:0ad2c6ee7d7335ed6bc837f7470fe923462117daa3130326b13c4bcfc15a2115"
+  infrastructure: "sha256:3d11223600b175335b2f9f3fa8729d6da01b64e48c26f89a9bc76ed931bcc590"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"
+  adapter-set: "sha256:b4de337cdab071c0ccf3f0c45ae44b469e801360ebcb6977047bcee28d3a9c2f"

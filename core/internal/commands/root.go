@@ -265,6 +265,9 @@ func init() {
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)
+	// parlay-feature: design-loop/vocabulary-validation
+	// parlay-component: cross-cutting/core-cli-wiring
+	rootCmd.AddCommand(validateVocabularyCmd)
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(checkCoverageCmd)
 	rootCmd.AddCommand(collectQuestionsCmd)

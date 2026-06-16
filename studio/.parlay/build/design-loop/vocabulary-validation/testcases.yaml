@@ -1,0 +1,649 @@
+feature: design-loop/vocabulary-validation
+framework: Go testing (standard library, table-driven t.Run subtests; no third-party assertion libraries)
+
+# Four suites, one per cross-cutting fragment. The suites translate the
+# Invariants and the intents' Verify bullets into concrete file-content
+# and structural checks. Studio's testing convention applies: standard
+# library testing, snake_case file names, _test.go alongside source.
+#
+# Suite-to-source mapping:
+#   Suite 1 -> cross-cutting/vocabulary-validator-library
+#               (studio/internal/vocabulary/{validator,report,vocabulary}.go
+#                plus their _test.go counterparts, intent 1, infrastructure 1)
+#   Suite 2 -> cross-cutting/core-cli-wiring
+#               (core/internal/commands/validate_vocabulary*.go,
+#                core/internal/commands/root.go, core/go.mod, intent 1)
+#   Suite 3 -> cross-cutting/vocabulary-adapter-schema-docs
+#               (core/internal/embedded/schemas/{vocabulary,adapter}.schema.md,
+#                intent 2, infrastructure 2)
+#   Suite 4 -> cross-cutting/stable-error-codes-tests
+#               (studio/internal/vocabulary/errors_test.go, infrastructure 3)
+
+suites:
+  # ---------------------------------------------------------------------------
+  # Suite 1: Vocabulary validator library — six checks + purity contract
+  # Traces to cross-cutting/vocabulary-validator-library
+  # Intent: @design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape
+  # ---------------------------------------------------------------------------
+  - name: vocabulary-validator-library
+    component: cross-cutting/vocabulary-validator-library
+    intent: "@design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape"
+
+    cases:
+      # File-existence + package structure
+      - name: Vocabulary package source files exist
+        description: >
+          The package layout introduces five new files under
+          studio/internal/vocabulary/.
+        steps:
+          - verify: file-exists
+            target: studio/internal/vocabulary/validator.go
+          - verify: file-exists
+            target: studio/internal/vocabulary/report.go
+          - verify: file-exists
+            target: studio/internal/vocabulary/vocabulary.go
+          - verify: file-exists
+            target: studio/internal/vocabulary/validator_test.go
+          - verify: file-exists
+            target: studio/internal/vocabulary/vocabulary_test.go
+
+      - name: Report file defines the closed Entry shape
+        description: >
+          Invariant: "The structured report's entries are exactly the
+          closed shape {node_path, rule, expected, actual, severity}
+          with no additional or renamed fields." Verified by source
+          grep against the Entry type declaration.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/report.go
+            expected:
+              contains-all:
+                - "type Entry struct"
+                - "NodePath"
+                - "Rule"
+                - "Expected"
+                - "Actual"
+                - "Severity"
+                - "node_path"
+                - "rule"
+                - "expected"
+                - "actual"
+                - "severity"
+
+      - name: Report file declares the closed Severity enum
+        description: >
+          Invariant: "severity is exactly one of error or warning for
+          every entry; no other severity values exist in the
+          validator's source."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/report.go
+            expected:
+              contains-all:
+                - "SeverityError"
+                - "SeverityWarning"
+                - "\"error\""
+                - "\"warning\""
+
+      - name: Report file declares the closed six-rule enum
+        description: >
+          Invariant: "The rule set is closed at exactly six checks."
+          Verified by source grep against the rule constants.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/report.go
+            expected:
+              contains-all:
+                - "RuleTypeCheck"
+                - "RulePropertyCheck"
+                - "RuleVariantCheck"
+                - "RuleSpacingTokenCheck"
+                - "RuleColorTokenCheck"
+                - "RuleLayoutContainerCheck"
+                - "\"type-check\""
+                - "\"property-check\""
+                - "\"variant-check\""
+                - "\"spacing-token-check\""
+                - "\"color-token-check\""
+                - "\"layout-container-check\""
+
+      # Per-check entries (the six checks, one assertion each from intent Verify)
+      - name: Type-check fires on unknown component
+        description: >
+          Verify from intent 1: "A unit test passes a layout with a node
+          whose type: is unknown and asserts the result entry has
+          rule: type-check, severity: error."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "clarity.megabutton"
+                - "RuleTypeCheck"
+                - "SeverityError"
+
+      - name: Property-check fires on unknown property
+        description: >
+          Dialog branch 2: A clarity.button node with glow: true property
+          yields a property-check error.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RulePropertyCheck"
+                - "glow"
+
+      - name: Variant-check fires on out-of-enum variant
+        description: >
+          Dialog branch 3: kind: ghost outside the [primary, secondary,
+          tertiary] enum yields a variant-check error.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RuleVariantCheck"
+                - "ghost"
+
+      - name: Spacing-token check errors on raw pixel and warns on alias
+        description: >
+          Verify from intent 1: "A unit test passes a layout with a
+          node using a raw pixel padding value (e.g. padding: 16) and
+          asserts the result entry has rule: spacing-token-check,
+          severity: error." Dialog branch 5 additionally covers the
+          alias-to-non-canonical warning case (spc-md -> spacing-md
+          warning).
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RuleSpacingTokenCheck"
+                - "SeverityError"
+                - "SeverityWarning"
+                - "spc-md"
+                - "spacing-md"
+
+      - name: Color-token check errors on raw hex
+        description: >
+          Dialog branch 7: color "#3B82F6" yields a color-token-check
+          error with the admissible color-token list as expected.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RuleColorTokenCheck"
+                - "#3B82F6"
+
+      - name: Layout-container check errors on unknown parameter value
+        description: >
+          Dialog branch 8: direction: diagonal outside the [horizontal,
+          vertical] allowed_values yields a layout-container-check
+          error.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RuleLayoutContainerCheck"
+                - "diagonal"
+
+      # Clean-layout and aggregation cases
+      - name: Clean layout produces an empty report
+        description: >
+          Verify from intent 1: "A unit test passes a layout with all
+          valid types, properties, and tokens and asserts the result
+          has zero entries."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains: "len(report.Entries)"
+
+      - name: No short-circuiting — multiple errors in one layout
+        description: >
+          Verify from intent 1: "A unit test passes a layout with both
+          a type error AND a property error and asserts both appear in
+          the result (no short-circuiting)."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "RuleTypeCheck"
+                - "RulePropertyCheck"
+
+      # Purity invariants
+      - name: Validator opens zero network sockets
+        description: >
+          Invariant: "The validator opens zero network sockets during
+          a validation run; a network-syscall trace across a validation
+          call shows nothing." Verified by a test that runs Validate
+          with a context whose net dialer rejects all calls.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "net"
+                - "dial"
+
+      - name: Validator never references Figma MCP tool names
+        description: >
+          Invariant: "The validator invokes zero Figma MCP tools; a
+          grep across its source for any Figma MCP tool name returns
+          zero matches outside comment blocks." Verified by source
+          grep over validator.go and the load path.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator.go
+            expected:
+              no-line-matches: "use_figma|get_metadata|add_code_connect_map|send_code_connect_mappings|get_code_connect_map|whoami|create_new_file"
+
+      - name: Validator never emits the derived in-vocabulary signal
+        description: >
+          Invariant: "The validator never computes or emits a derived
+          in-vocabulary / out-of-vocabulary signal; a grep across the
+          validator's source for those literal strings returns zero
+          matches outside test fixtures and documentation."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator.go
+            expected:
+              no-line-matches: "\"in-vocabulary\"|\"out-of-vocabulary\""
+
+      # Checks 1-3 never produce SeverityWarning
+      - name: Checks 1-3 never produce SeverityWarning
+        description: >
+          Invariant: "Checks 1-3 (type, property, variant) only ever
+          produce error severity." A unit test asserts a report
+          containing any of those three rules with severity: warning
+          is impossible from the validator's output path.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains: "never warns"
+
+      # Invocation-mode equivalence
+      - name: Single-node mode produces identical report shape
+        description: >
+          Verify from intent 1: "A unit test invokes the validator with
+          a single layout node (read-back mode) and asserts the report
+          shape matches the full-layout mode (same {node_path, rule,
+          expected, actual, severity} entries; same severity semantics)."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "single node"
+                - "full layout"
+
+      # Caller-derived signal
+      - name: Caller-derived in-vocabulary signal computation
+        description: >
+          Verify from intent 1: "A unit test invokes the validator
+          with a report containing zero error-severity entries and
+          asserts the caller-derived signal is in-vocabulary; with at
+          least one error-severity entry, asserts out-of-vocabulary."
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator_test.go
+            expected:
+              contains-all:
+                - "in-vocabulary"
+                - "out-of-vocabulary"
+
+  # ---------------------------------------------------------------------------
+  # Suite 2: Core CLI wiring — parlay validate-vocabulary subcommand
+  # Traces to cross-cutting/core-cli-wiring
+  # Intent: @design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape
+  # ---------------------------------------------------------------------------
+  - name: core-cli-wiring
+    component: cross-cutting/core-cli-wiring
+    intent: "@design-loop/vocabulary-validation/validation-rules-types-tokens-and-shape"
+
+    cases:
+      - name: Core command source file exists
+        description: >
+          New cobra command at core/internal/commands/validate_vocabulary.go.
+        steps:
+          - verify: file-exists
+            target: core/internal/commands/validate_vocabulary.go
+          - verify: file-exists
+            target: core/internal/commands/validate_vocabulary_test.go
+
+      - name: Core command imports the studio vocabulary library
+        description: >
+          Architectural decision (a): the CLI command in core imports
+          studio/internal/vocabulary directly. The import path is the
+          studio module's package path.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary.go
+            expected:
+              contains: "github.com/parlay-tool/parlay/studio/internal/vocabulary"
+
+      - name: Core go.mod has the cross-module require and replace
+        description: >
+          The go.mod requires the studio module and replaces it with
+          the sibling directory path. Local-only wiring (the version
+          can be the development zero; the replace is what binds the
+          actual sources).
+        steps:
+          - verify: file-content
+            target: core/go.mod
+            expected:
+              contains-all:
+                - "github.com/parlay-tool/parlay/studio"
+                - "replace"
+                - "../studio"
+
+      - name: Cobra command is registered against rootCmd
+        description: >
+          Exactly one AddCommand registration is added to
+          core/internal/commands/root.go for the validate-vocabulary
+          subcommand.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/root.go
+            expected:
+              contains: "validateVocabularyCmd"
+
+      - name: Command surface uses validate-vocabulary as the use string
+        description: >
+          Surface contract: parlay validate-vocabulary @<feature>.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary.go
+            expected:
+              contains: "validate-vocabulary"
+
+      - name: Command supports --node flag for read-back mode
+        description: >
+          Dialog branch (read-back classification mode): the CLI accepts
+          --node <node-path> to scope the validation to a single layout
+          node, matching the single-node Validate signature.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary.go
+            expected:
+              contains: "node"
+
+      - name: Command emits JSON report on stdout
+        description: >
+          Verify from intent 1: "A unit test invokes the parlay
+          validate-vocabulary @<feature> CLI command and asserts the
+          JSON output is the same structured report the library produces
+          in-process." Dialog trigger: the system emits the structured
+          report as JSON on stdout.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary_test.go
+            expected:
+              contains-all:
+                - "json.Marshal"
+                - "report"
+
+      - name: CLI and library produce byte-equivalent reports
+        description: >
+          Verify from infrastructure 1: "A unit test cross-checks: same
+          layout plus same adapter against both paths produces byte-
+          identical reports (modulo JSON marshaling whitespace)."
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary_test.go
+            expected:
+              contains-all:
+                - "library"
+                - "CLI"
+
+      - name: Exit code 0 on zero errors, non-zero on any error
+        description: >
+          Dialog branch: exit code 0 when zero error-severity entries,
+          1 otherwise.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary_test.go
+            expected:
+              contains-all:
+                - "exit"
+                - "0"
+                - "1"
+
+      - name: CLI surfaces the two stable error codes on resolution failure
+        description: >
+          Infrastructure 3: the two codes appear in the CLI's stderr
+          output for the two resolution failure paths. The CLI
+          references the library sentinels.
+        steps:
+          - verify: file-content
+            target: core/internal/commands/validate_vocabulary_test.go
+            expected:
+              contains-all:
+                - "vocabulary-missing-from-adapter"
+                - "vocabulary-unknown-adapter"
+
+  # ---------------------------------------------------------------------------
+  # Suite 3: Vocabulary adapter schema docs
+  # Traces to cross-cutting/vocabulary-adapter-schema-docs
+  # Intent: @design-loop/vocabulary-validation/vocabulary-source-resolution
+  # ---------------------------------------------------------------------------
+  - name: vocabulary-adapter-schema-docs
+    component: cross-cutting/vocabulary-adapter-schema-docs
+    intent: "@design-loop/vocabulary-validation/vocabulary-source-resolution"
+
+    cases:
+      - name: New vocabulary schema doc exists at the embedded surface
+        description: >
+          Verify from intent 2: "An adapter schema doc documents the
+          vocabulary: block shape." The doc lives at the embedded
+          schema surface in the core sibling root.
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+
+      - name: Schema doc has the required heading and pointer
+        description: >
+          The doc names the schema and points readers at the inline
+          location inside <adapter>.adapter.yaml.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "# Vocabulary"
+                - "vocabulary:"
+                - ".adapter.yaml"
+
+      - name: Schema doc enumerates the four subfields
+        description: >
+          Invariant: "The four vocabulary: subfields are exactly
+          components:, spacing_tokens:, color_tokens:, layout_containers:."
+          The schema doc names each one.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "components"
+                - "spacing_tokens"
+                - "color_tokens"
+                - "layout_containers"
+
+      - name: Schema doc pins the ComponentSpec record shape
+        description: >
+          The schema doc states that components: is a list of records,
+          each {name, properties, variants}.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "name"
+                - "properties"
+                - "variants"
+
+      - name: Schema doc pins the LayoutContainerSpec record shape
+        description: >
+          The schema doc states that layout_containers: is a list of
+          records, each {container_type, admissible_parameters,
+          parameter_constraints}.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "container_type"
+                - "admissible_parameters"
+                - "parameter_constraints"
+
+      - name: Schema doc surfaces both stable error codes
+        description: >
+          Infrastructure 3: the schema doc documents the two stable
+          error codes so adapter authors and design-loop-skill readers
+          can find the wire contract in one place.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "vocabulary-missing-from-adapter"
+                - "vocabulary-unknown-adapter"
+
+      - name: Schema doc has the inline-vs-separate-file rationale
+        description: >
+          Dialog branch (Q2.1 resolution): the schema doc states that
+          inline placement is the only supported one and names the
+          rejected sibling-file alternative for archaeology.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains-all:
+                - "inline"
+                - "separate"
+
+      - name: Adapter schema cross-references the vocabulary schema
+        description: >
+          The adapter schema points readers at vocabulary.schema.md for
+          the vocabulary: block shape rather than inlining the docs.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/adapter.schema.md
+            expected:
+              contains-all:
+                - "vocabulary"
+                - "vocabulary.schema.md"
+
+      - name: Adapter resolver behavior is documented
+        description: >
+          Verify from intent 2: "A unit test loads a layout with
+          componentVocabulary: unknown-vocab@99 and asserts the
+          validator fails with vocabulary-unknown-adapter." The schema
+          doc explains how componentVocabulary: resolves through the
+          adapter-set.
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/vocabulary.schema.md
+            expected:
+              contains: "componentVocabulary"
+
+  # ---------------------------------------------------------------------------
+  # Suite 4: Stable error codes — wire contract
+  # Traces to cross-cutting/stable-error-codes-tests
+  # Source intent: vocabulary-source-resolution (infrastructure 3)
+  # ---------------------------------------------------------------------------
+  - name: stable-error-codes-tests
+    component: cross-cutting/stable-error-codes-tests
+    intent: "@design-loop/vocabulary-validation/vocabulary-source-resolution"
+
+    cases:
+      - name: Dedicated errors_test file exists
+        description: >
+          The wire-contract pin lives in its own test file so a rename
+          fails with a single dedicated failure signal.
+        steps:
+          - verify: file-exists
+            target: studio/internal/vocabulary/errors_test.go
+
+      - name: vocabulary-missing-from-adapter is the literal error string
+        description: >
+          Invariant: "The validator emits exactly the two error codes
+          vocabulary-missing-from-adapter and vocabulary-unknown-
+          adapter." The test pins the first string by literal
+          comparison against the sentinel's Error() value.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/errors_test.go
+            expected:
+              contains-all:
+                - "ErrVocabularyMissingFromAdapter"
+                - "vocabulary-missing-from-adapter"
+
+      - name: vocabulary-unknown-adapter is the literal error string
+        description: >
+          The second stable error code is pinned by literal string
+          comparison.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/errors_test.go
+            expected:
+              contains-all:
+                - "ErrVocabularyUnknownAdapter"
+                - "vocabulary-unknown-adapter"
+
+      - name: Both errors carry their relevant identifier in the message
+        description: >
+          Invariant: vocabulary-missing-from-adapter names the adapter;
+          vocabulary-unknown-adapter names the referenced
+          componentVocabulary: value AND the registered-adapter list.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/errors_test.go
+            expected:
+              contains-all:
+                - "adapter"
+                - "registered"
+
+      - name: Error codes do not appear outside the dedicated sentinels
+        description: >
+          Invariant: "Neither code is emitted from any path other than
+          vocabulary resolution; a grep across the validator's source
+          for either code string returns matches only inside the two
+          resolution-failure code paths and their tests." Verified by
+          source grep over validator.go.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/validator.go
+            expected:
+              no-line-matches: "vocabulary-missing-from-adapter|vocabulary-unknown-adapter"
+
+      - name: Closed pair — exactly two stable error codes
+        description: >
+          Infrastructure 3: "The validator emits exactly the two error
+          codes ... for the two resolution failure modes; no third
+          resolution-failure code exists." The test enumerates the pair
+          and asserts the package exposes no third sentinel matching
+          the vocabulary- prefix.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/errors_test.go
+            expected:
+              contains: "closed"
+
+      - name: Both error sentinels are exported types-package-level
+        description: >
+          The two sentinels are exported package-level variables (per
+          the library introduces: list), enabling errors.Is matching
+          from the CLI command and from any in-process studio caller.
+        steps:
+          - verify: file-content
+            target: studio/internal/vocabulary/vocabulary.go
+            expected:
+              contains-all:
+                - "var ErrVocabularyMissingFromAdapter"
+                - "var ErrVocabularyUnknownAdapter"

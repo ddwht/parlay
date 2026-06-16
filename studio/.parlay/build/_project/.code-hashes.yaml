@@ -1,4 +1,4 @@
-generated-at: "2026-06-04T14:35:00Z"
+generated-at: "2026-06-16T09:22:02Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
@@ -69,3 +69,21 @@ files:
     studio/internal/server/server_test.go:
         component: cross-cutting/http-server-harness
         hash: 99df4e74759ac7cb
+    studio/pkg/vocabulary/errors_test.go:
+        component: cross-cutting/stable-error-codes-tests
+        hash: 49d9bbf9f1f77534
+    studio/pkg/vocabulary/report.go:
+        component: cross-cutting/vocabulary-validator-library
+        hash: 22b9dfc79973789a
+    studio/pkg/vocabulary/validator.go:
+        component: cross-cutting/vocabulary-validator-library
+        hash: 9d1ef61a8c024916
+    studio/pkg/vocabulary/validator_test.go:
+        component: cross-cutting/vocabulary-validator-library
+        hash: a08dd34f57d65e37
+    studio/pkg/vocabulary/vocabulary.go:
+        component: cross-cutting/vocabulary-validator-library
+        hash: 7a4acfd6a299c8a1
+    studio/pkg/vocabulary/vocabulary_test.go:
+        component: cross-cutting/vocabulary-validator-library
+        hash: a41980e7d54e565f
