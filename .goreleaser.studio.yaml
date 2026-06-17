@@ -1,0 +1,47 @@
+version: 2
+
+project_name: parlay-studio
+
+builds:
+  - dir: ./studio
+    main: ./cmd/parlay-studio
+    binary: parlay-studio
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums-studio.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  # Tag scheme is studio-v0.1.0. goreleaser's default name strips the
+  # leading "v"; we keep the tag verbatim so studio releases are visible
+  # alongside parlay releases on the GitHub release page without
+  # colliding.
+  name_template: "parlay-studio {{ .Tag }}"

@@ -29,6 +29,13 @@ import (
 	"github.com/parlay-tool/parlay/studio/internal/server"
 )
 
+// Set by goreleaser ldflags at release time; defaults are sentinels that
+// surface as "dev" / "none" when running an unreleased build.
+var (
+	version = "dev"
+	commit  = "none"
+)
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
@@ -44,6 +51,9 @@ func main() {
 				fmt.Fprintf(os.Stderr, "parlay-studio upgrade: %v\n", err)
 				os.Exit(1)
 			}
+			return
+		case "version", "--version", "-v":
+			fmt.Printf("parlay-studio %s (commit %s)\n", version, commit)
 			return
 		}
 	}
