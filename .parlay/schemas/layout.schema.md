@@ -50,6 +50,32 @@ This is enforced at **adapter parse time**, not at layout-validate time — the 
 
 **Adding a new universal field** is a layout-schema change — not a vocabulary change. It requires migrating every adapter to confirm none of them re-declare the new field, and it requires bumping the layout schema version. This is rare; the four-field set above is intentionally conservative.
 
+<!--
+parlay-feature: design-loop/design-loop
+parlay-component: cross-cutting/on-disk-artifact-contract
+-->
+
+## Optional `figma:` block (Design Loop)
+
+A layout MAY declare an optional top-level `figma:` block that records the Figma file the Parlay Studio Design Loop targets for this page. The block is **optional** — existing layout YAMLs without it continue to validate clean, so read-only Domain Model Editor use of layouts (which never invokes the Design Loop) stays unaffected.
+
+```yaml
+figma:
+  file_url: <URL string>
+```
+
+| Field | Value type | Required | Description |
+|---|---|---|---|
+| `file_url` | URL string | required when `figma:` is present | The Figma file the Design Loop reads and writes for this page. Consumed by the `parlay-design-loop` skill (see `.claude/skills/parlay-design-loop/SKILL.md`) — its step 3 and step 6 `get_metadata` calls target this URL, and step 5's write tools (`use_figma`, `add_code_connect_map`, `send_code_connect_mappings`) push edits into the same file. |
+
+The `figma:` block is the **per-feature** location for the Figma file URL. The URL is NOT stored in `studio-config.yaml`, NOT in any environment variable, and NOT at the page schema's root — different features routinely operate on different Figma files, so the URL is a per-feature concern, not a global one.
+
+When `figma:` is absent (or omitted entirely) the layout is still a valid layout file — it just cannot be the target of a design-loop run, since the loop has no Figma file URL to call `get_metadata` against. Validators MUST accept layouts without the block; the block may be omitted whenever the page is read-only or has no design-loop integration.
+
+### v1 contents
+
+In v1 the `figma:` block declares only `file_url:`. A `team_url:` field and a per-node Figma node ID map were considered and **deferred** — pinning speculative fields before the first round-trip produces real data would force premature schema revision. Once `design-loop-result.yaml` actually carries node IDs from a real round-trip, a follow-up feature can extend the `figma:` block to persist them.
+
 ## Out of scope (for this stub)
 
 The following layout-schema concerns are owned by `@studio-support/page-layout-field` and will be documented in subsequent revisions of this file:

@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T10:37:55Z"
+generated-at: "2026-06-17T17:21:19Z"
 intents:
     bridge-infrastructure-to-framework-specific-cross-cutting:
         content-hash: b69fa47e5838c4db
@@ -34,7 +34,7 @@ sources:
         bridge-infrastructure-to-framework-specific-cross-cutting: 537adbb5d172f94a
         define-the-infrastructure-artifact: 5d7daa54f480db46
         define-the-infrastructure-schema: bb26d859e46c576c
-        update-generate-code-to-process-infrastructure-sourced-entries: debb6e5cc11a74f1
+        update-generate-code-to-process-infrastructure-sourced-entries: 8ab73a1a0fb27f45
     surface-fragments:
         build-feature-infrastructure-report: 811c818a20701f11
         check-readiness-infrastructure-support: 4d83a78137c7a726

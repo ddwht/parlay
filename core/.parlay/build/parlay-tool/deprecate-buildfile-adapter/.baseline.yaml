@@ -1,0 +1,13 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    remove-top-level-adapter-from-the-buildfile-schema-and-parser:
+        content-hash: 912cce492f76fc46
+        goal-hash: 4c804592e3c9af5c
+        constraints-hash: 44ccbf9ae4bf582a
+        verify-hash: 588e4304ff348516
+        objects-hash: 2730bc00a0724d5c
+sources:
+    intents:
+        remove-top-level-adapter-from-the-buildfile-schema-and-parser: af4bc495d4aebd70
+    dialogs:
+        remove-top-level-adapter-from-the-buildfile-schema-and-parser: 85b1fb4c0cf9539e

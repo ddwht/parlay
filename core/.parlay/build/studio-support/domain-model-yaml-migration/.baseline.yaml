@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T10:37:55Z"
+generated-at: "2026-06-17T17:21:19Z"
 intents:
     define-a-versioned-yaml-schema-for-the-domain-model:
         content-hash: 8a1d41ec41631073
@@ -13,24 +13,24 @@ intents:
         verify-hash: eef93111c3271d1d
         objects-hash: 2057c4eb8c706cb4
     update-extract-domain-model-and-load-domain-model-to-round-trip-yaml:
-        content-hash: c5b1571dde9dc3ff
-        goal-hash: b016ad263749ccfe
-        constraints-hash: 93ecd9fa05a691dc
-        verify-hash: ced41d4e16f29dd8
-        objects-hash: ddda42142c69df86
+        content-hash: 70759e8d58074f10
+        goal-hash: 18a8791dc62f86b5
+        constraints-hash: db76dd079e2e1fd5
+        verify-hash: eb00bc77a706617a
+        objects-hash: 00d25088e911a637
 sources:
     intents:
         define-a-versioned-yaml-schema-for-the-domain-model: 5cf21d50aaa522a0
         migrate-existing-domain-modelmd-projects-to-yaml: b33dc70ba91d7119
-        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: b3315de5c5b7639c
+        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: 39ed9a4478252d68
     dialogs:
         define-a-versioned-yaml-schema-for-the-domain-model: dc965cc5e87873d2
         migrate-existing-domain-modelmd-projects-to-yaml: 9d53bb9af722c6c0
-        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: 5b266676dc5f5378
+        update-extract-domain-model-and-load-domain-model-to-round-trip-yaml: 53cb87e3f3c53ed7
     surface-fragments:
         domain-modelmd-deprecation-header: b9a9247099641507
         domain-modelyaml-validation-error-reporting: 63b1a4fa041c6b62
-        extract-domain-model-output-surface-post-migration: 92e364082423e651
+        extract-domain-model-output-surface-post-migration: e98e379638f3a52d
         load-domain-model-conflict-disambiguation-prompt: df8831818763c547
         load-domain-model-schema-version-migration-notice: 08d04fa6df69928c
         migrate-domain-model-command-surface: de8de597344f4210

@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T10:37:55Z"
+generated-at: "2026-06-17T17:21:19Z"
 intents:
     add-cross-cutting-section-to-the-buildfile-schema:
         content-hash: 94de9d004e6b7c48
@@ -25,7 +25,7 @@ sources:
         support-qualified-identifiers-in-path-resolvers: 22914f126c9e6d78
     dialogs:
         add-cross-cutting-section-to-the-buildfile-schema: 61bec53e0a65c156
-        centralize-feature-enumeration-for-bulk-walker-commands: ddb674bb38c80af9
+        centralize-feature-enumeration-for-bulk-walker-commands: c5e13bcc3a501c43
         support-qualified-identifiers-in-path-resolvers: 17dff264818335a6
 buildfile-sections:
     fixtures: 34167923659a98fd

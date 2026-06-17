@@ -1,0 +1,33 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    clarify-architectural-scope-in-infrastructureschemamd:
+        content-hash: 8de86f1075cd8d13
+        goal-hash: 8bbe8e45f127d8f2
+        constraints-hash: 5e7d75e1659efdb5
+        verify-hash: ba87776a4c0173d2
+        objects-hash: 5a0ca0b57b868213
+    make-migrate-capabilities-partial-migration-semantics-explicit:
+        content-hash: 6ab860e45a793b67
+        goal-hash: cd884b4670b4c806
+        constraints-hash: 9dcbc09fbfb46fe9
+        verify-hash: d066c32758c845b3
+        objects-hash: 7dc63129b6a9d6c5
+    restore-infrastructuremd-to-co-equal-spec-artifact-status:
+        content-hash: ff52fbea91dbf56b
+        goal-hash: 1d348732bc6479fa
+        constraints-hash: bf557aa2b4cba65e
+        verify-hash: a3acdea9a35dc1df
+        objects-hash: e3a468822d07d2cf
+sources:
+    intents:
+        clarify-architectural-scope-in-infrastructureschemamd: 13e1b7fd63272518
+        make-migrate-capabilities-partial-migration-semantics-explicit: 80333fa180c5fbd4
+        restore-infrastructuremd-to-co-equal-spec-artifact-status: e4ae0d13bac15765
+    dialogs:
+        clarify-architectural-scope-in-infrastructureschemamd: b80574858aff9538
+        make-migrate-capabilities-partial-migration-semantics-explicit: c0f60ecd185b596e
+        restore-infrastructuremd-to-co-equal-spec-artifact-status: f9d86bc803772ae6
+buildfile-sections:
+    fixtures: ca3d163bab055381
+    models: ca3d163bab055381
+    routes: 37517e5f3dc66819

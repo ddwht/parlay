@@ -1,0 +1,13 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    remove-operations-from-the-domain-model-schema-and-parser:
+        content-hash: 0760271bed86edf4
+        goal-hash: d125b1b2c0b3e670
+        constraints-hash: 6c75b51762fec87b
+        verify-hash: b83e4e07d0bd7a4b
+        objects-hash: da2bd15c255689d6
+sources:
+    intents:
+        remove-operations-from-the-domain-model-schema-and-parser: 46c5190619f0a588
+    dialogs:
+        remove-operations-from-the-domain-model-schema-and-parser: 27ebb0d327f37827

@@ -1,0 +1,13 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    remove-models-from-the-buildfile-schema-and-parser:
+        content-hash: f48f0ad7a1521449
+        goal-hash: 3d4411d4f80ad85f
+        constraints-hash: 4ab2e024d9e8f951
+        verify-hash: 09be1ebb444a6172
+        objects-hash: 8d23f82dd7cb868b
+sources:
+    intents:
+        remove-models-from-the-buildfile-schema-and-parser: 4f0339de5eb47581
+    dialogs:
+        remove-models-from-the-buildfile-schema-and-parser: de16384026890966

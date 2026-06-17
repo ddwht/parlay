@@ -1,0 +1,13 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    remove-prototype-framework-from-the-config-schema-and-parser:
+        content-hash: 779bfb8fec5eda24
+        goal-hash: c0c3e09fb8501b89
+        constraints-hash: 64c7bfe611d6156e
+        verify-hash: 4f508f01a4f1f573
+        objects-hash: a609018b672d7f50
+sources:
+    intents:
+        remove-prototype-framework-from-the-config-schema-and-parser: 4024827587bf30c1
+    dialogs:
+        remove-prototype-framework-from-the-config-schema-and-parser: a0282756a7269f68

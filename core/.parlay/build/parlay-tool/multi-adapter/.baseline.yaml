@@ -1,0 +1,174 @@
+generated-at: "2026-06-17T17:21:19Z"
+intents:
+    adapter-kinds-and-adapter-set-topology:
+        content-hash: 4d7d974ca287b08f
+        goal-hash: aa01db2fefa8d4f6
+        constraints-hash: 5327edb3fa56c485
+        verify-hash: 2336f03aec930402
+        objects-hash: 6ca614b3a0ec5699
+    adapter-set-links-enforce-cross-kind-boundaries:
+        content-hash: ff59bdde095d6c2f
+        goal-hash: 7d6916381ea19080
+        constraints-hash: 67e3373043bd5447
+        verify-hash: 329155ad3d083d54
+        objects-hash: 64683e833affb123
+    adapter-supports-contract-gates-codegen-pre-ai:
+        content-hash: 58a5039dfbb2a46a
+        goal-hash: 5ca7d535349cec42
+        constraints-hash: 7bedc2845b7d6a04
+        verify-hash: b94703e87ad7f70b
+        objects-hash: de51cb5c815b0656
+    blueprint-scope-override-precedence-and-strategy-selection:
+        content-hash: f79e3cb089446060
+        goal-hash: fdc83b50e592285c
+        constraints-hash: 39a5f031555e511e
+        verify-hash: 38be8a0509629624
+        objects-hash: cf9b6d62783d3fc2
+    bundled-adapter-set-presets:
+        content-hash: 693006442c1e1e63
+        goal-hash: cb929d7c2497e2de
+        constraints-hash: 26ee625d836f422c
+        verify-hash: d83f01cafec989d5
+        objects-hash: 4af45524bb4fdf02
+    capabilitiesyaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact:
+        content-hash: 6c367f69d017ec6c
+        goal-hash: fcfaea3437cf4487
+        constraints-hash: aab42512495afcd6
+        verify-hash: 60d0cbdd2f9510f3
+        objects-hash: 8cabecd3e4af8794
+    codegen-flow-ordered-layer-generation-and-fixed-read-set:
+        content-hash: ddc422a5e1431155
+        goal-hash: 46344e8e8c110a73
+        constraints-hash: 796b93001692e293
+        verify-hash: eae08862207f73c4
+        objects-hash: 598b8b49685eee59
+    coverage-reviewyaml-gates-codegen-on-human-approval:
+        content-hash: a2ba31d7012c5ad2
+        goal-hash: 6d38d75cc3209993
+        constraints-hash: 7ecc9f6b80d7a690
+        verify-hash: 288bfcc9eada97cb
+        objects-hash: 9dcda286d5c37446
+    domain-modelyaml-operations-field-is-deprecated-in-favor-of-capabilities:
+        content-hash: b1bb394aa5c75d63
+        goal-hash: 48ad5d16a0debb61
+        constraints-hash: d50273345a169605
+        verify-hash: b943db09daa65e03
+        objects-hash: ab5f2783d39a14c9
+    legacy-buildfile-fields-stay-deprecate-or-repurpose:
+        content-hash: a27b402ddab706a6
+        goal-hash: 5f09b140e45629a6
+        constraints-hash: 933ea6a2165d39e6
+        verify-hash: 22650b79f0aeb21b
+        objects-hash: 17e173410a309411
+    migration-of-legacy-artifacts-to-the-new-shape:
+        content-hash: 9b06a9784d6f44b9
+        goal-hash: f4c2c153d067ed5f
+        constraints-hash: 077bf5cc15bdaf0a
+        verify-hash: 677155ff5c3ee5fc
+        objects-hash: fbe8c46dcfe6344c
+    multi-target-buildfile-operations-targets-and-target-aware-plan:
+        content-hash: 6252b1fdcf4ac5ee
+        goal-hash: 7e4c152f435dc9aa
+        constraints-hash: 43e91dfb28bd7847
+        verify-hash: b07c8175894155f8
+        objects-hash: 65c16ed6e66eb0a9
+    pattern-fragment-decomposition-during-capabilities-migration:
+        content-hash: 4d77f6e2c49b74c0
+        goal-hash: c93186b2be7c062e
+        constraints-hash: c9c2cefd26b20b72
+        verify-hash: bbf0a8b9675c7b6f
+        objects-hash: 263541eeb4de81bd
+    presentation-only-projects-continue-to-work-unchanged:
+        content-hash: 6ee2ca2239abc0b2
+        goal-hash: 6c3824f0aa612f68
+        constraints-hash: 3bb5d98ea7d6ef29
+        verify-hash: 3fc8957d03c774e4
+        objects-hash: fa1e868c0757bfb3
+    surfaceyaml-replaces-surfacemd-as-the-closed-presentation-artifact-format:
+        content-hash: 3a41265235fb0f7e
+        goal-hash: c903eef709dc1c83
+        constraints-hash: b6ac3fef1b708fb5
+        verify-hash: b621de3d87410c49
+        objects-hash: 354e150f01417191
+    testcasesyaml-v2-discriminated-suite-kinds-and-sourcerefs:
+        content-hash: 1d050da04acc31a0
+        goal-hash: b104221690d9e2bb
+        constraints-hash: 149afdabb6b75a20
+        verify-hash: 7914cd0693862aec
+        objects-hash: 4310f624293b3856
+    v1-closed-vocabularies-and-v2-deferrals:
+        content-hash: 27a71ce7a00aa32a
+        goal-hash: 6b989717bd72c9d6
+        constraints-hash: bef960ee481add99
+        verify-hash: 68c5e86e7490f217
+        objects-hash: 924303b1af5e2600
+    validation-modes-authoring-vs-build:
+        content-hash: adbdd260a6c495f4
+        goal-hash: 4f6e3a9680586ce9
+        constraints-hash: 484521466b0ea194
+        verify-hash: faf10419ee734922
+        objects-hash: 5e3b1335d5087f13
+sources:
+    intents:
+        adapter-kinds-and-adapter-set-topology: eb8410619e2a367a
+        adapter-set-links-enforce-cross-kind-boundaries: 4e40679b2791375c
+        adapter-supports-contract-gates-codegen-pre-ai: c1244006f56b9629
+        blueprint-scope-override-precedence-and-strategy-selection: bf4de29fc3067db0
+        bundled-adapter-set-presets: 044b15bc8b22b46e
+        capabilitiesyaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact: fdfb8ed52235e195
+        codegen-flow-ordered-layer-generation-and-fixed-read-set: c56591ce987dda9b
+        coverage-reviewyaml-gates-codegen-on-human-approval: 3383f6c44513f18a
+        domain-modelyaml-operations-field-is-deprecated-in-favor-of-capabilities: 201667b0f8fa4bcc
+        legacy-buildfile-fields-stay-deprecate-or-repurpose: 66cb2589d3a31c19
+        migration-of-legacy-artifacts-to-the-new-shape: 5ddefccac1c103fe
+        multi-target-buildfile-operations-targets-and-target-aware-plan: 3f89de4f1e00a577
+        pattern-fragment-decomposition-during-capabilities-migration: 7935ee8dbfaed81f
+        presentation-only-projects-continue-to-work-unchanged: 2fe2d343aba5804b
+        surfaceyaml-replaces-surfacemd-as-the-closed-presentation-artifact-format: b55305efff8a1d87
+        testcasesyaml-v2-discriminated-suite-kinds-and-sourcerefs: fb6667978c53800d
+        v1-closed-vocabularies-and-v2-deferrals: 246a6dd17a4b29cc
+        validation-modes-authoring-vs-build: c1f18a6f3849104b
+    dialogs:
+        adapter-kinds-and-adapter-set-topology: 2284f1a912df0eeb
+        adapter-set-links-enforce-cross-kind-boundaries: 169efd72ff819d92
+        adapter-supports-contract-gates-codegen-pre-ai: d3b436b47bf12d37
+        blueprint-scope-override-precedence-and-strategy-selection: 0480b2ce1421986b
+        bundled-adapter-set-presets: 8a08ffd315887878
+        capabilitiesyaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact: d9f2d45e18023f09
+        codegen-flow-ordered-layer-generation-and-fixed-read-set: 63053ca5d446582f
+        coverage-reviewyaml-gates-codegen-on-human-approval: 6ffbf656d1621d72
+        domain-modelyaml-operations-field-is-deprecated-in-favor-of-capabilities: 170aba0fe3635d50
+        legacy-buildfile-fields-stay-deprecate-or-repurpose: 96f46df421eb1115
+        migration-of-legacy-artifacts-to-the-new-shape: 294ffcec79c2ff18
+        multi-target-buildfile-operations-targets-and-target-aware-plan: 5ec5bfa17ae1c309
+        pattern-fragment-decomposition-during-capabilities-migration: 9d02ec83619af609
+        presentation-only-projects-continue-to-work-unchanged: bc863d75c18fc3e3
+        surfaceyaml-replaces-surfacemd-as-the-closed-presentation-artifact-format: ec797b7ea6864fab
+        testcasesyaml-v2-discriminated-suite-kinds-and-sourcerefs: 4a9768e23b80dfcd
+        v1-closed-vocabularies-and-v2-deferrals: 6890c6778d8cc390
+        validation-modes-authoring-vs-build: 2854da9297379120
+    surface-fragments:
+        adapter-kind-field-opt-in-prompt: 95b1895fb459f6c2
+        adapter-set-validation-failure: ada47e14ecc02876
+        blueprint-validation-output: 6412087b52bcdd0e
+        buildfile-canonical-validation-output: a65f6db9c9ed6463
+        buildfile-normalization-review: 8ca4449c73af1337
+        capabilities-migration-operations-extraction: e2935170c47fd3c7
+        capabilities-validation-output: ae1cb264df911b30
+        codegen-pipeline-progress: ba6e5a96d7880322
+        config-migration-result: 310aa337113c8fb6
+        coverage-review-authoring: d21d8a31a726226b
+        coverage-review-gate-failure: b9966e330ec6657e
+        domain-model-validation-output: 4f2541e27a6b1283
+        domain-operations-migration-prompt: b36a5b303a9ac414
+        pattern-fragment-migration-report: f6bed891c2f217fd
+        pre-codegen-support-gate-failure: d39234fe231ca1d0
+        project-setup-preset-selection: 08199b4c9cd4e40b
+        routes-disambiguation-prompt: 3a85d24cc3a83bbc
+        spec-migration-report: f68e9ee292ddad25
+        surface-validation-output: b50c3d070ca5615c
+        testcases-validation-output: 04e4fdacf256fc50
+buildfile-sections:
+    fixtures: b728976eaed1ab12
+    models: 026c842d52b34d89
+    routes: 407f1e6cce62b51f

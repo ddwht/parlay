@@ -424,6 +424,10 @@ Two adapters declaring the same vocabulary version (e.g., `angular-clarity` and 
 
 The `componentVocabulary:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout references a vocabulary against an adapter without one, vocabulary-reference validation is skipped with a warning rather than failing the build.
 
+### Companion top-level `vocabulary:` block
+
+Adapters that drive Design Loop vocabulary validation declare an additional optional top-level block `vocabulary:` alongside `componentVocabulary:`. The `vocabulary:` block carries the closed admissible sets the validator pins — `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — and is read by `parlay validate-vocabulary` and the in-process `studio/internal/vocabulary` library. The full shape, the per-subfield record schemas, and the two stable resolution-failure error codes (`vocabulary-missing-from-adapter`, `vocabulary-unknown-adapter`) are documented in `vocabulary.schema.md`. Adapters MAY omit the block; in that case Design Loop vocabulary validation surfaces `vocabulary-missing-from-adapter` and other adapter uses (codegen, registration) continue to work.
+
 ## Section 9: Design tokens
 
 The `tokens:` section declares the design-system tokens an adapter emits during codegen. Tokens are referenced by name from layouts (e.g., `gap: spacing-lg`, `color: color-status-danger`) and translated to per-framework emit-forms (CSS variables, theme-object key paths, etc.) when code is generated.

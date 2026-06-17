@@ -1,4 +1,4 @@
-generated-at: "2026-05-09T10:37:55Z"
+generated-at: "2026-06-17T17:21:19Z"
 intents:
     extract-and-share-domain-models:
         content-hash: 2e694e9c21810f07
@@ -10,5 +10,5 @@ sources:
     intents:
         extract-and-share-domain-models: 4480049584552c4e
     dialogs:
-        extract-domain-model: a4cfd8261a0f54f4
+        extract-domain-model: 44fe8e1e20724657
         load-domain-model: cd697c908a574f3c
