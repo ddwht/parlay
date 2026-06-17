@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:21:19Z"
+generated-at: "2026-06-17T17:43:29Z"
 files:
     core/internal/agent/blueprint_resolver.go:
         component: blueprint-scope-and-precedence
@@ -360,6 +360,9 @@ files:
     core/internal/embedded/schemas/operation-kinds.schema.md:
         component: ""
         hash: e90adae7013016ec
+    core/internal/embedded/schemas/page.schema.md:
+        component: ""
+        hash: 2d3908b7de91eb84
     core/internal/embedded/schemas/policies.schema.md:
         component: ""
         hash: 1b3a98353214f3c9

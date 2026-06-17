@@ -1,3 +1,8 @@
+<!--
+parlay-section: cross-cutting
+parlay-feature: studio-support/page-layout-field
+-->
+
 # Page Schema
 
 File: `spec/pages/<page-name>.page.md`
@@ -35,6 +40,50 @@ By default, pages are derived views assembled on demand from feature surfaces. A
 | Status | No | `**Status**:` value — `draft`, `reviewed`, or `locked` |
 | Region | Yes (at least one) | `## ` heading. Must match Region values in feature surfaces. |
 | Fragment list | Yes | Numbered list (`1.`, `2.`, ...) of `@feature/fragment-name` references. Order overrides feature surface Order values. |
+| Layout | No | `## Layout` heading with a fenced YAML block conforming to `layout.schema.md`. See the [Layout](#layout) section below. |
+
+## Layout
+
+The `## Layout` section is **optional**. A page artifact that omits it parses and behaves exactly as today — pages without a layout block are valid and produce a parser-visible result bit-for-bit equivalent to a page authored before this section existed. The Fields table row for Layout reads `No` in the Required column; nothing in this document marks the layout block as required at the page level.
+
+When present, the body of the `## Layout` section is a fenced YAML code block whose top-level keys are:
+
+- `componentVocabulary` (string, required) — e.g., `"clarity@17"`. Names the component vocabulary the layout tree is authored against.
+- `schemaVersion` (integer, required) — the layout-tree schema version the block conforms to.
+- `nodes` (list, required) — a recursive tree of layout nodes.
+
+All three keys MUST be present when a `## Layout` section is included; the parser rejects layout blocks that omit any of them, naming the missing field.
+
+### Position among top-level sections
+
+The `## Layout` section MAY appear anywhere among the page's top-level body sections — order relative to other top-level sections is not significant. The parser matches by heading text, not by position. A page that places `## Layout` immediately after the frontmatter and a page that places it after other top-level sections produce identical parse trees.
+
+### Node-tree shape
+
+The shape of the `nodes` tree (universal container fields, recursive children, vocabulary-specific component types, token-vs-raw-value rules, no-wiring-in-layout invariant, and the full validation contract) is defined in the sibling [`layout.schema.md`](./layout.schema.md) document. This page-schema document names only the three top-level YAML keys above and forwards every further detail of the node tree to `layout.schema.md` — it deliberately does not restate the node-tree shape inline.
+
+### Example
+
+```
+## Layout
+
+​```yaml
+componentVocabulary: clarity@17
+schemaVersion: 1
+nodes:
+  - id: root
+    type: clarity.stack
+    direction: vertical
+    gap: spacing-md
+    children:
+      - id: header
+        type: clarity.header
+      - id: main-table
+        type: clarity.datagrid
+​```
+```
+
+(The leading zero-width characters in the inner fence above are decorative for the surrounding code block in this schema doc; an authored page omits them.)
 
 ## Behavior
 

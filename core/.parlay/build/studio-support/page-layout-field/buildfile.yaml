@@ -3,14 +3,25 @@ adapter: go-cli
 
 # This feature is infrastructure-only. It has no surface.md and produces no
 # components or routes. Every fragment in infrastructure.md translates to a
-# cross-cutting entry — three new/changed loci in the Go internals that
-# together form: "Core knows how to load a page-with-optional-layout, validates
-# the layout tree against an adapter, and exposes a closed-shape precheck that
-# every consumer (codegen, status, repair, sync) can call uniformly."
+# cross-cutting entry — three new/changed loci in the Go internals plus a
+# schema-doc edit that together form: "Core knows how to load a page-with-
+# optional-layout, validates the layout tree against an adapter, exposes a
+# closed-shape precheck that every consumer (codegen, status, repair, sync)
+# can call uniformly, AND the page schema document itself names the optional
+# ## Layout section so a new author reading the schema can discover it."
 #
 # All paths in cross-cutting target-files: and plan: are relative to the
 # active root (core/) — the buildfile-validator resolves them against the
 # root derived from the buildfile's location, NOT against the repo root.
+#
+# Lifecycle note: the four Go-side cross-cutting entries below
+# (page-artifact-loader-with-optional-layout, layout-tree-schema-validator,
+# layout-precheck-contract) were implemented during the previous build pass
+# and are present on disk today. They remain in this buildfile because they
+# own the intent → source-file traceability for the feature; codegen's diff
+# machinery will classify them as stable on subsequent runs and preserve the
+# existing source. The newly-added schema-doc-mentions-layout-section entry
+# is the only one that requires actual emission on this pass.
 
 models: {}
 
@@ -23,7 +34,9 @@ components: {}
 cross-cutting:
   - id: page-artifact-loader-with-optional-layout
     source: "@studio-support/page-layout-field/add-optional-layout-block-to-the-page-schema"
-    target-pattern: "internal/parser/page*.go"
+    target-files:
+      - internal/parser/page.go
+      - internal/parser/page_test.go
     transform: |
       Introduce a parser.ParsePageFile(path) entry point that reads a page
       artifact (spec/pages/<page>.page.md) and returns a Page struct carrying
@@ -70,8 +83,10 @@ cross-cutting:
       independence of ## Layout among siblings, and id stability across a
       read-edit-write round-trip.
 
-      Files (resolved by plan.creates — purely introducing, no existing file
-      to modify): internal/parser/page.go, internal/parser/page_test.go.
+      Lifecycle: both files are present on disk from the previous build pass
+      and satisfy the contract above. This entry continues to own the
+      intent-to-file traceability; codegen's diff classifies it stable so
+      long as the source remains intact.
     introduces:
       - "type Page struct { Name, Description, Owner, Status string; Regions []PageRegion; Layout *Layout }"
       - "type Layout struct { ComponentVocabulary string; SchemaVersion int; Nodes []LayoutNode }"
@@ -118,6 +133,11 @@ cross-cutting:
       ALREADY documents the universal-container-fields contract — no edits to
       that file are required by this fragment. The validator code is the
       runtime enforcement of that documented contract.
+
+      Lifecycle: the file is present on disk from the previous build pass and
+      satisfies the contract above. This entry continues to own the
+      intent-to-file traceability; codegen's diff classifies it stable so
+      long as the source remains intact.
     introduces:
       - 'ValidationError code "layout-schema-version-unsupported"'
       - "Recursive descent over LayoutNode.Children with re-application of every per-node check"
@@ -126,7 +146,9 @@ cross-cutting:
 
   - id: layout-precheck-contract
     source: "@studio-support/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
-    target-pattern: "internal/agent/precheck*.go"
+    target-files:
+      - internal/agent/precheck.go
+      - internal/agent/precheck_test.go
     transform: |
       Introduce a single callable validation entry point — LayoutPrecheck —
       that aggregates every layout check (well-formedness, schema compliance,
@@ -194,8 +216,10 @@ cross-cutting:
       ok-case carries only Code, the determinism-byte-equality test, and a
       multi-page walk yielding one verdict per page.
 
-      Files (resolved by plan.creates — purely introducing, no existing file
-      to modify): internal/agent/precheck.go, internal/agent/precheck_test.go.
+      Lifecycle: both files are present on disk from the previous build pass
+      and satisfy the contract above. This entry continues to own the
+      intent-to-file traceability; codegen's diff classifies it stable so
+      long as the source remains intact.
     introduces:
       - "type Verdict struct { Code, File, NodePath, Found, Expected, Fix string }"
       - "func LayoutPrecheck(page *parser.Page, adapter *deepAdapter) Verdict"
@@ -204,21 +228,92 @@ cross-cutting:
     caching: none
     backward-compatible: true
 
+  - id: page-schema-doc-mentions-layout-section
+    source: "@studio-support/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    target-files:
+      - internal/embedded/schemas/page.schema.md
+    transform: |
+      Edit the embedded page-schema documentation so that the optional
+      ## Layout section is discoverable from the schema doc itself. Today
+      the parser supports ## Layout but the schema document — the
+      authoritative reference for what may appear in a page artifact — does
+      not mention it. A new author reading the schema therefore has no way
+      to learn that the optional layout block exists.
+
+      The edit ADDS a single new top-level section to the existing
+      page.schema.md document. Existing sections (Template, Fields,
+      Behavior, Parsing) remain in place and unchanged. The new section
+      describes:
+
+        (a) ## Layout is an OPTIONAL top-level section in the page Markdown
+            body. Pages that omit it parse and behave exactly as today
+            (bit-for-bit equivalent in all parser-visible respects). The
+            schema doc explicitly states that ## Layout is OPTIONAL and
+            NOT required — this is load-bearing for adoption of the
+            change by projects whose pages do not have layouts yet.
+
+        (b) When present, the body of the ## Layout section is a fenced
+            YAML code block whose top-level keys are:
+              - componentVocabulary (string, required) — e.g., "clarity@17"
+              - schemaVersion       (integer, required)
+              - nodes               (list, required) — a recursive tree of
+                                    layout nodes
+            The schema doc names the three required keys explicitly.
+
+        (c) The ## Layout section may appear anywhere among the page's
+            top-level body sections — order relative to other top-level
+            sections is not significant. The parser matches by heading,
+            not by position; a page that places ## Layout immediately
+            after the frontmatter and one that places it after other
+            sections produce identical parse trees.
+
+        (d) The node-tree shape (universal-container-fields, recursive
+            children, validation rules) is documented in the sibling
+            layout.schema.md document, referenced by name. The page-schema
+            doc only names the three top-level keys and forwards detail
+            to layout.schema.md — it does not restate the node-tree shape
+            inline.
+
+        (e) The Fields table is extended with one new row:
+              | Layout | No | `## Layout` heading with a fenced YAML block conforming to `layout.schema.md` |
+
+      Wording rules (the build edit MUST hew to these to remain consistent
+      with the rest of the feature's surfaces):
+        - The schema doc MUST NOT call the layout block required at the
+          page level. The word "optional" appears explicitly. The Fields
+          table row reads "No" in the Required column.
+        - The schema doc MUST NOT enumerate the node-tree shape inline.
+          It forwards to layout.schema.md by name.
+        - The schema doc MUST mention all three top-level YAML keys
+          (componentVocabulary, schemaVersion, nodes) by their exact
+          string spelling.
+
+      This is purely a doc edit. No code is generated, no test scaffolding
+      is added beyond the lightweight testcases that assert the new section
+      and its required/optional framing are present.
+    introduces:
+      - "New top-level section ## Layout in page.schema.md (documentation only)"
+      - "New row in the Fields table naming the optional ## Layout heading"
+    caching: none
+    backward-compatible: true
+
 plan:
-  creates:
+  modifies:
     - path: internal/parser/page.go
       sources:
         - cross-cutting/page-artifact-loader-with-optional-layout
     - path: internal/parser/page_test.go
       sources:
         - cross-cutting/page-artifact-loader-with-optional-layout
+    - path: internal/agent/validate.go
+      sources:
+        - cross-cutting/layout-tree-schema-validator
     - path: internal/agent/precheck.go
       sources:
         - cross-cutting/layout-precheck-contract
     - path: internal/agent/precheck_test.go
       sources:
         - cross-cutting/layout-precheck-contract
-  modifies:
-    - path: internal/agent/validate.go
+    - path: internal/embedded/schemas/page.schema.md
       sources:
-        - cross-cutting/layout-tree-schema-validator
+        - cross-cutting/page-schema-doc-mentions-layout-section

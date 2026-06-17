@@ -333,3 +333,50 @@ suites:
           - verify: state
             target: LayoutPrecheck.purity
             expected: pure-function
+
+  - name: page-schema-doc-mentions-layout-section
+    component: page-schema-doc-mentions-layout-section
+    intent: "@studio-support/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: schema-doc-mentions-layout-as-top-level-section
+        description: "After the edit, core/internal/embedded/schemas/page.schema.md mentions ## Layout as a top-level section in the page Markdown body, so a new author reading the schema can discover that the optional layout block exists."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/page.schema.md
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: contains-heading-## Layout
+
+      - name: schema-doc-frames-layout-block-as-optional-not-required
+        description: "The schema doc explicitly frames the ## Layout section as optional. The word 'optional' (or equivalent framing) appears next to the Layout description, and the Fields table row for Layout reads 'No' in the Required column. Pages without ## Layout remain valid."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: layout-section-described-as-optional
+
+      - name: schema-doc-names-required-yaml-keys-inside-layout-block
+        description: "Inside the ## Layout section description, the schema doc names the three top-level YAML keys that the layout block carries: componentVocabulary, schemaVersion, and nodes. Each is named by its exact string spelling."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-componentVocabulary
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-schemaVersion
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-nodes
+
+      - name: schema-doc-forwards-node-tree-shape-to-layout-schema
+        description: "The page-schema doc references layout.schema.md by name as the document where the node-tree shape is defined. The page-schema doc does NOT restate the node-tree shape inline — it is a forward reference, not a duplicate."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: references-layout.schema.md-by-name
+
+      - name: schema-doc-does-not-mark-layout-block-required
+        description: "Negative assertion. The schema doc must not claim the ## Layout section is required at the page level. The Required column for the Layout row reads 'No', and no other prose contradicts that."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: layout-row-required-column-is-no
