@@ -17,11 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-
       - name: Extract version from tag
         id: ver
         run: |
@@ -31,14 +26,11 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Run GoReleaser (studio)
-        uses: goreleaser/goreleaser-action@v7
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --config .goreleaser.studio.yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: parlay-studio ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
 
       - name: Update Homebrew formula
         env:
