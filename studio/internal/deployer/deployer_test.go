@@ -168,21 +168,19 @@ func TestRunIgnoresParlayPrefixedUserSkill(t *testing.T) {
 	if string(got) != "USER OWNED PARLAY-PREFIXED" {
 		t.Fatalf("parlay-prefixed user skill modified: %q", got)
 	}
-	// This one is parlay-prefixed; it WILL appear in the orphan scan
-	// (manifest-not-prefix ownership: deployer reports it but leaves it
-	// alone). The intent is preservation; the orphan-detected WARN is
-	// the operator's signal that a non-manifest parlay-* file is on disk.
-	foundOrphan := false
+	// Manifest-based ownership: a parlay-prefixed user skill that was
+	// NEVER deployed by Studio is not owned by Studio, even though it
+	// shares the parlay- naming convention. The deployer leaves it
+	// untouched AND does not report it (no orphan entry, no WARN).
+	// This prevents Studio from claiming parlay-core's parlay-* skills
+	// in a real parlay project.
 	for _, e := range res.Entries {
-		if e.Path == userSkill && e.Status == StatusOrphan {
-			foundOrphan = true
+		if e.Path == userSkill {
+			t.Fatalf("parlay-prefixed user skill unexpectedly reported: %+v (manifest-based ownership should ignore it)", e)
 		}
 	}
-	if !foundOrphan {
-		t.Fatalf("expected parlay-prefixed user skill to be reported as orphan; entries = %+v", res.Entries)
-	}
-	if !strings.Contains(logBuf.String(), "studio-deployer-orphan-detected") {
-		t.Fatalf("expected orphan-detected WARN in logs; got %q", logBuf.String())
+	if strings.Contains(logBuf.String(), userSkill) {
+		t.Fatalf("parlay-prefixed user skill unexpectedly mentioned in logs; got %q", logBuf.String())
 	}
 }
 
@@ -194,6 +192,13 @@ func TestRunOrphanFromPriorVersionLeftOnDisk(t *testing.T) {
 	}
 	if err := os.WriteFile(orphan, []byte("STALE"), 0o644); err != nil {
 		t.Fatalf("seed orphan: %v", err)
+	}
+	// Seed the persisted manifest so the deployer knows it owned the
+	// orphan in a prior run. Without this, the file is just a
+	// user-authored file that happens to be parlay-prefixed and would
+	// (correctly) be ignored.
+	if err := savePersistedManifest(root, map[string]struct{}{orphan: {}}); err != nil {
+		t.Fatalf("seed persisted manifest: %v", err)
 	}
 	d, logBuf := newDeployer(t, root)
 	res, err := d.Run(context.Background())

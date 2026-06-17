@@ -15,11 +15,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 )
 
 // Deployer carries the dependencies one Run needs. The two function
@@ -59,11 +56,19 @@ type RunResult struct {
 //     source hash against the on-disk content hash. Skip on match
 //     (StatusUnchanged); writeAtomic on mismatch (StatusWritten or
 //     StatusFailed).
-//  3. For each detected agent, scan for orphan files (parlay-* files NOT
-//     on the current manifest). Record each as StatusOrphan and log
+//  3. Compute orphans as the set difference between the previously-
+//     persisted manifest (from the last successful Run, if any) and the
+//     current manifest. Files that Studio never deployed do not appear
+//     in any persisted manifest and are therefore never claimed as
+//     orphans — this is the load-bearing property that prevents Studio
+//     from reporting parlay-core's parlay-* skills as Studio orphans.
+//     Each orphan is recorded as StatusOrphan and logged with
 //     studio-deployer-orphan-detected at WARN. Orphans are never deleted.
 //  4. Aggregate ExitCode: non-zero when any entry is StatusFailed; zero
 //     otherwise (orphans do not affect ExitCode).
+//  5. When ExitCode is zero, persist the current manifest's paths so the
+//     next run's orphan-diff sees them. A partial deploy does not
+//     overwrite the prior persisted manifest.
 //
 // Per-agent atomicity: a failure on one agent's writes does not block
 // writes to other detected agents. The agents loop catches per-write
@@ -124,19 +129,25 @@ func (d *Deployer) Run(ctx context.Context) (RunResult, error) {
 		}
 	}
 
-	// Step 3: orphan scan, per agent, in detection order. Orphans land at
-	// the end of the entries slice — they are reported but never written.
-	for _, agent := range d.Agents {
-		skillsParent := skillsDirFor(d.ProjectRoot, agent.Surface)
-		orphans, err := scanOrphans(skillsParent, manifestPaths)
-		if err != nil {
-			d.warn("studio-deployer-orphan-scan-failed: %v", err)
+	// Step 3: compute orphans by diffing the previously-persisted
+	// manifest against the current manifest. Files Studio never
+	// deployed have no presence in any persisted manifest and are
+	// therefore never claimed — parlay-core's parlay-* skills under
+	// .claude/skills/ are correctly ignored.
+	prevPaths, err := loadPreviousManifest(d.ProjectRoot)
+	if err != nil {
+		d.warn("studio-deployer-prev-manifest-load-failed: %v", err)
+		prevPaths = map[string]struct{}{}
+	}
+	for _, p := range diffOrphans(prevPaths, manifestPaths) {
+		// Defensive: only report orphans that still exist on disk. A
+		// previously-deployed file the operator manually deleted is
+		// not an orphan; it's just gone.
+		if _, statErr := os.Stat(p); statErr != nil {
 			continue
 		}
-		for _, p := range orphans {
-			d.warn("studio-deployer-orphan-detected: %s (not on current manifest; leaving on disk)", p)
-			entries = append(entries, FileStatusEntry{Path: p, Status: StatusOrphan})
-		}
+		d.warn("studio-deployer-orphan-detected: %s (not on current manifest; leaving on disk)", p)
+		entries = append(entries, FileStatusEntry{Path: p, Status: StatusOrphan})
 	}
 
 	// Step 4: aggregate exit code.
@@ -145,6 +156,16 @@ func (d *Deployer) Run(ctx context.Context) (RunResult, error) {
 		if e.Status == StatusFailed {
 			exit = 1
 			break
+		}
+	}
+
+	// Step 5: persist the current manifest only on full success. A
+	// partial deploy (any StatusFailed) leaves the prior persisted
+	// manifest intact so the next run still sees the same orphan
+	// candidates rather than dropping them silently.
+	if exit == 0 {
+		if err := savePersistedManifest(d.ProjectRoot, manifestPaths); err != nil {
+			d.warn("studio-deployer-persist-manifest-failed: %v", err)
 		}
 	}
 	return RunResult{Entries: entries, ExitCode: exit}, nil
@@ -173,73 +194,6 @@ func (d *Deployer) processEntry(e ManifestEntry) FileStatusEntry {
 		return FileStatusEntry{Path: e.TargetPath, Status: StatusFailed, Source: e.SkillSlug, Err: err}
 	}
 	return FileStatusEntry{Path: e.TargetPath, Status: StatusWritten, Source: e.SkillSlug}
-}
-
-// scanOrphans returns parlay-* paths under dir that are NOT on the
-// current manifest. The scan only considers files (and immediate-child
-// directories that themselves match the parlay- prefix and contain a
-// SKILL.md), to keep the cost bounded.
-//
-// The "parlay-* naming convention" is the Claude Code convention
-// (.claude/skills/parlay-<slug>/SKILL.md) and the Cursor convention
-// (.cursor/agents/parlay-<slug>.md) and the Generic CLI convention
-// (.parlay/cli/skills/parlay-<slug>.md). Each is checked using the
-// surface-appropriate shape.
-func scanOrphans(dir string, manifestPaths map[string]struct{}) ([]string, error) {
-	if dir == "" {
-		return nil, nil
-	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("scanOrphans: stat %s: %w", dir, err)
-	}
-	if !info.IsDir() {
-		return nil, nil
-	}
-	var orphans []string
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if p == dir {
-			return nil
-		}
-		if d.IsDir() {
-			// Claude shape: <dir>/parlay-<slug>/SKILL.md. Allow recursion
-			// into parlay-prefixed subdirectories so SKILL.md inside is
-			// considered as an orphan candidate. Skip other subdirs to
-			// keep the scan cheap.
-			name := filepath.Base(p)
-			if !strings.HasPrefix(name, "parlay-") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(p, ".tmp") {
-			return nil
-		}
-		base := filepath.Base(p)
-		// Two flat-file conventions: Cursor (parlay-<slug>.md), Generic
-		// CLI (parlay-<slug>.md). The nested-folder convention (Claude)
-		// has SKILL.md as the filename — we detect via the parent dir
-		// name carrying the parlay- prefix.
-		isParlayPrefixed := strings.HasPrefix(base, "parlay-") ||
-			(base == "SKILL.md" && strings.HasPrefix(filepath.Base(filepath.Dir(p)), "parlay-"))
-		if !isParlayPrefixed {
-			return nil
-		}
-		if _, ok := manifestPaths[p]; !ok {
-			orphans = append(orphans, p)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("scanOrphans: walk %s: %w", dir, err)
-	}
-	return orphans, nil
 }
 
 // warn writes the formatted message to the configured Logger (or the
