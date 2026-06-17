@@ -2,9 +2,15 @@ version: 2
 
 project_name: parlay-studio
 
+# Monorepo mode: the tag scheme is `studio-vX.Y.Z`. Goreleaser strips the
+# `studio-` prefix to compute {{.Version}}, and runs go-build commands
+# from ./studio (which has its own go.mod).
+monorepo:
+  tag_prefix: studio-
+  dir: studio
+
 builds:
-  - dir: ./studio
-    main: ./cmd/parlay-studio
+  - main: ./cmd/parlay-studio
     binary: parlay-studio
     env:
       - CGO_ENABLED=0

@@ -39,10 +39,6 @@ jobs:
           args: release --clean --config .goreleaser.studio.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Override the version goreleaser computes from the tag, since
-          # our scheme is studio-v* rather than v*. Goreleaser would
-          # otherwise produce a malformed Version template from "studio-v0.1.0".
-          GORELEASER_CURRENT_TAG: "v${{ steps.ver.outputs.version }}"
 
       - name: Update Homebrew formula
         env:
@@ -57,6 +53,7 @@ jobs:
             desc "Parlay Studio — designer-facing extension to parlay (Domain Model Editor, Design Loop skill)"
             homepage "https://github.com/ddwht/parlay"
             url "https://github.com/ddwht/parlay/archive/refs/tags/${TAG}.tar.gz"
+            version "${VERSION}"
             sha256 "${SHA}"
             license "MIT"
 
