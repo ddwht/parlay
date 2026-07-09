@@ -5,7 +5,7 @@ description: "Parlay: Determine and create any subset of surface, capabilities, 
 
 # Create Artifacts
 
-Determine which of the four co-equal spec artifacts a feature needs — `surface.md` / `surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml` — based on its intents and dialogs, then create the appropriate artifacts. The four artifacts cover orthogonal concerns: what the user sees, what operations the backend exposes, what architectural prose constrains the codebase, and what entities and vocabulary the feature shares. A feature picks whichever subset it needs; none of the artifacts is a stand-in for another.
+Determine which spec artifacts a feature needs, based on its intents and dialogs, then create the appropriate ones — the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another. The four artifacts cover orthogonal concerns: what the user sees, what operations the backend exposes, what architectural prose constrains the codebase, and what entities and vocabulary the feature shares. A feature picks whichever subset it needs.
 
 ## Arguments
 

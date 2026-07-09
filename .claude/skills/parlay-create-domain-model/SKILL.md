@@ -144,7 +144,12 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
       The wording "Created empty domain-model.yaml stub at {path} —
       ready to author." is **stable** — the studio-cli-hooks feature
       pattern-matches on this single line to chain its "Open
-      Studio's Domain Model Editor?" prompt.
+      Studio's Domain Model Editor?" prompt. This is a deliberate,
+      narrow exception to the general "CI must not pattern-match
+      stdout" rule stated in `build-feature` and `generate-code` —
+      those skills' own output stays unstable-by-design; only this one
+      greenfield-stub line is pinned. Don't generalize this exception
+      to other output, and don't "fix" it to match the general rule.
 
    3. **Safety invariant.** A designer who hand-authored a domain
       model in Studio and then runs `parlay create-domain-model` must

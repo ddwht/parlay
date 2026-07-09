@@ -14,7 +14,7 @@ parlay-extends: parlay-tool/architectural-prose-artifact/partial-migration-seman
 
 Move operation-shaped fragments from each feature's `infrastructure.md` into `capabilities.yaml`. Architectural-prose fragments — boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations — are retained in `infrastructure.md` by design.
 
-Partial migration is the success case. The four spec artifacts (`surface.md`/`surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are co-equal: this command moves operation-shaped content between two of them and never frames `infrastructure.md` as a source to be emptied. A feature whose `infrastructure.md` contains only architectural prose is a successful all-retained run; a feature where every fragment is operation-shaped extracts everything and deletes the now-empty `infrastructure.md`; the common case is a mixture, and both lists print explicitly so the partition shape is always visible.
+Partial migration is the success case. the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another; this command moves operation-shaped content between two of them and never frames `infrastructure.md` as a source to be emptied. A feature whose `infrastructure.md` contains only architectural prose is a successful all-retained run; a feature where every fragment is operation-shaped extracts everything and deletes the now-empty `infrastructure.md`; the common case is a mixture, and both lists print explicitly so the partition shape is always visible.
 
 ## Arguments
 

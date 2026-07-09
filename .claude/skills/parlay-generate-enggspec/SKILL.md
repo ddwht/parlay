@@ -25,7 +25,7 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 1. **Load project config** — Read `.parlay/config.yaml` to determine the SDD framework format.
 
-2. **Read all feature artifacts** — the four spec artifacts are co-equal; read whichever subset the feature has:
+2. **Read all feature artifacts** — the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another; read whichever subset the feature has:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
    - `spec/intents/{feature}/surface.yaml` or `surface.md` (if exists — YAML wins when both are present)
