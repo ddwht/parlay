@@ -54,9 +54,9 @@ func runViewPage(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(targeted) == 0 {
-		fmt.Printf("No fragments target page %q.\n", pageName)
+		fmt.Fprintf(cmd.OutOrStdout(), "No fragments target page %q.\n", pageName)
 		if len(unplaced) > 0 {
-			fmt.Printf("%d fragments have no page target.\n", len(unplaced))
+			fmt.Fprintf(cmd.OutOrStdout(), "%d fragments have no page target.\n", len(unplaced))
 		}
 		return nil
 	}
@@ -66,36 +66,36 @@ func runViewPage(cmd *cobra.Command, args []string) error {
 	regions, conflicts := assembleRegions(targeted)
 
 	// Element: page-header (text-output → fmt.Println)
-	fmt.Printf("Assembled view: %s\n\n", pageName)
+	fmt.Fprintf(cmd.OutOrStdout(), "Assembled view: %s\n\n", pageName)
 
 	// Element: region-blocks (grouped-output → headed-section)
 	for _, region := range regions {
-		fmt.Printf("**%s**:\n", region.Name)
+		fmt.Fprintf(cmd.OutOrStdout(), "**%s**:\n", region.Name)
 		for i, frag := range region.Fragments {
-			fmt.Printf("  %d. @%s/%s\n", i+1, frag.Feature, parser.Slugify(frag.Name))
+			fmt.Fprintf(cmd.OutOrStdout(), "  %d. @%s/%s\n", i+1, frag.Feature, parser.Slugify(frag.Name))
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Element: conflict-warnings (data-list → bulleted-list, visible-when: conflicts.length > 0)
 	if len(conflicts) > 0 {
-		fmt.Printf("Conflicts (%d):\n", len(conflicts))
+		fmt.Fprintf(cmd.OutOrStdout(), "Conflicts (%d):\n", len(conflicts))
 		for _, c := range conflicts {
-			fmt.Printf("  %s and %s both target %s with order %d\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s and %s both target %s with order %d\n",
 				fmt.Sprintf("@%s/%s", c.Fragments[0].Feature, parser.Slugify(c.Fragments[0].Name)),
 				fmt.Sprintf("@%s/%s", c.Fragments[1].Feature, parser.Slugify(c.Fragments[1].Name)),
 				c.Region, c.Order)
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Element: unplaced-header + unplaced-list (visible-when: unplaced.length > 0)
 	if len(unplaced) > 0 {
-		fmt.Printf("Unplaced fragments (%d):\n", len(unplaced))
+		fmt.Fprintf(cmd.OutOrStdout(), "Unplaced fragments (%d):\n", len(unplaced))
 		for _, f := range unplaced {
-			fmt.Printf("  %s from @%s — %s\n", f.Name, f.Feature, truncate(f.Shows, 50))
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s from @%s — %s\n", f.Name, f.Feature, truncate(f.Shows, 50))
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	return nil

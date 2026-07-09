@@ -11,8 +11,8 @@ var buildFeatureCmdImpl = &cobra.Command{
 	Short: "Generate buildfile and testcases (use /parlay-build-feature skill)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("build-feature requires an AI agent.")
-		fmt.Println("Use the /parlay-build-feature skill in your AI agent (e.g., Claude Code).")
+		fmt.Fprintln(cmd.OutOrStdout(), "build-feature requires an AI agent.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-build-feature skill in your AI agent (e.g., Claude Code).")
 		return nil
 	},
 }

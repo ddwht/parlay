@@ -3,13 +3,14 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func TestEmitAmbiguitySignal_ShapeIsParseable(t *testing.T) {
@@ -44,19 +45,16 @@ func TestEmitAmbiguitySignal_ShapeIsParseable(t *testing.T) {
 	}
 }
 
+// TestPreRun_AmbiguityAsSignal_ExitsNonZero drives persistentPreRun
+// in-process. It used to build and exec a real parlay binary in a
+// subprocess because os.Exit couldn't be observed inside the test
+// process — now that the ambiguity-as-signal path returns an
+// *ExitCodeError instead of calling os.Exit directly (the 6.1
+// testability substrate), the whole scenario runs as a normal in-process
+// test with no subprocess, no `go build`, and no risk of hanging in
+// sandboxes where spawning a child process misbehaves.
 func TestPreRun_AmbiguityAsSignal_ExitsNonZero(t *testing.T) {
-	// Build a tiny binary that runs PreRunE, since os.Exit can't be
-	// observed inside the same test process. Skip if `go` isn't on PATH
-	// (common in CI sandboxes).
-	if _, err := exec.LookPath("go"); err != nil {
-		// Allow GOROOT-relative go binary too.
-		alt := filepath.Join(os.Getenv("HOME"), "go", "bin", "go")
-		if _, err := os.Stat(alt); err != nil {
-			t.Skip("go binary not available")
-		}
-	}
-
-	tmp := t.TempDir()
+	tmp := setupTestDir(t)
 	tmp, _ = filepath.EvalSymlinks(tmp)
 	// Place .git at tmp so walk-up stops here, AND a child .parlay/ below.
 	if err := os.MkdirAll(filepath.Join(tmp, ".git"), 0755); err != nil {
@@ -70,29 +68,23 @@ func TestPreRun_AmbiguityAsSignal_ExitsNonZero(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	binPath := filepath.Join(tmp, "parlay-test")
-	build := exec.Command("/home/node/go/bin/go", "build", "-o", binPath, "./core/cmd/parlay")
-	build.Dir = "/workspace/parlay-dev"
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Skipf("build failed: %v\n%s", err, out)
-	}
+	ambiguityAsSignalFlag = true
+	resetFlagsAfterTest(t, rootCmd.PersistentFlags())
 
-	cmd := exec.Command(binPath, "--ambiguity-as-signal", "status")
-	cmd.Dir = tmp
+	cmd := &cobra.Command{Use: "status"}
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	cmd.SetErr(&stderr)
 
-	err := cmd.Run()
+	err := persistentPreRun(cmd, nil)
 	if err == nil {
-		t.Fatal("expected non-zero exit, got nil")
+		t.Fatal("expected an *ExitCodeError, got nil")
 	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("not an ExitError: %v", err)
+	var exitErr *ExitCodeError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *ExitCodeError, got %T: %v", err, err)
 	}
-	if exitErr.ExitCode() != AmbiguityExitCode {
-		t.Errorf("exit code: want %d, got %d", AmbiguityExitCode, exitErr.ExitCode())
+	if exitErr.Code != AmbiguityExitCode {
+		t.Errorf("exit code: want %d, got %d", AmbiguityExitCode, exitErr.Code)
 	}
 
 	// Verify the JSON envelope is on stderr.

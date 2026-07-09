@@ -123,10 +123,9 @@ func runValidateVocabulary(cmd *cobra.Command, args []string) error {
 			Error   string `json:"error"`
 		}{Feature: slug, Error: resErr.Error()}
 		data, _ := json.MarshalIndent(errOut, "", "  ")
-		fmt.Println(string(data))
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		// Exit non-zero on resolution failure.
-		os.Exit(1)
-		return nil
+		return NewExitCodeError(1)
 	}
 
 	// Decide between full-layout and single-node mode based on --node.
@@ -151,11 +150,11 @@ func runValidateVocabulary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 
 	// Exit code policy: 0 when zero error-severity entries; 1 otherwise.
 	if report.HasErrors() {
-		os.Exit(1)
+		return NewExitCodeError(1)
 	}
 	return nil
 }

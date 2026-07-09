@@ -13,12 +13,14 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // StudioReason names every classified outcome of detectStudio. The
@@ -144,15 +146,28 @@ func classifyStudioCandidate(path string) StudioDetection {
 	}
 }
 
-// probeStudioVersion runs `<binary> --version` and returns the first
-// line of stdout, trimmed. On any failure (exit non-zero, empty
-// output) it returns ("", false) and the caller should treat the
+// studioVersionProbeTimeout bounds how long probeStudioVersion waits for
+// `<binary> --version` to respond. classifyStudioCandidate never invokes
+// the binary, but the version probe does — and this runs on every
+// command's PersistentPreRunE whenever a Studio binary is detected on
+// PATH. A hung or misbehaving Studio binary must never be able to hang
+// every parlay invocation. Two seconds is generous for a normal
+// --version print and short enough that a timeout is a barely-noticeable
+// pause, not a lockup. Var (not const) so tests can shrink it.
+var studioVersionProbeTimeout = 2 * time.Second
+
+// probeStudioVersion runs `<binary> --version` under a bounded timeout
+// and returns the first line of stdout, trimmed. On any failure (exit
+// non-zero, empty output, or the timeout firing and killing the
+// process) it returns ("", false) and the caller should treat the
 // version as unknown without flipping Detected.
 func probeStudioVersion(binaryPath string) (string, bool) {
 	if binaryPath == "" {
 		return "", false
 	}
-	cmd := exec.Command(binaryPath, "--version")
+	ctx, cancel := context.WithTimeout(context.Background(), studioVersionProbeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binaryPath, "--version")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false

@@ -37,7 +37,7 @@ func runNewInitiative(cmd *cobra.Command, args []string) error {
 	}
 
 	if info, err := os.Stat(initiativePath); err == nil && info.IsDir() {
-		fmt.Printf("Initiative %s already exists at %s/ — no changes made.\n", slug, initiativePath)
+		fmt.Fprintf(cmd.OutOrStdout(), "Initiative %s already exists at %s/ — no changes made.\n", slug, initiativePath)
 		return nil
 	}
 
@@ -50,13 +50,13 @@ func runNewInitiative(cmd *cobra.Command, args []string) error {
 	handoffPath := filepath.Join(cfg.HandoffRoot(), slug)
 	buildPath := filepath.Join(cfg.BuildRoot(), slug)
 
-	fmt.Printf("Initiative %s created at %s/ (with matching parallel paths under %s/ and %s/).\n", slug, initiativePath, handoffPath, buildPath)
-	fmt.Println("The directory is empty and in deferred classification — it becomes a proper initiative once it contains at least one feature subdirectory. A README.md on its own does not change that — it is narrative, not a classification signal.")
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Printf("  - Add features with parlay add-feature <name> --initiative %s\n", slug)
-	fmt.Printf("  - Move existing features in with parlay move-feature @<feature> --to %s\n", slug)
-	fmt.Printf("  - Optionally write %s/README.md with the initiative's \"why\" and scope notes\n", initiativePath)
+	fmt.Fprintf(cmd.OutOrStdout(), "Initiative %s created at %s/ (with matching parallel paths under %s/ and %s/).\n", slug, initiativePath, handoffPath, buildPath)
+	fmt.Fprintln(cmd.OutOrStdout(), "The directory is empty and in deferred classification — it becomes a proper initiative once it contains at least one feature subdirectory. A README.md on its own does not change that — it is narrative, not a classification signal.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Next steps:")
+	fmt.Fprintf(cmd.OutOrStdout(), "  - Add features with parlay add-feature <name> --initiative %s\n", slug)
+	fmt.Fprintf(cmd.OutOrStdout(), "  - Move existing features in with parlay move-feature @<feature> --to %s\n", slug)
+	fmt.Fprintf(cmd.OutOrStdout(), "  - Optionally write %s/README.md with the initiative's \"why\" and scope notes\n", initiativePath)
 
 	return nil
 }

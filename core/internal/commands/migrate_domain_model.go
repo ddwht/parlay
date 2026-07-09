@@ -98,8 +98,7 @@ func runMigrateDomainModel(cmd *cobra.Command, args []string) error {
 	// Already-migrated guard.
 	if yamlExists && !migrateDomainModelForce {
 		fmt.Fprintf(cmd.ErrOrStderr(), "[ERR] already migrated: %s\n", yamlPath)
-		os.Exit(1)
-		return nil
+		return NewExitCodeError(1)
 	}
 
 	// --force warning before overwriting.

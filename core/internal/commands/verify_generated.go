@@ -49,14 +49,14 @@ func runVerifyGenerated(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return emitVerifyJSON(output)
+		return emitVerifyJSON(cmd, output)
 	}
 	slug := parser.FeatureSlug(args[0])
 	output, err := computeVerifyOutput(cfg, slug)
 	if err != nil {
 		return err
 	}
-	return emitVerifyJSON(output)
+	return emitVerifyJSON(cmd, output)
 }
 
 // computeProjectVerifyOutput reads the project-level code-hashes sidecar
@@ -152,11 +152,11 @@ func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error
 	return output, nil
 }
 
-func emitVerifyJSON(output *verifyOutput) error {
+func emitVerifyJSON(cmd *cobra.Command, output *verifyOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }

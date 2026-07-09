@@ -83,7 +83,7 @@ func TestAddFeatureWithInitiative_CreatesInitiativeAndFeature(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	err := runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +110,8 @@ func TestAddFeatureWithInitiative_ReusesExistingInitiative(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testContext(t), "sso setup", "sso-setup", "auth overhaul")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "sso setup", "sso-setup", "auth overhaul")
 
 	if err != nil {
 		t.Fatalf("adding second feature to existing initiative should succeed, got: %v", err)
@@ -129,8 +129,8 @@ func TestAddFeatureWithInitiative_ScopeCollision(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "auth overhaul")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
 
 	if err == nil {
 		t.Error("expected scope collision error, got nil")
@@ -147,7 +147,7 @@ func TestAddFeatureWithInitiative_TopLevelCollision(t *testing.T) {
 	os.MkdirAll(orphanPath, 0755)
 	os.WriteFile(filepath.Join(orphanPath, "intents.md"), []byte("# Password Reset\n"), 0644)
 
-	err := runAddFeatureWithInitiative(testContext(t), "login", "login", "password-reset")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "login", "login", "password-reset")
 
 	if err == nil {
 		t.Error("expected top-level collision error, got nil")
@@ -160,8 +160,8 @@ func TestAddFeatureWithInitiative_SameSlugDifferentInitiative(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testContext(t), "password reset", "password-reset", "billing")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "billing")
 
 	if err != nil {
 		t.Errorf("same slug in different initiative should succeed, got: %v", err)

@@ -41,6 +41,6 @@ func runPromoteRoot(cmd *cobra.Command, args []string) error {
 	if err := config.RemoveParentPointer(pctx.Root.Path); err != nil {
 		return fmt.Errorf("remove parent pointer: %w", err)
 	}
-	fmt.Printf("Promoted %s to standalone root.\n", pctx.Root.Path)
+	fmt.Fprintf(cmd.OutOrStdout(), "Promoted %s to standalone root.\n", pctx.Root.Path)
 	return nil
 }

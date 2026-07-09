@@ -78,14 +78,14 @@ type projectValidateJSONResult struct {
 
 func runValidate(cmd *cobra.Command, args []string) error {
 	if validateProject {
-		return runValidateProject()
+		return runValidateProject(cmd)
 	}
 
 	path := args[0]
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return outputValidate(path, []agent.ValidationError{{
+		return outputValidate(cmd, path, []agent.ValidationError{{
 			Code:    "file-not-readable",
 			Message: fmt.Sprintf("cannot read %s: %s", path, err),
 			Context: path,
@@ -129,7 +129,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := validator(path, content); err != nil {
-		return outputValidate(path, []agent.ValidationError{{
+		return outputValidate(cmd, path, []agent.ValidationError{{
 			Code:    "schema-validation-failed",
 			Message: err.Error(),
 			Context: path,
@@ -141,11 +141,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if validateDeep && validateType == "buildfile" {
 		errors := agent.ValidateBuildfileDeepStructured(path, validateAdapter)
 		if len(errors) > 0 {
-			return outputValidate(path, errors)
+			return outputValidate(cmd, path, errors)
 		}
 	}
 
-	return outputValidate(path, nil)
+	return outputValidate(cmd, path, nil)
 }
 
 // runValidateProject implements the --project mode: walk every buildfile
@@ -154,7 +154,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 //
 // parlay-feature: parlay-tool/cross-cutting-target-paths
 // parlay-component: validate (extends project-pass-validation-and-cli-flag)
-func runValidateProject() error {
+func runValidateProject(cmd *cobra.Command) error {
 	root := validateRoot
 	if root == "" {
 		if env := os.Getenv("PARLAY_ROOT"); env != "" {
@@ -220,37 +220,36 @@ func runValidateProject() error {
 			out.Note = fmt.Sprintf("no buildfiles under %s/.parlay/build/", root)
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
-		fmt.Println(string(data))
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		if !ok {
-			os.Exit(1)
+			return NewExitCodeError(1)
 		}
 		return nil
 	}
 
 	// Text output.
 	if len(verdicts) == 0 {
-		fmt.Printf("OK (no buildfiles under %s/.parlay/build/)\n", root)
+		fmt.Fprintf(cmd.OutOrStdout(), "OK (no buildfiles under %s/.parlay/build/)\n", root)
 		return nil
 	}
 	if ok {
-		fmt.Printf("OK (%d feature(s) validated)\n", len(verdicts))
+		fmt.Fprintf(cmd.OutOrStdout(), "OK (%d feature(s) validated)\n", len(verdicts))
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "FAIL: %d issue(s) across %d feature(s)\n", totalErrors, len(verdicts))
+	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s) across %d feature(s)\n", totalErrors, len(verdicts))
 	for _, v := range verdicts {
 		if len(v.Errors) == 0 {
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "\nfeature %s (%s):\n", v.Feature, v.BuildfilePath)
+		fmt.Fprintf(cmd.ErrOrStderr(), "\nfeature %s (%s):\n", v.Feature, v.BuildfilePath)
 		for _, e := range v.Errors {
-			fmt.Fprintf(os.Stderr, "  [%s] %s\n", e.Code, e.Message)
+			fmt.Fprintf(cmd.ErrOrStderr(), "  [%s] %s\n", e.Code, e.Message)
 			if e.Fix != "" {
-				fmt.Fprintf(os.Stderr, "    fix: %s\n", e.Fix)
+				fmt.Fprintf(cmd.ErrOrStderr(), "    fix: %s\n", e.Fix)
 			}
 		}
 	}
-	os.Exit(1)
-	return nil
+	return NewExitCodeError(1)
 }
 
 // wrapOutcomeValidator adapts an agent.ValidationOutcome-returning
@@ -276,7 +275,7 @@ func wrapOutcomeValidator(fn func(agent.ValidationMode, string, []byte) []agent.
 	}
 }
 
-func outputValidate(path string, errors []agent.ValidationError) error {
+func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationError) error {
 	if validateJSON {
 		result := validateJSONResult{
 			Path:   path,
@@ -285,25 +284,24 @@ func outputValidate(path string, errors []agent.ValidationError) error {
 			Errors: errors,
 		}
 		data, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(data))
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		if len(errors) > 0 {
-			os.Exit(1)
+			return NewExitCodeError(1)
 		}
 		return nil
 	}
 
 	// Text output (default)
 	if len(errors) == 0 {
-		fmt.Println("OK")
+		fmt.Fprintln(cmd.OutOrStdout(), "OK")
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "FAIL: %d issue(s)\n", len(errors))
+	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s)\n", len(errors))
 	for _, e := range errors {
-		fmt.Fprintf(os.Stderr, "  [%s] %s\n", e.Code, e.Message)
+		fmt.Fprintf(cmd.ErrOrStderr(), "  [%s] %s\n", e.Code, e.Message)
 		if e.Fix != "" {
-			fmt.Fprintf(os.Stderr, "    fix: %s\n", e.Fix)
+			fmt.Fprintf(cmd.ErrOrStderr(), "    fix: %s\n", e.Fix)
 		}
 	}
-	os.Exit(1)
-	return nil
+	return NewExitCodeError(1)
 }

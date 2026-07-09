@@ -35,7 +35,7 @@ func runScanGenerated(cmd *cobra.Command, args []string) error {
 		// Root doesn't exist yet — emit empty result rather than error.
 		// This is the first-generation case where source-root has not
 		// been created.
-		return emitScanJSON(&scanOutput{SourceRoot: root, Files: []parser.Marker{}})
+		return emitScanJSON(cmd, &scanOutput{SourceRoot: root, Files: []parser.Marker{}})
 	}
 
 	markers, err := parser.ScanGenerated(root)
@@ -45,14 +45,14 @@ func runScanGenerated(cmd *cobra.Command, args []string) error {
 	if markers == nil {
 		markers = []parser.Marker{}
 	}
-	return emitScanJSON(&scanOutput{SourceRoot: root, Files: markers})
+	return emitScanJSON(cmd, &scanOutput{SourceRoot: root, Files: markers})
 }
 
-func emitScanJSON(output *scanOutput) error {
+func emitScanJSON(cmd *cobra.Command, output *scanOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }

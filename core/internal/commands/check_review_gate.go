@@ -163,7 +163,7 @@ func emitReviewGateJSON(cmd *cobra.Command, out reviewGateOutput) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	if !out.Ready {
-		os.Exit(1)
+		return NewExitCodeError(1)
 	}
 	return nil
 }

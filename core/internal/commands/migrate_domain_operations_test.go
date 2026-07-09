@@ -34,19 +34,11 @@ func setupMigrateDomainOperationsProject(t *testing.T, candidates ...string) str
 	return intentsRoot
 }
 
-// resetMigrateDomainOperationsFlags restores the package-level flag vars
-// migrate-domain-operations reads, so tests don't leak state into each
-// other (mirrors the defer pattern in move_feature_test.go).
-func resetMigrateDomainOperationsFlags() {
-	migrateDomainOperationsFeature = ""
-	migrateDomainOperationsNonInteractive = false
-}
-
 func TestMigrateDomainOperations_HeadlessAmbiguous_HardErrors(t *testing.T) {
 	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a", "feature-b")
 
 	migrateDomainOperationsNonInteractive = true
-	defer resetMigrateDomainOperationsFlags()
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err == nil {
@@ -74,7 +66,7 @@ func TestMigrateDomainOperations_HeadlessWithExplicitFeature_Succeeds(t *testing
 
 	migrateDomainOperationsNonInteractive = true
 	migrateDomainOperationsFeature = "@feature-b"
-	defer resetMigrateDomainOperationsFlags()
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err != nil {
@@ -94,7 +86,7 @@ func TestMigrateDomainOperations_ExplicitFeatureNotACandidate_Errors(t *testing.
 
 	migrateDomainOperationsNonInteractive = true
 	migrateDomainOperationsFeature = "@feature-c"
-	defer resetMigrateDomainOperationsFlags()
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err == nil {
@@ -109,7 +101,7 @@ func TestMigrateDomainOperations_UnambiguousSingleCandidate_StillWorksHeadless(t
 	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a")
 
 	migrateDomainOperationsNonInteractive = true
-	defer resetMigrateDomainOperationsFlags()
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err != nil {

@@ -78,7 +78,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 	}
 
 	if identifier == destIdentifier {
-		fmt.Printf("Feature @%s is already at the target location — no change.\n", identifier)
+		fmt.Fprintf(cmd.OutOrStdout(), "Feature @%s is already at the target location — no change.\n", identifier)
 		return nil
 	}
 
@@ -127,12 +127,12 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 	}
 
 	if initiativeCreated {
-		fmt.Printf("Initiative %s created.\n", parser.Slugify(moveToFlag))
+		fmt.Fprintf(cmd.OutOrStdout(), "Initiative %s created.\n", parser.Slugify(moveToFlag))
 	}
-	fmt.Println("Feature moved:")
-	fmt.Printf("  Before: @%s (%s/)\n", identifier, sourcePath)
-	fmt.Printf("  After:  @%s (%s/)\n", destIdentifier, destPath)
-	fmt.Println("All three trees updated in lockstep. Git history preserved via `git mv`.")
+	fmt.Fprintln(cmd.OutOrStdout(), "Feature moved:")
+	fmt.Fprintf(cmd.OutOrStdout(), "  Before: @%s (%s/)\n", identifier, sourcePath)
+	fmt.Fprintf(cmd.OutOrStdout(), "  After:  @%s (%s/)\n", destIdentifier, destPath)
+	fmt.Fprintln(cmd.OutOrStdout(), "All three trees updated in lockstep. Git history preserved via `git mv`.")
 
 	return nil
 }

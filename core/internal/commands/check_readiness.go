@@ -81,10 +81,10 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 
 	if !output.Ready {
-		os.Exit(1)
+		return NewExitCodeError(1)
 	}
 	return nil
 }

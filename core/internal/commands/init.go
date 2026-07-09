@@ -76,10 +76,10 @@ func DetectRunningAgent() (name string, detected bool) {
 // press Enter to confirm or type an alternative — init never proceeds
 // without an explicit choice. When no agent is detected, the prompt
 // falls back to free entry against the adapter list.
-func promptAgentWithDefault(reader *bufio.Reader, detected string) (string, error) {
+func promptAgentWithDefault(cmd *cobra.Command, reader *bufio.Reader, detected string) (string, error) {
 	if detected != "" {
-		fmt.Printf("ai-agent? [%s (detected)] — press Enter to confirm or type to override\n", detected)
-		fmt.Print("> ")
+		fmt.Fprintf(cmd.OutOrStdout(), "ai-agent? [%s (detected)] — press Enter to confirm or type to override\n", detected)
+		fmt.Fprint(cmd.OutOrStdout(), "> ")
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			return "", err
@@ -96,7 +96,7 @@ func promptAgentWithDefault(reader *bufio.Reader, detected string) (string, erro
 		}
 		return input, nil
 	}
-	return promptChoice(reader, "What AI agent would you like to use?", agentOptions)
+	return promptChoice(cmd, reader, "What AI agent would you like to use?", agentOptions)
 }
 var frameworks = []frameworkEntry{
 	{Display: "Go CLI", Adapter: "go-cli", NavStrategy: "cli-subcommands"},
@@ -114,12 +114,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	detectedAgent, _ := DetectRunningAgent()
-	agent, err := promptAgentWithDefault(reader, detectedAgent)
+	agent, err := promptAgentWithDefault(cmd, reader, detectedAgent)
 	if err != nil {
 		return err
 	}
 
-	sdd, err := promptChoice(reader, "What SDD framework do you want to use?", sddOptions)
+	sdd, err := promptChoice(cmd, reader, "What SDD framework do you want to use?", sddOptions)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	for i, fw := range frameworks {
 		fwDisplays[i] = fw.Display
 	}
-	fwChoice, err := promptChoice(reader, "What prototype framework do you want to use?", fwDisplays)
+	fwChoice, err := promptChoice(cmd, reader, "What prototype framework do you want to use?", fwDisplays)
 	if err != nil {
 		return err
 	}
@@ -206,29 +206,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 	skills, _ := embedded.ReadAllSkills()
 	dep, err := deployer.Get(agent)
 	if err != nil {
-		fmt.Printf("  Warning: no deployer for agent %q, using generic\n", agent)
+		fmt.Fprintf(cmd.OutOrStdout(), "  Warning: no deployer for agent %q, using generic\n", agent)
 		dep, _ = deployer.Get("generic")
 	}
 	if dep != nil {
 		if err := dep.Deploy(".", skills); err != nil {
-			fmt.Printf("  Warning: could not deploy skills: %s\n", err)
+			fmt.Fprintf(cmd.OutOrStdout(), "  Warning: could not deploy skills: %s\n", err)
 		}
 	}
 
 	// Element: summary
-	fmt.Println()
-	fmt.Println("Project bootstrapped:")
-	fmt.Printf("  .parlay/config.yaml        — %s + %s + %s\n", agent, sdd, fw.Display)
-	fmt.Printf("  .parlay/blueprint.yaml     — navigation: %s\n", fw.NavStrategy)
-	fmt.Printf("  .parlay/schemas/            — %d schemas\n", len(schemaNames))
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Project bootstrapped:")
+	fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/config.yaml        — %s + %s + %s\n", agent, sdd, fw.Display)
+	fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/blueprint.yaml     — navigation: %s\n", fw.NavStrategy)
+	fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/schemas/            — %d schemas\n", len(schemaNames))
 	if adapterName != "" {
-		fmt.Printf("  .parlay/adapters/           — %s adapter\n", adapterName)
+		fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/adapters/           — %s adapter\n", adapterName)
 	}
-	fmt.Printf("  .parlay/build/              — internal build artifacts (per feature)\n")
-	fmt.Printf("  spec/intents/               — designer-authored feature inputs\n")
-	fmt.Printf("  spec/handoff/               — engineering handoff artifacts (per feature)\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/build/              — internal build artifacts (per feature)\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "  spec/intents/               — designer-authored feature inputs\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "  spec/handoff/               — engineering handoff artifacts (per feature)\n")
 	if len(skills) > 0 {
-		fmt.Printf("  skills                      — %d skills deployed for %s\n", len(skills), dep.Name())
+		fmt.Fprintf(cmd.OutOrStdout(), "  skills                      — %d skills deployed for %s\n", len(skills), dep.Name())
 	}
 
 	// parlay-feature: parlay-tool/multi-adapter
@@ -238,13 +238,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// bundled adapter-set preset. Default flow leaves the project
 	// presentation-only with the chosen adapter; the preset prompt is the
 	// opt-in path into multi-target topology.
-	if err := offerPresetSelection(); err != nil {
-		fmt.Printf("  Note: preset selection skipped (%v)\n", err)
+	if err := offerPresetSelection(cmd); err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "  Note: preset selection skipped (%v)\n", err)
 	}
 
 	// Element: next-step
-	fmt.Println()
-	fmt.Println("Ready. Run: parlay add-feature <name>")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Ready. Run: parlay add-feature <name>")
 
 	return nil
 }
@@ -254,7 +254,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 // adapter-set.yaml + the adapter files it references into .parlay/. Skipping
 // (or selecting "custom") leaves .parlay/adapter-set.yaml absent for the
 // user to author from scratch.
-func offerPresetSelection() error {
+func offerPresetSelection(cmd *cobra.Command) error {
 	presetNames, err := embedded.PresetNames()
 	if err != nil {
 		return fmt.Errorf("list presets: %w", err)
@@ -269,17 +269,17 @@ func offerPresetSelection() error {
 		return nil
 	}
 
-	fmt.Println()
-	fmt.Println("Pick a starting preset (optional — adds backend slots beyond presentation):")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Pick a starting preset (optional — adds backend slots beyond presentation):")
 	for i, name := range presetNames {
 		marker := ""
 		if name == "react-nest-prisma" {
 			marker = "  [INFO] react-nest-prisma is the v1 first preset (exercised end-to-end in CI)"
 		}
-		fmt.Printf("  %d. %s%s\n", i+1, name, marker)
+		fmt.Fprintf(cmd.OutOrStdout(), "  %d. %s%s\n", i+1, name, marker)
 	}
-	fmt.Printf("  %d. custom (skip — author .parlay/adapter-set.yaml from scratch)\n", len(presetNames)+1)
-	fmt.Print("> ")
+	fmt.Fprintf(cmd.OutOrStdout(), "  %d. custom (skip — author .parlay/adapter-set.yaml from scratch)\n", len(presetNames)+1)
+	fmt.Fprint(cmd.OutOrStdout(), "> ")
 
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
@@ -296,7 +296,7 @@ func offerPresetSelection() error {
 		return nil
 	}
 	if idx == len(presetNames)+1 {
-		fmt.Println("No files written — author .parlay/adapter-set.yaml from scratch.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No files written — author .parlay/adapter-set.yaml from scratch.")
 		return nil
 	}
 
@@ -309,17 +309,17 @@ func offerPresetSelection() error {
 	if err := os.WriteFile(dest, content, 0644); err != nil {
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
-	fmt.Printf("Files written\n  %s — preset %s\n", dest, chosen)
+	fmt.Fprintf(cmd.OutOrStdout(), "Files written\n  %s — preset %s\n", dest, chosen)
 	return nil
 }
 
 // promptChoice displays a numbered menu and returns the selected option.
-func promptChoice(reader *bufio.Reader, question string, options []string) (string, error) {
-	fmt.Println(question)
+func promptChoice(cmd *cobra.Command, reader *bufio.Reader, question string, options []string) (string, error) {
+	fmt.Fprintln(cmd.OutOrStdout(), question)
 	for i, opt := range options {
-		fmt.Printf("  %d. %s\n", i+1, opt)
+		fmt.Fprintf(cmd.OutOrStdout(), "  %d. %s\n", i+1, opt)
 	}
-	fmt.Print("> ")
+	fmt.Fprint(cmd.OutOrStdout(), "> ")
 
 	input, err := reader.ReadString('\n')
 	if err != nil {

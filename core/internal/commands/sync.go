@@ -89,44 +89,44 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Element: all-clear (visible-when: uncovered == 0 && orphans == 0)
 	if len(uncoveredIntents) == 0 && len(orphanDialogs) == 0 {
-		fmt.Println("All intents are covered. No orphan dialogs.")
+		fmt.Fprintln(cmd.OutOrStdout(), "All intents are covered. No orphan dialogs.")
 		return nil
 	}
 
 	// Element: covered-header + covered-list (visible-when: covered.length > 0)
 	if len(covered) > 0 {
-		fmt.Println("Covered intents:")
+		fmt.Fprintln(cmd.OutOrStdout(), "Covered intents:")
 		for _, m := range covered {
-			fmt.Printf("  %s — matched by %s\n", m.IntentTitle, m.DialogTitle)
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s — matched by %s\n", m.IntentTitle, m.DialogTitle)
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Element: uncovered-header + uncovered-list (visible-when: uncovered.length > 0)
 	if len(uncoveredIntents) > 0 {
-		fmt.Println("Intents without dialogs:")
+		fmt.Fprintln(cmd.OutOrStdout(), "Intents without dialogs:")
 		for _, intent := range uncoveredIntents {
-			fmt.Printf("  %s — no matching dialog found\n", intent.Title)
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s — no matching dialog found\n", intent.Title)
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Element: orphan-header + orphan-list (visible-when: orphan.length > 0)
 	if len(orphanDialogs) > 0 {
-		fmt.Println("Orphan dialogs (no matching intent):")
+		fmt.Fprintln(cmd.OutOrStdout(), "Orphan dialogs (no matching intent):")
 		for _, dialog := range orphanDialogs {
-			fmt.Printf("  %s — doesn't trace to any intent\n", dialog.Title)
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s — doesn't trace to any intent\n", dialog.Title)
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Action: template-prompt (selection → lettered-prompt, visible-when: uncovered.length > 0)
 	if len(uncoveredIntents) > 0 {
-		fmt.Println("Generate dialog templates for uncovered intents?")
-		fmt.Println("  A: Yes, generate templates for all")
-		fmt.Println("  B: Let me pick which ones")
-		fmt.Println("  C: No, just the report")
-		fmt.Print("> ")
+		fmt.Fprintln(cmd.OutOrStdout(), "Generate dialog templates for uncovered intents?")
+		fmt.Fprintln(cmd.OutOrStdout(), "  A: Yes, generate templates for all")
+		fmt.Fprintln(cmd.OutOrStdout(), "  B: Let me pick which ones")
+		fmt.Fprintln(cmd.OutOrStdout(), "  C: No, just the report")
+		fmt.Fprint(cmd.OutOrStdout(), "> ")
 
 		reader := bufio.NewReader(os.Stdin)
 		choice, _ := reader.ReadString('\n')
@@ -135,19 +135,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 		switch choice {
 		case "A":
 			// Action: generate-all (file-operation, enabled-when: selected == A)
-			if err := appendDialogTemplates(uncoveredIntents, dialogsPath); err != nil {
+			if err := appendDialogTemplates(cmd, uncoveredIntents, dialogsPath); err != nil {
 				return err
 			}
 
 		case "B":
 			// Action: pick-specific (selection → lettered-prompt, enabled-when: selected == B)
-			selected := promptForSelection(uncoveredIntents, reader)
+			selected := promptForSelection(cmd, uncoveredIntents, reader)
 			if len(selected) > 0 {
-				if err := appendDialogTemplates(selected, dialogsPath); err != nil {
+				if err := appendDialogTemplates(cmd, selected, dialogsPath); err != nil {
 					return err
 				}
 			} else {
-				fmt.Println("No intents selected.")
+				fmt.Fprintln(cmd.OutOrStdout(), "No intents selected.")
 			}
 
 		case "C":
@@ -162,13 +162,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return runStudioPromptForSync(cfg, args[0], noStudio)
 }
 
-func promptForSelection(intents []parser.Intent, reader *bufio.Reader) []parser.Intent {
-	fmt.Println("Which intents should I generate templates for?")
+func promptForSelection(cmd *cobra.Command, intents []parser.Intent, reader *bufio.Reader) []parser.Intent {
+	fmt.Fprintln(cmd.OutOrStdout(), "Which intents should I generate templates for?")
 	for i, intent := range intents {
 		letter := string(rune('A' + i))
-		fmt.Printf("  %s: %s\n", letter, intent.Title)
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", letter, intent.Title)
 	}
-	fmt.Print("Enter letters (e.g., A,C): ")
+	fmt.Fprint(cmd.OutOrStdout(), "Enter letters (e.g., A,C): ")
 
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToUpper(input))
@@ -186,7 +186,7 @@ func promptForSelection(intents []parser.Intent, reader *bufio.Reader) []parser.
 	return selected
 }
 
-func appendDialogTemplates(intents []parser.Intent, dialogsPath string) error {
+func appendDialogTemplates(cmd *cobra.Command, intents []parser.Intent, dialogsPath string) error {
 	f, err := os.OpenFile(dialogsPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open dialogs.md: %w", err)
@@ -200,7 +200,7 @@ func appendDialogTemplates(intents []parser.Intent, dialogsPath string) error {
 		}
 	}
 
-	fmt.Printf("Added %d dialog templates to dialogs.md.\n", len(intents))
+	fmt.Fprintf(cmd.OutOrStdout(), "Added %d dialog templates to dialogs.md.\n", len(intents))
 	return nil
 }
 

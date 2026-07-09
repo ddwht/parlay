@@ -56,21 +56,21 @@ func runLockPage(cmd *cobra.Command, args []string) error {
 	regions, _ := assembleRegions(targeted)
 
 	// Element: layout-preview (grouped-output → headed-section)
-	fmt.Printf("Layout to lock for %q:\n\n", pageName)
+	fmt.Fprintf(cmd.OutOrStdout(), "Layout to lock for %q:\n\n", pageName)
 	for _, region := range regions {
-		fmt.Printf("**%s**:\n", region.Name)
+		fmt.Fprintf(cmd.OutOrStdout(), "**%s**:\n", region.Name)
 		for i, frag := range region.Fragments {
-			fmt.Printf("  %d. @%s/%s\n", i+1, frag.Feature, parser.Slugify(frag.Name))
+			fmt.Fprintf(cmd.OutOrStdout(), "  %d. @%s/%s\n", i+1, frag.Feature, parser.Slugify(frag.Name))
 		}
-		fmt.Println()
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Element: manifest-path (path-reference → path-line)
-	fmt.Printf("Will create %s\n", manifestPath)
+	fmt.Fprintf(cmd.OutOrStdout(), "Will create %s\n", manifestPath)
 
 	// Element: owner-prompt (text-output → fmt.Println)
 	// Action: read-owner (text-input → text-prompt)
-	fmt.Print("Who should own this page? > ")
+	fmt.Fprint(cmd.OutOrStdout(), "Who should own this page? > ")
 	reader := bufio.NewReader(os.Stdin)
 	owner, _ := reader.ReadString('\n')
 	owner = strings.TrimSpace(owner)
@@ -86,10 +86,10 @@ func runLockPage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write manifest: %w", err)
 	}
 
-	fmt.Printf("Created %s\n", manifestPath)
-	fmt.Println("Status: draft")
-	fmt.Println()
-	fmt.Println("Set the status to \"reviewed\" or \"locked\" when you're satisfied with the layout.")
+	fmt.Fprintf(cmd.OutOrStdout(), "Created %s\n", manifestPath)
+	fmt.Fprintln(cmd.OutOrStdout(), "Status: draft")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Set the status to \"reviewed\" or \"locked\" when you're satisfied with the layout.")
 
 	return nil
 }

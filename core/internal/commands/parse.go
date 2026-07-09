@@ -39,9 +39,9 @@ func runParse(cmd *cobra.Command, args []string) error {
 	if parseType == "intents" || parseType == "dialogs" {
 		if body, err := os.ReadFile(path); err == nil {
 			if errs := parser.ValidateNoCrossRootRefsInContent(path, body); len(errs) > 0 {
-				fmt.Fprintln(os.Stderr, "[ERR] cross-root references in intent content are not supported in v1")
+				fmt.Fprintln(cmd.ErrOrStderr(), "[ERR] cross-root references in intent content are not supported in v1")
 				for _, e := range errs {
-					fmt.Fprintf(os.Stderr, "  at %s:%d (%s)\n", e.File, e.Line, e.Ref)
+					fmt.Fprintf(cmd.ErrOrStderr(), "  at %s:%d (%s)\n", e.File, e.Line, e.Ref)
 				}
 				return fmt.Errorf("cross-root references found in %s", path)
 			}
@@ -71,6 +71,6 @@ func runParse(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("JSON encoding failed: %w", err)
 	}
 
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }

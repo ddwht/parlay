@@ -37,7 +37,7 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 	slug := parser.Slugify(name)
 
 	if initiativeFlag != "" {
-		return runAddFeatureWithInitiative(cfg, name, slug, initiativeFlag)
+		return runAddFeatureWithInitiative(cmd, cfg, name, slug, initiativeFlag)
 	}
 
 	featurePath := cfg.FeaturePath(slug)
@@ -62,18 +62,18 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating dialogs.md: %w", err)
 	}
 
-	fmt.Printf("Created feature at %s/\n", featurePath)
-	fmt.Println("  intents.md")
-	fmt.Println("  dialogs.md")
-	fmt.Println()
-	fmt.Printf("Start with intents.md. When ready, run: parlay create-dialogs @%s\n", slug)
+	fmt.Fprintf(cmd.OutOrStdout(), "Created feature at %s/\n", featurePath)
+	fmt.Fprintln(cmd.OutOrStdout(), "  intents.md")
+	fmt.Fprintln(cmd.OutOrStdout(), "  dialogs.md")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintf(cmd.OutOrStdout(), "Start with intents.md. When ready, run: parlay create-dialogs @%s\n", slug)
 
 	return nil
 }
 
 // parlay-feature: initiatives
 // parlay-component: FeatureCreationResult
-func runAddFeatureWithInitiative(cfg *config.Context, name, featureSlug, initiativeName string) error {
+func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, featureSlug, initiativeName string) error {
 	initiativeSlug := parser.Slugify(initiativeName)
 
 	intentsRoot := cfg.IntentsRoot()
@@ -101,7 +101,7 @@ func runAddFeatureWithInitiative(cfg *config.Context, name, featureSlug, initiat
 	for _, root := range threeTreeRoots(cfg) {
 		if mkErr := os.MkdirAll(filepath.Join(root, initiativeSlug, featureSlug), 0755); mkErr != nil {
 			if initiativeCreated {
-				fmt.Printf("[WARN] Created initiative %s (in deferred classification — no features yet), but couldn't create feature %s inside it: %v. Re-run the same command after fixing the issue — it's idempotent.\n", initiativeSlug, featureSlug, mkErr)
+				fmt.Fprintf(cmd.OutOrStdout(), "[WARN] Created initiative %s (in deferred classification — no features yet), but couldn't create feature %s inside it: %v. Re-run the same command after fixing the issue — it's idempotent.\n", initiativeSlug, featureSlug, mkErr)
 				return nil
 			}
 			return fmt.Errorf("creating feature directory in %s: %w", root, mkErr)
@@ -119,11 +119,11 @@ func runAddFeatureWithInitiative(cfg *config.Context, name, featureSlug, initiat
 	}
 
 	if initiativeCreated {
-		fmt.Printf("Initiative %s created.\n", initiativeSlug)
+		fmt.Fprintf(cmd.OutOrStdout(), "Initiative %s created.\n", initiativeSlug)
 	}
-	fmt.Printf("Feature %s added to initiative %s at %s/.\n", featureSlug, initiativeSlug, featurePath)
-	fmt.Println()
-	fmt.Printf("Start with intents.md. When ready, run: parlay create-dialogs @%s/%s\n", initiativeSlug, featureSlug)
+	fmt.Fprintf(cmd.OutOrStdout(), "Feature %s added to initiative %s at %s/.\n", featureSlug, initiativeSlug, featurePath)
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintf(cmd.OutOrStdout(), "Start with intents.md. When ready, run: parlay create-dialogs @%s/%s\n", initiativeSlug, featureSlug)
 
 	return nil
 }

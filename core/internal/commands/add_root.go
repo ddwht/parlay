@@ -161,10 +161,10 @@ func runAddRoot(cmd *cobra.Command, args []string) error {
 		refreshFailed = true
 	}
 
-	fmt.Printf("[OK] Created child root at %s/.\n", rel)
-	fmt.Printf("Registered in parent's roots index as %s.\n", name)
+	fmt.Fprintf(cmd.OutOrStdout(), "[OK] Created child root at %s/.\n", rel)
+	fmt.Fprintf(cmd.OutOrStdout(), "Registered in parent's roots index as %s.\n", name)
 	if !refreshFailed {
-		fmt.Printf("Agent surface refreshed (CLAUDE.md now lists %s).\n", name)
+		fmt.Fprintf(cmd.OutOrStdout(), "Agent surface refreshed (CLAUDE.md now lists %s).\n", name)
 	}
 	return nil
 }

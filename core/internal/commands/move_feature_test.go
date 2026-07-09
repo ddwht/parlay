@@ -40,7 +40,7 @@ func TestMoveFeature_OrphanToInitiative(t *testing.T) {
 
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestMoveFeature_AutoCreateInitiative(t *testing.T) {
 
 	moveToFlag = "auth-redesign"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@sso-setup"})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestMoveFeature_MoveOut(t *testing.T) {
 
 	moveToFlag = ""
 	moveOutFlag = true
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
@@ -105,7 +105,7 @@ func TestMoveFeature_ScopeCollision(t *testing.T) {
 
 	moveToFlag = "billing"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -119,7 +119,7 @@ func TestMoveFeature_NoopSameLocation(t *testing.T) {
 
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
@@ -132,7 +132,7 @@ func TestMoveFeature_NotFound(t *testing.T) {
 
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@nonexistent"})
 	if err == nil {
@@ -145,7 +145,7 @@ func TestMoveFeature_MutuallyExclusiveFlags(t *testing.T) {
 
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = true
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -161,6 +161,7 @@ func TestMoveFeature_MissingFlags(t *testing.T) {
 
 	moveToFlag = ""
 	moveOutFlag = false
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -179,7 +180,7 @@ func TestMoveFeature_WrongType_Initiative(t *testing.T) {
 
 	moveToFlag = "other"
 	moveOutFlag = false
-	defer func() { moveToFlag = ""; moveOutFlag = false }()
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul"})
 	if err == nil {

@@ -41,7 +41,7 @@ func runCreateDialogs(cmd *cobra.Command, args []string) error {
 	}
 
 	// Element: intent-count (text-output → fmt.Println)
-	fmt.Printf("Found %d intents.\n", len(intents))
+	fmt.Fprintf(cmd.OutOrStdout(), "Found %d intents.\n", len(intents))
 
 	// Computed: existing-dialogs from read dialogs.md (raw content for duplicate detection)
 	dialogsPath := filepath.Join(featurePath, "dialogs.md")
@@ -61,7 +61,7 @@ func runCreateDialogs(cmd *cobra.Command, args []string) error {
 
 	// Element: all-covered (visible-when: new-intents.length == 0)
 	if len(newIntents) == 0 {
-		fmt.Println("All intents already have dialog templates. Nothing to generate.")
+		fmt.Fprintln(cmd.OutOrStdout(), "All intents already have dialog templates. Nothing to generate.")
 		return nil
 	}
 
@@ -85,16 +85,16 @@ func runCreateDialogs(cmd *cobra.Command, args []string) error {
 	}
 
 	// Element: template-count (text-output → fmt.Println, visible-when: new-intents.length > 0)
-	fmt.Printf("Added %d dialog templates to dialogs.md.\n", len(newIntents))
+	fmt.Fprintf(cmd.OutOrStdout(), "Added %d dialog templates to dialogs.md.\n", len(newIntents))
 
 	// Element: skip-count (text-output → fmt.Println, visible-when: skipped > 0)
 	if skipped > 0 {
-		fmt.Printf("Skipped %d intents that already have dialogs.\n", skipped)
+		fmt.Fprintf(cmd.OutOrStdout(), "Skipped %d intents that already have dialogs.\n", skipped)
 	}
 
 	// Element: next-step (text-output → fmt.Println, visible-when: new-intents.length > 0)
-	fmt.Println()
-	fmt.Println("Review and rewrite them to capture the real conversation.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Review and rewrite them to capture the real conversation.")
 
 	return nil
 }

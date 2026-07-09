@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -71,17 +73,19 @@ type featureEntry struct {
 }
 
 type rootSection struct {
-	Path     string         `json:"path"`
-	Kind     config.RootKind `json:"kind"`
-	Source   string         `json:"source"`
-	Features []featureEntry `json:"features"`
+	Path              string         `json:"path"`
+	Kind              config.RootKind `json:"kind"`
+	Source            string         `json:"source"`
+	Features          []featureEntry `json:"features"`
+	OrphanedBuildDirs []string       `json:"orphaned_build_dirs"`
 }
 
 type childRootEntry struct {
-	Name        string         `json:"name"`
-	Path        string         `json:"path"`
-	Features    []featureEntry `json:"features"`
-	Unavailable string         `json:"unavailable,omitempty"`
+	Name              string         `json:"name"`
+	Path              string         `json:"path"`
+	Features          []featureEntry `json:"features"`
+	OrphanedBuildDirs []string       `json:"orphaned_build_dirs"`
+	Unavailable       string         `json:"unavailable,omitempty"`
 }
 
 type statusEnvelope struct {
@@ -110,25 +114,25 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if statusJSON {
-		return runStatusJSON(pctx)
+		return runStatusJSON(cmd, pctx)
 	}
-	return runStatusHuman(pctx)
+	return runStatusHuman(cmd, pctx)
 }
 
 // ---------------------------------------------------------------------
 // Human path — hierarchical listing with the Phase column.
 // ---------------------------------------------------------------------
 
-func runStatusHuman(pctx *config.Context) error {
+func runStatusHuman(cmd *cobra.Command, pctx *config.Context) error {
 	// Active root header — kept identical to the legacy output modulo
 	// the Phase column added per feature line below.
-	fmt.Printf("root:     %s\n", pctx.Root.Path)
-	fmt.Printf("kind:     %s\n", pctx.Root.Kind)
+	fmt.Fprintf(cmd.OutOrStdout(), "root:     %s\n", pctx.Root.Path)
+	fmt.Fprintf(cmd.OutOrStdout(), "kind:     %s\n", pctx.Root.Kind)
 	if pctx.Root.Kind == config.RootKindChild && pctx.Root.ParentPath != "" {
-		fmt.Printf("parent:   %s\n", pctx.Root.ParentPath)
+		fmt.Fprintf(cmd.OutOrStdout(), "parent:   %s\n", pctx.Root.ParentPath)
 	}
 	if pctx.Resolution != nil {
-		fmt.Printf("source:   %s\n", pctx.Resolution.Source)
+		fmt.Fprintf(cmd.OutOrStdout(), "source:   %s\n", pctx.Resolution.Source)
 	}
 
 	// Topology line — sits between the root header and the feature
@@ -136,7 +140,7 @@ func runStatusHuman(pctx *config.Context) error {
 	// per-mismatch detail; per-file diagnostics are reserved for
 	// `parlay repair`.
 	if mismatches, err := config.ScanTopology(&pctx.Root); err == nil {
-		renderTopologyLine(os.Stdout, len(mismatches))
+		renderTopologyLine(cmd.OutOrStdout(), len(mismatches))
 	}
 
 	// Active root's own features. Treat a missing intents/ tree as
@@ -148,7 +152,8 @@ func runStatusHuman(pctx *config.Context) error {
 	if err != nil {
 		return err
 	}
-	renderFeaturesHuman(pctx, features)
+	renderFeaturesHuman(cmd, pctx, features)
+	renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(pctx.IntentsRoot(), pctx.BuildRoot()))
 
 	// Cross-root walk: when the active root is a parent, iterate
 	// pctx.Index.Children IN SLICE ORDER (the on-disk roots.yaml
@@ -157,7 +162,7 @@ func runStatusHuman(pctx *config.Context) error {
 	// not walked.
 	if pctx.Root.Kind == config.RootKindParent && pctx.Index != nil && len(pctx.Index.Children) > 0 {
 		walkChildRoots(pctx, func(name, path string, childCtx *config.Context, childFeatures []string, unavailable error) {
-			renderChildHuman(name, path, childCtx, childFeatures, unavailable)
+			renderChildHuman(cmd, name, path, childCtx, childFeatures, unavailable)
 		})
 	}
 	return nil
@@ -166,56 +171,75 @@ func runStatusHuman(pctx *config.Context) error {
 // renderFeaturesHuman prints the active root's features as a tabwriter
 // table with the Phase column appended. Empty features render as the
 // `(none)` line.
-func renderFeaturesHuman(pctx *config.Context, features []string) {
+func renderFeaturesHuman(cmd *cobra.Command, pctx *config.Context, features []string) {
 	if len(features) == 0 {
-		fmt.Printf("features: (none)\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "features: (none)\n")
 		return
 	}
-	fmt.Printf("features: %d\n", len(features))
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(features))
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	for _, f := range features {
 		fmt.Fprintf(w, "  - %s\t%s\n", f, ComputeFeaturePhase(pctx, f))
 	}
 	w.Flush()
 }
 
+// renderOrphanedBuildDirsHuman prints an anomaly line naming every
+// qualified identifier under .parlay/build/ that carries a build
+// artifact but has no matching spec/intents/ feature — its intents.md
+// was deleted, renamed, or moved without cleaning up the stale build
+// state. Unlike the features/topology lines, this renders nothing when
+// there's nothing to report: it's an anomaly flag, not a status line
+// that's always present, so a healthy project's output stays unchanged.
+func renderOrphanedBuildDirsHuman(cmd *cobra.Command, orphans []string) {
+	if len(orphans) == 0 {
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "orphaned build dirs: %d (build artifacts with no matching spec/intents/ feature — run `parlay repair`)\n", len(orphans))
+	for _, o := range orphans {
+		fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", o)
+	}
+}
+
 // renderChildHuman prints one child section: header line, then either
 // the child's features (with Phase column) or the inline diagnostic.
 // Per-child error boundary: catching the error at the per-child level
 // lets the walk continue with remaining children. Exit stays zero.
-func renderChildHuman(name, path string, childCtx *config.Context, childFeatures []string, unavailable error) {
-	fmt.Println()
-	fmt.Printf("%s\n", name)
-	fmt.Printf("path:     %s\n", path)
+func renderChildHuman(cmd *cobra.Command, name, path string, childCtx *config.Context, childFeatures []string, unavailable error) {
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", name)
+	fmt.Fprintf(cmd.OutOrStdout(), "path:     %s\n", path)
 	if unavailable != nil {
 		// Single human-readable diagnostic. No stack trace. No
 		// partial feature listing.
-		fmt.Printf("(unavailable: %s)\n", unavailable.Error())
+		fmt.Fprintf(cmd.OutOrStdout(), "(unavailable: %s)\n", unavailable.Error())
 		return
 	}
 	if len(childFeatures) == 0 {
-		fmt.Printf("features: (none)\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "features: (none)\n")
+		renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()))
 		return
 	}
-	fmt.Printf("features: %d\n", len(childFeatures))
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(childFeatures))
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	for _, f := range childFeatures {
 		fmt.Fprintf(w, "  - %s\t%s\n", f, ComputeFeaturePhase(childCtx, f))
 	}
 	w.Flush()
+	renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()))
 }
 
 // ---------------------------------------------------------------------
 // JSON path — single envelope on stdout, no log lines, no preamble.
 // ---------------------------------------------------------------------
 
-func runStatusJSON(pctx *config.Context) error {
+func runStatusJSON(cmd *cobra.Command, pctx *config.Context) error {
 	env := buildStatusEnvelope(pctx)
 	data, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal status envelope: %w", err)
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }
 
@@ -232,9 +256,10 @@ func buildStatusEnvelope(pctx *config.Context) statusEnvelope {
 	if pctx.Root.Kind == config.RootKindParent && pctx.Index != nil && len(pctx.Index.Children) > 0 {
 		walkChildRoots(pctx, func(name, path string, childCtx *config.Context, childFeatures []string, unavailable error) {
 			entry := childRootEntry{
-				Name:     name,
-				Path:     path,
-				Features: []featureEntry{},
+				Name:              name,
+				Path:              path,
+				Features:          []featureEntry{},
+				OrphanedBuildDirs: []string{},
 			}
 			if unavailable != nil {
 				entry.Unavailable = unavailable.Error()
@@ -244,6 +269,9 @@ func buildStatusEnvelope(pctx *config.Context) statusEnvelope {
 						ID:    f,
 						Phase: ComputeFeaturePhase(childCtx, f),
 					})
+				}
+				if orphans := scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()); orphans != nil {
+					entry.OrphanedBuildDirs = orphans
 				}
 			}
 			env.Children = append(env.Children, entry)
@@ -258,9 +286,10 @@ func buildStatusEnvelope(pctx *config.Context) statusEnvelope {
 // contract requires the array to always be present.
 func buildRootSection(pctx *config.Context) rootSection {
 	r := rootSection{
-		Path:     pctx.Root.Path,
-		Kind:     pctx.Root.Kind,
-		Features: []featureEntry{},
+		Path:              pctx.Root.Path,
+		Kind:              pctx.Root.Kind,
+		Features:          []featureEntry{},
+		OrphanedBuildDirs: []string{},
 	}
 	if pctx.Resolution != nil {
 		r.Source = string(pctx.Resolution.Source)
@@ -271,6 +300,9 @@ func buildRootSection(pctx *config.Context) rootSection {
 			ID:    f,
 			Phase: ComputeFeaturePhase(pctx, f),
 		})
+	}
+	if orphans := scanOrphanedBuildDirs(pctx.IntentsRoot(), pctx.BuildRoot()); orphans != nil {
+		r.OrphanedBuildDirs = orphans
 	}
 	return r
 }
@@ -370,6 +402,63 @@ func scanFeaturesAtTolerant(intentsRoot string) ([]string, error) {
 		return nil, err
 	}
 	return config.ScanFeatureTree(intentsRoot)
+}
+
+// scanOrphanedBuildDirs finds qualified identifiers under buildRoot
+// (.parlay/build/) that carry a buildfile.yaml or testcases.yaml but
+// have no corresponding spec/intents/ feature at all — the feature's
+// intents.md is gone (deleted, renamed, moved) but its build artifacts
+// were never cleaned up. This is a different, narrower anomaly than
+// `parlay repair`'s stale-initiative-buildfile check (which flags a
+// build artifact sitting under a directory that reclassified as an
+// initiative, not one whose feature vanished outright). status only
+// surfaces the anomaly; fixing it is repair's job, not status's — this
+// function never touches disk.
+//
+// Walks exactly two levels (top-level and one nested level under an
+// initiative) to match the qualified-identifier shape features use
+// elsewhere (bare slug, or initiative/feature).
+func scanOrphanedBuildDirs(intentsRoot, buildRoot string) []string {
+	entries, err := os.ReadDir(buildRoot)
+	if err != nil {
+		return nil
+	}
+
+	hasBuildArtifact := func(dir string) bool {
+		return fileExistsAt(filepath.Join(dir, "buildfile.yaml")) || fileExistsAt(filepath.Join(dir, "testcases.yaml"))
+	}
+	isOrphaned := func(qualifiedID string) bool {
+		_, err := os.Stat(filepath.Join(intentsRoot, qualifiedID, "intents.md"))
+		return os.IsNotExist(err)
+	}
+
+	var orphans []string
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		topDir := filepath.Join(buildRoot, e.Name())
+		if hasBuildArtifact(topDir) && isOrphaned(e.Name()) {
+			orphans = append(orphans, e.Name())
+		}
+
+		subEntries, subErr := os.ReadDir(topDir)
+		if subErr != nil {
+			continue
+		}
+		for _, sub := range subEntries {
+			if !sub.IsDir() || strings.HasPrefix(sub.Name(), "_") {
+				continue
+			}
+			qualifiedID := filepath.Join(e.Name(), sub.Name())
+			if hasBuildArtifact(filepath.Join(topDir, sub.Name())) && isOrphaned(qualifiedID) {
+				orphans = append(orphans, qualifiedID)
+			}
+		}
+	}
+
+	sort.Strings(orphans)
+	return orphans
 }
 
 // renderTopologyLine writes one line summarizing the topology check

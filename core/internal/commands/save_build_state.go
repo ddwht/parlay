@@ -48,13 +48,13 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Build state committed (project-level):\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "Build state committed (project-level):\n")
 	for _, fr := range result.Features {
-		fmt.Printf("  %s: %d intents, %d dialogs, %d fragments\n",
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s: %d intents, %d dialogs, %d fragments\n",
 			fr.Slug, fr.IntentCount, fr.DialogCount, fr.FragmentCount)
 	}
-	fmt.Printf("  project baseline: %s\n", projectBaselinePath(cfg))
-	fmt.Printf("  code-hashes:      %s (%d files)\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "  project baseline: %s\n", projectBaselinePath(cfg))
+	fmt.Fprintf(cmd.OutOrStdout(), "  code-hashes:      %s (%d files)\n",
 		projectCodeHashesPath(cfg), result.FileCount)
 	return nil
 }

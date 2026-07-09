@@ -329,27 +329,27 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	}
 
 	// Element: adapter-name (text-output → fmt.Println)
-	fmt.Printf("Registered framework adapter %q:\n", adapter.Name)
+	fmt.Fprintf(cmd.OutOrStdout(), "Registered framework adapter %q:\n", adapter.Name)
 
 	// Element: vocab-count (data-value → fmt.Printf)
-	fmt.Printf("  Shows: %d  Actions: %d  Flows: %d\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "  Shows: %d  Actions: %d  Flows: %d\n",
 		len(adapter.Shows), len(adapter.Actions), len(adapter.Flows))
 
 	// Element: mount-strategies count (data-value → fmt.Printf)
 	if len(adapter.MountStrategies) > 0 {
-		fmt.Printf("  Mount strategies: %d\n", len(adapter.MountStrategies))
+		fmt.Fprintf(cmd.OutOrStdout(), "  Mount strategies: %d\n", len(adapter.MountStrategies))
 	}
 
 	// Element: componentVocabulary summary (data-value → fmt.Printf)
 	if adapter.ComponentVocabulary != nil {
-		fmt.Printf("  componentVocabulary %s: %d components\n",
+		fmt.Fprintf(cmd.OutOrStdout(), "  componentVocabulary %s: %d components\n",
 			adapter.ComponentVocabulary.Name,
 			len(adapter.ComponentVocabulary.Components))
 	}
 
 	// Element: tokens summary (data-value → fmt.Printf)
 	if adapter.Tokens != nil {
-		fmt.Printf("  tokens: modes=[%s]  %d spacing  %d color  %d typography\n",
+		fmt.Fprintf(cmd.OutOrStdout(), "  tokens: modes=[%s]  %d spacing  %d color  %d typography\n",
 			strings.Join(adapter.Tokens.Modes, ", "),
 			len(adapter.Tokens.Spacing),
 			len(adapter.Tokens.Color),
@@ -358,7 +358,7 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 
 	// Element: conventions (text-output → fmt.Println)
 	if sr, ok := adapter.FileConventions["source-root"]; ok {
-		fmt.Printf("  File conventions: %s\n", sr)
+		fmt.Fprintf(cmd.OutOrStdout(), "  File conventions: %s\n", sr)
 	}
 
 	// Operation: create-directory ".parlay/adapters/"
@@ -373,9 +373,9 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to copy adapter: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Printf("Adapter saved to %s\n", dstPath)
-	fmt.Println("Set it as the prototype framework in .parlay/config.yaml to use it with build-feature.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintf(cmd.OutOrStdout(), "Adapter saved to %s\n", dstPath)
+	fmt.Fprintln(cmd.OutOrStdout(), "Set it as the prototype framework in .parlay/config.yaml to use it with build-feature.")
 
 	return nil
 }

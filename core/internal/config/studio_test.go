@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fakeLookPath returns a stub LookPath function that resolves a
@@ -110,6 +111,53 @@ func TestDetectStudio_NotExecutableIsNotDetected(t *testing.T) {
 	}
 	if d.BinaryPath != stub {
 		t.Fatalf("expected BinaryPath=%s for diagnostics, got %q", stub, d.BinaryPath)
+	}
+}
+
+// makeBlockingExecutable writes an executable stub that never exits on
+// its own (it sleeps far longer than any test timeout) — used to
+// simulate a hung or misbehaving parlay-studio binary.
+//
+// The script uses `exec sleep` rather than a plain `sleep` followed by
+// another statement. A plain `sleep 300` as a non-final statement forks
+// sleep as a child of the shell interpreter; killing the shell (the
+// process exec.CommandContext's timeout actually signals) then leaves
+// the orphaned `sleep` grandchild running, still holding the stdout
+// pipe open — so cmd.Output() would block forever waiting for EOF even
+// though the "hung binary" was correctly killed. `exec` replaces the
+// shell process with sleep in place (same PID), so there is exactly one
+// process to kill and no orphan can survive it.
+func makeBlockingExecutable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 300\n"), 0755); err != nil {
+		t.Fatalf("write blocking stub: %v", err)
+	}
+}
+
+// TestProbeStudioVersion_TimesOutOnHungBinary confirms probeStudioVersion
+// cannot hang forever against a Studio binary that never exits. Before
+// this test existed, probeStudioVersion had no timeout at all: a hung
+// `parlay-studio --version` blocked every single parlay command that
+// resolves a root (PersistentPreRunE calls detectStudioFromOS on every
+// invocation once a Studio binary is detected on PATH).
+func TestProbeStudioVersion_TimesOutOnHungBinary(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "parlay-studio")
+	makeBlockingExecutable(t, stub)
+
+	orig := studioVersionProbeTimeout
+	studioVersionProbeTimeout = 100 * time.Millisecond
+	defer func() { studioVersionProbeTimeout = orig }()
+
+	start := time.Now()
+	version, ok := probeStudioVersion(stub)
+	elapsed := time.Since(start)
+
+	if ok {
+		t.Errorf("expected probe to fail against a hung binary, got version=%q", version)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("probe took %v, want it bounded near the 100ms timeout — it did not time out", elapsed)
 	}
 }
 

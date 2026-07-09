@@ -49,7 +49,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("parlay %s (%s)\n", appVersion, appCommit)
+		fmt.Fprintf(cmd.OutOrStdout(), "parlay %s (%s)\n", appVersion, appCommit)
 	},
 	Annotations: map[string]string{annotationSkipResolution: "true"},
 }
@@ -102,7 +102,7 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 						Candidates: candidates,
 						Hint:       "re-invoke with --root <name> or set PARLAY_ROOT=<abs-path>",
 					})
-					os.Exit(AmbiguityExitCode)
+					return NewExitCodeError(AmbiguityExitCode)
 				}
 				names := make([]string, 0, len(candidates))
 				for _, c := range candidates {

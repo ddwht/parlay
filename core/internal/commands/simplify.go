@@ -40,7 +40,7 @@ func runSimplify(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("scanning generated files: %w", scanErr)
 	}
 	if len(markers) == 0 {
-		fmt.Println("No parlay-generated files found in the source tree.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No parlay-generated files found in the source tree.")
 		return nil
 	}
 
@@ -55,16 +55,16 @@ func runSimplify(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(groups) == 0 {
-		fmt.Println("No duplicated helpers found across generated files. Nothing to extract.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No duplicated helpers found across generated files. Nothing to extract.")
 		return nil
 	}
 
-	fmt.Printf("Found %d duplicated helper(s) across generated files:\n", len(groups))
+	fmt.Fprintf(cmd.OutOrStdout(), "Found %d duplicated helper(s) across generated files:\n", len(groups))
 	for i, g := range groups {
-		fmt.Printf("  %d. `%s` — %s in %s\n", i+1, g.FunctionName, g.Similarity, strings.Join(g.SourceFiles, ", "))
+		fmt.Fprintf(cmd.OutOrStdout(), "  %d. `%s` — %s in %s\n", i+1, g.FunctionName, g.Similarity, strings.Join(g.SourceFiles, ", "))
 	}
-	fmt.Println()
-	fmt.Println("Run with --extract to review and apply extractions interactively.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Run with --extract to review and apply extractions interactively.")
 
 	return nil
 }

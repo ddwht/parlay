@@ -68,7 +68,7 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 			Context:  bfPath,
 			Fix:      fmt.Sprintf("run /parlay-build-feature @%s to generate it", slug),
 		})
-		return emitCheckBuildfileOutput(output)
+		return emitCheckBuildfileOutput(cmd, output)
 	}
 
 	// Auto-discover the adapter so vocab validation runs without the
@@ -88,7 +88,7 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	return emitCheckBuildfileOutput(output)
+	return emitCheckBuildfileOutput(cmd, output)
 }
 
 // autoDiscoverAdapter reads the buildfile's `adapter:` field and resolves
@@ -129,7 +129,7 @@ func severityForCode(code string) string {
 	return "error"
 }
 
-func emitCheckBuildfileOutput(output checkBuildfileOutput) error {
+func emitCheckBuildfileOutput(cmd *cobra.Command, output checkBuildfileOutput) error {
 	output.Ready = true
 	for _, issue := range output.Issues {
 		if issue.Severity == "error" {
@@ -142,10 +142,10 @@ func emitCheckBuildfileOutput(output checkBuildfileOutput) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 
 	if !output.Ready {
-		os.Exit(1)
+		return NewExitCodeError(1)
 	}
 	return nil
 }

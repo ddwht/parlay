@@ -33,12 +33,12 @@ func init() {
 // this feature) to fire the Studio prompt at the end of a successful
 // run.
 func runCreateArtifactsHandler(cmd *cobra.Command, args []string) error {
-	fmt.Println("create-artifacts requires an AI agent.")
-	fmt.Println("Use the /parlay-create-artifacts skill in your AI agent (e.g., Claude Code).")
-	fmt.Println()
-	fmt.Println("The agent analyzes intents and dialogs to determine whether the feature")
-	fmt.Println("needs surface.md (user-facing), infrastructure.md (behind-the-scenes), or both,")
-	fmt.Println("then proceeds to create the appropriate artifacts.")
+	fmt.Fprintln(cmd.OutOrStdout(), "create-artifacts requires an AI agent.")
+	fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-create-artifacts skill in your AI agent (e.g., Claude Code).")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "The agent analyzes intents and dialogs to determine whether the feature")
+	fmt.Fprintln(cmd.OutOrStdout(), "needs surface.md (user-facing), infrastructure.md (behind-the-scenes), or both,")
+	fmt.Fprintln(cmd.OutOrStdout(), "then proceeds to create the appropriate artifacts.")
 
 	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
 	// Hook-point dispatch — fires after the main work prints its

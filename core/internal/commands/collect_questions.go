@@ -45,7 +45,7 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(output)
+		return printJSON(cmd, output)
 	}
 
 	// No argument: scan all features (including initiative-nested)
@@ -66,7 +66,7 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return printJSON(all)
+	return printJSON(cmd, all)
 }
 
 func collectForFeature(cfg *config.Context, slug string) (*questionsOutput, error) {
@@ -98,11 +98,11 @@ func collectForFeature(cfg *config.Context, slug string) (*questionsOutput, erro
 	return output, nil
 }
 
-func printJSON(v interface{}) error {
+func printJSON(cmd *cobra.Command, v interface{}) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }

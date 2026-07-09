@@ -134,10 +134,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Upgraded to parlay %s:\n", appVersion)
-	fmt.Printf("  schemas — %d updated\n", result.SchemaCount)
+	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded to parlay %s:\n", appVersion)
+	fmt.Fprintf(cmd.OutOrStdout(), "  schemas — %d updated\n", result.SchemaCount)
 	if result.SkillCount > 0 {
-		fmt.Printf("  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
+		fmt.Fprintf(cmd.OutOrStdout(), "  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
 	}
 
 	// parlay-feature: parlay-tool/multi-adapter
@@ -147,8 +147,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// adapter file that predates the multi-adapter feature. The validator
 	// already treats absent kind: as the legacy presentation default; this
 	// prompt makes the default explicit.
-	if err := offerAdapterKindOptIn(rootPath); err != nil {
-		fmt.Printf("  Note: adapter kind opt-in skipped (%v)\n", err)
+	if err := offerAdapterKindOptIn(cmd, rootPath); err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "  Note: adapter kind opt-in skipped (%v)\n", err)
 	}
 
 	return nil
@@ -158,7 +158,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 // files lacking an explicit kind: field, and offers to add `kind: presentation`
 // to each. Skipping is non-blocking; files keep working without explicit
 // kind: per the legacy default.
-func offerAdapterKindOptIn(rootPath string) error {
+func offerAdapterKindOptIn(cmd *cobra.Command, rootPath string) error {
 	adaptersDir := filepath.Join(rootPath, ".parlay", "adapters")
 	entries, err := os.ReadDir(adaptersDir)
 	if err != nil {
@@ -193,16 +193,16 @@ func offerAdapterKindOptIn(rootPath string) error {
 	stat, err := os.Stdin.Stat()
 	if err != nil || (stat.Mode()&os.ModeCharDevice) == 0 {
 		// Non-TTY upgrade — print informational note, don't prompt.
-		fmt.Printf("  Note: %d adapter file(s) lack explicit kind: presentation; run `parlay upgrade` interactively to opt in.\n", len(missing))
+		fmt.Fprintf(cmd.OutOrStdout(), "  Note: %d adapter file(s) lack explicit kind: presentation; run `parlay upgrade` interactively to opt in.\n", len(missing))
 		return nil
 	}
 
-	fmt.Println()
-	fmt.Println("These adapter files predate the multi-adapter feature; the validator already treats them as kind: presentation.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "These adapter files predate the multi-adapter feature; the validator already treats them as kind: presentation.")
 	for _, p := range missing {
-		fmt.Printf("  - %s — inferred default: kind: presentation\n", p)
+		fmt.Fprintf(cmd.OutOrStdout(), "  - %s — inferred default: kind: presentation\n", p)
 	}
-	fmt.Print("Add explicit `kind: presentation` to all of them? [y/N] ")
+	fmt.Fprint(cmd.OutOrStdout(), "Add explicit `kind: presentation` to all of them? [y/N] ")
 
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
@@ -221,7 +221,7 @@ func offerAdapterKindOptIn(rootPath string) error {
 			updated++
 		}
 	}
-	fmt.Printf("Updated\n  %d file(s) gained an explicit kind: presentation line\n", updated)
+	fmt.Fprintf(cmd.OutOrStdout(), "Updated\n  %d file(s) gained an explicit kind: presentation line\n", updated)
 	return nil
 }
 

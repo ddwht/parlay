@@ -38,8 +38,8 @@ func init() {
 // — the wording table is keyed by this slug, and the surface intent's
 // rename from extract-domain-model has now landed.
 func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error {
-	fmt.Println("create-domain-model requires an AI agent.")
-	fmt.Println("Use the /parlay-create-domain-model skill in your AI agent (e.g., Claude Code).")
+	fmt.Fprintln(cmd.OutOrStdout(), "create-domain-model requires an AI agent.")
+	fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-create-domain-model skill in your AI agent (e.g., Claude Code).")
 
 	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-domain-model
 	// Hook-point dispatch — fires after the main work above

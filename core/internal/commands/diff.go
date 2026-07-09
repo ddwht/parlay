@@ -164,7 +164,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return emitDiffJSON(&output)
+	return emitDiffJSON(cmd, &output)
 }
 
 // computeSectionDiff hashes the current buildfile's major sections and
@@ -369,12 +369,12 @@ func makeSet(items []string) map[string]bool {
 	return set
 }
 
-func emitDiffJSON(output *diffOutput) error {
+func emitDiffJSON(cmd *cobra.Command, output *diffOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }
 
@@ -492,7 +492,7 @@ func runProjectDiff(cmd *cobra.Command, cfg *config.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }
 
