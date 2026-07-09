@@ -1,3 +1,6 @@
+> **Deprecated** — see [`../../../../domain-model.yaml`](../../../../domain-model.yaml).
+> Edits to this markdown have no effect post-migration; the YAML is the live source.
+
 # Intent Design Tool — Domain Model
 
 Extracted from intents.md, dialogs.md, and surface.md.

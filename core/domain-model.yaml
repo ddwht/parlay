@@ -1,0 +1,450 @@
+schema_version: 1
+
+enums:
+  - name: ExtensionType
+    values:
+      - value: ai-agent
+      - value: sdd-framework
+      - value: prototype-framework
+  - name: TurnSpeaker
+    values:
+      - value: user
+      - value: system
+  - name: TurnType
+    values:
+      - value: regular
+      - value: background
+      - value: conditional
+  - name: PageManifestStatus
+    values:
+      - value: draft
+      - value: reviewed
+      - value: locked
+
+entities:
+  - name: Project
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: path
+        type: string
+        required: true
+
+  - name: ProjectConfig
+    fields:
+      - name: ai-agent
+        type: string
+        required: true
+      - name: sdd-framework
+        type: string
+        required: true
+      - name: prototype-framework
+        type: string
+        required: true
+
+  - name: Extension
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: type
+        type: ExtensionType
+        enum: ExtensionType
+        required: true
+      - name: installed
+        type: bool
+        required: true
+
+  - name: FrameworkAdapter
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: framework
+        type: string
+        required: true
+
+  - name: LayoutPattern
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: description
+        type: string
+        required: false
+
+  - name: InteractionPattern
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: trigger
+        type: string
+        required: false
+      - name: implementation
+        type: string
+        required: false
+
+  - name: Feature
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: slug
+        type: string
+        required: true
+      - name: path
+        type: string
+        required: true
+
+  - name: Intent
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: slug
+        type: string
+        required: true
+      - name: goal
+        type: string
+        required: true
+      - name: persona
+        type: string
+        required: true
+      - name: context
+        type: string
+        required: false
+      - name: action
+        type: string
+        required: false
+
+  - name: Dialog
+    fields:
+      - name: title
+        type: string
+        required: false
+      - name: slug
+        type: string
+        required: false
+      - name: trigger
+        type: string
+        required: false
+
+  - name: Turn
+    fields:
+      - name: speaker
+        type: TurnSpeaker
+        enum: TurnSpeaker
+        required: true
+      - name: type
+        type: TurnType
+        enum: TurnType
+        required: true
+      - name: condition
+        type: string
+        required: false
+      - name: content
+        type: string
+        required: true
+
+  - name: Option
+    fields:
+      - name: letter
+        type: string
+        required: true
+      - name: description
+        type: string
+        required: true
+      - name: is-freeform
+        type: bool
+        required: true
+
+  - name: DialogTemplate
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: trigger
+        type: string
+        required: false
+
+  - name: Surface
+    fields:
+      - name: feature-name
+        type: string
+        required: true
+      - name: path
+        type: string
+        required: true
+
+  - name: Fragment
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: shows
+        type: string
+        required: true
+      - name: actions
+        type: string
+        required: false
+      - name: page
+        type: string
+        required: false
+      - name: region
+        type: string
+        required: false
+      - name: order
+        type: int
+        required: false
+
+  - name: Page
+    fields:
+      - name: name
+        type: string
+        required: true
+
+  - name: Region
+    fields:
+      - name: name
+        type: string
+        required: true
+
+  - name: PageManifest
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: description
+        type: string
+        required: false
+      - name: owner
+        type: string
+        required: false
+      - name: status
+        type: PageManifestStatus
+        enum: PageManifestStatus
+        required: true
+      - name: path
+        type: string
+        required: true
+
+  - name: Buildfile
+    fields:
+      - name: path
+        type: string
+        required: true
+
+  - name: TestCase
+    fields:
+      - name: path
+        type: string
+        required: true
+
+  - name: Prototype
+    fields:
+      - name: framework
+        type: string
+        required: true
+
+  - name: EngineeringSpec
+    fields:
+      - name: path
+        type: string
+        required: true
+      - name: format
+        type: string
+        required: true
+
+  - name: DomainModel
+    fields:
+      - name: path
+        type: string
+        required: false
+
+  - name: Skill
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: content
+        type: string
+        required: false
+
+  - name: Deployer
+    fields:
+      - name: name
+        type: string
+        required: true
+
+  - name: CoverageReport
+    fields: []
+
+relationships:
+  - name: project-config
+    from: Project
+    to: ProjectConfig
+    cardinality: one-to-one
+  - name: project-features
+    from: Project
+    to: Feature
+    cardinality: one-to-many
+  - name: project-pages
+    from: Project
+    to: Page
+    cardinality: one-to-many
+  - name: project-page-manifests
+    from: Project
+    to: PageManifest
+    cardinality: one-to-many
+  - name: extension-adapter
+    from: Extension
+    to: FrameworkAdapter
+    cardinality: one-to-one
+  - name: adapter-layout-patterns
+    from: FrameworkAdapter
+    to: LayoutPattern
+    cardinality: one-to-many
+  - name: adapter-interaction-patterns
+    from: FrameworkAdapter
+    to: InteractionPattern
+    cardinality: one-to-many
+  - name: feature-intents
+    from: Feature
+    to: Intent
+    cardinality: one-to-many
+  - name: feature-dialogs
+    from: Feature
+    to: Dialog
+    cardinality: one-to-many
+  - name: feature-surface
+    from: Feature
+    to: Surface
+    cardinality: one-to-one
+  - name: feature-buildfile
+    from: Feature
+    to: Buildfile
+    cardinality: one-to-one
+  - name: feature-testcase
+    from: Feature
+    to: TestCase
+    cardinality: one-to-one
+  - name: feature-engineering-spec
+    from: Feature
+    to: EngineeringSpec
+    cardinality: one-to-one
+  - name: feature-prototype
+    from: Feature
+    to: Prototype
+    cardinality: one-to-one
+  - name: dialog-turns
+    from: Dialog
+    to: Turn
+    cardinality: one-to-many
+  - name: turn-options
+    from: Turn
+    to: Option
+    cardinality: one-to-many
+  - name: intent-dialog-template
+    from: Intent
+    to: DialogTemplate
+    cardinality: one-to-one
+  - name: dialog-template-turns
+    from: DialogTemplate
+    to: Turn
+    cardinality: one-to-many
+  - name: surface-fragments
+    from: Surface
+    to: Fragment
+    cardinality: one-to-many
+  - name: fragment-page
+    from: Fragment
+    to: Page
+    cardinality: many-to-one
+  - name: page-regions
+    from: Page
+    to: Region
+    cardinality: one-to-many
+  - name: page-manifest
+    from: Page
+    to: PageManifest
+    cardinality: one-to-one
+  - name: region-fragments
+    from: Region
+    to: Fragment
+    cardinality: one-to-many
+
+operations:
+  - entity: Project
+    name: bootstrap-project
+    input:
+      - ProjectConfig.ai-agent
+      - ProjectConfig.sdd-framework
+      - ProjectConfig.prototype-framework
+    effects:
+      - "creates Project, ProjectConfig, and FrameworkAdapter; initializes .parlay/ (initial setup, no CLI command)"
+  - entity: FrameworkAdapter
+    name: register-adapter
+    input: []
+    effects:
+      - "parlay register-adapter reads an adapter path and saves it as a FrameworkAdapter under .parlay/adapters/"
+  - entity: Feature
+    name: add-feature
+    input:
+      - Feature.name
+    effects:
+      - "parlay add-feature creates a Feature with empty intents.md and dialogs.md"
+  - entity: Dialog
+    name: scaffold-dialogs
+    input: []
+    effects:
+      - "parlay create-dialogs (@feature) generates DialogTemplate entries into dialogs.md"
+  - entity: Surface
+    name: generate-surface
+    input: []
+    effects:
+      - "generates a Surface with Fragments for a feature; agent-driven with CLI-heuristic fallback (legacy command name predates create-artifacts)"
+  - entity: Surface
+    name: generate-surface-from-figma
+    input: []
+    effects:
+      - "generates a Surface with Fragments from a Figma link; agent-driven (legacy command name predates reference-design-spec)"
+  - entity: Page
+    name: view-page
+    input:
+      - Page.name
+    effects:
+      - "parlay view-page assembles and returns a Page view"
+  - entity: PageManifest
+    name: lock-page
+    input:
+      - PageManifest.name
+      - PageManifest.owner
+    effects:
+      - "parlay lock-page creates a PageManifest locking a page's layout"
+  - entity: Buildfile
+    name: build-feature
+    input: []
+    effects:
+      - "parlay build-feature generates Buildfile and TestCase for a feature using its FrameworkAdapter"
+  - entity: EngineeringSpec
+    name: generate-enggspec
+    input: []
+    effects:
+      - "parlay generate-enggspec generates an EngineeringSpec for a feature"
+  - entity: DomainModel
+    name: create-domain-model
+    input: []
+    effects:
+      - "parlay create-domain-model extracts a DomainModel from all features"
+  - entity: DomainModel
+    name: load-domain-model
+    input: []
+    effects:
+      - "parlay load-domain-model integrates an external DomainModel by path"
+  - entity: CoverageReport
+    name: sync-coverage
+    input: []
+    effects:
+      - "parlay sync produces a CoverageReport comparing intents and dialogs for a feature"
