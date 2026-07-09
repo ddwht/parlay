@@ -5,7 +5,7 @@ description: "Parlay: Extract design spec from Figma"
 
 # Reference Design Spec
 
-Extract visual design details from a Figma file and generate a design-spec.yaml that enriches the buildfile with per-fragment widget specifics, layout, tokens, variants, spacing, and colors.
+Extract visual design details from a Figma file and generate a design-spec.yaml that enriches the buildfile with per-fragment widget specifics, tokens (including motion), variants, spacing, and colors. Design-spec does not carry structural layout (component nesting, direction, gap, padding, alignment) — that's `<page>.layout.yaml`'s scope; see `design-spec.schema.md`'s "Relationship to layout.schema.md".
 
 This is an **optional** step between surface creation and build-feature. The pipeline works without it — adapter defaults apply when no design-spec exists.
 
@@ -46,10 +46,10 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 5. **Read Figma via MCP** — Connect to Figma and read the file/frame at the provided link. Extract:
    - Component hierarchy and naming
-   - Design tokens used (colors, typography, spacing, shadows)
-   - Layout properties (auto-layout direction, spacing, padding, sizes)
+   - Design tokens used (colors, typography, spacing, shadows, motion/transitions)
    - Component variants and states
    - Style references (fills, strokes, effects)
+   - Auto-layout properties (direction, spacing, padding, sizes) are visible in the Figma read but are NOT written to design-spec.yaml — they're structural, and structure belongs in `<page>.layout.yaml` (see `layout.schema.md`), which this skill does not author. If the designer wants that structure captured, tell them to author a layout file separately; don't fold it into this skill's output.
 
 6. **Map Figma components to surface fragments** — For each surface fragment, find matching Figma components. Use name similarity, structural similarity, and content similarity. Present the mapping to the user for confirmation:
    ```
@@ -74,7 +74,6 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 7. **Extract visual details per mapped fragment** — For each mapped pair:
    - **widget**: Determine the exact framework widget variant from the Figma component structure (e.g., "Table with fixed header and bordered cells" not just "Table")
-   - **layout**: Extract from auto-layout properties (direction, spacing, padding, alignment, item sizes)
    - **tokens**: Cross-reference applied styles with the adapter's `design-system:` categories, respecting the `source` field for each category:
      - `source: figma` — record the specific Figma token values as-is (these ARE the source of truth).
      - `source: framework` — do NOT record raw Figma hex values or Figma token names. Instead, map each Figma visual property to the closest framework token or component class from the adapter's `format` and `usage` fields (e.g., map a red background to `--cds-alias-status-danger`, not `#ec221f`; map a primary-styled button to the framework's `btn btn-primary` class, not a custom `.btn-brand` class). If no close framework match exists, omit the value — the framework default will apply.

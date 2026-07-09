@@ -130,6 +130,19 @@ The validator emits exactly two stable error codes for vocabulary resolution fai
 
 Exactly two codes exist. No third resolution-failure code may be introduced without a schema-doc change. The Go sentinels are `vocabulary.ErrVocabularyMissingFromAdapter` and `vocabulary.ErrVocabularyUnknownAdapter`; both are exported package-level variables so callers can match via `errors.Is`.
 
+## Relationship to `componentVocabulary:` and `tokens:` — known duplication, deferred unification
+
+This schema's `vocabulary:` block and the adapter's `componentVocabulary:`/`tokens:` blocks (`adapter.schema.md` Sections 8-9) describe overlapping information — component types, their properties and variants, spacing/color token names — using two independently-authored representations. An adapter author who changes a component's properties in `componentVocabulary:` must remember to make the matching edit in `vocabulary:` too; nothing checks that the two stay consistent. This is real duplication, not just two names for the same document.
+
+**Why this isn't unified into a single source yet.** Deriving `vocabulary:` mechanically from `componentVocabulary:`/`tokens:` was investigated as part of this consolidation and found to require more than a reshape:
+
+- `ComponentSpec.Properties` here is a flat `[]string` (membership check only). `componentVocabulary`'s component properties are typed records (`name`, `type`, `enum-values`, `child-types`, `required`) — deriving one from the other is lossy in one direction (typed → flat drops type information a derivation would need to decide it doesn't matter) and underspecified in the other (flat → typed has no source for the dropped type info).
+- `LayoutContainerSpec` here pairs a `container_type` with `admissible_parameters` and per-parameter `parameter_constraints` — a shape that predates the universal container fields (`direction`, `gap`, `padding`, `alignment`) that `layout.schema.md` now owns exclusively and which `componentVocabulary` entries are explicitly forbidden from re-declaring (`universal-field-redeclared`). There is no `componentVocabulary` shape today that cleanly maps to `admissible_parameters`/`parameter_constraints` — the two container models were built against different points in this schema's evolution.
+
+Forcing a derivation across a mismatch this real would either lose information silently or require redesigning `LayoutContainerSpec` itself — bigger surgery than a documentation-consolidation pass should absorb, and riskier than living with the known duplication a little longer.
+
+**What changes now, what doesn't.** Nothing in the Go loader changes as part of this revision — `vocabulary.LoadFromAdapterFile` continues to read the `vocabulary:` block directly, as it always has. What changes is that this duplication is now **documented as known and deliberate**, not silently discovered by the next person who notices two adapter sections say almost the same thing. A future feature that wants true single-sourcing has a concrete starting point: reconcile `LayoutContainerSpec` against the universal-container-fields model first — that's the harder of the two mismatches above — then the component/property reshape becomes a more tractable lossy-derivation-with-documented-tradeoffs problem.
+
 ## Inline vs separate file
 
 The `vocabulary:` block lives **inline** at the top level of `<adapter>.adapter.yaml`. Adapter authors do NOT place vocabulary content in a sibling `<adapter>.vocabulary.yaml` file — the validator does not read any sibling file. A unit test plants a sibling `<adapter>.vocabulary.yaml` file and asserts the loader ignores it.

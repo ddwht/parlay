@@ -190,8 +190,8 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - This rule governs build-feature's own output only. `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception — its wording is pinned stable on purpose for `studio-cli-hooks` to pattern-match — see that skill's step 6 for why. Don't generalize this exception; don't "fix" that one to match this rule.
 
 8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
-   - Set `feature:` and `adapter:` fields
-   - Define `models:` from domain entities referenced in intents (Objects fields) and dialogs
+   - Set `feature:`, `schema_version: 1`, and `adapter:` (or `adapter-set:` for multi-target projects) fields
+   - Do NOT populate `models:` — it's deprecated. Entities live in `domain-model.yaml`; a non-empty `models:` fails validation with `buildfile-models-deprecated`. Reference domain entities by name from `domain-model.yaml` wherever the buildfile needs to name one (fixtures, data.inputs.model).
    - Create `fixtures:` with representative sample data
    - Map each surface fragment to a `component:`:
      - Look up each Show in the fragment's `**Shows**:` field in the adapter's `shows:` section → write the adapter's widget name as the element's `widget:`
@@ -199,12 +199,12 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - Look up the fragment's `**Flow**:` (if present) in the adapter's `flows:` section → write the adapter's pattern name as the route's `flow-pattern:`
      - Set the component's primary `widget:` from the adapter's action mapping for the dominant action (e.g., `invoke` → the adapter's mapped widget for invocation)
      - Define `data:` inputs and computed values
-     - Define `operations:` (file reads, writes, directory creation)
+     - Define `file-operations:` (file reads, writes, directory creation) — named `file-operations:`, not `operations:`, to avoid colliding with the top-level multi-target `operations:` block described below
      - The buildfile must NOT contain surface vocabulary terms. Only framework-specific widget names from the adapter.
    - **When design-spec.yaml exists** — for each fragment that has a corresponding entry in `design-spec.yaml.fragments`:
      - Use the `widget` field to refine the component's `widget:` value (more specific than the adapter's generic mapping)
-     - Use `layout` values to add layout-specific properties to elements (column widths, flex ratios, alignment)
-     - Use `tokens` to add token references to elements. The design-spec has already mapped values per the adapter's `design-system` source rules:
+     - Design-spec no longer carries structural layout properties (column widths, flex ratios, alignment) — that's `<page>.layout.yaml`'s job now (see step 7.7's binding resolution and `layout.schema.md`). If the feature has a layout for this page, its structure has already been resolved into `bindings:`; do not look for it in design-spec.
+     - Use `tokens` to add token references to elements — including `motion` tokens, which design-spec is the only source for. The design-spec has already mapped values per the adapter's `design-system` source rules:
        - `source: figma` — use the design-spec values directly (authoritative Figma tokens).
        - `source: framework` — the design-spec values are already framework token references (mapped during extraction). Use them as-is. If a value does not look like a recognized framework token, discard it and fall back to the adapter's default guidance. Never write raw hex values, Figma token names, or custom CSS classes for framework-sourced categories.
        - `source: not-defined` — use the design-spec values as supplementary guidance.
@@ -237,6 +237,7 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - Presentation hints are known to the active adapter — unknown hints raise `unknown-presentation-hint` at finalize time, not deferred to codegen.
      - `confidence:` is one of the three permitted values.
      - Refuse to commit a buildfile that fails any of these checks.
+   - **Emit the `source-signatures:` section** — the last thing written before the buildfile is committed. Compute a content hash for every source artifact this build actually consumed: `intents`, `dialogs`, `surface` (whichever of surface.yaml/surface.md was read), `capabilities` (when capabilities.yaml exists), `infrastructure` (when infrastructure.md exists), `domain` (the project domain-model.yaml), `layout` (when the feature has a layout-bearing page), and `adapter-version`. Omit the field for any artifact that doesn't exist for this feature — do not write a hash of nothing. See `buildfile.schema.md`'s Source-signatures section for exactly which fields exist and why `capabilities`/`infrastructure` were added.
 
 9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
@@ -302,8 +303,10 @@ On first regeneration of a legacy buildfile, normalize:
 - top-level `adapter:` → `targets.<kind>.adapter`
 - top-level `components:` → `targets.presentation.components:`
 - top-level `routes:` → `targets.presentation` (client-side) or `targets.transport` (HTTP) — disambiguate via designer prompt when both are plausible
+- per-component `operations:` → per-component `file-operations:` (the pre-multi-target field name collided with the new top-level `operations:` block; see `buildfile.schema.md`'s "Why this was renamed")
 - `plan.creates`/`plan.modifies` → `plan.targets.<kind>.creates`/`plan.targets.<kind>.modifies`
 - non-empty `models:` → flagged as `buildfile-models-deprecated` (entities belong in `domain-model.yaml`)
+- missing `schema_version:` → set to `1`
 
 Surface the diff to the designer for review before any write. `wiring.rules` and `bindings` sections stay byte-equivalent through normalization.
 
