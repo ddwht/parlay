@@ -147,15 +147,7 @@ Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content 
 
 When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
 
-## File Ownership
-
-Three-zone layout — strict ownership:
-- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): surface.yaml (or legacy surface.md), capabilities.yaml (or legacy infrastructure.md), domain-model.md, *.page.md
-- **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
-- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
-%s`, commands, renderMultiRootSection(projectRoot))
+%s%s`, commands, fileOwnershipSection, renderMultiRootSection(projectRoot))
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {

@@ -23,6 +23,26 @@ type Deployer interface {
 	AgentSurfacePaths() []string
 }
 
+// fileOwnershipSection is the canonical "File Ownership" doctrine block —
+// the three-zone layout and the four co-equal spec artifacts — rendered
+// verbatim into every agent's project-config file (CLAUDE.md, Cursor's
+// parlay.mdc, ...). A single constant here is what keeps deployers from
+// drifting out of sync with each other as the artifact set evolves.
+const fileOwnershipSection = `## File Ownership
+
+Three-zone layout — strict ownership:
+- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
+- **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts —
+  - **surface.yaml** (or surface.md) — visible output, page assemblies, dialog turns
+  - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
+  - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
+  - **domain-model.yaml** (or domain-model.md) — entities, relationships, and shared vocabulary
+  - Plus *.page.md for per-page layouts. A feature picks whichever artifacts it needs; capabilities.yaml and infrastructure.md are co-equal, not stand-ins for each other.
+- **spec/handoff/<feature>/** (engineering output): specification.md
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
+- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
+`
+
 var registry = map[string]func() Deployer{}
 
 // Register adds a deployer factory.

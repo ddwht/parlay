@@ -159,20 +159,7 @@ Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content 
 
 When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
 
-## File Ownership
-
-Three-zone layout — strict ownership:
-- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts —
-  - **surface.yaml** (or surface.md) — visible output, page assemblies, dialog turns
-  - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
-  - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
-  - **domain-model.yaml** (or domain-model.md) — entities, relationships, and shared vocabulary
-  - Plus *.page.md for per-page layouts. A feature picks whichever artifacts it needs; capabilities.yaml and infrastructure.md are co-equal, not stand-ins for each other.
-- **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
-- **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
-%s%s`, parlayMarkerBegin, commands, multiRootBlock, parlayMarkerEnd)
+%s%s%s`, parlayMarkerBegin, commands, fileOwnershipSection, multiRootBlock, parlayMarkerEnd)
 
 	claudePath := filepath.Join(projectRoot, "CLAUDE.md")
 

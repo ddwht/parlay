@@ -90,3 +90,52 @@ func TestSkillSourceAudit(t *testing.T) {
 		}
 	}
 }
+
+// TestDesignerAgentMentionsFourArtifacts guards against the designer
+// agent's artifacts-phase prose drifting back to the pre-four-artifact
+// world (it used to say "surface.md, infrastructure.md, or both"). The
+// agent must name all four co-equal spec artifact filenames so a reader
+// can tell at a glance which subset the artifacts phase might produce.
+func TestDesignerAgentMentionsFourArtifacts(t *testing.T) {
+	agents, err := ReadAllAgents()
+	if err != nil {
+		t.Fatalf("ReadAllAgents: %v", err)
+	}
+	var designer string
+	for _, a := range agents {
+		if a.Name == "designer" {
+			designer = string(a.Content)
+			break
+		}
+	}
+	if designer == "" {
+		t.Fatal("designer agent not found in embedded bundle")
+	}
+
+	required := []string{"surface", "capabilities.yaml", "infrastructure.md", "domain-model"}
+	for _, kw := range required {
+		if !strings.Contains(designer, kw) {
+			t.Errorf("designer agent missing reference to artifact %q — the artifacts phase must name all four co-equal spec artifacts", kw)
+		}
+	}
+}
+
+// TestFeatureStructureSchemaMentionsFourArtifacts guards against
+// feature-structure.schema.md regressing to a two-artifact (surface.md
+// + domain-model.md) description of the project layout. The doc must
+// name capabilities.yaml and infrastructure.md as first-class artifacts
+// alongside surface and domain-model.
+func TestFeatureStructureSchemaMentionsFourArtifacts(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/feature-structure.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read feature-structure.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{"capabilities.yaml", "infrastructure.md"}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("feature-structure.schema.md missing reference to %q — the doc must document all four co-equal spec artifacts", kw)
+		}
+	}
+}

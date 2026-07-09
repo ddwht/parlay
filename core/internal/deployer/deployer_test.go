@@ -243,6 +243,42 @@ func TestSkillTitle_Loop(t *testing.T) {
 	}
 }
 
+// TestClaudeAndCursor_FileOwnershipSectionIdentical guards against the
+// File Ownership doctrine drifting out of sync between deployers again
+// (Claude's CLAUDE.md and Cursor's parlay.mdc used to carry two
+// different, non-current descriptions of the spec-artifact set). Both
+// deployers render the shared fileOwnershipSection constant verbatim,
+// so this asserts the rendered project-config files agree byte-for-byte
+// on that block.
+func TestClaudeAndCursor_FileOwnershipSectionIdentical(t *testing.T) {
+	skills := testSkills()
+
+	claudeRoot := t.TempDir()
+	if err := (&ClaudeDeployer{}).Deploy(claudeRoot, skills); err != nil {
+		t.Fatalf("Claude Deploy failed: %v", err)
+	}
+	claudeMd, err := os.ReadFile(filepath.Join(claudeRoot, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("expected CLAUDE.md: %v", err)
+	}
+
+	cursorRoot := t.TempDir()
+	if err := (&CursorDeployer{}).Deploy(cursorRoot, skills); err != nil {
+		t.Fatalf("Cursor Deploy failed: %v", err)
+	}
+	cursorRule, err := os.ReadFile(filepath.Join(cursorRoot, ".cursor", "rules", "parlay.mdc"))
+	if err != nil {
+		t.Fatalf("expected parlay.mdc: %v", err)
+	}
+
+	if !strings.Contains(string(claudeMd), fileOwnershipSection) {
+		t.Error("CLAUDE.md does not contain the shared fileOwnershipSection verbatim")
+	}
+	if !strings.Contains(string(cursorRule), fileOwnershipSection) {
+		t.Error("parlay.mdc does not contain the shared fileOwnershipSection verbatim")
+	}
+}
+
 func TestRegistry(t *testing.T) {
 	tests := []struct {
 		name     string
