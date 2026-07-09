@@ -484,6 +484,12 @@ The adapter file is the **runtime source of truth** at codegen time. Studio MAY 
 
 The `tokens:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout uses a token-reference against an adapter without `tokens:`, token validation is skipped with a warning rather than failing the build.
 
+## Versioning
+
+The adapter file has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — this is a **deliberate deferral**, not an oversight. Don't confuse it with the top-level `version:` field, which tracks the *adapter's own* revision (a team-owned value, unrelated to the file *format*), or `componentVocabulary.name`'s `@<version>` suffix, which pins a design-system vocabulary revision. None of the three is a stand-in for the others.
+
+Adapters are hand-authored, team-owned, and long-lived — exactly the profile that would normally call for a migrator chain per the house rule. The reason there isn't one yet: the adapter file *format* (which top-level sections exist, what each requires) hasn't had a breaking change since this feature space stabilized, so there's no prior version to migrate from and no migrator to write. Adding an unused `schema_version: 1` field now, with no migrator and nothing to gate, would be exactly the kind of premature versioning the house rule warns against. When the adapter format needs its first breaking change, that's the point to add `schema_version:` with a real migrator — following `domain-model.schema.md`'s pattern — rather than before.
+
 ## Validation
 
 When an adapter file is loaded, the tool verifies:

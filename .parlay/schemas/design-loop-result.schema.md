@@ -49,3 +49,7 @@ When step 2 (pre-flight) aborts the loop, only `design-loop-conflicts.yaml` is w
 ## Atomic write coordination
 
 Step 8 of the skill writes this file via the write-temp + rename pattern (write-then-rename) coordinated with the conflicts file and any updated layout YAML. A reader cannot observe a result file mid-write. If the rename fails, the previously-committed result (if any) remains intact and the failure is itself recorded in the next loop's conflicts file.
+
+## Versioning
+
+No `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — deferred, and for a different reason than the adapter/blueprint deferrals above: this artifact is ephemeral by design. It's written fresh by every loop run, correlated to its sibling conflicts file by `loop-timestamp` rather than persisted and re-read across binary upgrades. There's no cross-version compatibility concern to version against — a reader always consumes the result from the loop that just ran, produced by the binary that's running now.

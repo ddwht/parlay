@@ -174,6 +174,8 @@ Describes the app's access control model.
 
 Guards are referenced by name in `navigation.routes[].guard`. They produce route-level protection. Policies are used by components for action-level checks (e.g., showing/hiding a delete button based on ownership).
 
+**Not the same vocabulary as capabilities' `policies:`.** This `authorization.policies` block (named, free-form business rules — `owner or admin`, `task deletion`) is a different vocabulary from `capabilities.yaml`'s closed three-value `policies:` enum (`auth-required`/`permission-required`/`transaction-required`; see `capabilities.schema.md`'s "Policy-step-error tie rules" and "Relationship to blueprint's `authorization.policies`" sections). The two are related in spirit — both are "policy" in the everyday sense — but they're not the same field, don't share an identifier space, and a capability operation declaring `permission-required` does not currently reference a specific entry here by name. Don't conflate the two when reading either schema.
+
 ## Section 4: Data architecture
 
 Describes the app's data fetching, caching, and offline strategy.
@@ -233,6 +235,10 @@ Native-app-only section for OS-level integration points. Omit entirely for web a
 | `background-tasks` | No | Scheduled or event-driven background work |
 | `widgets` | No | Home screen / lock screen widgets |
 | `extensions` | No | App extensions (share sheets, today widgets, Siri intents) |
+
+## Versioning
+
+The blueprint has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — deferred for the same reason as the adapter file: `blueprint.yaml` is hand-authored, team-owned, and long-lived (exactly the migrator-chain profile), but its top-level shape (the closed `data`/`auth`/`errors`/`state`/`navigation`/`platform` scope) hasn't had a breaking change since it stabilized. There's no prior version to migrate from yet. Add `schema_version:` with a real migrator when the first breaking shape change actually happens, not speculatively now.
 
 ## Validation
 

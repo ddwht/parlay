@@ -36,6 +36,10 @@ exemptions:
 | `approved_suites` | Yes | List of suite ids the reviewer has approved. Every required suite must appear or be exempted. |
 | `exemptions` | No | List of `{ suite, item, reason }` entries documenting why a required term has no covering case. |
 
+## Versioning
+
+No `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — this artifact's freshness isn't governed by its own version timeline at all. It's gated by `buildfile_hash`/`testcases_hash` matching the CURRENT canonical-form hash of those two files; a shape change to `coverage-review.yaml` itself would be caught by `parlay review-coverage` simply re-emitting the current shape on every run (it's tool-generated, never hand-edited). Same reasoning as `adapter-set.schema.md`: shape pinned by what it gates, not an independent version.
+
 ## Canonical-form hashing
 
 Hashes are computed over a canonical-form serialization (sorted map keys, normalized whitespace, stable list ordering where the schema permits it) so that cosmetic edits to the source files do not invalidate the review. Editing `buildfile.yaml` to add or remove a binding changes the hash; reordering wiring rules without semantic impact does not.

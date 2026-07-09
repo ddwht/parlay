@@ -98,6 +98,8 @@ A layout block — whether embedded in a page artifact under the optional `## La
 
 The rule for embedding the same three keys inside a page Markdown body under the optional `## Layout` heading — including the heading-match semantics, the fenced YAML code-block convention, and the Fields-table row — is documented in `page.schema.md`. The layout schema owns the keys themselves; the page schema owns the embedding rule. This file does not restate the embedding rule inline.
 
+**Versioning policy** (see `schema-versioning.schema.md` for the house rule): **regenerate, for now**. Layouts can be hand-edited — this is a real difference from buildfiles/testcases, which are purely tool-generated — but the feature is new enough (v1, freshly landed) that there's no installed base of hand-authored layouts a migrator chain would need to bridge. This is a deliberate, recorded exception to "hand-editable implies migrator chain": when this schema needs its first real v2 shape, that's the point to decide whether a migrator chain is worth building, weighed against how much hand-authored content exists by then to lose without one. Regenerating from Studio's layout pipeline (or hand-editing the small delta) is the interim policy — the same reasoning already applied to the `schemaVersion` → `schema_version` field rename in this revision, which was a hard cutover with no dual-key bridge for the same reason.
+
 **Precedence when both forms exist for the same page.** A standalone `spec/intents/<feature>/<page>.layout.yaml` and a page manifest's embedded `## Layout` section can both exist for the same page name. When they do, the page manifest's embedded layout is authoritative — see `page.schema.md`'s "Precedence when a per-feature layout also exists" section for the full rule and rationale. This file does not restate it inline.
 
 ## Vocabulary pinning
@@ -172,7 +174,7 @@ The closed set of stable error codes the precheck registers for this feature:
 - `missing-schema-version` — `schema_version` key absent.
 - `vocabulary-version-mismatch` — page declares a vocabulary version that does not match the registered adapter version.
 - `unknown-component-type` — node references a `type` outside the declared vocabulary.
-- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer).
+- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer). **Same underlying violation** as the Design Loop vocabulary validator's `spacing-token-check` rule (`vocabulary.schema.md`) — see that schema's "Same violation, two reporting frameworks" note for why the two aren't literally one code today.
 - `wiring-in-layout` — node carries a wiring field (`dataSource`, `binding`, expression-string fields) that does not belong in a layout block.
 
 Adjacent error codes (`unknown-variant`, `unknown-token`, `universal-field-redeclared`, `missing-mode-emit-form`) are owned by sibling features and surface through the same precheck contract. The full verdict shape — `Code`, `File`, `NodePath`, `Found`, `Expected`, `Fix` — is owned by the precheck contract and is not restated here.
