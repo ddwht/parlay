@@ -49,7 +49,7 @@ The `## Layout` section is **optional**. A page artifact that omits it parses an
 When present, the body of the `## Layout` section is a fenced YAML code block whose top-level keys are:
 
 - `componentVocabulary` (string, required) — e.g., `"clarity@17"`. Names the component vocabulary the layout tree is authored against.
-- `schemaVersion` (integer, required) — the layout-tree schema version the block conforms to.
+- `schema_version` (integer, required) — the layout-tree schema version the block conforms to.
 - `nodes` (list, required) — a recursive tree of layout nodes.
 
 All three keys MUST be present when a `## Layout` section is included; the parser rejects layout blocks that omit any of them, naming the missing field.
@@ -62,6 +62,12 @@ The `## Layout` section MAY appear anywhere among the page's top-level body sect
 
 The shape of the `nodes` tree (universal container fields, recursive children, vocabulary-specific component types, token-vs-raw-value rules, no-wiring-in-layout invariant, and the full validation contract) is defined in the sibling [`layout.schema.md`](./layout.schema.md) document. This page-schema document names only the three top-level YAML keys above and forwards every further detail of the node tree to `layout.schema.md` — it deliberately does not restate the node-tree shape inline.
 
+### Precedence when a per-feature layout also exists
+
+A page name can be the target of fragments from multiple features, and any of those features may separately author its own `spec/intents/<feature>/<page>.layout.yaml` (see `layout.schema.md`) for the same page name. When a page manifest's `## Layout` section is ALSO present for that page, the manifest's embedded layout is authoritative — it is the cross-feature structural layout, the same role the manifest already plays for fragment ordering ("Manifest order overrides feature surface Order values" below). A per-feature standalone `<page>.layout.yaml` is the page's structural layout only in the absence of a manifest-level `## Layout` override; it's the derived/default the way surface `Order` values are the fragment-ordering default.
+
+This mirrors the existing fragment-ordering precedence exactly: manifest-level structure (when present) wins over feature-level structure, for the same reason a manifest exists at all — cross-feature layout needs one explicit owner, and that owner is the manifest once one is locked. A project that never locks a page manifest, or locks one without a `## Layout` section, is unaffected — the per-feature layout (if any) governs, or the adapter's generic Show/Action-derived placement applies if there's no layout at all.
+
 ### Example
 
 ```
@@ -69,7 +75,7 @@ The shape of the `nodes` tree (universal container fields, recursive children, v
 
 ​```yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: root
     type: clarity.stack

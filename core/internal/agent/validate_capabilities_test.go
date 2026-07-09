@@ -103,6 +103,83 @@ operations:
 	}
 }
 
+func TestValidateCapabilities_PolicyTieRulesSatisfied(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: task-list
+operations:
+  - id: task.delete
+    kind: command
+    subject: { entity: Task }
+    errors: [unauthorized, forbidden]
+    policies: [auth-required, permission-required]
+    steps:
+      - { type: authorize }
+      - { type: delete-one }
+      - { type: return-empty }
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "test", content)
+	if findCode(outcomes, "capabilities-policy-missing-step") || findCode(outcomes, "capabilities-policy-missing-error") {
+		t.Errorf("policy tie rules should be satisfied; got %+v", outcomes)
+	}
+}
+
+func TestValidateCapabilities_AuthRequiredMissingStepAndError(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: task-list
+operations:
+  - id: task.delete
+    kind: command
+    subject: { entity: Task }
+    policies: [auth-required]
+    steps:
+      - { type: delete-one }
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "test", content)
+	if !findCode(outcomes, "capabilities-policy-missing-step") {
+		t.Errorf("missing capabilities-policy-missing-step; got %+v", outcomes)
+	}
+	if !findCode(outcomes, "capabilities-policy-missing-error") {
+		t.Errorf("missing capabilities-policy-missing-error; got %+v", outcomes)
+	}
+}
+
+func TestValidateCapabilities_PermissionRequiredMissingStepAndError(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: task-list
+operations:
+  - id: task.delete
+    kind: command
+    subject: { entity: Task }
+    policies: [permission-required]
+    steps:
+      - { type: delete-one }
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "test", content)
+	if !findCode(outcomes, "capabilities-policy-missing-step") {
+		t.Errorf("missing capabilities-policy-missing-step; got %+v", outcomes)
+	}
+	if !findCode(outcomes, "capabilities-policy-missing-error") {
+		t.Errorf("missing capabilities-policy-missing-error; got %+v", outcomes)
+	}
+}
+
+func TestValidateCapabilities_TransactionRequiredHasNoTie(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: task-list
+operations:
+  - id: task.create
+    kind: command
+    subject: { entity: Task }
+    policies: [transaction-required]
+    steps:
+      - { type: create-one }
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "test", content)
+	if findCode(outcomes, "capabilities-policy-missing-step") || findCode(outcomes, "capabilities-policy-missing-error") {
+		t.Errorf("transaction-required has no tied step/error; got %+v", outcomes)
+	}
+}
+
 func TestValidateOperationRefNormalized(t *testing.T) {
 	if outcome, ok := ValidateOperationRefNormalized(ModeBuild, "@task-list/operation:task.create"); !ok {
 		t.Errorf("normalized ref rejected: %+v", outcome)

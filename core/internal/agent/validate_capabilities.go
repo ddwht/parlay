@@ -130,6 +130,49 @@ func ValidateCapabilities(mode ValidationMode, path string, content []byte) []Va
 					fmt.Sprintf("%s: operation %q policy %q is outside the closed policies vocabulary", path, op.ID, p)))
 			}
 		}
+
+		// Policy-step-error tie rules — see capabilities.schema.md's
+		// "Policy-step-error tie rules" section. auth-required and
+		// permission-required each imply a specific step (authorize) and
+		// error (unauthorized / forbidden respectively); the tie is
+		// one-directional — declaring the step or error without the
+		// policy is fine, but declaring the policy without its tied step
+		// or error is not. transaction-required has no tie (see the
+		// schema section for why).
+		hasAuthorizeStep := false
+		for _, s := range op.Steps {
+			if s.Type == "authorize" {
+				hasAuthorizeStep = true
+				break
+			}
+		}
+		hasError := func(name string) bool {
+			for _, e := range op.Errors {
+				if e == name {
+					return true
+				}
+			}
+			return false
+		}
+		for _, p := range op.Policies {
+			var tiedError string
+			switch p {
+			case "auth-required":
+				tiedError = "unauthorized"
+			case "permission-required":
+				tiedError = "forbidden"
+			default:
+				continue
+			}
+			if !hasAuthorizeStep {
+				outcomes = append(outcomes, NewOutcome(mode, "capabilities-policy-missing-step",
+					fmt.Sprintf("%s: operation %q declares policy %q but has no authorize step in steps:", path, op.ID, p)))
+			}
+			if !hasError(tiedError) {
+				outcomes = append(outcomes, NewOutcome(mode, "capabilities-policy-missing-error",
+					fmt.Sprintf("%s: operation %q declares policy %q but errors: has no %q entry", path, op.ID, p, tiedError)))
+			}
+		}
 	}
 	return outcomes
 }

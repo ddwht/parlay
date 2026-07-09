@@ -216,3 +216,113 @@ func TestFeatureStructureSchemaMentionsFourArtifacts(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildfileSchemaIsMultiTargetPrimaryWithFileOperations guards the
+// Phase 5 buildfile v2 rewrite: multi-target must be the primary
+// documented shape (not a bolted-on "Section: Multi-target" appendix),
+// the per-component file-I/O list must be named file-operations: (not
+// operations:, which now collides with the top-level multi-target
+// operations: block), the buildfile must declare schema_version, and
+// the old single-target shape must still exist somewhere as a frozen
+// historical reference.
+func TestBuildfileSchemaIsMultiTargetPrimaryWithFileOperations(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/buildfile.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read buildfile.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"schema_version",
+		"file-operations:",
+		"Why this was renamed",
+		"Appendix: Legacy v1 buildfile shape (frozen)",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("buildfile.schema.md missing %q", kw)
+		}
+	}
+
+	// The primary Structure block (before the Appendix) must lead with
+	// the multi-target shape, not bury it in a bolted-on section deep in
+	// the file. Assert the multi-target `targets:` block appears before
+	// the frozen appendix begins.
+	appendixIdx := strings.Index(body, "## Appendix: Legacy v1 buildfile shape (frozen)")
+	targetsIdx := strings.Index(body, "targets:")
+	if appendixIdx == -1 || targetsIdx == -1 || targetsIdx > appendixIdx {
+		t.Error("buildfile.schema.md's primary Structure block must declare targets: before the frozen legacy appendix — multi-target must be primary, not an afterthought")
+	}
+}
+
+// TestSchemaVersioningHouseRuleExists guards the Phase 5 versioning
+// consolidation: the house rule doc must exist and must state the
+// snake_case + migrator-or-regenerate policy explicitly, so a future
+// schema author has one place to learn the convention instead of
+// re-deriving it per artifact.
+func TestSchemaVersioningHouseRuleExists(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/schema-versioning.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read schema-versioning.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"snake_case",
+		"Migrator chain",
+		"Regenerate",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("schema-versioning.schema.md missing %q", kw)
+		}
+	}
+}
+
+// TestLayoutSchemaVersionFieldIsSnakeCase guards the one historical
+// violation the versioning house rule closes: layout.schema.md's
+// version field must be schema_version (snake_case), not the old
+// camelCase schemaVersion, everywhere it's declared as the field name.
+func TestLayoutSchemaVersionFieldIsSnakeCase(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/layout.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read layout.schema.md: %v", err)
+	}
+	body := string(content)
+
+	if !strings.Contains(body, "schema_version") {
+		t.Error("layout.schema.md must declare its version field as schema_version (snake_case)")
+	}
+}
+
+// TestDesignSpecScopedAwayFromLayout guards the Phase 5 design-spec
+// scoping decision: design-spec.yaml must document itself as
+// non-layout enrichment only, with the per-fragment structural layout:
+// field removed and cross-references to layout.schema.md in both
+// directions.
+func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
+	designSpec, err := schemasFS.ReadFile("schemas/design-spec.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read design-spec.schema.md: %v", err)
+	}
+	designSpecBody := string(designSpec)
+
+	required := []string{
+		"Scope: non-layout enrichment only",
+		"Relationship to layout.schema.md",
+		"motion",
+	}
+	for _, kw := range required {
+		if !strings.Contains(designSpecBody, kw) {
+			t.Errorf("design-spec.schema.md missing %q", kw)
+		}
+	}
+
+	layout, err := schemasFS.ReadFile("schemas/layout.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read layout.schema.md: %v", err)
+	}
+	if !strings.Contains(string(layout), "Relationship to design-spec.schema.md") {
+		t.Error("layout.schema.md missing the reciprocal cross-reference to design-spec.schema.md")
+	}
+}

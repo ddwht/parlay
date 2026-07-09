@@ -64,7 +64,7 @@ const (
 // The check order is deterministic:
 //
 //  1. nil-layout shortcut (ok)
-//  2. block-level shape (missing schemaVersion)
+//  2. block-level shape (missing schema_version)
 //  3. schema-version compatibility
 //  4. vocabulary version match
 //  5. per-node walk (membership, tokens, wiring)
@@ -78,7 +78,7 @@ func LayoutPrecheck(page *parser.Page, adapter *deepAdapter) Verdict {
 	layout := page.Layout
 
 	// (1) Block-level shape. The parser already rejects layouts that
-	// omit componentVocabulary or schemaVersion, but a synthetically
+	// omit componentVocabulary or schema_version, but a synthetically
 	// constructed Page (e.g., from a non-parser test harness) can still
 	// reach LayoutPrecheck with the field zero — guard accordingly.
 	if layout.SchemaVersion == 0 {
@@ -86,8 +86,8 @@ func LayoutPrecheck(page *parser.Page, adapter *deepAdapter) Verdict {
 			Code:     VerdictMissingSchemaVersion,
 			File:     pagePath,
 			Found:    "",
-			Expected: "schemaVersion: <integer>",
-			Fix:      "add schemaVersion at the top of the ## Layout block",
+			Expected: "schema_version: <integer>",
+			Fix:      "add schema_version at the top of the ## Layout block",
 		}
 	}
 
@@ -98,9 +98,9 @@ func LayoutPrecheck(page *parser.Page, adapter *deepAdapter) Verdict {
 			Code:     VerdictMalformedLayoutBlock,
 			File:     pagePath,
 			NodePath: "",
-			Found:    fmt.Sprintf("schemaVersion: %d", layout.SchemaVersion),
-			Expected: fmt.Sprintf("schemaVersion: %d (the version this build supports)", SupportedLayoutSchemaVersion),
-			Fix:      fmt.Sprintf("either downgrade the layout to schemaVersion %d, or run parlay upgrade to install a build that understands schemaVersion %d", SupportedLayoutSchemaVersion, layout.SchemaVersion),
+			Found:    fmt.Sprintf("schema_version: %d", layout.SchemaVersion),
+			Expected: fmt.Sprintf("schema_version: %d (the version this build supports)", SupportedLayoutSchemaVersion),
+			Fix:      fmt.Sprintf("either downgrade the layout to schema_version %d, or run parlay upgrade to install a build that understands schema_version %d", SupportedLayoutSchemaVersion, layout.SchemaVersion),
 		}
 	}
 
@@ -140,16 +140,16 @@ func ParsePagePrecheck(path string, adapter *deepAdapter) Verdict {
 	page, err := parser.ParsePageFile(path)
 	if err != nil {
 		// Translate parser-level missing-schema-version into the
-		// dedicated verdict so callers can distinguish "schemaVersion
+		// dedicated verdict so callers can distinguish "schema_version
 		// absent" from "block YAML didn't even parse".
 		emsg := err.Error()
-		if strings.Contains(emsg, "missing required field 'schemaVersion'") {
+		if strings.Contains(emsg, "missing required field 'schema_version'") {
 			return Verdict{
 				Code:     VerdictMissingSchemaVersion,
 				File:     path,
 				Found:    "",
-				Expected: "schemaVersion: <integer>",
-				Fix:      "add schemaVersion at the top of the ## Layout block",
+				Expected: "schema_version: <integer>",
+				Fix:      "add schema_version at the top of the ## Layout block",
 			}
 		}
 		// Wiring-in-layout — parser surfaces it as "wiring field 'X' on node 'Y'".

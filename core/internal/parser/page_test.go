@@ -68,7 +68,7 @@ name: dashboard
 
 `+"```"+`yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: root
     type: clarity.region
@@ -92,7 +92,7 @@ nodes:
 		t.Fatalf("expected componentVocabulary=clarity@17; got %q", page.Layout.ComponentVocabulary)
 	}
 	if page.Layout.SchemaVersion != 1 {
-		t.Fatalf("expected schemaVersion=1; got %d", page.Layout.SchemaVersion)
+		t.Fatalf("expected schema_version=1; got %d", page.Layout.SchemaVersion)
 	}
 	if len(page.Layout.Nodes) == 0 {
 		t.Fatalf("expected at least one node")
@@ -115,7 +115,7 @@ nodes:
 func TestParsePageFile_LayoutSectionPositionAmongSiblingsIsIrrelevant(t *testing.T) {
 	dir := t.TempDir()
 	layoutBody := `componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: root
     type: clarity.region
@@ -174,7 +174,7 @@ name: dashboard
 ## Layout
 
 `+"```"+`yaml
-schemaVersion: 1
+schema_version: 1
 nodes: []
 `+"```"+`
 `)
@@ -202,10 +202,10 @@ nodes: []
 `)
 	_, err := ParsePageFile(path)
 	if err == nil {
-		t.Fatalf("expected error for missing schemaVersion")
+		t.Fatalf("expected error for missing schema_version")
 	}
-	if !strings.Contains(err.Error(), "missing required field 'schemaVersion'") {
-		t.Fatalf("expected error to name missing schemaVersion; got %v", err)
+	if !strings.Contains(err.Error(), "missing required field 'schema_version'") {
+		t.Fatalf("expected error to name missing schema_version; got %v", err)
 	}
 	if !strings.Contains(err.Error(), path) {
 		t.Fatalf("expected error to include page path; got %v", err)
@@ -222,7 +222,7 @@ name: dashboard
 
 `+"```"+`yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: main-table
     type: clarity.datagrid
@@ -252,7 +252,7 @@ name: dashboard
 
 `+"```"+`yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: header-row
     type: clarity.region
@@ -285,7 +285,7 @@ name: dashboard
 
 `+"```"+`yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: header-row
     type: clarity.region
@@ -311,7 +311,7 @@ name: dashboard
 
 ` + "```" + `yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: root
     type: clarity.region

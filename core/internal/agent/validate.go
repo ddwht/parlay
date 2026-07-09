@@ -358,9 +358,9 @@ func ValidateLayout(adapter *deepAdapter, layout *LayoutReference) []ValidationE
 	if layout.SchemaVersion != 0 && layout.SchemaVersion != SupportedLayoutSchemaVersion {
 		return []ValidationError{{
 			Code:    "layout-schema-version-unsupported",
-			Message: fmt.Sprintf("layout schemaVersion %d is not supported by this build (expected %d)", layout.SchemaVersion, SupportedLayoutSchemaVersion),
-			Context: "layout.schemaVersion",
-			Fix:     fmt.Sprintf("either downgrade the layout to schemaVersion %d, or run parlay upgrade to install a build that understands schemaVersion %d", SupportedLayoutSchemaVersion, layout.SchemaVersion),
+			Message: fmt.Sprintf("layout schema_version %d is not supported by this build (expected %d)", layout.SchemaVersion, SupportedLayoutSchemaVersion),
+			Context: "layout.schema_version",
+			Fix:     fmt.Sprintf("either downgrade the layout to schema_version %d, or run parlay upgrade to install a build that understands schema_version %d", SupportedLayoutSchemaVersion, layout.SchemaVersion),
 		}}
 	}
 

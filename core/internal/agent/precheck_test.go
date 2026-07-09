@@ -91,7 +91,7 @@ name: dashboard
 
 ` + "```" + `yaml
 componentVocabulary: clarity@17
-schemaVersion: 1
+schema_version: 1
 nodes:
   - id: root
     type: clarity.region

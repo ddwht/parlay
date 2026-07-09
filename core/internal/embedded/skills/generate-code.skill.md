@@ -190,7 +190,7 @@ Concretely:
 
 12. **Generate code per dirty/new component** — For each component the diff classifies as dirty or new:
     - Look up the component's file path in `plan` (the entry whose `sources` references this component). The plan is authoritative — do NOT recompute the path from the adapter's `component-pattern` + `naming` rules at this step. The adapter's conventions were already applied when build-feature emitted the plan.
-    - Translate the component's abstract `type`, `elements`, `actions`, and `operations` into framework-specific code using the adapter's widget mappings
+    - Translate the component's abstract `type`, `elements`, `actions`, and `file-operations` into framework-specific code using the adapter's widget mappings
     - Honor the adapter's `patterns:` section (interaction style, information density, error placement, confirmation style, content rules)
     - Add the marker at the top of every generated file. Use the comment style appropriate for the file type (`//` for Go/TS/JS, `#` for YAML/Python/shell).
     - **Component implementation files** get a two-line marker:
@@ -270,7 +270,7 @@ Concretely:
       If the file is the same surface, perform an intelligent merge:
 
       a. Read the existing file fully (already done in step 2).
-      b. Read the component spec from the buildfile (data.inputs, elements, actions, operations, computed values).
+      b. Read the component spec from the buildfile (data.inputs, elements, actions, file-operations, computed values).
       c. Identify which behaviors the existing file already implements and which are new in the component spec.
       d. Generate a merge that:
          - **Preserves all existing user-owned code paths verbatim** (do not rewrite working code).

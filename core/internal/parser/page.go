@@ -54,9 +54,16 @@ type PageRegion struct {
 // vocabulary version (e.g., "clarity@17"). SchemaVersion is the layout
 // schema's own version, distinct from the vocabulary version. Nodes is
 // the recursive tree of layout nodes.
+//
+// SchemaVersion's YAML tag is schema_version (snake_case) per the
+// cross-schema versioning house rule (schema-versioning.schema.md) —
+// this was previously the one schema out of step, tagged schemaVersion
+// (camelCase). Renamed directly with no dual-key acceptance window:
+// the layout feature is new enough (v1, freshly landed) that there is
+// no installed base of hand-authored layouts worth bridging.
 type Layout struct {
 	ComponentVocabulary string       `yaml:"componentVocabulary"`
-	SchemaVersion       int          `yaml:"schemaVersion"`
+	SchemaVersion       int          `yaml:"schema_version"`
 	Nodes               []LayoutNode `yaml:"nodes"`
 }
 
@@ -242,7 +249,7 @@ func decodeLayout(path string, layoutYAML []byte) (*Layout, error) {
 	// First decode into a generic map so we can detect missing required
 	// keys with field-level precision (yaml.Unmarshal silently leaves
 	// missing fields zero, which would otherwise fold into a generic
-	// "schemaVersion: 0" rather than the actionable "missing required
+	// "schema_version: 0" rather than the actionable "missing required
 	// field" error this contract requires).
 	var raw map[string]interface{}
 	if err := yaml.Unmarshal(layoutYAML, &raw); err != nil {
@@ -251,8 +258,8 @@ func decodeLayout(path string, layoutYAML []byte) (*Layout, error) {
 	if _, ok := raw["componentVocabulary"]; !ok {
 		return nil, fmt.Errorf("layout block in %s: missing required field 'componentVocabulary'", path)
 	}
-	if _, ok := raw["schemaVersion"]; !ok {
-		return nil, fmt.Errorf("layout block in %s: missing required field 'schemaVersion'", path)
+	if _, ok := raw["schema_version"]; !ok {
+		return nil, fmt.Errorf("layout block in %s: missing required field 'schema_version'", path)
 	}
 
 	var layout Layout

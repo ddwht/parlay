@@ -12,6 +12,10 @@ A **layout** describes the visual / structural composition of a page using compo
 
 This file defines the **universal container fields** that every layout-author may use on every container node, regardless of which adapter is active. The full layout schema (node shape, child arrays, leaf-component properties, vocabulary pinning syntax) is owned by `@studio-support/page-layout-field` and will be added here as that feature lands. This stub establishes the universal-container-fields contract so the vocabulary-extension and layout-pipeline features can refer to a single source of truth for container chrome.
 
+## Relationship to design-spec.schema.md
+
+Layout and design-spec (`.parlay/build/<feature>/design-spec.yaml`) both describe a page's UI, with a deliberately disjoint scope: this file owns structural composition — which components exist, how they nest, `direction`/`gap`/`padding`/`alignment` — and design-spec owns non-layout enrichment on top of that structure — exact widget variant, state-specific visuals, and color/spacing/motion token values. Neither restates the other's fields. A layout node never carries a `variants:` map or a `motion:` token; a design-spec never declares `direction` or child ordering. See `design-spec.schema.md`'s "Relationship to layout.schema.md" section for the full statement and the migration note for design-specs authored before this split (their now-removed per-fragment `layout:` field predates this schema's node-tree ownership of structure).
+
 ## Universal container fields
 
 The following four fields are available on **every** container node in **every** vocabulary, regardless of which adapter is active:
@@ -89,10 +93,12 @@ A layout block — whether embedded in a page artifact under the optional `## La
 | Key | Value type | Required | Description |
 |---|---|---|---|
 | `componentVocabulary` | string | required | Name and version of the component vocabulary the layout targets (e.g., `clarity@17`). See [Vocabulary pinning](#vocabulary-pinning) below. |
-| `schemaVersion` | integer | required | Layout schema version this block conforms to. Mismatched versions are rejected by the validator (see [Validation pass](#validation-pass)). |
+| `schema_version` | integer | required | Layout schema version this block conforms to. Mismatched versions are rejected by the validator (see [Validation pass](#validation-pass)). |
 | `nodes` | list of layout nodes | required | The recursive tree of layout nodes that compose the page. Container nodes carry `children:`; leaf and data-shape nodes do not. See [Container node shape](#container-node-shape) and [Leaf and data-shape nodes](#leaf-and-data-shape-nodes). |
 
 The rule for embedding the same three keys inside a page Markdown body under the optional `## Layout` heading — including the heading-match semantics, the fenced YAML code-block convention, and the Fields-table row — is documented in `page.schema.md`. The layout schema owns the keys themselves; the page schema owns the embedding rule. This file does not restate the embedding rule inline.
+
+**Precedence when both forms exist for the same page.** A standalone `spec/intents/<feature>/<page>.layout.yaml` and a page manifest's embedded `## Layout` section can both exist for the same page name. When they do, the page manifest's embedded layout is authoritative — see `page.schema.md`'s "Precedence when a per-feature layout also exists" section for the full rule and rationale. This file does not restate it inline.
 
 ## Vocabulary pinning
 
@@ -147,7 +153,7 @@ This is why the layout schema owns only the universal fields and the top-level s
 
 ## Per-mode value selection
 
-A layout MAY declare an optional `mode:` selector at the top level alongside `componentVocabulary`, `schemaVersion`, and `nodes`, and a node MAY declare per-mode field values via a `mode:` key on individual fields. This lets a single layout carry distinct values for different visual modes (e.g., dense vs. comfortable density, light vs. dark theme, compact vs. spacious spacing).
+A layout MAY declare an optional `mode:` selector at the top level alongside `componentVocabulary`, `schema_version`, and `nodes`, and a node MAY declare per-mode field values via a `mode:` key on individual fields. This lets a single layout carry distinct values for different visual modes (e.g., dense vs. comfortable density, light vs. dark theme, compact vs. spacious spacing).
 
 The `mode:` key is **optional**. A layout that does not declare it parses and validates exactly as before — there is no behavioral change for layouts that have no mode-aware fields, and the absence of `mode:` is bit-for-bit equivalent to today's layouts. Pages without per-mode fields stay simple.
 
@@ -163,7 +169,7 @@ Validation of a layout block runs through two entry points:
 The closed set of stable error codes the precheck registers for this feature:
 
 - `malformed-layout-block` — block-level YAML parse failure.
-- `missing-schema-version` — `schemaVersion` key absent.
+- `missing-schema-version` — `schema_version` key absent.
 - `vocabulary-version-mismatch` — page declares a vocabulary version that does not match the registered adapter version.
 - `unknown-component-type` — node references a `type` outside the declared vocabulary.
 - `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer).

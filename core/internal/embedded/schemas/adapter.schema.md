@@ -428,6 +428,8 @@ The `componentVocabulary:` section is optional. Adapters that omit it continue t
 
 Adapters that drive Design Loop vocabulary validation declare an additional optional top-level block `vocabulary:` alongside `componentVocabulary:`. The `vocabulary:` block carries the closed admissible sets the validator pins — `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — and is read by `parlay validate-vocabulary` and by in-process Studio callers. The full shape, the per-subfield record schemas, and the two stable resolution-failure error codes (`vocabulary-missing-from-adapter`, `vocabulary-unknown-adapter`) are documented in `vocabulary.schema.md`. Adapters MAY omit the block; in that case Design Loop vocabulary validation surfaces `vocabulary-missing-from-adapter` and other adapter uses (codegen, registration) continue to work.
 
+**This block is independently authored, not derived from `componentVocabulary:`/`tokens:` above** — an adapter author maintains both by hand today, and the two can drift. See `vocabulary.schema.md`'s "Relationship to componentVocabulary: and tokens:" section for why unifying them into one authored source is deferred rather than done as part of this pass: the two models' container-parameter shapes don't currently map onto each other cleanly.
+
 ## Section 9: Design tokens
 
 The `tokens:` section declares the design-system tokens an adapter emits during codegen. Tokens are referenced by name from layouts (e.g., `gap: spacing-lg`, `color: color-status-danger`) and translated to per-framework emit-forms (CSS variables, theme-object key paths, etc.) when code is generated.

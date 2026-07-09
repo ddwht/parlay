@@ -210,6 +210,40 @@ Unknown identifiers are errors. Missing Actions is allowed (pure display fragmen
 
 `surface.yaml` is the **target format** for the surface artifact. It coexists with the legacy `surface.md` form during the migration window — both parse to the same in-memory surface model, so the build pipeline does not branch on serialization.
 
+### Structure
+
+```yaml
+feature: <feature-slug>   # optional — defaults to the parent directory name when omitted
+
+fragments:
+  - name: <fragment name>
+    shows: <comma-separated Show types from vocabulary>
+    actions: <comma-separated Action types from vocabulary>
+    source: <comma-separated @feature/slug references>
+    page: <target page name>
+    region: <screen area — main, sidebar, header, toolbar, footer, dialog>
+    order: <integer — relative position within region, lower first>
+    notes:
+      - <design decisions, reviewer comments, open questions>
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `feature` | No | Feature slug. When omitted, derived from the file's `spec/intents/<feature>/` parent directory — matches `surface.md`'s file-location-derived behavior. |
+| `fragments` | Yes | List of fragment entries. May be empty. |
+| `fragments[].name` | Yes | Fragment name — the YAML-form equivalent of the `## ` heading in `surface.md`. Must be unique within the feature. |
+| `fragments[].shows` | Yes | Comma-separated Show type identifiers from the Shows vocabulary (same string format as `surface.md`'s `**Shows**:`). |
+| `fragments[].actions` | No | Comma-separated Action type identifiers. |
+| `fragments[].source` | Yes | Comma-separated `@feature/slug` traceability references. |
+| `fragments[].page` | No | Target page name. |
+| `fragments[].region` | No | Region name. |
+| `fragments[].order` | No | Integer position within region. |
+| `fragments[].notes` | No | List of free-text strings — the YAML-form equivalent of `surface.md`'s `- ` bulleted lines under `**Notes**:`. |
+
+This shape mirrors the parser's in-memory `Fragment` representation field-for-field — `shows` and `actions` stay comma-separated strings rather than becoming YAML lists, matching what the legacy `surface.md` parser already produces, so both formats resolve to byte-identical `[]Fragment` values and the build pipeline never needs to know which form it read.
+
+**Known gap: no `flow:` key yet.** `surface.md`'s legacy parser does not parse `**Flow**:` into the `Fragment` struct either — `Flow` is documented in the vocabulary section above but isn't wired into either parser's output today. `surface.yaml` inherits this gap rather than inventing a `flow:` key that would silently do nothing; adding real Flow-field support is parser work that applies to both formats equally, not something specific to the YAML migration.
+
 ### File resolution
 
 When a feature contains both `surface.yaml` and `surface.md`, the YAML form wins. The MD form gets a `surface-md-superseded` warning until the designer deletes it. When a feature contains only `surface.md`, the validator emits `surface-md-legacy-format` (informational) pointing the designer at `parlay migrate-spec`.
