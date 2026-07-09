@@ -12,9 +12,9 @@ The vocabulary block is the closed declaration of what components, tokens, and l
 
 - The Design Loop pre-flight validator (`parlay validate-vocabulary @<feature>`) — checks the canonical layout against this vocabulary before any Figma round-trip.
 - The Design Loop read-back classifier — runs the same checks against designer-authored novelties, in single-node mode.
-- Future in-process Studio callers (e.g. Domain Model Editor pre-saves) that import `github.com/parlay-tool/parlay/studio/internal/vocabulary` directly.
+- Future in-process Studio callers (e.g. Domain Model Editor pre-saves) that load the vocabulary block directly, in-process.
 
-The validator pins the Go types `Vocabulary`, `ComponentSpec`, `LayoutContainerSpec`, and `ParameterConstraint` in `studio/internal/vocabulary/vocabulary.go` to the field set documented here one-for-one. Any rename or extra field on either side is a wire-contract break.
+The validator's internal representation — the `Vocabulary`, `ComponentSpec`, `LayoutContainerSpec`, and `ParameterConstraint` record shapes — mirrors the field set documented here one-for-one. Any rename or extra field on either side is a wire-contract break.
 
 ## Structure
 
@@ -132,7 +132,7 @@ Exactly two codes exist. No third resolution-failure code may be introduced with
 
 ## Inline vs separate file
 
-The `vocabulary:` block lives **inline** at the top level of `<adapter>.adapter.yaml`. Adapter authors do NOT place vocabulary content in a sibling `<adapter>.vocabulary.yaml` file — the validator does not read any sibling file. A unit test in `studio/internal/vocabulary/vocabulary_test.go` plants a sibling and asserts the loader ignores it.
+The `vocabulary:` block lives **inline** at the top level of `<adapter>.adapter.yaml`. Adapter authors do NOT place vocabulary content in a sibling `<adapter>.vocabulary.yaml` file — the validator does not read any sibling file. A unit test plants a sibling `<adapter>.vocabulary.yaml` file and asserts the loader ignores it.
 
 Rejected alternative (archaeology): an earlier proposal split the vocabulary into a separate `<adapter>.vocabulary.yaml` to keep adapter files small. The split was rejected because:
 
@@ -154,4 +154,4 @@ The `spacing_tokens` and `color_tokens` lists are flat names — they do NOT car
 
 ## Determinism contract
 
-Any AI or codegen pass that reads this schema produces the same `Vocabulary`, `ComponentSpec`, `LayoutContainerSpec`, and `ParameterConstraint` field sets — exactly the four subfields and the four record shapes documented above. The Go types in `studio/internal/vocabulary/vocabulary.go` are the runtime mirror of this schema; any divergence between the schema doc and the Go types is a bug in whichever was edited last.
+Any AI or codegen pass that reads this schema produces the same `Vocabulary`, `ComponentSpec`, `LayoutContainerSpec`, and `ParameterConstraint` field sets — exactly the four subfields and the four record shapes documented above. The validator's internal types are the runtime mirror of this schema; any divergence between the schema doc and the implementation is a bug in whichever was edited last.

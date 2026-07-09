@@ -440,7 +440,7 @@ The skill is permitted to read ONLY:
 - `.parlay/domain-model.yaml`
 - The source tree under each adapter's declared root
 
-Reads of `spec/intents/**` are forbidden — `internal/agent/codegen_input_guard.go` enforces this. Attempts surface `codegen-spec-read-forbidden`. Reads of paths outside the read-set surface `codegen-input-out-of-scope`.
+Reads of `spec/intents/**` are forbidden and mechanically enforced. Attempts surface `codegen-spec-read-forbidden`. Reads of paths outside the read-set surface `codegen-input-out-of-scope`.
 
 ### Layered emission order
 

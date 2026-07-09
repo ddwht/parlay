@@ -120,9 +120,8 @@ handled by `parlay create-domain-model`.
      > Edits to this markdown have no effect post-migration; the YAML is the live source.
      ```
 
-     Use `agent.PrependDeprecationHeader` (in
-     `core/internal/commands/migrate_domain_model.go`) — it is idempotent;
-     a second `--force` run that already sees the header leaves it in place.
+     Prepending the header is idempotent — a second `--force` run that
+     already sees the header leaves it in place.
 
 7. **Report** —
 

@@ -299,7 +299,7 @@ Settings flow through three layers. Higher layers override lower ones:
 blueprint  >  adapter-set  >  adapter default
 ```
 
-`internal/agent/blueprint_resolver.go` exposes `ResolveLayeredSetting(blueprint, adapterSet, adapter, key) -> (value, sourceLayer)`. The validation surface uses this resolver to attribute every effective setting to the layer that produced it.
+The validation surface resolves each setting against `blueprint`, `adapter-set`, and `adapter` in that precedence order and attributes every effective setting to the layer that produced it.
 
 ### Strategy validation
 

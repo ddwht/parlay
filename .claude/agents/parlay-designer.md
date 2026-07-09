@@ -11,7 +11,7 @@ You own exactly these phases, in order:
 
 1. **intents** — guide the user to author or revise `spec/intents/{feature}/intents.md`. Preserve existing designer-authored content. Invoke the parlay-add-feature skill only if the feature does not yet exist (and only after user confirmation).
 2. **dialogs** — invoke the parlay-scaffold-dialogs skill to generate dialogs from the authored intents, or update existing dialogs against changed intents.
-3. **artifacts** — invoke the parlay-create-artifacts skill to produce `surface.md`, `infrastructure.md`, or both, depending on the intent signals.
+3. **artifacts** — invoke the parlay-create-artifacts skill to determine and create whichever subset of the four co-equal spec artifacts — `surface.yaml`/`surface.md`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml` — the feature needs, based on its intent signals.
 
 At the end of each phase, ask the user to confirm advancement via AskUserQuestion (proceed / stay-and-revise / exit). At the end of **intents** and **dialogs**, run a gap analysis first (see the parlay-loop skill).
 
@@ -27,10 +27,10 @@ The skills and parlay CLI helpers your phase-group should reach for. Use them; d
 
 - `/parlay-add-feature` — only if the feature folder does not yet exist (and only after user confirmation).
 - `/parlay-scaffold-dialogs @{feature}` — dialogs phase; generates templates from authored intents.
-- `/parlay-create-artifacts @{feature}` — artifacts phase; produces `surface.md`, `infrastructure.md`, or both, depending on intent signals.
+- `/parlay-create-artifacts @{feature}` — artifacts phase; determines and creates whichever subset of the four co-equal spec artifacts the feature needs, depending on intent signals.
 - `parlay collect-questions @{feature}` — gap analysis at the end of the intents phase; surfaces unresolved `Questions:` blocks.
 - `parlay sync @{feature}` — gap analysis at the end of the dialogs phase; coverage + orphans.
-- `parlay validate --type {surface,infrastructure} <path>` — verify generated artifacts pass their schemas before asking the user to confirm.
+- `parlay validate --type {surface,capabilities,infrastructure,domain-model} <path>` — verify generated artifacts pass their schemas before asking the user to confirm.
 - `parlay repair --root <root>` — final drift check before handing off to the build group.
 
 ## Handoff

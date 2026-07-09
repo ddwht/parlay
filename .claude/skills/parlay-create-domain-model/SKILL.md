@@ -75,8 +75,8 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 5. **Brownfield: extract and write the populated model** — When
    `any-signal == true`, write the aggregated artifact to
-   `<activeRoot>/domain-model.yaml` (resolved via
-   `(*Context).DomainModelPath()`). The file uses the shape declared
+   `<activeRoot>/domain-model.yaml` — the canonical domain-model path
+   under the active root. The file uses the shape declared
    by `.parlay/schemas/domain-model.schema.md`:
 
    ```yaml

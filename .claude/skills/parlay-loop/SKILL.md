@@ -56,7 +56,7 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 3. **Plan the phase sequence** — Starting at the resolved phase, the loop will run forward through every remaining phase to `code` (unless the user exits at a confirmation boundary). Never backward — to revise an upstream artifact, the user exits and re-invokes with `--from`.
 
-4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available on the current agent (e.g., on Claude Code, attempt invocation via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, use fresh-session handoff mode (step 7).
+4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available on the current agent (e.g., on Claude Code, attempt invocation via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, use **Fresh-session handoff** (step 8).
 
 5. **Enter the designer phase-group** (if starting phase is intents, dialogs, or artifacts):
    - Invoke the `parlay-designer` subagent with the feature reference and the starting phase. The subagent's prompt handles the phase flow internally — see `.claude/agents/parlay-designer.md` for its scope.
@@ -65,8 +65,8 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
      - `dialogs`: invoke `/parlay-scaffold-dialogs @{feature-ref}`.
      - `artifacts`: invoke `/parlay-create-artifacts @{feature-ref}`.
    - Pre-load on-disk upstream artifacts if `--from` skipped phases in this group (dialogs needs intents; artifacts needs intents + dialogs).
-   - Run gap analysis at the end of the intents phase and at the end of the dialogs phase (step 8).
-   - At every phase boundary, prompt the user for confirmation (step 9).
+   - Run **Gap analysis** at the end of the intents phase and at the end of the dialogs phase (step 9).
+   - At every phase boundary, prompt the user for confirmation — see **Phase confirmation** (step 10).
    - The subagent returns a summary when the designer group is complete or the user exits.
 
 6. **Enter the build phase-group** (at the designer→build boundary):
@@ -74,13 +74,13 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - At the boundary, run `parlay check-readiness --stage build-feature @{feature-ref}`. Treat errors as HARD BLOCKS — the user cannot advance by acknowledgement; they must fix the underlying artifact (route them back to the artifacts phase). Warnings are informational and acknowledgeable.
    - Invoke the `parlay-build` subagent with the feature reference.
    - The subagent invokes `/parlay-build-feature @{feature-ref}` inline.
-   - At the end, prompt for confirmation (step 9).
+   - At the end, prompt for confirmation — see **Phase confirmation** (step 10).
 
 7. **Enter the code phase-group** (at the build→code boundary):
    - End the build subagent; announce the new subagent boundary.
    - Invoke the `parlay-code` subagent.
    - The subagent invokes `/parlay-generate-code` inline (project-level; no @feature arg).
-   - After the code phase completes successfully, end the loop with the natural completion summary (step 10). No trailing confirmation — there is no next phase.
+   - After the code phase completes successfully, end the loop with the natural completion summary — see **End the loop cleanly** (step 11). No trailing confirmation — there is no next phase.
 
 8. **Fresh-session handoff** (adapter without subagent support):
    - At the phase-group boundary, print the exact resume command, e.g. `/parlay-loop @{initiative}/{feature} --from build`.

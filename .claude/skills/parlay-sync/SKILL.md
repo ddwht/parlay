@@ -46,7 +46,7 @@ Check coverage, traceability, and drift between intents and downstream artifacts
    - A: Generate dialog templates for all uncovered
    - B: Let the user pick which ones
    - C: Just the report
-   - If the user chooses A or B, run `parlay scaffold-dialogs @{feature}` or generate templates inline
+   - If the user chooses A or B, run `parlay create-dialogs @{feature}` or generate templates inline
 
 ## Error Handling
 

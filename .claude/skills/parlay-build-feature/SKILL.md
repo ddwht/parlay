@@ -272,7 +272,7 @@ When `parlay check-readiness` returns errors:
 - `fragment-missing-source` — surface fragment has no Source. Likely a bug in surface generation; regenerate the surface.
 - `no-config` / `no-prototype-framework` — project not initialized. Suggest running `parlay init`.
 
-When `parlay validate --type buildfile --deep --json` returns errors:
+When `parlay check-buildfile @{feature} --json` returns errors:
 - `missing-model-reference` — a component references a model that doesn't exist. Either add the model to `models:` or change the input. The error's `context` field shows the component path.
 - `missing-component-reference` — a route references a component that doesn't exist. Either add the component or remove it from the route.
 - `missing-child-reference` — a component's `children:` references a non-existent component. Add or remove.

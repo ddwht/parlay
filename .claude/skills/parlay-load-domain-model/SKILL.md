@@ -37,7 +37,7 @@ active root.
 
 2. **Fetch / read the source**:
 
-   - **Local path**: read the file via `os.ReadFile`. If the file is
+   - **Local path**: read the file directly from disk. If the file is
      missing, surface the standard not-found error and exit non-zero.
    - **HTTP(S) URL**: fetch via the agent's WebFetch / Bash tooling.
      HTTPS certificate verification is honored by default; bypass flags
@@ -71,8 +71,8 @@ active root.
      `[ERR] schema_version <source-version> is newer than this Core release supports (<target-version>); run parlay upgrade`,
      exit non-zero.
 
-5. **Read the local model** — invoke `(*Context).LoadDomainModel()` for
-   the active root's `domain-model.yaml`. If the local model is absent,
+5. **Read the local model** — load the active root's `domain-model.yaml`
+   via the CLI's standard domain-model loader. If the local model is absent,
    start with an empty-but-valid model (`schema_version: 1`, empty
    lists) and proceed to merge.
 
