@@ -212,6 +212,14 @@ type deepAdapter struct {
 	Flows               map[string]interface{}        `yaml:"flows"`
 	ComponentVocabulary *deepComponentVocabulary      `yaml:"componentVocabulary,omitempty"`
 	Tokens              *deepAdapterTokens            `yaml:"tokens,omitempty"`
+	// Vocabulary is a minimal local mirror of the top-level `vocabulary:`
+	// block — just enough fields for CheckVocabularyBlockParity to compare
+	// against ComponentVocabulary/Tokens. This is deliberately NOT the full
+	// Vocabulary/ComponentSpec/LayoutContainerSpec shape studio/pkg/vocabulary
+	// owns — importing that package from core would cross a module boundary
+	// this consolidation doesn't take on. See vocabulary.schema.md's
+	// "Cross-block parity check" section.
+	Vocabulary          *deepVocabularyBlock           `yaml:"vocabulary,omitempty"`
 }
 
 // deepComponentVocabulary mirrors the adapter file's componentVocabulary
@@ -260,6 +268,20 @@ type deepTypographyToken struct {
 	Name     string `yaml:"name"`
 	UseSite  string `yaml:"use-site"`
 	EmitForm string `yaml:"emit-form"`
+}
+
+// deepVocabularyBlock is a minimal local mirror of the adapter's top-level
+// `vocabulary:` block — see the Vocabulary field comment on deepAdapter for
+// why this isn't studio/pkg/vocabulary.Vocabulary itself. Only the fields
+// CheckVocabularyBlockParity compares are represented.
+type deepVocabularyBlock struct {
+	Components    []deepVocabularyBlockComponent `yaml:"components"`
+	SpacingTokens []string                       `yaml:"spacing_tokens"`
+	ColorTokens   []string                       `yaml:"color_tokens"`
+}
+
+type deepVocabularyBlockComponent struct {
+	Name string `yaml:"name"`
 }
 
 // LayoutReference is the minimal shape of a layout used by ValidateLayout.

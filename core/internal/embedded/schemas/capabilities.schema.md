@@ -33,6 +33,10 @@ operations:
       - { type: <step from steps.schema.md closed set>, ... }
 ```
 
+### Versioning
+
+`schema_version` (see `schema-versioning.schema.md` for the house rule) is currently `1`. **Policy: regenerate.** `capabilities.yaml` is tool-derived from intents/dialogs via `/parlay-create-artifacts` (and populated by the migration commands `migrate-capabilities`/`migrate-domain-operations` for pre-existing content). A stale `schema_version` is a signal to re-run the producing command, not to migrate the file in place — there's no hand-authored state in a v1 capabilities file that a migrator would need to preserve beyond what regeneration already reconstructs from intents.
+
 | Field | Required | Description |
 |---|---|---|
 | `schema_version` | Yes | Currently `1`. |
@@ -41,11 +45,21 @@ operations:
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
 | `operations[].kind` | Yes | One of the values in `operation-kinds.schema.md`. |
 | `operations[].subject` | Yes | The primary entity the operation acts on. |
-| `operations[].input` | No | Input contract; absent for parameterless queries. |
+| `operations[].input` | No | Input contract; absent for parameterless queries. `input.type` names an ad-hoc input DTO — see "The `input.type` namespace" below. |
 | `operations[].output` | No | Output contract — `shape` is `one`, `many`, or `empty`; `entity` names the returned entity for non-empty shapes. |
 | `operations[].errors` | No | Errors the operation may emit. Every entry must come from the `errors.schema.md` closed set. |
 | `operations[].policies` | No | Policies the operation enforces. Every entry must come from the `policies.schema.md` closed set. |
 | `operations[].steps` | Yes | Ordered list of steps. Each step's `type:` must come from the `steps.schema.md` closed set. |
+
+## The `input.type` namespace
+
+`input.type` (e.g., `CreateTaskInput`) is **not** a reference into a closed vocabulary the way `subject.entity`/`output.entity` are references into `domain-model.yaml`'s declared entities. There is no `types:` registry anywhere in the parlay artifact set today — `input.type` is a free-form descriptive name, unvalidated by the capabilities validator, that exists purely for human and AI readability when reading the operation. The Go representation (`parser.CapabilityIO.Type`) is a plain string with no cross-reference check.
+
+Concretely:
+
+- **What may appear**: any string. Convention (not enforced) is `<Verb><Entity>Input` — `CreateTaskInput`, `UpdateTaskInput` — but a feature-local shorthand is equally valid.
+- **Where the DTO's actual field shape is declared**: nowhere, structurally. Unlike a domain entity's fields (which `domain-model.schema.md` closes over `DomainField`'s type set), an input DTO's fields are inferred by whoever consumes the capability — `build-feature` when it wires the operation into a buildfile, or an application-layer adapter's codegen — from context: the named entity in `subject`, the operation's `kind`, and the intent that produced the capability. This is a real, current limitation, not an oversight papered over: input shapes are so often a proper *subset* of an entity's fields (a create input omits `id`/`created_at`; an update input might omit most fields the caller isn't changing) that reusing `DomainEntity` directly would either be wrong (claims fields that aren't actually accepted) or require a second, parallel "partial entity" concept this schema doesn't have.
+- **A natural next step, not undertaken here**: a `types:` section paralleling `domain-model.yaml`'s entities — closed field lists per named input DTO — would give `input.type` the same closed-vocabulary treatment `subject.entity` already has. That's new schema surface, not a naming-namespace clarification, so it's out of scope for this consolidation; this section exists so the gap is documented rather than silently assumed away.
 
 ## Validation rules
 

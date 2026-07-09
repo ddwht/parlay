@@ -61,3 +61,7 @@ Step 8 of the skill writes this file via the write-temp + rename pattern (write-
 ## Reader pairing rule
 
 A reader processing a loop's outputs MUST consult BOTH the result file (for the read-back node list) and the conflicts file (for any staged conflicts) when they exist at the same `loop-timestamp`. Acting on the result alone — without consulting the conflicts file — can lead to treating a silent-drop or tool-call-failure as a clean success. The two files are paired outputs of a single loop; reading them together is the contract.
+
+## Versioning
+
+No `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — same deferral reasoning as the paired result file: this artifact is ephemeral, written fresh per loop run and correlated by `loop-timestamp`, never persisted across binary upgrades in a way that needs cross-version compatibility.

@@ -326,3 +326,96 @@ func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
 		t.Error("layout.schema.md missing the reciprocal cross-reference to design-spec.schema.md")
 	}
 }
+
+// TestCapabilitiesInputTypeNamespaceDocumented guards the 5d addition
+// defining what input.type may contain and where (nowhere, structurally)
+// its field shape is declared — without this section a reader has no
+// way to know input.type is an unvalidated free-form name rather than a
+// closed-vocabulary reference like subject.entity.
+func TestCapabilitiesInputTypeNamespaceDocumented(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/capabilities.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read capabilities.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"The `input.type` namespace",
+		"reference into a closed vocabulary",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("capabilities.schema.md missing %q", kw)
+		}
+	}
+}
+
+// TestDomainModelV2DeferredGapsDocumented guards the Phase 4-derived
+// finding that list-typed scalar/enum fields and state-machine
+// transitions were silently inexpressible in domain-model.yaml. Both
+// must be documented as explicit v2-deferred decisions, not left as
+// undocumented gaps a migrator has to rediscover.
+func TestDomainModelV2DeferredGapsDocumented(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/domain-model.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read domain-model.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"v2-deferred: list-typed scalar/enum fields",
+		"v2-deferred: state-machine constructs",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("domain-model.schema.md missing %q", kw)
+		}
+	}
+}
+
+// TestBlueprintAndCapabilitiesPoliciesDistinguished guards the mutual
+// note (added to both schemas per team-lead steering) that blueprint's
+// free-form authorization.policies and capabilities' closed policies:
+// enum are different vocabularies that must not be conflated.
+func TestBlueprintAndCapabilitiesPoliciesDistinguished(t *testing.T) {
+	blueprint, err := schemasFS.ReadFile("schemas/blueprint.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read blueprint.schema.md: %v", err)
+	}
+	if !strings.Contains(string(blueprint), "Not the same vocabulary as capabilities' `policies:`") {
+		t.Error("blueprint.schema.md missing the distinguishing note against capabilities' policies: enum")
+	}
+
+	capabilities, err := schemasFS.ReadFile("schemas/capabilities.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read capabilities.schema.md: %v", err)
+	}
+	if !strings.Contains(string(capabilities), "Relationship to blueprint's") {
+		t.Error("capabilities.schema.md missing the distinguishing note against blueprint's authorization.policies")
+	}
+}
+
+// TestVocabularyBlockDerivationTargetDocumented guards the 5c
+// redefinition: componentVocabulary:/tokens: are authoritative, the
+// vocabulary: block is a derivation target, and the field-name
+// equivalence table exists so a reader can see exactly which facts
+// overlap and which don't (the layout_containers mismatch is the real
+// blocker on full derivation).
+func TestVocabularyBlockDerivationTargetDocumented(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/vocabulary.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read vocabulary.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"redefined as a derivation target",
+		"Field-name equivalence",
+		"layout_containers",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("vocabulary.schema.md missing %q", kw)
+		}
+	}
+}

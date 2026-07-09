@@ -37,6 +37,10 @@ A schema declaring `schema_version:` with neither policy documented is incomplet
 | `<page>.layout.yaml` | `schema_version` | Regenerate (for now) | See `layout.schema.md`. Layouts may be hand-edited today, but the feature is new enough (v1) that a migrator chain is deferred until a real v2 shape exists to migrate to — regenerating from Studio's layout pipeline or by hand-editing the small delta is the interim policy. |
 | `.parlay/adapter-set.yaml` | — (none) | N/A | Shape is pinned by the project's adapter-set topology, not an independent version timeline. |
 | `.parlay/build/<feature>/coverage-review.yaml` | — (none) | N/A | Gated by buildfile/testcases content hashes, not its own version. |
+| `.parlay/adapters/<name>.adapter.yaml` | — (none, deferred) | N/A for now | Hand-authored, long-lived — the migrator-chain profile — but the file *format* hasn't had a breaking change yet. See `adapter.schema.md`'s Versioning section: add `schema_version` with a real migrator at the first breaking format change, not speculatively now. |
+| `.parlay/blueprint.yaml` | — (none, deferred) | N/A for now | Same deferral reasoning as the adapter file; see `blueprint.schema.md`. |
+| `spec/pages/<page>.page.md` (manifest shape, not the embedded Layout block) | — (none, deferred) | N/A for now | Simple, hand-reviewed, unchanged shape since introduction; see `page.schema.md`. Do not confuse with the embedded `## Layout` block's own `schema_version`, a separate field on a separate structure. |
+| `design-loop-result.yaml` / `design-loop-conflicts.yaml` | — (none) | N/A | Ephemeral — written fresh per loop run, correlated by `loop-timestamp`, never persisted across binary upgrades. No cross-version compatibility concern to version against. |
 
 ## The one historical violation this rule closes
 

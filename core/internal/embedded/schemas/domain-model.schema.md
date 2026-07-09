@@ -124,6 +124,44 @@ Anything else fails deep validation with code
 struct-shaped fields) are rejected with the same code; lift the nested
 shape into a separate entity joined by a `ref`-typed field.
 
+### v2-deferred: list-typed scalar/enum fields
+
+The closed field-type set above has no way to express a field that holds
+a **list of scalars or enum values** — e.g. `Task.tags: string[]` (a list
+of free-text tags) or `Task.labels: [Priority]` (a list of enum values).
+This surfaced as a real gap during Phase 4's domain-model migration: a
+feature with a genuinely list-shaped scalar field had no expressible
+target and had to be flattened or dropped rather than migrated
+faithfully. It is **v2-deferred**, following the same posture as
+`operation-kinds.schema.md`'s `subscription`/`job` deferral — reserved,
+not silently unsupported: a `type: string[]`-style declaration fails
+`field-type-outside-closed-set` today, and that failure should read as
+"deferred to v2," not "malformed."
+
+This is narrower than it might first look: a list of **entity
+references** (e.g. `Task.watchers` naming several `User` entities) is
+already expressible today — as a `DomainRelationship` with
+`cardinality: one-to-many` or `many-to-many`, not as a field. The gap is
+specifically scalar/enum lists, which have no relationship-based
+workaround because there's no second entity to relate to.
+
+### v2-deferred: state-machine constructs
+
+There is no way to declare which transitions between a `DomainEnum`'s
+values are valid — `DomainEnum` declares the closed set of values
+(`pending`, `paid`, `shipped`, ...) but not which transitions between
+them are allowed (`pending → paid` yes, `paid → pending` no). The legacy
+buildfile shape (see `buildfile.schema.md`'s frozen v1 appendix) had an
+informal `models.<Entity>.states.{values,transitions}` construct that
+covered this; `domain-model.yaml` has no equivalent, and Phase 4's
+migration hit features that relied on it with no expressible target.
+**V2-deferred**, same posture as the list-typed-fields gap above: this
+is a recognized, reserved gap, not an oversight. A future schema version
+would need a new construct (something like a `transitions:` block on
+`DomainEnum`, declaring the allowed `{from, to}` pairs) — sketching that
+shape is out of scope for this consolidation; naming the gap explicitly
+is what's in scope.
+
 ## `DomainRelationship`
 
 ```yaml

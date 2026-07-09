@@ -51,6 +51,10 @@ The link validator walks every cross-kind reference recorded in the buildfile's 
 | `adapter-set-link-missing` | A buildfile contains cross-kind edges but the project's adapter-set has no `links:` block. |
 | `adapter-set-link-unfilled-slot` | A `links:` entry references a slot that is not declared in `targets:`. |
 
+## Versioning
+
+No `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — the file's shape is pinned by the project's adapter-set topology (which kinds are filled, what links exist), not by an independent evolution timeline. Adding a new kind or relation to the closed sets this schema enforces is a schema-doc change, not a per-file version bump; there is no "old adapter-set.yaml" to migrate since the file only ever reflects the project's CURRENT topology.
+
 ## Backward compatibility
 
 A project with only the `presentation:` slot filled (or no `.parlay/adapter-set.yaml` at all) continues to work — every multi-target validation rule consults `isMultiTarget(adapterSet)` and short-circuits when only presentation is filled. Adding the first non-presentation slot transitions the project into multi-target mode automatically; no explicit migration step is required.

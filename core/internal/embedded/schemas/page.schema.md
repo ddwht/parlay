@@ -91,6 +91,10 @@ nodes:
 
 (The leading zero-width characters in the inner fence above are decorative for the surrounding code block in this schema doc; an authored page omits them.)
 
+## Versioning
+
+The page manifest's own shape (the `# Page Name` / `**Owner**:` / `**Status**:` / region-and-fragment-list structure) has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — don't confuse this with the embedded `## Layout` block's `schema_version`, which is a completely separate field on a completely separate structure (see `layout.schema.md`). The manifest format is simple, hand-reviewed, and hasn't changed shape since it was introduced; deferred for the same reason as the adapter and blueprint files — add it when the format's first breaking change actually happens.
+
 ## Behavior
 
 - Manifest order overrides feature surface Order values
