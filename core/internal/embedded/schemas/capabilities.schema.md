@@ -49,7 +49,7 @@ operations:
 
 ## Validation rules
 
-The validator in `internal/agent/validate_capabilities.go` enforces:
+The capabilities validator enforces:
 
 | Code | When it fires |
 |---|---|

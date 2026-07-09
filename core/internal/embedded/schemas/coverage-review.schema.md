@@ -38,11 +38,11 @@ exemptions:
 
 ## Canonical-form hashing
 
-Hashes are computed by `internal/agent/coverage_hash.go` over a canonical-form serialization (sorted map keys, normalized whitespace, stable list ordering where the schema permits it) so that cosmetic edits to the source files do not invalidate the review. Editing `buildfile.yaml` to add or remove a binding changes the hash; reordering wiring rules without semantic impact does not.
+Hashes are computed over a canonical-form serialization (sorted map keys, normalized whitespace, stable list ordering where the schema permits it) so that cosmetic edits to the source files do not invalidate the review. Editing `buildfile.yaml` to add or remove a binding changes the hash; reordering wiring rules without semantic impact does not.
 
 ## Gate behavior
 
-`parlay generate-code` reads this file before any other input. Failures surface via `internal/agent/validate_coverage_review.go`:
+`parlay generate-code` reads this file before any other input. Failures surface as:
 
 | Code | When it fires |
 |---|---|

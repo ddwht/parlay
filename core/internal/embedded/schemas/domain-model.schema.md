@@ -159,8 +159,8 @@ effects:
 
 ## Read-path precedence
 
-Every domain-model consumer routes through `(*Context).LoadDomainModel()`,
-which consults only `<activeRoot>/domain-model.yaml`. The legacy
+Every domain-model consumer routes through the CLI's standard domain-model
+loader, which consults only `<activeRoot>/domain-model.yaml`. The legacy
 `domain-model.md` (when present, as a pre-migration artifact) is never
 parsed, never merged, never consulted as a fallback. A project with
 both `.md` and `.yaml` has the YAML as the sole live source.

@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +25,18 @@ var migrateDomainOperationsCmd = &cobra.Command{
 	Short: "Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs",
 	Args:  cobra.NoArgs,
 	RunE:  runMigrateDomainOperations,
+}
+
+var (
+	migrateDomainOperationsFeature        string
+	migrateDomainOperationsNonInteractive bool
+)
+
+func init() {
+	migrateDomainOperationsCmd.Flags().StringVar(&migrateDomainOperationsFeature, "feature", "",
+		"Explicit target feature (e.g. @task-list) used whenever an operation has more than one candidate feature")
+	migrateDomainOperationsCmd.Flags().BoolVar(&migrateDomainOperationsNonInteractive, "non-interactive", false,
+		"Force headless mode even when a TTY is attached — ambiguous targeting then hard-errors instead of prompting (mirrors build-feature's --non-interactive contract)")
 }
 
 type domainModelShape struct {
@@ -62,6 +76,17 @@ func runMigrateDomainOperations(cmd *cobra.Command, args []string) error {
 	intentsRoot := filepath.Join(cfg.Root.Path, "spec", "intents")
 	features, _ := os.ReadDir(intentsRoot)
 
+	// Headless doctrine (mirrors build-feature steps 7.6-7.9): the flag
+	// wins over TTY detection in both directions. With --non-interactive
+	// set, this run is headless even if a TTY is attached; without it, a
+	// missing TTY still triggers headless behavior automatically.
+	headless := migrateDomainOperationsNonInteractive || !ttyInteractive(nil)
+
+	explicitFeature := ""
+	if migrateDomainOperationsFeature != "" {
+		explicitFeature = parser.FeatureSlug(migrateDomainOperationsFeature)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	migrated := 0
 	for _, op := range dm.Operations {
@@ -80,7 +105,23 @@ func runMigrateDomainOperations(cmd *cobra.Command, args []string) error {
 		}
 
 		choice := candidates[0]
-		if len(candidates) > 1 {
+		switch {
+		case len(candidates) <= 1:
+			// Unambiguous (or no candidates at all) — keep the existing
+			// single-candidate behavior unchanged.
+		case explicitFeature != "":
+			if !slices.Contains(candidates, explicitFeature) {
+				return fmt.Errorf("--feature %q is not a candidate feature for operation %q (candidates: %s)",
+					explicitFeature, title, strings.Join(candidates, ", "))
+			}
+			choice = explicitFeature
+		case headless:
+			// Never guess in headless mode — hard error instead, per the
+			// migrate-domain-operations skill's headless contract.
+			return fmt.Errorf("ambiguous-target: operation %q (entity: %s) matches %d candidate features (%s) — "+
+				"headless/non-interactive mode does not guess; re-run with --feature <slug> naming the target",
+				title, entity, len(candidates), strings.Join(candidates, ", "))
+		default:
 			fmt.Fprintln(cmd.OutOrStdout(), "candidate features:")
 			for i, c := range candidates {
 				fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s\n", i+1, c)

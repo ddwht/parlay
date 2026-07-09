@@ -92,7 +92,7 @@ A layout block — whether embedded in a page artifact under the optional `## La
 | `schemaVersion` | integer | required | Layout schema version this block conforms to. Mismatched versions are rejected by the validator (see [Validation pass](#validation-pass)). |
 | `nodes` | list of layout nodes | required | The recursive tree of layout nodes that compose the page. Container nodes carry `children:`; leaf and data-shape nodes do not. See [Container node shape](#container-node-shape) and [Leaf and data-shape nodes](#leaf-and-data-shape-nodes). |
 
-The rule for embedding the same three keys inside a page Markdown body under the optional `## Layout` heading — including the heading-match semantics, the fenced YAML code-block convention, and the Fields-table row — is documented in `internal/embedded/schemas/page.schema.md`. The layout schema owns the keys themselves; the page schema owns the embedding rule. This file does not restate the embedding rule inline.
+The rule for embedding the same three keys inside a page Markdown body under the optional `## Layout` heading — including the heading-match semantics, the fenced YAML code-block convention, and the Fields-table row — is documented in `page.schema.md`. The layout schema owns the keys themselves; the page schema owns the embedding rule. This file does not restate the embedding rule inline.
 
 ## Vocabulary pinning
 
@@ -155,10 +155,10 @@ When a node carries per-mode values for a field, the active `adapter`'s `compone
 
 ## Validation pass
 
-Validation of a layout block is implemented by two entry points in `internal/agent/`:
+Validation of a layout block runs through two entry points:
 
-- **`agent.ValidateLayout`** (`internal/agent/validate.go`) — the per-rule validator. Walks every node in the tree and applies the per-node checks (component-type membership, variant membership, property type, allowed-children, raw-value-vs-token, unknown-token, universal-field-redeclared, layout-schema-version-unsupported). Returns the full set of `ValidationError` entries found.
-- **`agent.LayoutPrecheck`** (`internal/agent/precheck.go`) — the consumer-facing precheck contract. Calls `ValidateLayout` internally and aggregates the result into a closed-shape `Verdict` that consumers (codegen, status, repair, sync) branch on uniformly.
+- **The per-rule validator** — walks every node in the tree and applies the per-node checks (component-type membership, variant membership, property type, allowed-children, raw-value-vs-token, unknown-token, universal-field-redeclared, layout-schema-version-unsupported). Returns the full set of validation errors found.
+- **The precheck contract** — the consumer-facing entry point. Calls the per-rule validator internally and aggregates the result into a closed-shape verdict that consumers (codegen, status, repair, sync) branch on uniformly.
 
 The closed set of stable error codes the precheck registers for this feature:
 
@@ -169,4 +169,4 @@ The closed set of stable error codes the precheck registers for this feature:
 - `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer).
 - `wiring-in-layout` — node carries a wiring field (`dataSource`, `binding`, expression-string fields) that does not belong in a layout block.
 
-Adjacent error codes (`unknown-variant`, `unknown-token`, `universal-field-redeclared`, `missing-mode-emit-form`) are owned by sibling features and surface through the same precheck contract. The full verdict shape — `Code`, `File`, `NodePath`, `Found`, `Expected`, `Fix` — is documented at the `LayoutPrecheck` definition site in `internal/agent/precheck.go` and is not restated here.
+Adjacent error codes (`unknown-variant`, `unknown-token`, `universal-field-redeclared`, `missing-mode-emit-form`) are owned by sibling features and surface through the same precheck contract. The full verdict shape — `Code`, `File`, `NodePath`, `Found`, `Expected`, `Fix` — is owned by the precheck contract and is not restated here.

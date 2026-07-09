@@ -58,7 +58,7 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 	}
 	if cls == config.DirClassInitiative {
 		slug := filepath.Base(sourcePath)
-		return fmt.Errorf("`%s` is an initiative, not a feature. Only features can be moved with parlay move-feature. To rename an initiative, use parlay rename-initiative", slug)
+		return fmt.Errorf("`%s` is an initiative, not a feature. Only features can be moved with parlay move-feature. To rename an initiative, rename the directory by hand (git mv) in each of the three trees, then run parlay repair to reconcile them", slug)
 	}
 
 	featureSlug := filepath.Base(sourcePath)

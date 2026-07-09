@@ -32,7 +32,7 @@ links:
 
 ## Validation rules
 
-The validator in `internal/agent/validate_adapter_set.go` enforces:
+The validator enforces:
 
 | Code | When it fires |
 |---|---|
@@ -43,7 +43,7 @@ The validator in `internal/agent/validate_adapter_set.go` enforces:
 
 ## Link enforcement
 
-The validator in `internal/agent/validate_adapter_set_links.go` walks every cross-kind reference recorded in the buildfile's `targets:` block and rejects edges whose `(from-kind, to-kind)` pair is not present in `links:`.
+The link validator walks every cross-kind reference recorded in the buildfile's `targets:` block and rejects edges whose `(from-kind, to-kind)` pair is not present in `links:`.
 
 | Code | When it fires |
 |---|---|

@@ -414,7 +414,7 @@ Each property has its own shape:
 
 ### Universal container fields (NOT here)
 
-The fields `direction`, `gap`, `padding`, `alignment` are **universal**: they live on every container node in any vocabulary, regardless of which adapter is active. They are declared once in the layout schema and are NEVER repeated inside `componentVocabulary` component entries. An adapter that re-declares a universal field inside a component fails parse with `universal-field-redeclared`. See `internal/embedded/schemas/layout.schema.md` for the canonical definition.
+The fields `direction`, `gap`, `padding`, `alignment` are **universal**: they live on every container node in any vocabulary, regardless of which adapter is active. They are declared once in the layout schema and are NEVER repeated inside `componentVocabulary` component entries. An adapter that re-declares a universal field inside a component fails parse with `universal-field-redeclared`. See `layout.schema.md` for the canonical definition.
 
 ### Cross-adapter parity
 
@@ -426,7 +426,7 @@ The `componentVocabulary:` section is optional. Adapters that omit it continue t
 
 ### Companion top-level `vocabulary:` block
 
-Adapters that drive Design Loop vocabulary validation declare an additional optional top-level block `vocabulary:` alongside `componentVocabulary:`. The `vocabulary:` block carries the closed admissible sets the validator pins — `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — and is read by `parlay validate-vocabulary` and the in-process `studio/internal/vocabulary` library. The full shape, the per-subfield record schemas, and the two stable resolution-failure error codes (`vocabulary-missing-from-adapter`, `vocabulary-unknown-adapter`) are documented in `vocabulary.schema.md`. Adapters MAY omit the block; in that case Design Loop vocabulary validation surfaces `vocabulary-missing-from-adapter` and other adapter uses (codegen, registration) continue to work.
+Adapters that drive Design Loop vocabulary validation declare an additional optional top-level block `vocabulary:` alongside `componentVocabulary:`. The `vocabulary:` block carries the closed admissible sets the validator pins — `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — and is read by `parlay validate-vocabulary` and by in-process Studio callers. The full shape, the per-subfield record schemas, and the two stable resolution-failure error codes (`vocabulary-missing-from-adapter`, `vocabulary-unknown-adapter`) are documented in `vocabulary.schema.md`. Adapters MAY omit the block; in that case Design Loop vocabulary validation surfaces `vocabulary-missing-from-adapter` and other adapter uses (codegen, registration) continue to work.
 
 ## Section 9: Design tokens
 

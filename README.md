@@ -381,7 +381,7 @@ Three zones with strict ownership:
 
 ## Schemas
 
-Parlay has 11 schemas defining every artifact:
+Parlay has 23 schemas defining every artifact. Key schemas include:
 
 | Schema | What it defines |
 |---|---|
@@ -415,7 +415,9 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 | `/parlay-build-feature @<feature>` | Generate buildfile.yaml + testcases.yaml |
 | `/parlay-generate-code` | Generate prototype code (project-level, all features) |
 | `/parlay-generate-enggspec @<feature>` | Generate engineering specification for handoff |
-| `/parlay-extract-domain-model` | Extract domain model from all features |
+| `/parlay-create-domain-model` | Extract domain model from all features |
+| `/parlay-migrate-domain-model` | Convert legacy domain-model.md to domain-model.yaml |
+| `/parlay-migrate-domain-operations` | Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs |
 | `/parlay-load-domain-model <path>` | Load and integrate an external domain model |
 | `/parlay-sync @<feature>` | Check coverage, traceability, and drift |
 | `/parlay-collect-questions @<feature>` | Collect unresolved design questions |
@@ -423,6 +425,10 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 | `/parlay-register-adapter <path>` | Register a framework adapter |
 | `/parlay-view-page <page>` | Assemble cross-feature page view |
 | `/parlay-lock-page <page>` | Lock page layout into a manifest |
+| `/parlay-review-coverage @<feature>` | Walk suites, record approvals, write coverage-review.yaml |
+| `/parlay-migrate-capabilities` | Move operation-shaped fragments from infrastructure.md into capabilities.yaml |
+| `/parlay-migrate-config` | Convert legacy prototype-framework into a single-target presentation adapter-set |
+| `/parlay-migrate-spec` | Convert each feature's surface.md to surface.yaml |
 
 ## CLI Reference
 
@@ -441,7 +447,7 @@ The `parlay` binary is a helper that skills call internally for parsing, validat
 | `parlay build-feature @<feature>` | Skill-pointer for buildfile generation |
 | `parlay generate-code` | Skill-pointer for code generation |
 | `parlay generate-enggspec @<feature>` | Skill-pointer for handoff spec |
-| `parlay extract-domain-model` | Skill-pointer for domain-model extraction |
+| `parlay create-domain-model` | Skill-pointer for domain-model extraction |
 | `parlay load-domain-model <path>` | Skill-pointer for external domain-model load |
 | `parlay repair [--dry-run] [--yes]` | Validate and reconcile the three parallel trees |
 | `parlay simplify` | Detect duplicated helpers across generated files and propose extractions |
