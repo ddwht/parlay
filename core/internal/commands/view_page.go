@@ -34,6 +34,19 @@ func runViewPage(cmd *cobra.Command, args []string) error {
 	// Data input: page-name from command-argument
 	pageName := args[0]
 
+	// Layout-validation precheck gate (parlay-cross-cutting-id:
+	// layout-precheck-contract): a page with a layout artifact on disk
+	// must pass precheck before its view is assembled. Pages without a
+	// layout artifact are unaffected — the gate is a no-op for the
+	// existing region-based flow below.
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
+	if verdict := layoutPrecheckGate(cfg, pageName); verdict.Code != "ok" {
+		return refuseOnPrecheckVerdict(cmd, verdict)
+	}
+
 	// Operation: scan-files "spec/intents/*/surface.md", parse using surface-schema
 	allFragments, err := parser.ScanAllSurfaces(config.SpecDir)
 	if err != nil {

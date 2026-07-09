@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ var validateJSON bool
 var validateProject bool
 
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review, page, layout")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
@@ -76,10 +77,10 @@ type validateJSONResult struct {
 // parlay-feature: parlay-tool/cross-cutting-target-paths
 // parlay-component: validate (extends project-pass-validation-and-cli-flag)
 type projectValidateJSONResult struct {
-	Root     string                   `json:"root"`
-	OK       bool                     `json:"ok"`
-	Features []agent.FeatureVerdict   `json:"features,omitempty"`
-	Note     string                   `json:"note,omitempty"`
+	Root     string                 `json:"root"`
+	OK       bool                   `json:"ok"`
+	Features []agent.FeatureVerdict `json:"features,omitempty"`
+	Note     string                 `json:"note,omitempty"`
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -101,7 +102,22 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// --type is required for the non-project paths.
 	if validateType == "" {
-		return fmt.Errorf("--type is required (one of: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review)")
+		return fmt.Errorf("--type is required (one of: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review, page, layout)")
+	}
+
+	// page and layout route through the unified layout validator
+	// (agent.ValidateLayoutDeep) rather than the plain Validator shape —
+	// they need adapter resolution and structured, multi-error output.
+	// Codes and fix messages follow layout.schema.md's "Validation pass"
+	// table.
+	//
+	// parlay-feature: studio-support/page-layout-field
+	// parlay-cross-cutting-id: layout-precheck-contract
+	if validateType == "page" {
+		return runValidatePageType(cmd, path)
+	}
+	if validateType == "layout" {
+		return runValidateLayoutType(cmd, path)
 	}
 
 	var validator agent.Validator
@@ -278,6 +294,90 @@ func wrapOutcomeValidator(fn func(agent.ValidationMode, string, []byte) []agent.
 		}
 		return fmt.Errorf("%s", strings.Join(msgs, "\n"))
 	}
+}
+
+// runValidatePageType handles --type page: parses the page artifact
+// (page.schema.md shape, including any embedded ## Layout block per
+// layout.schema.md) and, when a Layout is present, runs the deep layout
+// validator against the resolved --adapter. Codes and fix messages match
+// layout.schema.md's "Validation pass" table; a page with no Layout
+// block validates clean by definition (nothing layout-shaped to check).
+func runValidatePageType(cmd *cobra.Command, path string) error {
+	page, err := parser.ParsePageFile(path)
+	if err != nil {
+		return outputValidate(cmd, path, agent.ValidateLayoutParseError(err, loadValidateAdapter()))
+	}
+	if page.Layout == nil {
+		return outputValidate(cmd, path, nil)
+	}
+	return outputValidate(cmd, path, agent.ValidateLayoutDeep(page.Layout, loadValidateAdapter()))
+}
+
+// runValidateLayoutType handles --type layout: validates a standalone
+// *.layout.yaml file (see layout.schema.md's "Top-level structure" —
+// a layout block carries the same three top-level keys whether embedded
+// in a page artifact or standalone). internal/parser only exposes a
+// loader for the embedded-in-page-markdown form (ParsePageFile), so a
+// standalone file is validated by wrapping its raw YAML in a minimal
+// synthetic page body and running it through that same, fully-tested
+// parser path — this reuses every parser-level shape check (missing
+// componentVocabulary/schema_version, wiring rejection, raw-spacing
+// format) instead of re-implementing a second, divergent decode path.
+func runValidateLayoutType(cmd *cobra.Command, path string) error {
+	layout, err := loadStandaloneLayout(path)
+	if err != nil {
+		return outputValidate(cmd, path, agent.ValidateLayoutParseError(err, loadValidateAdapter()))
+	}
+	return outputValidate(cmd, path, agent.ValidateLayoutDeep(layout, loadValidateAdapter()))
+}
+
+// loadStandaloneLayout reads a standalone *.layout.yaml file and parses
+// it via parser.ParsePageFile by wrapping its raw content in a minimal
+// synthetic page body under a ## Layout heading, then returns the parsed
+// Layout. See runValidateLayoutType for why the wrap exists.
+func loadStandaloneLayout(path string) (*parser.Layout, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read layout file %s: %w", path, err)
+	}
+	wrapped := "---\nname: " + filepath.Base(path) + "\n---\n\n## Layout\n\n```yaml\n" + strings.TrimRight(string(raw), "\n") + "\n```\n"
+	tmp, err := os.CreateTemp("", "parlay-layout-*.md")
+	if err != nil {
+		return nil, fmt.Errorf("create temp file for layout validation: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(wrapped); err != nil {
+		tmp.Close()
+		return nil, fmt.Errorf("write temp file for layout validation: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close temp file for layout validation: %w", err)
+	}
+	page, err := parser.ParsePageFile(tmp.Name())
+	if err != nil {
+		// The parser's error text embeds the temp file's ephemeral path;
+		// callers (and anyone reading the surfaced message) care about
+		// the original standalone layout file, not the synthetic wrapper.
+		return nil, fmt.Errorf("%s", strings.ReplaceAll(err.Error(), tmp.Name(), path))
+	}
+	return page.Layout, nil
+}
+
+// loadValidateAdapter loads the --adapter flag's file (if set) for
+// --type page/layout. Returns nil when --adapter is unset or fails to
+// load — adapter-dependent checks (component-type membership, variant,
+// property, disallowed-child, vocabulary match, token membership)
+// degrade gracefully to "skipped" in that case; adapter-independent
+// checks (schema_version, wiring, raw-spacing format) still run.
+func loadValidateAdapter() *agent.Adapter {
+	if validateAdapter == "" {
+		return nil
+	}
+	adapter, err := agent.LoadAdapterFile(validateAdapter)
+	if err != nil {
+		return nil
+	}
+	return adapter
 }
 
 func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationError) error {

@@ -35,6 +35,18 @@ func runLockPage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("page manifest already exists at %s", manifestPath)
 	}
 
+	// Layout-validation precheck gate (parlay-cross-cutting-id:
+	// layout-precheck-contract): a standalone *.layout.yaml already on
+	// disk for this page must pass precheck before the (legacy,
+	// region-based) manifest below is generated and locked. Pages
+	// without a layout artifact are unaffected — the manifest-exists
+	// check above already covers the embedded-layout case (a manifest
+	// with an embedded Layout section is, by definition, an existing
+	// manifest, and the check above already refuses to proceed).
+	if verdict := layoutPrecheckGate(cfg, pageName); verdict.Code != "ok" {
+		return refuseOnPrecheckVerdict(cmd, verdict)
+	}
+
 	// Data input: assembled-regions from reuse page-assembly-view logic
 	allFragments, err := parser.ScanAllSurfaces(filepath.Join(cfg.Root.Path, config.SpecDir))
 	if err != nil {

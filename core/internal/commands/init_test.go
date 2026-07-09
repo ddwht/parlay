@@ -13,9 +13,18 @@ import (
 func setupTestDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	// Restore cwd before dir is removed by t.TempDir()'s own cleanup —
+	// otherwise the process cwd is left pointing at a deleted directory
+	// for every test that runs later in the same test binary, and any
+	// later os.Getwd() call fails with "no such file or directory".
+	t.Cleanup(func() { os.Chdir(prev) })
 	return dir
 }
 
