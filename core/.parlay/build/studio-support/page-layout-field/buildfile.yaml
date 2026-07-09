@@ -16,12 +16,23 @@ adapter: go-cli
 #
 # Lifecycle note: the four Go-side cross-cutting entries below
 # (page-artifact-loader-with-optional-layout, layout-tree-schema-validator,
-# layout-precheck-contract) were implemented during the previous build pass
-# and are present on disk today. They remain in this buildfile because they
-# own the intent → source-file traceability for the feature; codegen's diff
-# machinery will classify them as stable on subsequent runs and preserve the
-# existing source. The newly-added schema-doc-mentions-layout-section entry
-# is the only one that requires actual emission on this pass.
+# layout-precheck-contract, page-schema-doc-mentions-layout-section) were
+# implemented during prior build passes and are present on disk today. They
+# remain in this buildfile because they own the intent → source-file
+# traceability for the feature; codegen's diff machinery will classify them
+# as stable on subsequent runs and preserve the existing source.
+#
+# Third sub-pass: the layout-schema-doc-tree-shape entry below is the new
+# work for this pass. It edits internal/embedded/schemas/layout.schema.md to
+# replace the existing "Out of scope (for this stub)" stub section with the
+# concrete documentation for the layout-tree shape (file structure,
+# vocabulary pinning syntax, container node shape, leaf/data-shape node,
+# vocabulary-binding rule, per-mode value selection, and a forward
+# reference to internal/agent/validate.go for the validation pass). The
+# layout.schema.md file's universal-container-fields and figma: sections
+# were landed by @studio-support/adapter-vocabulary-extension and
+# @design-loop/design-loop respectively and stay byte-equivalent through
+# this edit — only the "Out of scope" stub section is replaced.
 
 models: {}
 
@@ -297,6 +308,173 @@ cross-cutting:
     caching: none
     backward-compatible: true
 
+  - id: layout-schema-doc-tree-shape
+    source: "@studio-support/page-layout-field/define-the-layout-tree-schema"
+    target-files:
+      - internal/embedded/schemas/layout.schema.md
+    transform: |
+      Edit the embedded layout-schema documentation so that the typed-tree
+      shape promised by Intent #2 ("Define the Layout Tree Schema") is
+      actually documented in the schema file. Today the file contains the
+      universal-container-fields contract (landed by
+      @studio-support/adapter-vocabulary-extension) and the optional figma:
+      block (landed by @design-loop/design-loop), but the bottom of the file
+      carries an "Out of scope (for this stub)" section that explicitly
+      defers six concerns to this feature. This edit replaces that stub
+      section with concrete documentation for each concern.
+
+      The edit MUST preserve the existing sections byte-equivalent:
+        - The header comment naming
+          parlay-feature: studio-support/adapter-vocabulary-extension on the
+          universal-container-fields section stays in place. That section is
+          owned by adapter-vocabulary-extension; this edit does not touch it.
+        - The "# Layout Schema" title, the opening prose, the
+          "## Universal container fields" section (with its 4-field table),
+          the "## Uniformity contract" section, the "## Universal-fields
+          rule" section, the "## Migration posture" section, and the entire
+          "## Optional `figma:` block (Design Loop)" section (including its
+          inner header comment naming
+          parlay-feature: design-loop/design-loop) all stay byte-equivalent.
+        - Only the "## Out of scope (for this stub)" section at the bottom
+          of the file is replaced. The replacement content is introduced
+          with a NEW HTML comment marker that attributes the new sections
+          to this feature:
+
+            <!--
+            parlay-section: cross-cutting
+            parlay-feature: studio-support/page-layout-field
+            parlay-cross-cutting-id: layout-schema-doc-tree-shape
+            -->
+
+      Content of the replacement section, broken out per concern:
+
+      (a) **Top-level layout file structure** — a new "## Top-level
+          structure" subsection that names the three top-level keys that
+          appear at the root of a layout block (whether the block is
+          embedded in a page artifact under ## Layout, or lives in a
+          standalone *.layout.yaml file): `componentVocabulary` (string,
+          required), `schemaVersion` (integer, required), `nodes` (list of
+          layout nodes, required). The section explicitly refers FORWARD to
+          internal/embedded/schemas/page.schema.md for the rule about how
+          the same three keys appear inside a page Markdown's optional
+          ## Layout YAML body — the layout schema doc owns the keys
+          themselves; the page schema doc owns the embedding rule. Do NOT
+          restate the page-embedding rule inline.
+
+      (b) **Vocabulary pinning syntax** — a new "## Vocabulary pinning"
+          subsection that documents `componentVocabulary: <name>@<version>`
+          (e.g., `clarity@17`), explains the version-mismatch error path
+          (a layout declaring `clarity@17` evaluated against an adapter
+          registered as `clarity@16` fails with
+          `vocabulary-version-mismatch` — names BOTH remediation paths:
+          re-register the adapter at the declared version, or change the
+          declaration to the registered version).
+
+      (c) **Container node shape** — a new "## Container node shape"
+          subsection. Documents the universal node fields that apply to
+          every container node:
+            - `id` (string, required) — stable identifier; preserved across
+              round-trips per the round-trip-stability invariant.
+            - `type` (string, required) — a vocabulary-qualified component
+              type (e.g., `clarity.region`); validated against the adapter's
+              componentVocabulary entry for the active version.
+            - `children` (list of layout nodes, optional) — recursive
+              nesting to arbitrary depth.
+          The four universal container fields (`direction`, `gap`, `padding`,
+          `alignment`) already documented in the "## Universal container
+          fields" section above apply on every container node. This
+          subsection cross-references that section by name rather than
+          restating the four-field table.
+
+      (d) **Leaf and data-shape node shape** — a new "## Leaf and data-shape
+          nodes" subsection. Documents that a leaf node is a layout node
+          with no `children` (e.g., a button, a label, a single data field
+          display); a data-shape node is a leaf node whose `type` is a
+          vocabulary component that consumes a typed data binding (e.g.,
+          `clarity.datagrid`, `clarity.kpi-card`). Leaf and data-shape
+          nodes carry the same universal node fields as container nodes
+          (`id`, `type`, plus the universal container fields where the
+          component opts in). Vocabulary-specific node fields are validated
+          per (e) below.
+
+      (e) **Vocabulary-binding rule** — a new "## Vocabulary-binding rule"
+          subsection. States the rule that vocabulary-specific node fields
+          (e.g., `headerLabel` on `clarity.region`, `density` on
+          `clarity.datagrid`) are NOT enumerated in this schema; they are
+          validated against the active adapter's componentVocabulary entry
+          for the node's declared `type`. The rule names BOTH `adapter`
+          (the artifact that registers vocabulary entries) and
+          `componentVocabulary` (the block within the adapter that
+          declares per-component properties) by their exact string
+          spelling, so a reader can grep for either term and find this
+          rule. Per-vocabulary variation is captured in the adapter, not
+          in this schema.
+
+      (f) **Per-mode value selection** — a new "## Per-mode value selection"
+          subsection. Documents the rule that a layout MAY declare a
+          `mode:` selector at the layout level (top-level alongside
+          `componentVocabulary`, `schemaVersion`, `nodes`) AND a node MAY
+          declare per-mode field values via a `mode:` key on individual
+          fields, so a single layout can carry distinct values for
+          different visual modes (e.g., dense vs. comfortable, light vs.
+          dark). The subsection states that the `mode:` key is optional —
+          a layout that does not declare it parses and validates exactly
+          as today. When a node carries per-mode values for a field, the
+          adapter's componentVocabulary entry for that type must declare
+          the field as mode-aware; otherwise validation fails with
+          `missing-mode-emit-form` (owned by
+          @studio-support/adapter-vocabulary-extension and surfaced in the
+          precheck verdict).
+
+      (g) **Validation pass forward reference** — a final
+          "## Validation pass" subsection. Does NOT restate the validation
+          rules. Instead, names the validation pass entry point as
+          `agent.ValidateLayout` (file:
+          `internal/agent/validate.go`) and the consumer-facing precheck
+          contract as `agent.LayoutPrecheck` (file:
+          `internal/agent/precheck.go`). Lists the closed set of stable
+          error codes that the precheck registers for THIS feature
+          (malformed-layout-block, missing-schema-version,
+          vocabulary-version-mismatch, unknown-component-type,
+          raw-value-where-token-required, wiring-in-layout), notes that
+          adjacent error codes (unknown-variant, unknown-token,
+          universal-field-redeclared, missing-mode-emit-form) are owned
+          by sibling features and surface through the same precheck
+          contract, and forwards to the precheck contract for the verdict
+          shape rather than restating it inline.
+
+      Wording rules (load-bearing across the feature's surfaces):
+        - The schema doc MUST NOT restate the universal-container-fields
+          table — those four fields are already documented above and the
+          new sections cross-reference that table by name.
+        - The schema doc MUST NOT restate the validation-error verdict
+          shape — that contract is owned by `internal/agent/precheck.go`
+          and the page-schema doc, and is forward-referenced here.
+        - The schema doc MUST name `componentVocabulary`, `schemaVersion`,
+          and `nodes` by their exact string spelling (matching the
+          page-schema doc's wording).
+        - The schema doc MUST name BOTH `adapter` AND `componentVocabulary`
+          in the vocabulary-binding rule, so the file is greppable from
+          either side of the binding.
+        - The schema doc MUST NOT contain the literal phrase "Out of scope
+          (for this stub)" after this edit. That stub framing is what this
+          edit replaces.
+
+      This is purely a doc edit. No code is generated, no test scaffolding
+      is added beyond the lightweight testcases that assert the new
+      sections and their key terms are present.
+    introduces:
+      - "New section ## Top-level structure in layout.schema.md (documentation only)"
+      - "New section ## Vocabulary pinning in layout.schema.md (documentation only)"
+      - "New section ## Container node shape in layout.schema.md (documentation only)"
+      - "New section ## Leaf and data-shape nodes in layout.schema.md (documentation only)"
+      - "New section ## Vocabulary-binding rule in layout.schema.md (documentation only)"
+      - "New section ## Per-mode value selection in layout.schema.md (documentation only)"
+      - "New section ## Validation pass in layout.schema.md (documentation only, forward reference to internal/agent/validate.go and internal/agent/precheck.go)"
+      - "New HTML comment marker attributing the replacement to parlay-feature: studio-support/page-layout-field"
+    caching: none
+    backward-compatible: true
+
 plan:
   modifies:
     - path: internal/parser/page.go
@@ -317,3 +495,6 @@ plan:
     - path: internal/embedded/schemas/page.schema.md
       sources:
         - cross-cutting/page-schema-doc-mentions-layout-section
+    - path: internal/embedded/schemas/layout.schema.md
+      sources:
+        - cross-cutting/layout-schema-doc-tree-shape

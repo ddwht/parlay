@@ -76,15 +76,97 @@ When `figma:` is absent (or omitted entirely) the layout is still a valid layout
 
 In v1 the `figma:` block declares only `file_url:`. A `team_url:` field and a per-node Figma node ID map were considered and **deferred** — pinning speculative fields before the first round-trip produces real data would force premature schema revision. Once `design-loop-result.yaml` actually carries node IDs from a real round-trip, a follow-up feature can extend the `figma:` block to persist them.
 
-## Out of scope (for this stub)
+<!--
+parlay-section: cross-cutting
+parlay-feature: studio-support/page-layout-field
+parlay-cross-cutting-id: layout-schema-doc-tree-shape
+-->
 
-The following layout-schema concerns are owned by `@studio-support/page-layout-field` and will be documented in subsequent revisions of this file:
+## Top-level structure
 
-- Top-level layout file structure (`layout:`, `vocabulary:`, `mode:`).
-- Vocabulary pinning syntax (e.g., `vocabulary: clarity@17`) and the version-mismatch error path.
-- Container node shape (`type:`, `children:`, `properties:`).
-- Leaf and data-shape node shape.
-- Per-mode value selection at the page level.
-- Validation pass details (deferred to the validator implementation in `internal/agent/validate.go`).
+A layout block — whether embedded in a page artifact under the optional `## Layout` heading, or carried in a standalone `*.layout.yaml` file — declares three top-level keys at its root:
 
-This stub contributes only the universal-container-fields section so that the `@studio-support/adapter-vocabulary-extension` feature has a single source of truth to point at when describing where these fields live.
+| Key | Value type | Required | Description |
+|---|---|---|---|
+| `componentVocabulary` | string | required | Name and version of the component vocabulary the layout targets (e.g., `clarity@17`). See [Vocabulary pinning](#vocabulary-pinning) below. |
+| `schemaVersion` | integer | required | Layout schema version this block conforms to. Mismatched versions are rejected by the validator (see [Validation pass](#validation-pass)). |
+| `nodes` | list of layout nodes | required | The recursive tree of layout nodes that compose the page. Container nodes carry `children:`; leaf and data-shape nodes do not. See [Container node shape](#container-node-shape) and [Leaf and data-shape nodes](#leaf-and-data-shape-nodes). |
+
+The rule for embedding the same three keys inside a page Markdown body under the optional `## Layout` heading — including the heading-match semantics, the fenced YAML code-block convention, and the Fields-table row — is documented in `internal/embedded/schemas/page.schema.md`. The layout schema owns the keys themselves; the page schema owns the embedding rule. This file does not restate the embedding rule inline.
+
+## Vocabulary pinning
+
+The `componentVocabulary` key pins a layout to a specific vocabulary name and version using the syntax `<name>@<version>`:
+
+```yaml
+componentVocabulary: clarity@17
+```
+
+The name (`clarity`) identifies a component vocabulary; the version (`17`) identifies a specific revision of that vocabulary. At validation time the precheck cross-references this declaration against the active adapter's registered vocabulary version.
+
+When a layout declares `clarity@17` but the active adapter is registered as `clarity@16` (or vice versa), validation fails with `vocabulary-version-mismatch`. The fix names **both** remediation paths:
+
+- Re-register the adapter at the version the layout declares (e.g., upgrade or downgrade the adapter to `clarity@17`), or
+- Change the layout's `componentVocabulary` declaration to match the registered adapter version (e.g., `clarity@16`).
+
+Neither path is preferred over the other — the choice depends on whether the adapter or the layout is the source of truth for the intended vocabulary version in that project.
+
+## Container node shape
+
+A **container node** is a layout node whose `children:` list carries one or more nested layout nodes. Every container node declares the following universal node fields:
+
+| Field | Value type | Required | Description |
+|---|---|---|---|
+| `id` | string | required | Stable identifier for the node. Preserved across read-edit-write round-trips per the round-trip-stability invariant — surviving nodes keep their ids; newly added nodes get fresh ids. |
+| `type` | string | required | Vocabulary-qualified component type (e.g., `clarity.region`). Validated against the active adapter's `componentVocabulary` entry for the declared version (see [Vocabulary-binding rule](#vocabulary-binding-rule)). |
+| `children` | list of layout nodes | optional | Recursive nesting to arbitrary depth. Each child is itself a layout node — container, leaf, or data-shape — and is validated by the same rules at every level. |
+
+The four universal container fields (`direction`, `gap`, `padding`, `alignment`) documented in the [Universal container fields](#universal-container-fields) section above apply to every container node. They are not restated here — the table above is the single source of truth for their value types and rejection rules.
+
+## Leaf and data-shape nodes
+
+A **leaf node** is a layout node with no `children:` list (e.g., a button, a label, a single data-field display, a static icon). A **data-shape node** is a leaf node whose `type` is a vocabulary component that consumes a typed data binding (e.g., `clarity.datagrid`, `clarity.kpi-card`, `clarity.chart`). Both leaf and data-shape nodes carry the same universal node fields as container nodes — `id` (required) and `type` (required) — plus the universal container fields (`direction`, `gap`, `padding`, `alignment`) on whichever fields the component opts in to from the [Universal container fields](#universal-container-fields) set.
+
+The distinction between a leaf node and a data-shape node is not encoded in the layout schema itself; it is a property of the vocabulary component named in `type`. The validator does not branch on "leaf vs. data-shape" — it walks every node uniformly and looks the type up in the adapter to determine what fields are valid.
+
+Vocabulary-specific node fields (e.g., `headerLabel` on `clarity.region`, `density` on `clarity.datagrid`, `axisTitle` on `clarity.chart`) are validated per the [Vocabulary-binding rule](#vocabulary-binding-rule) below — not enumerated in this schema.
+
+## Vocabulary-binding rule
+
+Vocabulary-specific node fields are **not enumerated in this schema**. They are validated against the active `adapter`'s `componentVocabulary` entry for the node's declared `type`.
+
+The flow:
+
+1. The layout declares `componentVocabulary: <name>@<version>` at the root (see [Vocabulary pinning](#vocabulary-pinning)).
+2. Each node declares `type: <vocabulary-qualified-name>` (e.g., `clarity.datagrid`).
+3. At validation time, the validator looks up the `adapter` registered under the declared vocabulary name and version, finds the `componentVocabulary` entry for the declared `type`, and validates the node's vocabulary-specific fields against the property declarations on that entry.
+
+Both `adapter` and `componentVocabulary` are named here by their exact string spelling so the rule is greppable from either side of the binding — a reader investigating either term will land on this section. Per-vocabulary variation (which components exist, which properties they declare, which property values are valid) is captured in the adapter, not in this schema.
+
+This is why the layout schema owns only the universal fields and the top-level structure; the per-component shape is delegated to the adapter so that adding a new vocabulary component does not require editing this schema.
+
+## Per-mode value selection
+
+A layout MAY declare an optional `mode:` selector at the top level alongside `componentVocabulary`, `schemaVersion`, and `nodes`, and a node MAY declare per-mode field values via a `mode:` key on individual fields. This lets a single layout carry distinct values for different visual modes (e.g., dense vs. comfortable density, light vs. dark theme, compact vs. spacious spacing).
+
+The `mode:` key is **optional**. A layout that does not declare it parses and validates exactly as before — there is no behavioral change for layouts that have no mode-aware fields, and the absence of `mode:` is bit-for-bit equivalent to today's layouts. Pages without per-mode fields stay simple.
+
+When a node carries per-mode values for a field, the active `adapter`'s `componentVocabulary` entry for that `type` MUST declare the field as mode-aware. Otherwise validation fails with `missing-mode-emit-form` — the error code is owned by `@studio-support/adapter-vocabulary-extension` and surfaced through the same precheck verdict shape as the codes listed in [Validation pass](#validation-pass) below. The remediation is either to remove the per-mode declaration from the node or to update the adapter's `componentVocabulary` entry to mark the field as mode-aware.
+
+## Validation pass
+
+Validation of a layout block is implemented by two entry points in `internal/agent/`:
+
+- **`agent.ValidateLayout`** (`internal/agent/validate.go`) — the per-rule validator. Walks every node in the tree and applies the per-node checks (component-type membership, variant membership, property type, allowed-children, raw-value-vs-token, unknown-token, universal-field-redeclared, layout-schema-version-unsupported). Returns the full set of `ValidationError` entries found.
+- **`agent.LayoutPrecheck`** (`internal/agent/precheck.go`) — the consumer-facing precheck contract. Calls `ValidateLayout` internally and aggregates the result into a closed-shape `Verdict` that consumers (codegen, status, repair, sync) branch on uniformly.
+
+The closed set of stable error codes the precheck registers for this feature:
+
+- `malformed-layout-block` — block-level YAML parse failure.
+- `missing-schema-version` — `schemaVersion` key absent.
+- `vocabulary-version-mismatch` — page declares a vocabulary version that does not match the registered adapter version.
+- `unknown-component-type` — node references a `type` outside the declared vocabulary.
+- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer).
+- `wiring-in-layout` — node carries a wiring field (`dataSource`, `binding`, expression-string fields) that does not belong in a layout block.
+
+Adjacent error codes (`unknown-variant`, `unknown-token`, `universal-field-redeclared`, `missing-mode-emit-form`) are owned by sibling features and surface through the same precheck contract. The full verdict shape — `Code`, `File`, `NodePath`, `Found`, `Expected`, `Fix` — is documented at the `LayoutPrecheck` definition site in `internal/agent/precheck.go` and is not restated here.

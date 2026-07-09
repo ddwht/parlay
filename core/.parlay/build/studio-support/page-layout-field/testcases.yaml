@@ -380,3 +380,150 @@ suites:
           - verify: file-content
             target: core/internal/embedded/schemas/page.schema.md
             expected: layout-row-required-column-is-no
+
+  - name: layout-schema-doc-tree-shape
+    component: layout-schema-doc-tree-shape
+    intent: "@studio-support/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: layout-schema-doc-no-longer-contains-out-of-scope-stub
+        description: "After the edit, core/internal/embedded/schemas/layout.schema.md no longer contains the literal phrase 'Out of scope (for this stub)'. The stub framing that deferred this feature's concerns has been replaced with concrete documentation. Negative assertion: the substring must not appear anywhere in the file."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/layout.schema.md
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: does-not-contain-out-of-scope-for-this-stub
+
+      - name: layout-schema-doc-attributes-new-sections-to-page-layout-field
+        description: "The replacement region carries an HTML comment marker attributing the new sections to parlay-feature: studio-support/page-layout-field. This is the ownership marker — sibling features (adapter-vocabulary-extension, design-loop) carry their own markers above their own sections and must remain unchanged."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-studio-support-page-layout-field
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-cross-cutting-id-layout-schema-doc-tree-shape
+
+      - name: layout-schema-doc-preserves-adapter-vocabulary-extension-marker
+        description: "The HTML comment marker attributing the universal-container-fields section to parlay-feature: studio-support/adapter-vocabulary-extension is preserved byte-equivalent. This edit does NOT take ownership of that section; it only adds new sections owned by this feature."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-studio-support-adapter-vocabulary-extension
+
+      - name: layout-schema-doc-preserves-design-loop-figma-block-marker
+        description: "The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-design-loop-design-loop
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Optional-figma-block-Design-Loop
+
+      - name: layout-schema-doc-describes-top-level-structure
+        description: "The schema doc describes the top-level layout file structure naming the three required top-level keys: componentVocabulary, schemaVersion, and nodes. Each is named by its exact string spelling. The doc forwards to page.schema.md for the embedding rule rather than restating it inline."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Top-level-structure
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-componentVocabulary
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-schemaVersion
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-nodes
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-page.schema.md-by-name
+
+      - name: layout-schema-doc-describes-vocabulary-pinning-syntax
+        description: "The schema doc documents the vocabulary pinning syntax (e.g., componentVocabulary: clarity@17) and the version-mismatch error path. The vocabulary-version-mismatch error code is named, and the fix names both remediation paths."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Vocabulary-pinning
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-vocabulary-version-mismatch
+
+      - name: layout-schema-doc-describes-container-node-shape
+        description: "The schema doc describes container node shape, naming the universal node fields type and children explicitly. The doc cross-references the existing universal-container-fields table for the four container-level layout fields rather than restating them."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Container-node-shape
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-type-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-children-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-Universal-container-fields-section
+
+      - name: layout-schema-doc-describes-leaf-and-data-shape-nodes
+        description: "The schema doc describes leaf and data-shape node shape. A leaf node is a layout node with no children; a data-shape node is a leaf node whose type is a vocabulary component that consumes a typed data binding."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Leaf-and-data-shape-nodes
+
+      - name: layout-schema-doc-states-vocabulary-binding-rule
+        description: "The schema doc states the vocabulary-binding rule: vocabulary-specific fields are validated against the active adapter's componentVocabulary entry for the node's declared type. Both 'adapter' and 'componentVocabulary' are referenced by exact string spelling so the rule is greppable from either side."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Vocabulary-binding-rule
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-adapter
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-componentVocabulary-in-binding-rule
+
+      - name: layout-schema-doc-describes-per-mode-value-selection
+        description: "The schema doc documents per-mode value selection. A layout MAY declare a mode: selector at the layout level, and a node MAY declare per-mode field values. The mode key is explicitly optional. The missing-mode-emit-form error code is named and attributed to its owning feature."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Per-mode-value-selection
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-mode-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-missing-mode-emit-form
+
+      - name: layout-schema-doc-forward-references-validation-pass
+        description: "The schema doc forward-references the validation pass to internal/agent/validate.go and the precheck contract to internal/agent/precheck.go. The doc does NOT restate the validation rules inline — it names the entry points and forwards detail. The stable error code set owned by this feature is listed."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Validation-pass
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-internal-agent-validate.go
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-internal-agent-precheck.go
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: lists-stable-error-codes-malformed-layout-block-and-vocabulary-version-mismatch
+
+      - name: layout-schema-doc-preserves-universal-container-fields-section
+        description: "Negative assertion. The existing Universal container fields section (with its 4-field table: direction, gap, padding, alignment) is preserved byte-equivalent. This feature's edit does NOT modify the table, the uniformity contract, the universal-fields rule, or the migration posture sections — those remain owned by adapter-vocabulary-extension."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Universal-container-fields
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Uniformity-contract
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Universal-fields-rule
