@@ -117,7 +117,7 @@ func TestCheckSlugUniqueness_DetectsDuplicates(t *testing.T) {
 	}
 }
 
-func TestAllFeaturePaths_MixedOrphansAndInitiatives(t *testing.T) {
+func TestScanFeatureTree_MixedOrphansAndInitiatives(t *testing.T) {
 	setupConfigTestDir(t)
 	intentsRoot := filepath.Join(SpecDir, IntentsDir)
 
@@ -129,7 +129,7 @@ func TestAllFeaturePaths_MixedOrphansAndInitiatives(t *testing.T) {
 	os.MkdirAll(nested, 0755)
 	os.WriteFile(filepath.Join(nested, "intents.md"), []byte("# Login\n"), 0644)
 
-	result, err := AllFeatures()
+	result, err := ScanFeatureTree(intentsRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestAllFeaturePaths_MixedOrphansAndInitiatives(t *testing.T) {
 	}
 }
 
-func TestAllFeaturePaths_SubInitiativeError(t *testing.T) {
+func TestScanFeatureTree_SubInitiativeError(t *testing.T) {
 	setupConfigTestDir(t)
 	intentsRoot := filepath.Join(SpecDir, IntentsDir)
 
@@ -155,13 +155,13 @@ func TestAllFeaturePaths_SubInitiativeError(t *testing.T) {
 	os.WriteFile(filepath.Join(filepath.Join(intentsRoot, "a", "b"), "intents.md"), []byte("# B\n"), 0644)
 	os.WriteFile(filepath.Join(deep, "intents.md"), []byte("# C\n"), 0644)
 
-	_, err := AllFeatures()
+	_, err := ScanFeatureTree(intentsRoot)
 	if err == nil {
 		t.Error("expected sub-initiative error, got nil")
 	}
 }
 
-func TestAllFeaturePaths_DeferredSkipped(t *testing.T) {
+func TestScanFeatureTree_DeferredSkipped(t *testing.T) {
 	setupConfigTestDir(t)
 	intentsRoot := filepath.Join(SpecDir, IntentsDir)
 
@@ -171,7 +171,7 @@ func TestAllFeaturePaths_DeferredSkipped(t *testing.T) {
 	os.MkdirAll(feature, 0755)
 	os.WriteFile(filepath.Join(feature, "intents.md"), []byte("# Real\n"), 0644)
 
-	result, err := AllFeatures()
+	result, err := ScanFeatureTree(intentsRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

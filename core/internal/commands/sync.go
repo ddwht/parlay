@@ -28,7 +28,7 @@ func init() {
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 	// --no-studio: skip the Studio open-editor prompt at the end.
 	syncCmdImpl.Flags().BoolVar(
-		&noStudioFlagSync, "no-studio", false, noStudioFlagHelpText,
+		&noStudioFlag, "no-studio", false, noStudioFlagHelpText,
 	)
 }
 
@@ -158,7 +158,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
 	// Hook-point dispatch — fires after the textual sync report is
 	// produced and after any template-prompt branch has run.
-	noStudio := resolveNoStudioForSync(loadProjectConfigNoStudio(cfg))
+	noStudio := resolveNoStudio(loadProjectConfigNoStudio(cfg))
 	return runStudioPromptForSync(cfg, args[0], noStudio)
 }
 

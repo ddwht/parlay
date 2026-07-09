@@ -38,9 +38,9 @@ func TestMoveFeature_OrphanToInitiative(t *testing.T) {
 	initDir := filepath.Join(config.SpecDir, config.IntentsDir, "auth-overhaul")
 	os.MkdirAll(initDir, 0755)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err != nil {
@@ -59,9 +59,9 @@ func TestMoveFeature_AutoCreateInitiative(t *testing.T) {
 	setupMoveTestProject(t)
 	createFeatureInTree(t, "sso-setup")
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "auth-redesign"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@sso-setup"})
 	if err != nil {
@@ -80,9 +80,9 @@ func TestMoveFeature_MoveOut(t *testing.T) {
 	os.MkdirAll(initDir, 0755)
 	createFeatureInTree(t, "auth-overhaul/password-reset")
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = ""
 	moveOutFlag = true
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
@@ -103,9 +103,9 @@ func TestMoveFeature_ScopeCollision(t *testing.T) {
 	billingInit := filepath.Join(config.SpecDir, config.IntentsDir, "billing")
 	os.MkdirAll(billingInit, 0755)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "billing"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -117,9 +117,9 @@ func TestMoveFeature_NoopSameLocation(t *testing.T) {
 	setupMoveTestProject(t)
 	createFeatureInTree(t, "auth-overhaul/password-reset")
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul/password-reset"})
 	if err != nil {
@@ -130,9 +130,9 @@ func TestMoveFeature_NoopSameLocation(t *testing.T) {
 func TestMoveFeature_NotFound(t *testing.T) {
 	setupMoveTestProject(t)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@nonexistent"})
 	if err == nil {
@@ -143,9 +143,9 @@ func TestMoveFeature_NotFound(t *testing.T) {
 func TestMoveFeature_MutuallyExclusiveFlags(t *testing.T) {
 	setupMoveTestProject(t)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "auth-overhaul"
 	moveOutFlag = true
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -159,9 +159,9 @@ func TestMoveFeature_MutuallyExclusiveFlags(t *testing.T) {
 func TestMoveFeature_MissingFlags(t *testing.T) {
 	setupMoveTestProject(t)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = ""
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@password-reset"})
 	if err == nil {
@@ -178,9 +178,9 @@ func TestMoveFeature_WrongType_Initiative(t *testing.T) {
 	os.MkdirAll(childDir, 0755)
 	os.WriteFile(filepath.Join(childDir, "intents.md"), []byte("# Login\n"), 0644)
 
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 	moveToFlag = "other"
 	moveOutFlag = false
-	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
 
 	err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@auth-overhaul"})
 	if err == nil {

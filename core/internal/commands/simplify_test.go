@@ -5,10 +5,48 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestRunSimplify_UsesGivenSourceRoot is a regression test for the
+// hardcoded "internal/commands/" source root runSimplify used to scan
+// unconditionally, regardless of the caller's actual project layout.
+// It writes duplicated helpers under a project-shaped root that is NOT
+// named internal/commands/ and confirms runSimplify finds them there —
+// proving it scans args[0], not a fixed path.
+func TestRunSimplify_UsesGivenSourceRoot(t *testing.T) {
+	setupTestDir(t)
+
+	sourceRoot := filepath.Join("cmd", "myproject")
+	if err := os.MkdirAll(sourceRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := `// parlay-feature: test
+// parlay-component: x
+package myproject
+
+func sharedHelper() []string {
+	return []string{"a", "b", "c"}
+}
+`
+	os.WriteFile(filepath.Join(sourceRoot, "a.go"), []byte(body), 0644)
+	os.WriteFile(filepath.Join(sourceRoot, "b.go"), []byte(body), 0644)
+
+	cmd := testCommandWithContext(t, testContext(t))
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	if err := runSimplify(cmd, []string{sourceRoot}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "sharedHelper") {
+		t.Errorf("expected sharedHelper duplicate found under %s, got: %s", sourceRoot, buf.String())
+	}
+}
 
 func TestSimplify_NoDuplicates(t *testing.T) {
 	setupTestDir(t)

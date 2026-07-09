@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -89,6 +90,23 @@ func runMigrateDomainModel(cmd *cobra.Command, args []string) error {
 	yamlExists := fileExistsAt(yamlPath)
 	mdExists := fileExistsAt(mdPath)
 
+	// Probe every feature directory for a domain-model.md that ISN'T at
+	// the active root. This command only ever looks at the canonical
+	// root-level path above; a legacy project-wide model has been found
+	// living inside a feature-shaped directory in this very repo
+	// (spec/intents/parlay-tool/domain-model/domain-model.md was
+	// discovered to be the whole project's aggregated model, not that
+	// one feature's own artifact). Report only — never auto-migrate —
+	// because a feature's own domain-model.md is also a legitimate,
+	// separate per-feature artifact (CLAUDE.md's four co-equal spec
+	// artifacts), and this command cannot tell the two cases apart.
+	if elsewhere, probeErr := findDomainModelFilesOutsideRoot(cfg); probeErr == nil && len(elsewhere) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "[NOTE] found %d domain-model.md file(s) under spec/intents/, outside the active root — not migrated automatically (review each: it may be a genuine per-feature artifact, or a misplaced project-level model that needs relocating by hand before this command can see it):\n", len(elsewhere))
+		for _, p := range elsewhere {
+			fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", p)
+		}
+	}
+
 	// Greenfield: nothing to migrate.
 	if !yamlExists && !mdExists {
 		fmt.Fprintln(cmd.OutOrStdout(), "nothing to migrate")
@@ -113,6 +131,27 @@ func runMigrateDomainModel(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), "migrate-domain-model requires an AI agent.")
 	fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-migrate-domain-model skill in your AI agent (e.g., Claude Code).")
 	return nil
+}
+
+// findDomainModelFilesOutsideRoot walks every feature directory under
+// spec/intents/ (initiative-aware, via cfg.AllFeatures()) and returns
+// the path of each domain-model.md found there. These are distinct from
+// the canonical <activeRoot>/domain-model.md this command otherwise
+// operates on exclusively.
+func findDomainModelFilesOutsideRoot(cfg *config.Context) ([]string, error) {
+	features, err := cfg.AllFeatures()
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	for _, slug := range features {
+		path := filepath.Join(cfg.FeaturePath(slug), "domain-model.md")
+		if fileExistsAt(path) {
+			found = append(found, path)
+		}
+	}
+	sort.Strings(found)
+	return found, nil
 }
 
 // PrependDeprecationHeader writes the deprecation header to the top of

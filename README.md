@@ -450,7 +450,7 @@ The `parlay` binary is a helper that skills call internally for parsing, validat
 | `parlay create-domain-model` | Skill-pointer for domain-model extraction |
 | `parlay load-domain-model <path>` | Skill-pointer for external domain-model load |
 | `parlay repair [--dry-run] [--yes]` | Validate and reconcile the three parallel trees |
-| `parlay simplify` | Detect duplicated helpers across generated files and propose extractions |
+| `parlay simplify <source-root>` | Detect duplicated helpers across generated files and propose extractions |
 | `parlay register-adapter <path>` | Register a framework adapter |
 | `parlay view-page <page>` | Assemble cross-feature page view |
 | `parlay lock-page <page>` | Lock page layout into a manifest |

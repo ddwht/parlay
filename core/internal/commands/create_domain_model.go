@@ -24,7 +24,7 @@ func init() {
 	// flag has no inverse --studio form; config-level disables can
 	// only be reverted by changing config.
 	createDomainModelCmdImpl.Flags().BoolVar(
-		&noStudioFlagDomainModel, "no-studio", false, noStudioFlagHelpText,
+		&noStudioFlag, "no-studio", false, noStudioFlagHelpText,
 	)
 }
 
@@ -53,7 +53,7 @@ func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error {
 		// printed its own output.
 		return nil
 	}
-	noStudio := resolveNoStudioForDomainModel(loadProjectConfigNoStudio(pctx))
+	noStudio := resolveNoStudio(loadProjectConfigNoStudio(pctx))
 	mode := pickDomainModelPromptMode()
 	return runStudioPromptForDomainModel(pctx, mode, noStudio)
 }

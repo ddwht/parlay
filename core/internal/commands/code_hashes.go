@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -54,6 +55,51 @@ func loadCodeHashes(cfg *config.Context, slug string) (*CodeHashes, error) {
 		return nil, fmt.Errorf("invalid code-hashes file: %w", err)
 	}
 	return &hashes, nil
+}
+
+// loadProjectCodeHashes reads the project-level code-hashes sidecar
+// (.parlay/build/_project/.code-hashes.yaml). Returns nil (no error)
+// when the file does not exist — the first-generation case, or a
+// project that has never run save-build-state.
+func loadProjectCodeHashes(cfg *config.Context) (*CodeHashes, error) {
+	data, err := os.ReadFile(projectCodeHashesPath(cfg))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var hashes CodeHashes
+	if err := yaml.Unmarshal(data, &hashes); err != nil {
+		return nil, fmt.Errorf("invalid project code-hashes file: %w", err)
+	}
+	return &hashes, nil
+}
+
+// filesDroppedBySourceRootNarrowing compares a previous project-level
+// CodeHashes snapshot against a freshly computed one and returns every
+// file the old snapshot tracked that the new one does not — restricted
+// to files that still exist on disk. A file legitimately deleted since
+// the last run is not a narrowing signal (it's supposed to disappear
+// from tracking); a file that still exists on disk but fell out of
+// tracking means the --source-root passed this run doesn't cover
+// ground the previous run's source-root did, which silently shrinks
+// what verify-generated can ever check again unless caught here.
+func filesDroppedBySourceRootNarrowing(previous, current *CodeHashes) []string {
+	if previous == nil {
+		return nil
+	}
+	var dropped []string
+	for path := range previous.Files {
+		if _, stillTracked := current.Files[path]; stillTracked {
+			continue
+		}
+		if _, statErr := os.Stat(path); statErr == nil {
+			dropped = append(dropped, path)
+		}
+	}
+	sort.Strings(dropped)
+	return dropped
 }
 
 // saveCodeHashes writes the sidecar file for a feature. Creates the

@@ -43,7 +43,7 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	result, err := saveProjectBuildState(cfg, saveBuildStateSourceRoot)
+	result, err := saveProjectBuildState(cmd, cfg, saveBuildStateSourceRoot)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func projectCodeHashesPath(cfg *config.Context) string {
 //
 // This is the only sanctioned write path for these files. It MUST be
 // invoked only as the final step of /parlay-generate-code, after tests pass.
-func saveProjectBuildState(cfg *config.Context, sourceRoot string) (*projectSaveResult, error) {
+func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot string) (*projectSaveResult, error) {
 	features, err := discoverFeatures(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("discover features: %w", err)
@@ -193,6 +193,26 @@ func saveProjectBuildState(cfg *config.Context, sourceRoot string) (*projectSave
 	if err != nil {
 		return nil, fmt.Errorf("compute project code hashes: %w", err)
 	}
+
+	// Guard against a narrower --source-root silently shrinking what
+	// verify-generated can ever check: in a multi-adapter project, a
+	// caller might accidentally pass one adapter's own (narrower) source
+	// root instead of the true project-wide root that spans every
+	// adapter. Compare against the previous run's tracked file set —
+	// files that vanished from tracking but still exist on disk are a
+	// narrowing signal, not a legitimate deletion, so warn loudly rather
+	// than silently committing a smaller CodeHashes than before.
+	if previous, loadErr := loadProjectCodeHashes(cfg); loadErr == nil {
+		if dropped := filesDroppedBySourceRootNarrowing(previous, hashes); len(dropped) > 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"[WARN] --source-root %q no longer covers %d previously-tracked file(s) that still exist on disk — verify-generated will stop checking them. If this is unintended, pass the project-wide source root instead of a narrower one:\n",
+				sourceRoot, len(dropped))
+			for _, path := range dropped {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", path)
+			}
+		}
+	}
+
 	hashesBytes, err := marshalCodeHashes(hashes)
 	if err != nil {
 		return nil, fmt.Errorf("marshal project code hashes: %w", err)

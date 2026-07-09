@@ -29,7 +29,6 @@ var validateDeep bool
 var validateAdapter string
 var validateJSON bool
 var validateProject bool
-var validateRoot string
 
 func init() {
 	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model")
@@ -39,7 +38,14 @@ func init() {
 	// parlay-feature: parlay-tool/cross-cutting-target-paths
 	// parlay-component: validate (extends project-pass-validation-and-cli-flag)
 	validateCmd.Flags().BoolVar(&validateProject, "project", false, "Validate every buildfile under the resolved root in project-pass mode (no positional path; implies --type buildfile --deep)")
-	validateCmd.Flags().StringVar(&validateRoot, "root", "", "Project root for --project (defaults to cwd or PARLAY_ROOT)")
+	// --project resolves its root via the standard active-root resolver
+	// (the persistent --root flag, PARLAY_ROOT, or cwd walk-up) — the
+	// same mechanism every other command uses. This command used to
+	// register its own local --root flag here, which shadowed the
+	// persistent --root flag's real meaning (select a registered child
+	// root by name) with a different one (an arbitrary filesystem path,
+	// resolved outside the multi-root machinery entirely — no parent-
+	// pointer validation, no ambiguity signaling, nothing). Removed.
 }
 
 // validateArgs reconciles the legacy positional-path requirement with the
@@ -152,21 +158,20 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // under the resolved root and validate each in project-pass mode (which
 // threads cross-feature plannedCreates through validatePlanSection).
 //
+// Root resolution goes through mustContext(cmd), the same standard
+// active-root resolver every other command uses (cwd walk-up, the
+// persistent --root flag, PARLAY_ROOT) — not a bespoke PARLAY_ROOT-or-cwd
+// fallback that bypasses parent-pointer validation and doesn't understand
+// registered child roots at all.
+//
 // parlay-feature: parlay-tool/cross-cutting-target-paths
 // parlay-component: validate (extends project-pass-validation-and-cli-flag)
 func runValidateProject(cmd *cobra.Command) error {
-	root := validateRoot
-	if root == "" {
-		if env := os.Getenv("PARLAY_ROOT"); env != "" {
-			root = env
-		} else {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("cannot resolve project root: %s", err)
-			}
-			root = cwd
-		}
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
 	}
+	root := cfg.Root.Path
 	verdicts, err := agent.ValidateBuildfilesProjectStructured(root)
 	if err != nil {
 		return fmt.Errorf("project-pass walk failed: %s", err)

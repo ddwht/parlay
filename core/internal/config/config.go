@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,12 +83,6 @@ func resolveQualifiedPath(identifier, treeRoot string) string {
 // --- Extended by: initiatives/directory-classification-validation ---
 // --- Extended by: initiatives/duplicate-slug-detection ---
 // --- Extended by: initiatives/cross-tree-traversal-consistency ---
-
-var (
-	featureTreeOnce   sync.Once
-	featureTreeResult []string
-	featureTreeErr    error
-)
 
 // DirClass represents the classification of a directory under spec/intents/.
 type DirClass int
@@ -172,35 +165,23 @@ func slugifyDirName(name string) string {
 	return name
 }
 
-func AllFeatures() ([]string, error) {
-	return AllFeaturePaths(filepath.Join(SpecDir, IntentsDir))
-}
-
 // ScanFeatureTree walks the given tree root and returns qualified
-// feature identifiers, NOT using the package-global cache. Multi-root-
-// aware callers should use this instead of AllFeaturePaths, since the
-// cache assumes a single cwd-relative tree.
+// feature identifiers. This is the sole public entry point for feature
+// enumeration — every caller, single-root or multi-root, should resolve
+// its own tree root (typically via (*Context).IntentsRoot() and
+// (*Context).AllFeatures(), the Context-bound wrapper below) and call
+// this directly.
+//
+// A previous package-level AllFeatures()/AllFeaturePaths() pair existed
+// here with a sync.Once-cached result keyed to a single cwd-relative
+// spec/intents/ path. That cache was unsound for anything but a single
+// cwd-anchored invocation per process — every multi-root caller, and
+// every test that constructs more than one project tree in the same
+// test binary, would have silently read another root's stale cached
+// result. Nothing in this codebase depended on the free functions by
+// the time this was noticed (every real caller already went through
+// (*Context).AllFeatures()), so they were removed rather than fixed.
 func ScanFeatureTree(treeRoot string) ([]string, error) {
-	return scanFeatureTree(treeRoot)
-}
-
-// AllFeaturePaths walks the given tree root and returns qualified identifiers
-// for all features. When treeRoot differs from spec/intents/, classification
-// is performed against spec/intents/ (the authoritative source) so that
-// features missing from the requested tree are still enumerated.
-func AllFeaturePaths(treeRoot string) ([]string, error) {
-	intentsRoot := filepath.Join(SpecDir, IntentsDir)
-
-	if treeRoot != intentsRoot {
-		featureTreeOnce.Do(func() {
-			featureTreeResult, featureTreeErr = scanFeatureTree(intentsRoot)
-		})
-		if featureTreeErr != nil {
-			return nil, featureTreeErr
-		}
-		return featureTreeResult, nil
-	}
-
 	return scanFeatureTree(treeRoot)
 }
 

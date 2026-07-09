@@ -68,8 +68,8 @@ func TestPreRun_AmbiguityAsSignal_ExitsNonZero(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ambiguityAsSignalFlag = true
 	resetFlagsAfterTest(t, rootCmd.PersistentFlags())
+	ambiguityAsSignalFlag = true
 
 	cmd := &cobra.Command{Use: "status"}
 	var stderr bytes.Buffer

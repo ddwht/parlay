@@ -114,6 +114,8 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	}
 	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
+	output.AdvisorySources = computeAdvisorySourceDiff(featurePath, stored)
+
 	buildfilePath := filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {
 		output.HasBuildfile = true
@@ -950,5 +952,133 @@ fragments:
 	}
 	if len(out.Components.Stable) != 1 || out.Components.Stable[0] != "comp-b" {
 		t.Errorf("expected comp-b stable, got %+v", out.Components.Stable)
+	}
+}
+
+// --- AdvisorySources: capabilities.yaml / infrastructure.md / surface.yaml ---
+
+func TestDiff_AdvisorySources_OmittedWhenNoneExist(t *testing.T) {
+	setupTestDir(t)
+	writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+	writeBaseline(t, "my-feature", Baseline{
+		Sources: &HashedSources{Intents: map[string]string{}},
+	})
+
+	out := runDiffForTest(t, "my-feature")
+	if out.AdvisorySources != nil {
+		t.Errorf("expected nil AdvisorySources when none of the 3 artifacts exist on either side, got %+v", out.AdvisorySources)
+	}
+}
+
+func TestDiff_AdvisorySources_ChangedCapabilities(t *testing.T) {
+	setupTestDir(t)
+	featureDir := writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+
+	original := "schema_version: 1\nfeature: my-feature\noperations: []\n"
+	os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"), []byte(original), 0644)
+
+	writeBaseline(t, "my-feature", Baseline{
+		Sources: &HashedSources{
+			Intents:      map[string]string{},
+			Capabilities: sha256Hex(original),
+		},
+	})
+
+	// Change the file after the baseline was captured.
+	modified := "schema_version: 1\nfeature: my-feature\noperations:\n  - id: x\n    kind: command\n"
+	os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"), []byte(modified), 0644)
+
+	out := runDiffForTest(t, "my-feature")
+	if out.AdvisorySources["capabilities"] != "changed" {
+		t.Errorf("capabilities = %q, want changed; full map: %+v", out.AdvisorySources["capabilities"], out.AdvisorySources)
+	}
+	if _, ok := out.AdvisorySources["infrastructure"]; ok {
+		t.Errorf("did not expect an infrastructure entry, got %+v", out.AdvisorySources)
+	}
+}
+
+func TestDiff_AdvisorySources_StableWhenUnchanged(t *testing.T) {
+	setupTestDir(t)
+	featureDir := writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+
+	content := "**Affects**: something\n**Behavior**: does a thing\n"
+	os.WriteFile(filepath.Join(featureDir, "infrastructure.md"), []byte(content), 0644)
+
+	writeBaseline(t, "my-feature", Baseline{
+		Sources: &HashedSources{
+			Intents:        map[string]string{},
+			Infrastructure: sha256Hex(content),
+		},
+	})
+
+	out := runDiffForTest(t, "my-feature")
+	if out.AdvisorySources["infrastructure"] != "stable" {
+		t.Errorf("infrastructure = %q, want stable; full map: %+v", out.AdvisorySources["infrastructure"], out.AdvisorySources)
+	}
+}
+
+func TestDiff_AdvisorySources_NewSurfaceYAML(t *testing.T) {
+	setupTestDir(t)
+	featureDir := writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+
+	// No surface.yaml at baseline time.
+	writeBaseline(t, "my-feature", Baseline{
+		Sources: &HashedSources{Intents: map[string]string{}},
+	})
+
+	// surface.yaml appears after the baseline.
+	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte("schema_version: 1\nfragments: []\n"), 0644)
+
+	out := runDiffForTest(t, "my-feature")
+	if out.AdvisorySources["surface-yaml"] != "new" {
+		t.Errorf("surface-yaml = %q, want new; full map: %+v", out.AdvisorySources["surface-yaml"], out.AdvisorySources)
+	}
+}
+
+func TestDiff_AdvisorySources_RemovedCapabilities(t *testing.T) {
+	setupTestDir(t)
+	featureDir := writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+
+	content := "schema_version: 1\nfeature: my-feature\noperations: []\n"
+	writeBaseline(t, "my-feature", Baseline{
+		Sources: &HashedSources{
+			Intents:      map[string]string{},
+			Capabilities: sha256Hex(content),
+		},
+	})
+	// capabilities.yaml is NOT written to disk — it existed at baseline
+	// time (per the stored hash) but has since been deleted.
+	_ = featureDir
+
+	out := runDiffForTest(t, "my-feature")
+	if out.AdvisorySources["capabilities"] != "removed" {
+		t.Errorf("capabilities = %q, want removed; full map: %+v", out.AdvisorySources["capabilities"], out.AdvisorySources)
+	}
+}
+
+// TestBuildBaseline_HashesAdvisoryArtifacts confirms buildBaseline
+// itself populates the three new HashedSources fields when the
+// corresponding files exist, and leaves them empty when absent.
+func TestBuildBaseline_HashesAdvisoryArtifacts(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := writeFeatureFiles(t, "my-feature", "## X\n\n**Goal**: x\n**Persona**: u\n", "", "")
+
+	capsContent := "schema_version: 1\nfeature: my-feature\noperations: []\n"
+	os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"), []byte(capsContent), 0644)
+	// infrastructure.md and surface.yaml intentionally absent.
+
+	baseline, err := buildBaseline(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.Sources.Capabilities != sha256Hex(capsContent) {
+		t.Errorf("Capabilities hash = %q, want %q", baseline.Sources.Capabilities, sha256Hex(capsContent))
+	}
+	if baseline.Sources.Infrastructure != "" {
+		t.Errorf("expected empty Infrastructure hash when file absent, got %q", baseline.Sources.Infrastructure)
+	}
+	if baseline.Sources.SurfaceYAML != "" {
+		t.Errorf("expected empty SurfaceYAML hash when file absent, got %q", baseline.Sources.SurfaceYAML)
 	}
 }

@@ -23,7 +23,7 @@ func init() {
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 	// --no-studio: skip the Studio open-editor prompt at the end.
 	createArtifactsCmdImpl.Flags().BoolVar(
-		&noStudioFlagArtifacts, "no-studio", false, noStudioFlagHelpText,
+		&noStudioFlag, "no-studio", false, noStudioFlagHelpText,
 	)
 }
 
@@ -48,6 +48,6 @@ func runCreateArtifactsHandler(cmd *cobra.Command, args []string) error {
 	if pctx == nil {
 		return nil
 	}
-	noStudio := resolveNoStudioForArtifacts(loadProjectConfigNoStudio(pctx))
+	noStudio := resolveNoStudio(loadProjectConfigNoStudio(pctx))
 	return runStudioPromptForArtifacts(pctx, args[0], noStudio)
 }

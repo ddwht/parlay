@@ -18,8 +18,9 @@ import (
 )
 
 var simplifyCmd = &cobra.Command{
-	Use:   "simplify",
+	Use:   "simplify <source-root>",
 	Short: "Detect duplicated helpers across generated files and propose extractions",
+	Args:  cobra.ExactArgs(1),
 	RunE:  runSimplify,
 }
 
@@ -33,7 +34,14 @@ type duplicateGroup struct {
 }
 
 func runSimplify(cmd *cobra.Command, args []string) error {
-	sourceRoot := "internal/commands/"
+	// source-root is a required positional argument, matching
+	// scan-generated's and save-build-state --source-root's convention
+	// — this command has no adapter-resolution machinery of its own, so
+	// it takes the same explicit input every other source-tree-walking
+	// command takes rather than hardcoding a path (the previous
+	// "internal/commands/" default only ever made sense for scanning
+	// this repo's own dev tree, not a caller's actual project).
+	sourceRoot := args[0]
 
 	markers, scanErr := parlayParser.ScanGenerated(sourceRoot)
 	if scanErr != nil {

@@ -73,8 +73,16 @@ func runMigrateDomainOperations(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	intentsRoot := filepath.Join(cfg.Root.Path, "spec", "intents")
-	features, _ := os.ReadDir(intentsRoot)
+	intentsRoot := cfg.IntentsRoot()
+	// AllFeatures walks initiatives too and returns qualified
+	// "initiative/feature" identifiers — a plain os.ReadDir(intentsRoot)
+	// only sees top-level entries, so a feature nested under an
+	// initiative was never a valid candidate at all (not ambiguous,
+	// structurally invisible), and --feature could never target one
+	// either. Errors are treated as "no candidates" rather than
+	// aborting the whole migration; the per-operation ambiguity/headless
+	// handling below still applies to whatever candidate set results.
+	candidateFeatures, _ := cfg.AllFeatures()
 
 	// Headless doctrine (mirrors build-feature steps 7.6-7.9): the flag
 	// wins over TTY detection in both directions. With --non-interactive
@@ -97,11 +105,9 @@ func runMigrateDomainOperations(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "\noperation: %s (entity: %s)\n", title, entity)
-		var candidates []string
-		for _, f := range features {
-			if f.IsDir() {
-				candidates = append(candidates, f.Name())
-			}
+		candidates := candidateFeatures
+		if len(candidates) == 0 {
+			return fmt.Errorf("no candidate features found under %s", intentsRoot)
 		}
 
 		choice := candidates[0]

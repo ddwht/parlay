@@ -27,7 +27,16 @@ func setupMigrateDomainOperationsProject(t *testing.T, candidates ...string) str
 
 	intentsRoot := filepath.Join(dir, config.SpecDir, config.IntentsDir)
 	for _, c := range candidates {
-		if err := os.MkdirAll(filepath.Join(intentsRoot, c), 0755); err != nil {
+		featDir := filepath.Join(intentsRoot, c)
+		if err := os.MkdirAll(featDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		// A real candidate must classify as a feature (config.AllFeatures
+		// walks spec/intents/ via config.ClassifyDir, which requires
+		// intents.md) — a bare directory classifies as "deferred" and is
+		// correctly excluded, unlike the old naive os.ReadDir scan this
+		// command used to do.
+		if err := os.WriteFile(filepath.Join(featDir, "intents.md"), []byte("# "+c+"\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -37,8 +46,8 @@ func setupMigrateDomainOperationsProject(t *testing.T, candidates ...string) str
 func TestMigrateDomainOperations_HeadlessAmbiguous_HardErrors(t *testing.T) {
 	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a", "feature-b")
 
-	migrateDomainOperationsNonInteractive = true
 	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
+	migrateDomainOperationsNonInteractive = true
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err == nil {
@@ -64,9 +73,9 @@ func TestMigrateDomainOperations_HeadlessAmbiguous_HardErrors(t *testing.T) {
 func TestMigrateDomainOperations_HeadlessWithExplicitFeature_Succeeds(t *testing.T) {
 	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a", "feature-b")
 
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 	migrateDomainOperationsNonInteractive = true
 	migrateDomainOperationsFeature = "@feature-b"
-	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err != nil {
@@ -84,9 +93,9 @@ func TestMigrateDomainOperations_HeadlessWithExplicitFeature_Succeeds(t *testing
 func TestMigrateDomainOperations_ExplicitFeatureNotACandidate_Errors(t *testing.T) {
 	setupMigrateDomainOperationsProject(t, "feature-a", "feature-b")
 
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 	migrateDomainOperationsNonInteractive = true
 	migrateDomainOperationsFeature = "@feature-c"
-	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err == nil {
@@ -100,8 +109,8 @@ func TestMigrateDomainOperations_ExplicitFeatureNotACandidate_Errors(t *testing.
 func TestMigrateDomainOperations_UnambiguousSingleCandidate_StillWorksHeadless(t *testing.T) {
 	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a")
 
-	migrateDomainOperationsNonInteractive = true
 	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
+	migrateDomainOperationsNonInteractive = true
 
 	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
 	if err != nil {
@@ -109,5 +118,51 @@ func TestMigrateDomainOperations_UnambiguousSingleCandidate_StillWorksHeadless(t
 	}
 	if _, statErr := os.Stat(filepath.Join(intentsRoot, "feature-a", "capabilities.yaml")); statErr != nil {
 		t.Errorf("expected stub written to feature-a/capabilities.yaml: %v", statErr)
+	}
+}
+
+// TestMigrateDomainOperations_QualifiedNestedFeatureCandidate is the
+// regression test for the Phase 4 finding: candidate detection used to
+// be a bare os.ReadDir(intentsRoot) that only saw top-level entries, so
+// a feature nested under an initiative (spec/intents/<initiative>/<feature>/)
+// was never a valid candidate at all — not ambiguous, structurally
+// invisible — and --feature could never target one either, even with
+// the fully-qualified "initiative/feature" form. Now that candidate
+// discovery goes through cfg.AllFeatures() (initiative-aware), both the
+// candidate listing and --feature must accept the qualified form.
+func TestMigrateDomainOperations_QualifiedNestedFeatureCandidate(t *testing.T) {
+	intentsRoot := setupMigrateDomainOperationsProject(t, "top-level-feature", "auth-overhaul/login")
+
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
+	migrateDomainOperationsNonInteractive = true
+	migrateDomainOperationsFeature = "@auth-overhaul/login"
+
+	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
+	if err != nil {
+		t.Fatalf("expected --feature to target the nested candidate, got error: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(intentsRoot, "auth-overhaul", "login", "capabilities.yaml")); statErr != nil {
+		t.Errorf("expected stub written to auth-overhaul/login/capabilities.yaml: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(intentsRoot, "top-level-feature", "capabilities.yaml")); statErr == nil {
+		t.Errorf("did not expect a stub written to top-level-feature/capabilities.yaml")
+	}
+}
+
+// TestMigrateDomainOperations_HeadlessAmbiguous_ListsNestedCandidate
+// confirms the ambiguous-target error's candidate list itself includes
+// a nested initiative/feature candidate, not just top-level ones.
+func TestMigrateDomainOperations_HeadlessAmbiguous_ListsNestedCandidate(t *testing.T) {
+	setupMigrateDomainOperationsProject(t, "top-level-feature", "auth-overhaul/login")
+
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
+	migrateDomainOperationsNonInteractive = true
+
+	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
+	if err == nil {
+		t.Fatal("expected ambiguous-target error, got nil")
+	}
+	if !strings.Contains(err.Error(), "auth-overhaul/login") {
+		t.Errorf("expected the nested candidate listed in the error, got: %v", err)
 	}
 }

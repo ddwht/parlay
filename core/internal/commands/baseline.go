@@ -57,6 +57,20 @@ type HashedSources struct {
 	SurfaceFragments    map[string]string `yaml:"surface-fragments,omitempty"`
 	DesignSpecFragments map[string]string `yaml:"design-spec-fragments,omitempty"`
 	DesignSpecShared    string            `yaml:"design-spec-shared,omitempty"`
+
+	// Capabilities, Infrastructure, and SurfaceYAML are whole-file
+	// content hashes for capabilities.yaml, infrastructure.md, and
+	// surface.yaml — advisory only. There is no per-operation or
+	// per-fragment granularity here the way SurfaceFragments has for
+	// surface.md; the buildfile schema's own source-signatures:
+	// mechanism was found to be aspirational (never implemented), and
+	// these three fields are the real advisory freshness signal for
+	// those artifacts until a hard codegen gate is specced separately.
+	// Empty string means the file didn't exist when the baseline was
+	// captured.
+	Capabilities   string `yaml:"capabilities,omitempty"`
+	Infrastructure string `yaml:"infrastructure,omitempty"`
+	SurfaceYAML    string `yaml:"surface-yaml,omitempty"`
 }
 
 type driftItem struct {
@@ -137,7 +151,34 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 		}
 	}
 
+	// Advisory whole-file hashes for the three artifacts the buildfile
+	// schema's fictional source-signatures: mechanism was supposed to
+	// cover. All three are optional — a feature may have any subset of
+	// surface.md/surface.yaml, capabilities.yaml, infrastructure.md per
+	// the four-co-equal-artifact model.
+	if hash, ok := hashWholeFile(filepath.Join(featurePath, "capabilities.yaml")); ok {
+		baseline.Sources.Capabilities = hash
+	}
+	if hash, ok := hashWholeFile(filepath.Join(featurePath, "infrastructure.md")); ok {
+		baseline.Sources.Infrastructure = hash
+	}
+	if hash, ok := hashWholeFile(filepath.Join(featurePath, "surface.yaml")); ok {
+		baseline.Sources.SurfaceYAML = hash
+	}
+
 	return baseline, nil
+}
+
+// hashWholeFile returns a content hash for the entire file at path, and
+// false when the file doesn't exist (any other read error is also
+// treated as "no hash" — advisory hashing must never fail a baseline
+// build over a file it doesn't strictly need).
+func hashWholeFile(path string) (hash string, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return sha256Hex(string(data)), true
 }
 
 // marshalBaseline serializes a Baseline to YAML bytes for atomic disk writes.

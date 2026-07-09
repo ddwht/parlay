@@ -10,6 +10,7 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,4 +150,75 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestFindDomainModelFilesOutsideRoot_FindsFeatureLevelFiles is the
+// regression test for the Phase 4 finding: a legacy project-wide
+// domain-model.md was discovered living inside a feature-shaped
+// directory (spec/intents/parlay-tool/domain-model/domain-model.md) —
+// migrate-domain-model only ever looked at <activeRoot>/domain-model.md
+// and was structurally blind to this. The probe must find it (and any
+// other feature-level domain-model.md), without claiming to migrate it.
+func TestFindDomainModelFilesOutsideRoot_FindsFeatureLevelFiles(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+
+	featureDir := cfg.FeaturePath("parlay-tool/domain-model")
+	if err := os.MkdirAll(featureDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stray := filepath.Join(featureDir, "domain-model.md")
+	if err := os.WriteFile(stray, []byte("# Whole Project Model\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte("# X\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A feature with no domain-model.md at all — must not show up.
+	other := cfg.FeaturePath("other-feature")
+	os.MkdirAll(other, 0755)
+	os.WriteFile(filepath.Join(other, "intents.md"), []byte("# Y\n"), 0644)
+
+	found, err := findDomainModelFilesOutsideRoot(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0] != stray {
+		t.Errorf("found = %v, want [%s]", found, stray)
+	}
+}
+
+// TestRunMigrateDomainModel_ReportsDomainModelFilesElsewhere confirms
+// the probe's findings surface in the command's actual output, on the
+// greenfield path (no root-level domain-model.md/.yaml at all) — the
+// case that would otherwise print only "nothing to migrate" and leave
+// the designer unaware a stray domain-model.md exists elsewhere.
+func TestRunMigrateDomainModel_ReportsDomainModelFilesElsewhere(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+
+	featureDir := cfg.FeaturePath("parlay-tool/domain-model")
+	os.MkdirAll(featureDir, 0755)
+	os.WriteFile(filepath.Join(featureDir, "domain-model.md"), []byte("# Whole Project Model\n"), 0644)
+	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte("# X\n"), 0644)
+
+	cmd := testCommandWithContext(t, cfg)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	if err := runMigrateDomainModel(cmd, nil); err != nil {
+		t.Fatalf("runMigrateDomainModel: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "found 1 domain-model.md file(s)") {
+		t.Errorf("expected the probe's finding reported, got: %s", out)
+	}
+	if !strings.Contains(out, filepath.Join(featureDir, "domain-model.md")) {
+		t.Errorf("expected the stray file's path named, got: %s", out)
+	}
+	// The greenfield behavior itself must be unchanged.
+	if !strings.Contains(out, "nothing to migrate") {
+		t.Errorf("expected greenfield 'nothing to migrate' still reported, got: %s", out)
+	}
 }

@@ -64,6 +64,17 @@ type diffOutput struct {
 	DesignSpec   sourceLevelDiff   `json:"design_spec"`
 	Components   componentDiff     `json:"components"`
 	Sections     map[string]string `json:"sections,omitempty"`
+
+	// AdvisorySources reports whole-file drift for capabilities.yaml,
+	// infrastructure.md, and surface.yaml, keyed by that name with a
+	// "changed" | "stable" | "new" | "removed" value (same shape and
+	// semantics as Sections). Advisory only — computeComponentImpact
+	// does not consult this to mark any component/cross-cutting entry
+	// dirty; a hard codegen gate over these artifacts is being specced
+	// separately. This is the real freshness signal for these three
+	// artifacts — the buildfile schema's documented source-signatures:
+	// mechanism was found to be aspirational and was never implemented.
+	AdvisorySources map[string]string `json:"advisory_sources,omitempty"`
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
@@ -141,6 +152,8 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
+	output.AdvisorySources = computeAdvisorySourceDiff(featurePath, stored)
+
 	// Component-level impact analysis is only meaningful when there's a
 	// committed baseline AND a buildfile to walk. On first_build (no
 	// baseline yet) we leave Components empty: there's nothing to compare
@@ -165,6 +178,54 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 
 	return emitDiffJSON(cmd, &output)
+}
+
+// computeAdvisorySourceDiff hashes the current capabilities.yaml,
+// infrastructure.md, and surface.yaml (whichever exist) and compares
+// each against the stored HashedSources hash from the baseline. Returns
+// a map keyed by artifact name with the same "changed" | "stable" |
+// "new" | "removed" vocabulary as computeSectionDiff — a file present
+// in only one of stored/current is "new" or "removed"; present in both
+// with a differing hash is "changed"; identical hashes are "stable". A
+// file absent from both sides is omitted entirely (nothing to report).
+func computeAdvisorySourceDiff(featurePath string, stored *HashedSources) map[string]string {
+	type entry struct {
+		name       string
+		path       string
+		storedHash string
+	}
+	entries := []entry{
+		{"capabilities", filepath.Join(featurePath, "capabilities.yaml"), ""},
+		{"infrastructure", filepath.Join(featurePath, "infrastructure.md"), ""},
+		{"surface-yaml", filepath.Join(featurePath, "surface.yaml"), ""},
+	}
+	if stored != nil {
+		entries[0].storedHash = stored.Capabilities
+		entries[1].storedHash = stored.Infrastructure
+		entries[2].storedHash = stored.SurfaceYAML
+	}
+
+	result := make(map[string]string)
+	for _, e := range entries {
+		currentHash, currentExists := hashWholeFile(e.path)
+		storedExists := e.storedHash != ""
+		switch {
+		case currentExists && storedExists:
+			if currentHash != e.storedHash {
+				result[e.name] = "changed"
+			} else {
+				result[e.name] = "stable"
+			}
+		case currentExists && !storedExists:
+			result[e.name] = "new"
+		case !currentExists && storedExists:
+			result[e.name] = "removed"
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // computeSectionDiff hashes the current buildfile's major sections and
