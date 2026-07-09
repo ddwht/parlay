@@ -83,9 +83,13 @@ func baselinePath(cfg *config.Context, slug string) string {
 func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 	featurePath := cfg.FeaturePath(slug)
 
-	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
+	intentsPath := filepath.Join(featurePath, "intents.md")
+	intents, err := parser.ParseIntentsFile(intentsPath)
 	if err != nil {
 		return nil, fmt.Errorf("read intents: %w", err)
+	}
+	if len(intents) == 0 {
+		return nil, fmt.Errorf("baseline refuses empty artifact: %s exists but has no intent blocks", intentsPath)
 	}
 
 	baseline := &Baseline{
@@ -99,7 +103,16 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 		baseline.Sources.Intents[intent.Slug] = hashIntentContent(intent)
 	}
 
-	if dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md")); err == nil {
+	// A missing dialogs.md is fine — dialogs may not be authored yet, and
+	// the source-hash is simply omitted. A dialogs.md that exists but
+	// parses to zero dialogs is different: it's a stub that should never
+	// have been baselined as if the dialogs phase were complete. Refuse
+	// rather than silently commit a baseline with an empty dialogs section.
+	dialogsPath := filepath.Join(featurePath, "dialogs.md")
+	if dialogs, err := parser.ParseDialogsFile(dialogsPath); err == nil {
+		if len(dialogs) == 0 {
+			return nil, fmt.Errorf("baseline refuses empty artifact: %s exists but has no dialog blocks", dialogsPath)
+		}
 		baseline.Sources.Dialogs = make(map[string]string)
 		for _, dialog := range dialogs {
 			baseline.Sources.Dialogs[dialog.Slug] = hashDialogContent(dialog)

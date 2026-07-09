@@ -165,6 +165,84 @@ func TestSaveBuildState_MissingIntentsFails(t *testing.T) {
 	}
 }
 
+// TestSaveBuildState_EmptyDialogsStubFails confirms that a dialogs.md that
+// exists on disk but parses to zero dialogs (a scaffolded-but-never-written
+// stub) refuses to baseline, instead of silently committing a baseline with
+// an empty dialogs section as if the dialogs phase were complete.
+func TestSaveBuildState_EmptyDialogsStubFails(t *testing.T) {
+	dir := setupTestDir(t)
+
+	featureDir := testContext(t).FeaturePath("stub-dialogs")
+	os.MkdirAll(featureDir, 0755)
+	os.WriteFile(filepath.Join(featureDir, "intents.md"),
+		[]byte("## Do Something\n\n**Goal**: Do the thing\n**Persona**: User\n"), 0644)
+	// A dialogs.md that exists but has no dialog blocks — header only.
+	os.WriteFile(filepath.Join(featureDir, "dialogs.md"),
+		[]byte("# Stub Dialogs — Dialogs\n\n---\n"), 0644)
+
+	sourceRoot := filepath.Join(dir, "cmd", "stub-dialogs")
+	os.MkdirAll(sourceRoot, 0755)
+
+	err := saveBuildStateForFeature(testContext(t), "stub-dialogs", sourceRoot)
+	if err == nil {
+		t.Fatal("expected error for empty dialogs.md stub, got nil")
+	}
+	if !strings.Contains(err.Error(), "dialogs.md") {
+		t.Errorf("error = %v, want it to name dialogs.md", err)
+	}
+
+	if _, statErr := os.Stat(baselinePath(testContext(t), "stub-dialogs")); statErr == nil {
+		t.Error("baseline.yaml must not be written when dialogs.md is an empty stub")
+	}
+}
+
+// TestSaveBuildState_MissingDialogsStillSucceeds confirms the guard is
+// specific to an empty-but-present dialogs.md — a feature that simply
+// hasn't authored dialogs.md yet (file absent) still baselines fine, since
+// the dialogs source-hash section is optional.
+func TestSaveBuildState_MissingDialogsStillSucceeds(t *testing.T) {
+	dir := setupTestDir(t)
+
+	featureDir := testContext(t).FeaturePath("no-dialogs-yet")
+	os.MkdirAll(featureDir, 0755)
+	os.WriteFile(filepath.Join(featureDir, "intents.md"),
+		[]byte("## Do Something\n\n**Goal**: Do the thing\n**Persona**: User\n"), 0644)
+	// No dialogs.md written at all.
+
+	sourceRoot := filepath.Join(dir, "cmd", "no-dialogs-yet")
+	os.MkdirAll(sourceRoot, 0755)
+
+	if err := saveBuildStateForFeature(testContext(t), "no-dialogs-yet", sourceRoot); err != nil {
+		t.Fatalf("expected success when dialogs.md is simply absent, got: %v", err)
+	}
+	if _, statErr := os.Stat(baselinePath(testContext(t), "no-dialogs-yet")); statErr != nil {
+		t.Errorf("baseline.yaml missing: %v", statErr)
+	}
+}
+
+// TestSaveBuildState_EmptyIntentsFails confirms the same empty-artifact
+// guard applies to intents.md: a file that exists but has zero intent
+// blocks refuses to baseline rather than committing an empty Intents map.
+func TestSaveBuildState_EmptyIntentsFails(t *testing.T) {
+	dir := setupTestDir(t)
+
+	featureDir := testContext(t).FeaturePath("stub-intents")
+	os.MkdirAll(featureDir, 0755)
+	os.WriteFile(filepath.Join(featureDir, "intents.md"),
+		[]byte("# Stub Intents\n\n> nothing authored yet\n"), 0644)
+
+	sourceRoot := filepath.Join(dir, "cmd", "stub-intents")
+	os.MkdirAll(sourceRoot, 0755)
+
+	err := saveBuildStateForFeature(testContext(t), "stub-intents", sourceRoot)
+	if err == nil {
+		t.Fatal("expected error for empty intents.md stub, got nil")
+	}
+	if !strings.Contains(err.Error(), "intents.md") {
+		t.Errorf("error = %v, want it to name intents.md", err)
+	}
+}
+
 // TestWriteFileAtomic_RoundTrip writes then reads bytes through writeFileAtomic
 // and confirms they're identical.
 func TestWriteFileAtomic_RoundTrip(t *testing.T) {
