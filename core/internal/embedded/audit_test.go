@@ -419,3 +419,29 @@ func TestVocabularyBlockDerivationTargetDocumented(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildfileSourceSignaturesEnforcementLayerDocumented guards the
+// mutual-acknowledgment clarification in buildfile.schema.md's
+// Source-signatures section: source-signatures: is a skill-mechanical
+// gate (build-feature/generate-code), distinct from — but related to —
+// the Go-side advisory HashedSources mechanism in .baseline.yaml. Both
+// must be named so nobody later "unifies" one away against the other
+// without understanding both.
+func TestBuildfileSourceSignaturesEnforcementLayerDocumented(t *testing.T) {
+	content, err := schemasFS.ReadFile("schemas/buildfile.schema.md")
+	if err != nil {
+		t.Fatalf("failed to read buildfile.schema.md: %v", err)
+	}
+	body := string(content)
+
+	required := []string{
+		"Enforcement layer: skill-mechanical, not CLI",
+		"HashedSources",
+		".baseline.yaml",
+	}
+	for _, kw := range required {
+		if !strings.Contains(body, kw) {
+			t.Errorf("buildfile.schema.md missing %q", kw)
+		}
+	}
+}
