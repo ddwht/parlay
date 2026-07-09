@@ -1,3 +1,8 @@
+---
+name: reference-design-spec
+description: "Extract design spec from Figma"
+---
+
 # Reference Design Spec
 
 Extract visual design details from a Figma file and generate a design-spec.yaml that enriches the buildfile with per-fragment widget specifics, layout, tokens, variants, spacing, and colors.
@@ -15,14 +20,7 @@ This is an **optional** step between surface creation and build-feature. The pip
 - **Surface** must exist at `spec/intents/{feature}/surface.md`. If not, tell the user to run `/parlay-create-artifacts @{feature}` first.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

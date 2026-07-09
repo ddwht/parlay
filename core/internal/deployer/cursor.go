@@ -42,7 +42,7 @@ name: parlay-%s
 description: "Parlay: %s"
 ---
 
-%s`, skill.Name, skillTitle(skill.Name), string(skill.Content))
+%s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
 		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
@@ -121,33 +121,12 @@ func writeCursorAgents(projectRoot string) error {
 }
 
 func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) error {
-	var commands string
-	for _, skill := range skills {
-		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skillTitle(skill.Name))
-	}
+	header := "---\n" +
+		`description: "Parlay project context and available skills"` + "\n" +
+		"alwaysApply: true\n" +
+		"---"
 
-	content := fmt.Sprintf(`---
-description: "Parlay project context and available skills"
-alwaysApply: true
----
-
-# Parlay Project
-
-This project uses the Parlay intent-driven design toolkit.
-All operations are available as /parlay-* slash commands.
-
-## Available Commands
-
-%s
-## Schema Loading
-
-Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
-
-## Interactive Questions
-
-When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
-
-%s%s`, commands, fileOwnershipSection, renderMultiRootSection(projectRoot))
+	content := header + "\n\n" + renderProjectConfigBody(skills, projectRoot)
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {

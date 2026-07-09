@@ -2,7 +2,6 @@
 // parlay-extends: parlay-tool/parlay-loop/claude-adapter-subagent-deployment
 // parlay-extends: parlay-tool/parlay-loop/parlay-loop-cli-command-registration
 // parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-deployer-title
-// parlay-extends: parlay-tool/create-domain-model/deployer-skill-titles-map
 // parlay-extends: parlay-tool/create-domain-model/deployer-claude-stale-skill-cleanup
 
 package deployer
@@ -43,13 +42,15 @@ func (d *ClaudeDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry
 			return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 		}
 
-		// Claude Code skills use YAML frontmatter + markdown body
+		// Claude Code skills use YAML frontmatter + markdown body. The
+		// description is sourced from the skill's own frontmatter
+		// (embedded.ReadAllSkills parses it) — not re-declared here.
 		content := fmt.Sprintf(`---
 name: parlay-%s
 description: "Parlay: %s"
 ---
 
-%s`, skill.Name, skillTitle(skill.Name), string(skill.Content))
+%s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
 		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
@@ -135,31 +136,7 @@ func writeClaudeAgents(projectRoot string) error {
 }
 
 func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
-	var commands string
-	for _, skill := range skills {
-		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skillTitle(skill.Name))
-	}
-
-	multiRootBlock := renderMultiRootSection(projectRoot)
-
-	parlaySection := fmt.Sprintf(`%s
-# Parlay Project
-
-This project uses the Parlay intent-driven design toolkit.
-All operations are available as /parlay-* slash commands.
-
-## Available Commands
-
-%s
-## Schema Loading
-
-Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
-
-## Interactive Questions
-
-When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
-
-%s%s%s`, parlayMarkerBegin, commands, fileOwnershipSection, multiRootBlock, parlayMarkerEnd)
+	parlaySection := parlayMarkerBegin + "\n" + renderProjectConfigBody(skills, projectRoot) + parlayMarkerEnd
 
 	claudePath := filepath.Join(projectRoot, "CLAUDE.md")
 
@@ -185,39 +162,4 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 	fmt.Fprintf(os.Stderr, "[WARN] CLAUDE.md has no parlay markers — preserving existing content below parlay section.\n")
 	merged := parlaySection + "\n\n" + content
 	return os.WriteFile(claudePath, []byte(merged), 0644)
-}
-
-func skillTitle(name string) string {
-	titles := map[string]string{
-		"add-feature":          "Create a new feature",
-		"scaffold-dialogs":     "Scaffold dialog templates from intents",
-		"create-artifacts":     "Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs",
-		"build-feature":        "Generate buildfile and testcases",
-		"generate-code":        "Generate prototype code from buildfile",
-		"generate-enggspec":    "Generate engineering specification",
-		"create-domain-model":  "Create domain model from features",
-		"load-domain-model":    "Load and integrate external domain model",
-		"migrate-domain-model": "Convert domain-model.md to domain-model.yaml",
-		"collect-questions":    "Collect open questions from intents",
-		"reference-design-spec": "Extract design spec from Figma",
-		"sync":                 "Check intent-dialog coverage",
-		"view-page":            "Assemble and display a page view",
-		"lock-page":            "Lock a page layout into a manifest",
-		"register-adapter":     "Register a framework adapter",
-		"onboard":              "Onboard existing codebase and draft adapter",
-		"new-initiative":       "Create an empty initiative directory",
-		"repair":              "Validate and reconcile the three parallel trees",
-		"loop":                "Walk a feature end-to-end through the parlay design pipeline",
-		// parlay-feature: parlay-tool/multi-adapter
-		// parlay-component: cli-and-deployer-registration
-		"migrate-config":          "Convert legacy prototype-framework into a single-target presentation adapter-set",
-		"migrate-spec":            "Convert each feature's surface.md to surface.yaml",
-		"migrate-capabilities":    "Move operation-shaped fragments from infrastructure.md into capabilities.yaml; retain architectural prose in place (partial migration is the success case)",
-		"migrate-domain-operations": "Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs",
-		"review-coverage":         "Walk suites, record approvals, write coverage-review.yaml",
-	}
-	if t, ok := titles[name]; ok {
-		return t
-	}
-	return name
 }

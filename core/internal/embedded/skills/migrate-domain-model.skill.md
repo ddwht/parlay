@@ -1,3 +1,8 @@
+---
+name: migrate-domain-model
+description: "Convert domain-model.md to domain-model.yaml"
+---
+
 # Migrate Domain Model
 
 Convert a project's legacy `domain-model.md` to `domain-model.yaml` at
@@ -6,18 +11,7 @@ markdown, and exit cleanly. One-shot port; on subsequent runs, the
 command refuses to overwrite without `--force`.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** —
-the parlay project root resolved by the CLI from cwd, the `--root` flag,
-or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths
-abstractly.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that
-might face an ambiguous active root. If a CLI invocation exits with code
-11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`),
-re-prompt the user via AskUserQuestion with the listed candidate roots,
-then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Arguments
 
@@ -132,8 +126,10 @@ handled by `parlay create-domain-model`.
 
 Success messages and the dry-run diff go to **stdout**. Errors,
 warnings, and the ambiguity envelope go to **stderr**. Never mixed.
+`load-domain-model` follows the same stdout/stderr split — see its own
+Stdout / stderr discipline section.
 
-## Error handling
+## Error Handling
 
 - `markdown-input-refused` — only `parlay load-domain-model` emits this;
   `migrate-domain-model` is the markdown-accepting path.

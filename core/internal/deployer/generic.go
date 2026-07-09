@@ -1,6 +1,5 @@
 // parlay-feature: parlay-tool/parlay-loop
 // parlay-section: cross-cutting
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-generic-deployer-list
 package deployer
 
 import (
@@ -52,33 +51,11 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	content += "you MUST present the question and stop. Do not continue to the next step until the user has responded. "
 	content += "The skill requires the user's answer to decide what to do next.\n\n"
 	content += "---\n\n## CLI Utility Commands\n\n"
-	content += "- `parlay init` — Bootstrap project\n"
-	content += "- `parlay add-feature <name> [--initiative <name>]` — Create feature folder\n"
-	content += "- `parlay new-initiative <name>` — Create empty initiative directory\n"
-	content += "- `parlay move-feature @<feature> --to <initiative> | --out` — Relocate a feature\n"
-	content += "- `parlay create-dialogs @<feature>` — Scaffold dialog templates\n"
-	content += "- `parlay simplify` — Detect duplicated helpers and propose extractions\n"
-	content += "- `parlay validate --type <type> <path>` — Validate a file\n"
-	content += "- `parlay parse --type <type> <path>` — Parse to JSON\n"
-	content += "- `parlay check-coverage @<feature>` — Coverage check (JSON)\n"
-	content += "- `parlay view-page <page>` — Assemble page view\n"
-	content += "- `parlay lock-page <page>` — Lock page layout\n"
-	content += "- `parlay repair [--dry-run] [--yes]` — Validate and reconcile the three parallel trees\n"
-	content += "- `parlay loop <@feature> [--from <phase>]` — Walk a feature end-to-end through the design pipeline\n"
-	content += "- `parlay upgrade` — Redeploy skills and schemas from the binary\n"
-	content += "- `parlay add-root <subdir>` — Register a child parlay root (multi-root projects)\n"
-	content += "- `parlay status` — Show active root, features, and child roots\n"
-	content += "- `parlay promote-root` — Promote an orphaned child to standalone\n"
-	content += "- `parlay migrate-domain-model [--dry-run] [--force] [--root <name>]` — Convert domain-model.md to domain-model.yaml\n"
-	// parlay-feature: parlay-tool/multi-adapter
-	// parlay-component: cli-and-deployer-registration
-	content += "- `parlay migrate-config` — Convert legacy prototype-framework into a single-target presentation adapter-set\n"
-	content += "- `parlay migrate-spec` — Convert each feature's surface.md to surface.yaml\n"
-	content += "- `parlay migrate-capabilities` — Extract operation-shaped fragments from infrastructure.md into capabilities.yaml\n"
-	content += "- `parlay migrate-domain-operations` — Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs\n"
-	content += "- `parlay review-coverage <@feature>` — Walk suites, record approvals, write coverage-review.yaml\n"
-	content += "- `parlay check-supports <@feature>` — Pre-codegen support gate (JSON output for skill consumption)\n"
-	content += "- `parlay check-review-gate <@feature>` — Coverage-review gate before generate-code (JSON output)\n"
+	content += "Beyond the skills above, `parlay` also exposes plain CLI utility commands with no AI step " +
+		"(`parlay init`, `parlay validate`, `parlay repair`, `parlay status`, and others). " +
+		"Run `parlay --help` for the full, always-current list, or `parlay <command> --help` for a specific command's flags. " +
+		"This file intentionally does not mirror that list inline — the registered cobra command set is the single source of truth, " +
+		"and a hand-copied list here drifts the moment a command is added, renamed, or removed.\n\n"
 
 	if section := renderMultiRootSection(projectRoot); section != "" {
 		content += section

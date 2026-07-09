@@ -1,3 +1,8 @@
+---
+name: load-domain-model
+description: "Load and integrate external domain model"
+---
+
 # Load Domain Model
 
 <!-- parlay-feature: studio-support/domain-model-yaml-migration -->
@@ -9,13 +14,7 @@ Load an external domain model and integrate it with the active root's
 domain model.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** —
-the parlay project root resolved by the CLI from cwd, the `--root`
-flag, or `PARLAY_ROOT`. When invoking the CLI, pass
-`--ambiguity-as-signal` on commands that might face an ambiguous
-active root.
+<!-- parlay:expand-active-root -->
 
 ## Arguments
 
@@ -122,4 +121,5 @@ active root.
 
 Success messages and the merged YAML path go to **stdout**. The
 schema-version migration notice, conflict prompts, and errors go to
-**stderr**. Never mixed.
+**stderr**. Never mixed. `migrate-domain-model` follows the same
+stdout/stderr split — see its own Stdout / stderr discipline section.

@@ -1,3 +1,8 @@
+---
+name: migrate-config
+description: "Convert legacy prototype-framework into a single-target presentation adapter-set"
+---
+
 <!--
 parlay-feature: parlay-tool/multi-adapter
 parlay-component: config-migration-result

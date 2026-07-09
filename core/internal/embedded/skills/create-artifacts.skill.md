@@ -1,20 +1,18 @@
+---
+name: create-artifacts
+description: "Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs"
+---
+
 # Create Artifacts
 
-Determine which of the four co-equal spec artifacts a feature needs — `surface.md` / `surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml` — based on its intents and dialogs, then create the appropriate artifacts. The four artifacts cover orthogonal concerns: what the user sees, what operations the backend exposes, what architectural prose constrains the codebase, and what entities and vocabulary the feature shares. A feature picks whichever subset it needs; none of the artifacts is a stand-in for another.
+Determine which spec artifacts a feature needs, based on its intents and dialogs, then create the appropriate ones — <!-- parlay:expand-co-equal-artifacts -->. The four artifacts cover orthogonal concerns: what the user sees, what operations the backend exposes, what architectural prose constrains the codebase, and what entities and vocabulary the feature shares. A feature picks whichever subset it needs.
 
 ## Arguments
 
 - `feature`: The feature slug (e.g., `initiatives`)
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

@@ -1,3 +1,8 @@
+---
+name: review-coverage
+description: "Walk suites, record approvals, write coverage-review.yaml"
+---
+
 <!--
 parlay-feature: parlay-tool/multi-adapter
 parlay-component: coverage-review-authoring

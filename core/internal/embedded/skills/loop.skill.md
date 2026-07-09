@@ -1,3 +1,8 @@
+---
+name: loop
+description: "Walk a feature end-to-end through the parlay design pipeline"
+---
+
 # Loop
 
 Walk a feature end-to-end through the parlay design pipeline — intents → dialogs → artifacts → build → code — as one continuous guided process. The loop orchestrates the existing `/parlay-*` skills rather than re-implementing their logic. Confirmations are mandatory at every phase boundary; context is managed via three pre-defined subagents (parlay-designer / parlay-build / parlay-code) that `parlay init` / `parlay upgrade` deploys to your agent.
@@ -28,14 +33,7 @@ The five phases are organized into three phase-groups, each mapping to one of th
 Within a phase-group, skills are invoked inline (direct dispatch) so that, e.g., the dialogs skill sees the intents authored moments earlier in the same context. Between phase-groups, the loop ends the current subagent and invokes the next one — context clears as a side effect of the subagent boundary; no separate "clear context" primitive is required.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

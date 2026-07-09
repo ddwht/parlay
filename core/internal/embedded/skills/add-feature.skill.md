@@ -1,3 +1,8 @@
+---
+name: add-feature
+description: "Create a new feature"
+---
+
 # Add Feature
 
 Create a new feature folder with intents.md and dialogs.md. Optionally place it inside an initiative.
@@ -6,6 +11,9 @@ Create a new feature folder with intents.md and dialogs.md. Optionally place it 
 
 - `name`: The feature name (e.g., `upgrade plan creation`)
 - `initiative` (optional): The initiative to create the feature inside (e.g., `auth overhaul`). Auto-creates the initiative if it doesn't exist.
+
+<!-- parlay:active-root-aware -->
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

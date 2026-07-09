@@ -1,3 +1,8 @@
+---
+name: register-adapter
+description: "Register a framework adapter"
+---
+
 # Register Adapter
 
 Register a framework adapter from a YAML file.
@@ -5,6 +10,9 @@ Register a framework adapter from a YAML file.
 ## Arguments
 
 - `path`: Path to the adapter YAML file
+
+<!-- parlay:active-root-aware -->
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

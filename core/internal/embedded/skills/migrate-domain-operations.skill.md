@@ -1,3 +1,8 @@
+---
+name: migrate-domain-operations
+description: "Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs"
+---
+
 <!--
 parlay-feature: parlay-tool/multi-adapter
 parlay-component: domain-operations-migration-prompt

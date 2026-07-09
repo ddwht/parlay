@@ -43,6 +43,54 @@ Three-zone layout — strict ownership:
 - **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 `
 
+// renderAvailableCommands returns the "- `/parlay-<name>` — <description>"
+// list every deployer's Available Commands section is built from. One
+// line per skill, description sourced from the skill's own frontmatter
+// (embedded.ReadAllSkills), not a per-deployer title map.
+func renderAvailableCommands(skills []embedded.SkillEntry) string {
+	var commands string
+	for _, skill := range skills {
+		commands += fmt.Sprintf("- `/parlay-%s` — %s\n", skill.Name, skill.Description)
+	}
+	return commands
+}
+
+// renderProjectConfigBody renders the full templated project-config
+// body shared by every agent adapter that writes a persistent project
+// context file (CLAUDE.md, Cursor's parlay.mdc, ...): the intro, the
+// Available Commands list, Schema Loading, Interactive Questions, File
+// Ownership, and — when the project has registered child roots — the
+// Multi-Root Layout section.
+//
+// This is the single template both ClaudeDeployer and CursorDeployer
+// render from. Before this existed the two deployers each inlined their
+// own copy of this text, which is exactly how Cursor's File Ownership
+// section drifted out of sync with Claude's. Rendering both from one
+// function makes that drift structurally impossible: change the text
+// once, here, and every deployer picks it up.
+//
+// The caller is responsible for any deployer-specific wrapping around
+// this body — frontmatter, `<!-- parlay:begin/end -->` markers, etc.
+func renderProjectConfigBody(skills []embedded.SkillEntry, projectRoot string) string {
+	return fmt.Sprintf(`# Parlay Project
+
+This project uses the Parlay intent-driven design toolkit.
+All operations are available as /parlay-* slash commands.
+
+## Available Commands
+
+%s
+## Schema Loading
+
+Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
+
+## Interactive Questions
+
+When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
+
+%s%s`, renderAvailableCommands(skills), fileOwnershipSection, renderMultiRootSection(projectRoot))
+}
+
 var registry = map[string]func() Deployer{}
 
 // Register adds a deployer factory.

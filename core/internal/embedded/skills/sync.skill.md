@@ -1,3 +1,8 @@
+---
+name: sync
+description: "Check intent-dialog coverage"
+---
+
 # Sync Intents and Dialogs
 
 Check coverage, traceability, and drift between intents and downstream artifacts.
@@ -5,6 +10,9 @@ Check coverage, traceability, and drift between intents and downstream artifacts
 ## Arguments
 
 - `feature`: The feature slug (e.g., `upgrade-plan-creation`)
+
+<!-- parlay:active-root-aware -->
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

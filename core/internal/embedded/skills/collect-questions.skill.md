@@ -1,3 +1,8 @@
+---
+name: collect-questions
+description: "Collect open questions from intents"
+---
+
 # Collect Open Questions
 
 Scan intents for unresolved design questions. Use this as a quality gate before running build-feature.
@@ -5,6 +10,9 @@ Scan intents for unresolved design questions. Use this as a quality gate before 
 ## Arguments
 
 - `feature` (optional): The feature slug. If omitted, scans all features.
+
+<!-- parlay:active-root-aware -->
+<!-- parlay:expand-active-root -->
 
 ## Steps
 

@@ -1,3 +1,8 @@
+---
+name: generate-code
+description: "Generate prototype code from buildfile"
+---
+
 <!--
 parlay-section: cross-cutting
 parlay-extends: studio-support/layout-aware-codegen/layout-block-reader
@@ -35,14 +40,7 @@ This skill reads ONLY from these locations:
 This isolation rule is the load-bearing test for whether the buildfile is doing its job. If a code generator can produce a working, test-passing prototype using only buildfile + adapter, the buildfile is correct.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Project-pass mode
 
@@ -64,7 +62,7 @@ Concretely:
 - **No TTY checks.** Codegen behaves identically with and without a controlling terminal. A no-TTY container produces output behaviorally equivalent to a local TTY run on the same source state.
 - **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt the parent skill describes (mount-strategy ambiguity, hand-edited stable file, etc.) lives in the AI-agent author surface that wraps codegen — the codegen execution itself is prompt-free. The `--non-interactive` flag is silently accepted for compatibility but has no observable effect; running with or without it produces identical exit codes, the same testcases pass, and the same component tree is emitted.
 - **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
-- **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent.
+- **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent. This governs generate-code's own output only — `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception with pinned-stable wording that `studio-cli-hooks` pattern-matches on; see that skill's step 6.
 
 ## Steps
 
@@ -397,7 +395,7 @@ Earlier versions of the skill saved the baseline at the end of `build-feature`, 
 
 The fix is structural: the baseline and code-hashes are written together by a single command (`parlay save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
 
-## Error handling
+## Error Handling
 
 - `buildfile-not-found` — `.parlay/build/{feature}/buildfile.yaml` does not exist. Tell the user to run `/parlay-build-feature @{feature}` first.
 - `adapter-not-found` — `.parlay/adapters/{framework}.adapter.yaml` does not exist. Tell the user to run `/parlay-register-adapter` or `parlay init`.

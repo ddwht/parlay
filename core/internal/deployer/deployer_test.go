@@ -10,10 +10,14 @@ import (
 )
 
 // testSkills returns a small set of fake skills for testing deployers.
+// Description mirrors what embedded.ReadAllSkills would parse out of a
+// real skill's frontmatter — deployers read it directly off the field
+// rather than deriving it, so fixtures need it populated to exercise
+// that path meaningfully.
 func testSkills() []embedded.SkillEntry {
 	return []embedded.SkillEntry{
-		{Name: "add-feature", Content: []byte("# Add Feature\nStep 1: do something\n")},
-		{Name: "build-feature", Content: []byte("# Build Feature\nStep 1: build it\n")},
+		{Name: "add-feature", Description: "Create a new feature", Content: []byte("# Add Feature\nStep 1: do something\n")},
+		{Name: "build-feature", Description: "Generate buildfile and testcases", Content: []byte("# Build Feature\nStep 1: build it\n")},
 	}
 }
 
@@ -137,11 +141,26 @@ func TestGenericDeployer_Layout(t *testing.T) {
 	}
 }
 
-func TestSkillTitle_OnboardSkill(t *testing.T) {
-	title := skillTitle("onboard")
-	if title != "Onboard existing codebase and draft adapter" {
-		t.Errorf("skillTitle(onboard) = %q, want %q", title, "Onboard existing codebase and draft adapter")
+// TestSkillDescription_OnboardSkill guards the single-sourced
+// replacement for the old skillTitle map: the "onboard" skill's
+// human-facing description now lives in its own frontmatter
+// (embedded/skills/onboard.skill.md) and is parsed out by
+// embedded.ReadAllSkills, not hand-duplicated in this package.
+func TestSkillDescription_OnboardSkill(t *testing.T) {
+	skills, err := embedded.ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
 	}
+	for _, s := range skills {
+		if s.Name != "onboard" {
+			continue
+		}
+		if s.Description != "Onboard existing codebase and draft adapter" {
+			t.Errorf("onboard skill Description = %q, want %q", s.Description, "Onboard existing codebase and draft adapter")
+		}
+		return
+	}
+	t.Fatal("onboard skill not found in embedded bundle")
 }
 
 // parlay-feature: parlay-tool/parlay-loop
@@ -223,7 +242,8 @@ func TestGenericDeployer_EmbedsPhaseGroups(t *testing.T) {
 		"### parlay-designer",
 		"### parlay-build",
 		"### parlay-code",
-		"parlay loop <@feature>",
+		"## CLI Utility Commands",
+		"parlay --help",
 	}
 	for _, want := range wantSections {
 		if !strings.Contains(content, want) {
@@ -232,25 +252,78 @@ func TestGenericDeployer_EmbedsPhaseGroups(t *testing.T) {
 	}
 }
 
-// parlay-feature: parlay-tool/parlay-loop
-// parlay-component: ClaudeAdapterSubagentDeployment
-// parlay-artifact: test
-func TestSkillTitle_Loop(t *testing.T) {
-	got := skillTitle("loop")
-	want := "Walk a feature end-to-end through the parlay design pipeline"
-	if got != want {
-		t.Errorf("skillTitle(loop) = %q, want %q", got, want)
+// TestGenericDeployer_SkillsCarryExpandedActiveRootProse guards a
+// structural property of the marker-expansion design: expansion happens
+// once, inside embedded.ReadAllSkills, upstream of every deployer — not
+// per-deployer. GenericDeployer never re-implements the substitution
+// (it just concatenates skill.Content into AGENT_INSTRUCTIONS.md), so
+// this asserts real skill content flowing through Generic ends up with
+// the marker fully expanded, exactly like Claude and Cursor get it, and
+// never leaks the raw `<!-- parlay:expand-active-root -->` placeholder
+// to a generic-adapter project.
+func TestGenericDeployer_SkillsCarryExpandedActiveRootProse(t *testing.T) {
+	skills, err := embedded.ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+
+	root := t.TempDir()
+	if err := (&GenericDeployer{}).Deploy(root, skills); err != nil {
+		t.Fatalf("Deploy failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "AGENT_INSTRUCTIONS.md"))
+	if err != nil {
+		t.Fatalf("AGENT_INSTRUCTIONS.md missing: %v", err)
+	}
+	content := string(data)
+
+	if strings.Contains(content, "<!-- parlay:expand-active-root -->") {
+		t.Error("AGENT_INSTRUCTIONS.md leaks the unexpanded active-root marker — Generic must receive already-expanded skill content")
+	}
+	if !strings.Contains(content, "## Active root") {
+		t.Error("AGENT_INSTRUCTIONS.md is missing the expanded '## Active root' prose — expected at least one embedded skill to carry the marker")
 	}
 }
 
-// TestClaudeAndCursor_FileOwnershipSectionIdentical guards against the
-// File Ownership doctrine drifting out of sync between deployers again
-// (Claude's CLAUDE.md and Cursor's parlay.mdc used to carry two
-// different, non-current descriptions of the spec-artifact set). Both
-// deployers render the shared fileOwnershipSection constant verbatim,
-// so this asserts the rendered project-config files agree byte-for-byte
-// on that block.
-func TestClaudeAndCursor_FileOwnershipSectionIdentical(t *testing.T) {
+// parlay-feature: parlay-tool/parlay-loop
+// parlay-component: ClaudeAdapterSubagentDeployment
+// parlay-artifact: test
+//
+// TestSkillDescription_Loop is the loop-skill counterpart to
+// TestSkillDescription_OnboardSkill — same single-sourcing guard.
+func TestSkillDescription_Loop(t *testing.T) {
+	skills, err := embedded.ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	want := "Walk a feature end-to-end through the parlay design pipeline"
+	for _, s := range skills {
+		if s.Name != "loop" {
+			continue
+		}
+		if s.Description != want {
+			t.Errorf("loop skill Description = %q, want %q", s.Description, want)
+		}
+		return
+	}
+	t.Fatal("loop skill not found in embedded bundle")
+}
+
+// TestClaudeAndCursorProjectConfigBodyIdentical is the general parity
+// guard for the single-templated-source refactor: both ClaudeDeployer's
+// CLAUDE.md and CursorDeployer's parlay.mdc render their project-config
+// body from the one shared renderProjectConfigBody function (Available
+// Commands, Schema Loading, Interactive Questions, File Ownership,
+// Multi-Root Layout). Before that refactor each deployer inlined its
+// own copy of this text — which is exactly how Cursor's File Ownership
+// section drifted to a stale, non-current description of the
+// spec-artifact set while Claude's stayed current. This test strips
+// each file down to just that shared body (Claude's parlay-marker
+// contents; Cursor's content after its frontmatter) and asserts the two
+// are byte-for-byte identical, so any future re-inlining or
+// per-deployer edit of the shared block fails the build immediately
+// instead of silently drifting again.
+func TestClaudeAndCursorProjectConfigBodyIdentical(t *testing.T) {
 	skills := testSkills()
 
 	claudeRoot := t.TempDir()
@@ -261,6 +334,13 @@ func TestClaudeAndCursor_FileOwnershipSectionIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected CLAUDE.md: %v", err)
 	}
+	// A fresh deploy (no pre-existing CLAUDE.md) appends one trailing
+	// newline after the closing marker — see writeCLAUDEmd's
+	// no-existing-file branch.
+	if !strings.HasPrefix(string(claudeMd), parlayMarkerBegin+"\n") || !strings.HasSuffix(string(claudeMd), parlayMarkerEnd+"\n") {
+		t.Fatalf("CLAUDE.md is not wrapped in the expected parlay markers:\n%s", claudeMd)
+	}
+	claudeBody := strings.TrimSuffix(strings.TrimPrefix(string(claudeMd), parlayMarkerBegin+"\n"), parlayMarkerEnd+"\n")
 
 	cursorRoot := t.TempDir()
 	if err := (&CursorDeployer{}).Deploy(cursorRoot, skills); err != nil {
@@ -270,12 +350,19 @@ func TestClaudeAndCursor_FileOwnershipSectionIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected parlay.mdc: %v", err)
 	}
-
-	if !strings.Contains(string(claudeMd), fileOwnershipSection) {
-		t.Error("CLAUDE.md does not contain the shared fileOwnershipSection verbatim")
+	const cursorHeader = "---\ndescription: \"Parlay project context and available skills\"\nalwaysApply: true\n---\n\n"
+	if !strings.HasPrefix(string(cursorRule), cursorHeader) {
+		t.Fatalf("parlay.mdc does not start with the expected Cursor frontmatter header:\n%s", cursorRule)
 	}
-	if !strings.Contains(string(cursorRule), fileOwnershipSection) {
-		t.Error("parlay.mdc does not contain the shared fileOwnershipSection verbatim")
+	cursorBody := strings.TrimPrefix(string(cursorRule), cursorHeader)
+
+	if claudeBody != cursorBody {
+		t.Errorf("CLAUDE.md and parlay.mdc project-config bodies differ despite both being rendered from renderProjectConfigBody.\nCLAUDE.md body:\n%s\n\nparlay.mdc body:\n%s", claudeBody, cursorBody)
+	}
+	// Sanity: make sure the shared body isn't accidentally empty (which
+	// would make the equality check above vacuously true).
+	if !strings.Contains(claudeBody, "## File Ownership") || !strings.Contains(claudeBody, "## Available Commands") {
+		t.Error("shared project-config body is missing expected sections — test fixture may have drifted")
 	}
 }
 

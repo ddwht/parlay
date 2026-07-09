@@ -1,3 +1,8 @@
+---
+name: generate-enggspec
+description: "Generate engineering specification"
+---
+
 # Generate Engineering Specification
 
 Translate feature design artifacts into a formal engineering specification for handoff.
@@ -7,20 +12,13 @@ Translate feature design artifacts into a formal engineering specification for h
 - `feature`: The feature slug (e.g., `upgrade-plan-creation`)
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Steps
 
 1. **Load project config** — Read `.parlay/config.yaml` to determine the SDD framework format.
 
-2. **Read all feature artifacts** — the four spec artifacts are co-equal; read whichever subset the feature has:
+2. **Read all feature artifacts** — <!-- parlay:expand-co-equal-artifacts -->; read whichever subset the feature has:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
    - `spec/intents/{feature}/surface.yaml` or `surface.md` (if exists — YAML wins when both are present)

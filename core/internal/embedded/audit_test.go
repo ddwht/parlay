@@ -91,6 +91,83 @@ func TestSkillSourceAudit(t *testing.T) {
 	}
 }
 
+// TestMarkerExpansion guards the deploy-time marker-expansion mechanism
+// in skills.go: every skill's raw source may drop in the compact
+// `<!-- parlay:expand-active-root -->` / `<!-- parlay:expand-co-equal-artifacts -->`
+// placeholders, but ReadAllSkills must always hand deployers fully
+// expanded prose — a marker that leaks through unexpanded (typo in the
+// constant, marker added to a skill after expandMarkers stopped being
+// called, etc.) would ship literal HTML-comment placeholder text to
+// every deployed agent surface.
+func TestMarkerExpansion(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+
+	sawActiveRootExpansion := false
+	sawCoEqualExpansion := false
+	for _, s := range skills {
+		body := string(s.Content)
+		if strings.Contains(body, activeRootMarker) {
+			t.Errorf("skill %s still contains the unexpanded %q marker after ReadAllSkills", s.Name, activeRootMarker)
+		}
+		if strings.Contains(body, coEqualArtifactsMarker) {
+			t.Errorf("skill %s still contains the unexpanded %q marker after ReadAllSkills", s.Name, coEqualArtifactsMarker)
+		}
+		if strings.Contains(body, "## Active root") {
+			sawActiveRootExpansion = true
+		}
+		if strings.Contains(body, coEqualArtifactsExpansion) {
+			sawCoEqualExpansion = true
+		}
+	}
+	if !sawActiveRootExpansion {
+		t.Error("no skill exercised the active-root marker expansion — test fixture may have drifted; expected at least one skill to use `<!-- parlay:expand-active-root -->`")
+	}
+	if !sawCoEqualExpansion {
+		t.Error("no skill exercised the co-equal-artifacts marker expansion — expected at least one skill to use `<!-- parlay:expand-co-equal-artifacts -->`")
+	}
+}
+
+// TestCreateArtifactsStep2RoutingRulePhrase guards create-artifacts
+// step 2's intent-classification routing rule against silent drift.
+// This mention of the co-equal-artifacts doctrine is deliberately NOT
+// marker-extracted (unlike the skill's intro sentence, which uses
+// `<!-- parlay:expand-co-equal-artifacts -->`): step 2's sentence is
+// context-woven prose about how classification routes an intent to
+// infrastructure.md vs capabilities.yaml, not a restatement of the
+// four-artifact definition itself, so forcing it through the shared
+// marker would read awkwardly. A phrase contract is the cheaper way to
+// keep it from drifting out of sync with the doctrine.
+func TestCreateArtifactsStep2RoutingRulePhrase(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var createArtifacts string
+	for _, s := range skills {
+		if s.Name == "create-artifacts" {
+			createArtifacts = string(s.Content)
+			break
+		}
+	}
+	if createArtifacts == "" {
+		t.Fatal("create-artifacts skill not found in embedded bundle")
+	}
+
+	required := []string{
+		"co-equal",
+		"an architectural intent flows to `infrastructure.md` directly",
+		"not via `capabilities.yaml`",
+	}
+	for _, kw := range required {
+		if !strings.Contains(createArtifacts, kw) {
+			t.Errorf("create-artifacts skill missing required phrase %q in step 2's routing rule", kw)
+		}
+	}
+}
+
 // TestDesignerAgentMentionsFourArtifacts guards against the designer
 // agent's artifacts-phase prose drifting back to the pre-four-artifact
 // world (it used to say "surface.md, infrastructure.md, or both"). The

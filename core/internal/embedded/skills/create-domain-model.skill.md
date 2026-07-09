@@ -1,3 +1,8 @@
+---
+name: create-domain-model
+description: "Create domain model from features"
+---
+
 # Create Domain Model
 
 <!-- parlay-feature: studio-support/domain-model-yaml-migration -->
@@ -11,14 +16,7 @@ Analyze all features in the active root and write a single
 `domain-model.yaml` at the project level.
 
 <!-- parlay:active-root-aware -->
-## Active root
-
-Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
-
-- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
-- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
-
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+<!-- parlay:expand-active-root -->
 
 ## Steps
 
@@ -139,7 +137,12 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
       The wording "Created empty domain-model.yaml stub at {path} —
       ready to author." is **stable** — the studio-cli-hooks feature
       pattern-matches on this single line to chain its "Open
-      Studio's Domain Model Editor?" prompt.
+      Studio's Domain Model Editor?" prompt. This is a deliberate,
+      narrow exception to the general "CI must not pattern-match
+      stdout" rule stated in `build-feature` and `generate-code` —
+      those skills' own output stays unstable-by-design; only this one
+      greenfield-stub line is pinned. Don't generalize this exception
+      to other output, and don't "fix" it to match the general rule.
 
    3. **Safety invariant.** A designer who hand-authored a domain
       model in Studio and then runs `parlay create-domain-model` must

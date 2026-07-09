@@ -1,3 +1,8 @@
+---
+name: migrate-spec
+description: "Convert each feature's surface.md to surface.yaml"
+---
+
 <!--
 parlay-feature: parlay-tool/multi-adapter
 parlay-component: spec-migration-report
