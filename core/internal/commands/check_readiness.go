@@ -321,16 +321,36 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 		})
 		return issues
 	}
-	if pc.PrototypeFramework == "" {
+	// An adapter must be configured for the build stage. This is satisfied by
+	// either the legacy prototype-framework field (deprecated — v0.3 removes
+	// it) or, for adapter-set projects, a parseable adapter-set.yaml with at
+	// least one filled slot. Studio and other multi-target projects carry no
+	// prototype-framework, so requiring it alone would falsely block them.
+	if pc.PrototypeFramework == "" && !hasConfiguredAdapterSet(cfg) {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
-			Code:     "no-prototype-framework",
-			Message:  "no prototype-framework configured",
-			Fix:      "set prototype-framework in .parlay/config.yaml",
+			Code:     "no-adapter-configured",
+			Message:  "no adapter configured (neither adapter-set.yaml nor prototype-framework)",
+			Fix:      "define .parlay/adapter-set.yaml (recommended) or set prototype-framework in .parlay/config.yaml",
 		})
 	}
 
 	return issues
+}
+
+// hasConfiguredAdapterSet reports whether the active root carries a parseable
+// adapter-set.yaml with at least one filled target slot. This is the modern
+// replacement for the deprecated prototype-framework field: an adapter-set
+// with any slot filled (presentation-only included) means the project has an
+// adapter configured for the build stage. A missing or unparseable file
+// returns false, preserving the legacy prototype-framework requirement for
+// projects that have not migrated.
+func hasConfiguredAdapterSet(cfg *config.Context) bool {
+	as, err := parser.ParseAdapterSet(cfg.AdapterSetPath())
+	if err != nil {
+		return false
+	}
+	return len(as.Targets) > 0
 }
 
 // parlay-feature: infrastructure-layer

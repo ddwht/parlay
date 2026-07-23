@@ -167,3 +167,97 @@ func TestReadiness_BuildFeature_Valid(t *testing.T) {
 		}
 	}
 }
+
+// A multi-target project configures its adapter via adapter-set.yaml and
+// carries no (deprecated) prototype-framework field. The build-feature gate
+// must treat that as configured, not block it.
+func TestReadiness_BuildFeature_AdapterSetSatisfiesAdapterRequirement(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := filepath.Join(dir, "spec", "intents", "test-feature")
+	os.MkdirAll(featureDir, 0755)
+
+	intents := `## Some Intent
+
+**Goal**: Do a thing
+**Persona**: Admin
+`
+	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
+	os.WriteFile(filepath.Join(featureDir, "dialogs.md"), []byte(""), 0644)
+
+	surface := `## My Fragment
+
+**Shows**: Some data
+**Source**: @test-feature/some-intent
+**Page**: dashboard
+**Region**: main
+`
+	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+
+	// Config with NO prototype-framework, plus an adapter-set.yaml — the
+	// modern multi-target shape.
+	parlayDir := filepath.Join(dir, ".parlay")
+	os.MkdirAll(parlayDir, 0755)
+	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\n"), 0644)
+	adapterSet := `name: test-project
+targets:
+  presentation:
+    adapter: some-ui-adapter
+    root: internal/ui
+  application:
+    adapter: some-app-adapter
+    root: .
+`
+	os.WriteFile(filepath.Join(parlayDir, "adapter-set.yaml"), []byte(adapterSet), 0644)
+
+	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
+
+	for _, i := range issues {
+		if i.Code == "no-adapter-configured" {
+			t.Errorf("adapter-set.yaml should satisfy the adapter requirement, got: %+v", i)
+		}
+		if i.Severity == "error" {
+			t.Errorf("unexpected error: %+v", i)
+		}
+	}
+}
+
+// With neither prototype-framework nor adapter-set.yaml, the adapter is
+// genuinely unconfigured and the gate must still error.
+func TestReadiness_BuildFeature_NoAdapterConfigured(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := filepath.Join(dir, "spec", "intents", "test-feature")
+	os.MkdirAll(featureDir, 0755)
+
+	intents := `## Some Intent
+
+**Goal**: Do a thing
+**Persona**: Admin
+`
+	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
+	os.WriteFile(filepath.Join(featureDir, "dialogs.md"), []byte(""), 0644)
+
+	surface := `## My Fragment
+
+**Shows**: Some data
+**Source**: @test-feature/some-intent
+**Page**: dashboard
+**Region**: main
+`
+	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+
+	parlayDir := filepath.Join(dir, ".parlay")
+	os.MkdirAll(parlayDir, 0755)
+	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\n"), 0644)
+
+	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
+
+	hasError := false
+	for _, i := range issues {
+		if i.Code == "no-adapter-configured" {
+			hasError = true
+		}
+	}
+	if !hasError {
+		t.Errorf("expected no-adapter-configured error, got: %+v", issues)
+	}
+}
