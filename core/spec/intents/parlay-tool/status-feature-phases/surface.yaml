@@ -1,0 +1,69 @@
+feature: parlay-tool/status-feature-phases
+fragments:
+    - actions: (none)
+      name: Per-feature phase column in human listing
+      notes:
+        - 'The existing per-root features section already renders a tabwriter table of feature identifiers. This fragment adds one new column to the right of the identifier: the pipeline phase, one of `intents | dialogs | artifacts | build | done`, lowercase.'
+        - The column is right-padded by the existing tabwriter — no new layout primitive. Phase tokens are bare lowercase strings with no decoration (no brackets, no color codes, no progress bars).
+        - Every listed feature gets exactly one phase value. Never blank, never an error placeholder. The `code` phase is intentionally absent from the vocabulary.
+        - The column is unconditional — it appears whenever the features section is rendered, in both child-root and parent-root invocations. There is no flag to turn it off in human output.
+        - Existing callers see the addition as a new trailing column on each feature line. No other field shifts position. No other line changes.
+      order: 20
+      page: parlay-status (CLI)
+      region: main
+      shows: data-table, data-value
+      source: '@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status'
+    - actions: (none)
+      name: Hierarchical parent-and-children listing
+      notes:
+        - 'When the resolved active root is a parent, the human output is a hierarchical listing: parent root header → parent''s own features (with phase column) → for each registered child root in registration order, a child section header (the child''s name) → that child''s features (with phase column).'
+        - When the active root is a child or standalone, only that root's section is printed. No parent header is synthesized. No sibling sections are emitted. Aggregation is downward-only.
+        - 'Bare-parent case (parent has no parent-owned features, only registered children): parent header prints with `features: (none)` (or zero-count equivalent), then each child section prints normally. This is not a special-case branch — it falls out of the per-root walk.'
+        - 'Same-name-different-root: a feature named `widget` appearing under both `core/` and `studio/` is listed once per root with each root''s independently-computed phase. The two entries do not collide or get deduplicated.'
+        - 'Ordering is stable: parent first, then children in the order they appear in the parent''s `pctx.Index.Children` slice (the on-disk YAML order from `<parent>/.parlay/roots.yaml`). Status MUST NOT alphabetize. Within each root, features keep whatever ordering the existing per-root listing already uses.'
+      order: 10
+      page: parlay-status (CLI)
+      region: main
+      shows: data-tree, data-value, message
+      source: '@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status, @parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots'
+    - actions: (none)
+      name: Unavailable child root inline diagnostic
+      notes:
+        - 'When a registered child root is missing on disk, unreadable, or otherwise broken, the aggregated parent listing must NOT abort. The child''s header still prints, followed by an inline diagnostic line of the form `(unavailable: <reason>)` (e.g. `(unavailable: spec/intents not readable: open /workspace/parlay-dev/studio/spec/intents: no such file or directory)`). No feature lines are emitted under that header. The remaining children continue to render in registration order.'
+        - The command exits zero in this case — one bad child does not break the whole aggregated view. Stack traces are NOT emitted. The diagnostic is a single human-readable line.
+        - In `--json` output, the same condition surfaces as a `children[]` entry that includes the `name`, `path`, an empty `features` array, and an `unavailable` string field carrying the same reason text. The overall command still exits zero.
+      order: 15
+      page: parlay-status (CLI)
+      region: main
+      shows: message, status
+      source: '@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots, @parlay-tool/status-feature-phases/emit-machine-readable-status-with-json'
+    - actions: (none)
+      name: Machine-readable JSON output via `--json`
+      notes:
+        - The `--json` flag is additive and opt-in. Default behavior of `parlay status` (human tabular output) is byte-for-byte unchanged for existing callers, except for the addition of the new phase column and the new per-child sections in parent-root invocations.
+        - When `--json` is set, a single JSON document is emitted on stdout. No human-readable preamble. No trailing log lines on stdout. All diagnostics go to stderr.
+        - 'Envelope shape (top-level keys):'
+        - Each feature entry includes at minimum `id` (the feature slug, e.g. `parlay-tool/status-feature-phases`) and `phase` (one of `intents`, `dialogs`, `artifacts`, `build`, `done`). Additional fields may be added later without bumping `schema_version`.
+        - Multi-word JSON keys use snake_case (`schema_version`, not `schemaVersion` or `SchemaVersion`).
+        - 'Unavailable child: that child''s entry still appears in `children[]` with `name`, `path`, an empty `features` array, and an `unavailable` string field describing the reason. Command exits zero.'
+        - 'Bare-parent case: `root.features` is `[]`, `children` lists each registered child with its own `features` array. No special-case envelope shape.'
+        - 'Error path: with no active parlay root, the command prints a diagnostic on stderr (e.g. `no active parlay root`), prints nothing on stdout (no partial envelope, no empty object), and exits non-zero. The JSON contract is broken by absence, never by emitting an invalid envelope.'
+        - 'Coexistence with `--ambiguity-as-signal`: when ambiguity is detected and that flag is set, the CLI exits with code 11 and emits the existing ambiguity JSON envelope on stderr (per active-root convention). Stdout stays empty. The success-path `--json` envelope is NOT emitted in that case — the two streams (stderr for ambiguity, stdout for status payload) and the two exit codes keep the schemas from conflating.'
+        - 'Malformed flag (e.g. `--jsno`): cobra''s default handling applies — `Error: unknown flag: --jsno` on stderr, usage printed, non-zero exit. We do NOT customize this path.'
+      order: 30
+      page: parlay-status (CLI)
+      region: main
+      shows: code
+      source: '@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json'
+    - actions: (none)
+      name: Exit-code and stream discipline
+      notes:
+        - Exit zero whenever the active root resolves and the listing renders, even if some children are unavailable.
+        - Exit non-zero only when the active root cannot be resolved (no parlay root in cwd-walk, no `--root`, no `PARLAY_ROOT`) or when ambiguity is detected with `--ambiguity-as-signal` (exit code 11, stderr JSON envelope per active-root convention).
+        - 'Stdout discipline: human output OR a single JSON document, depending on `--json`. Never both. Never a JSON document mixed with log lines.'
+        - 'Stderr discipline: all diagnostics, ambiguity envelopes, and error messages. Never the success-path payload.'
+      order: 40
+      page: parlay-status (CLI)
+      region: main
+      shows: status
+      source: '@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json, @parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots'
