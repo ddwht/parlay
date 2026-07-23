@@ -1,5 +1,7 @@
 # Parlay Studio — Architectural Proposal (v4)
 
+> **Status (2026-07-23): historical design proposal.** This document records the v4 Studio design; it is not a description of the shipped system. Since superseded: the doc's references to `surface.md` and `domain-model.md` reflect the markdown-era spec formats. Both have since migrated to YAML — `surface.yaml` (via `parlay migrate-spec`) and `domain-model.yaml` (via `parlay migrate-domain-model`). Where the body says `surface.md` or treats `domain-model.md` migration as an open question, read `surface.yaml` / `domain-model.yaml` as the current formats. Read the body below as design rationale, not current behavior.
+
 A round-trip prototyping toolchain built as an extension on top of Parlay Core.
 
 ## What's new in v4

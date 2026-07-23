@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # Includes a common fallback for environments where Go is installed under $HOME/go/bin.
 GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 
-.PHONY: build sync-skills verify-skills
+.PHONY: build test vet sync-skills verify-skills
 
 # Source for a throwaway helper binary used only by verify-skills (see
 # that target's comment for why it exists). Written to a temp file with
@@ -39,6 +39,19 @@ build:
 	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
 	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
 
+# Run the test suite across BOTH Go modules. studio/ is a nested module
+# with its own go.mod, so the root module's `./...` never reaches it — it
+# must be tested from its own directory. CGO stays off to match `build`.
+test:
+	CGO_ENABLED=0 $(GO) test ./...
+	cd studio && CGO_ENABLED=0 $(GO) test ./...
+
+# Vet both modules the same way: root module, then the nested studio
+# module from its own directory. Same CGO/two-module reasoning as `test`.
+vet:
+	CGO_ENABLED=0 $(GO) vet ./...
+	cd studio && CGO_ENABLED=0 $(GO) vet ./...
+
 # Edit-source -> build -> upgrade, in one shot.
 # Use this after changing anything under core/internal/embedded/{skills,schemas}/.
 # This is the dogfooding rule documented in CLAUDE.md.
@@ -64,7 +77,7 @@ sync-skills: build
 verify-skills: $(shell mkdir -p core/internal/embedded/cmd/dumpskills-verify-tmp)$(file >core/internal/embedded/cmd/dumpskills-verify-tmp/main.go,$(DUMPSKILLS_GO_SRC))
 	@drift=0; \
 	tmpdir=$$(mktemp -d); \
-	trap 'rm -rf "$$tmpdir"; rm -rf core/internal/embedded/cmd/dumpskills-verify-tmp' EXIT; \
+	trap 'rm -rf "$$tmpdir"; rm -rf core/internal/embedded/cmd/dumpskills-verify-tmp; rmdir core/internal/embedded/cmd 2>/dev/null || true' EXIT; \
 	$(GO) run ./core/internal/embedded/cmd/dumpskills-verify-tmp > "$$tmpdir/expanded-all.txt" 2>"$$tmpdir/dump.err" \
 		|| { echo "verify-skills: failed to run dump helper:"; cat "$$tmpdir/dump.err"; exit 1; }; \
 	awk -v outdir="$$tmpdir" '/^===DUMPSKILL:/{if(f)close(f); name=$$0; sub(/^===DUMPSKILL:/,"",name); sub(/===$$/,"",name); f=outdir"/expanded."name".txt"; next} {print > f}' "$$tmpdir/expanded-all.txt"; \

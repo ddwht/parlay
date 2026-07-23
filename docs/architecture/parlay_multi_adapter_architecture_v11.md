@@ -1,5 +1,7 @@
 # Parlay Multi-Adapter Architecture
 
+> **Status (2026-07-23): historical design proposal.** This document records the thinking that led to the multi-adapter work; it is not a description of the shipped system. The main point since superseded: this doc frames the spec layer as **exactly three artifacts** (`surface`, `capabilities`, `domain-model`) and describes `infrastructure` as *renamed* to `capabilities`. The shipped model is **four co-equal artifacts** — `infrastructure.md` was *retained* alongside `capabilities.yaml`, not renamed away. Operation-shaped content lives in `capabilities.yaml`; architectural prose (boundaries, probes, allowlists, dependency pins) stays in `infrastructure.md`. The two are co-equal and cover orthogonal concerns. Read the body below as design rationale, not current behavior.
+
 ## Status
 
 Architecture proposal, simplified revision.

@@ -3,9 +3,9 @@
 An intent-driven specification framework that turns user goals into working prototypes through a structured pipeline. Describe what users need, not how to code it.
 
 ```
-intent → dialog → artifacts (surface and/or infrastructure) → [design-spec] → buildfile → code
-                                                                   ↑ optional
-                                                                (from Figma)
+intent → dialog → artifacts (surface, capabilities, infrastructure, domain-model) → [design-spec] → buildfile → code
+                                                                                        ↑ optional
+                                                                                     (from Figma)
 ```
 
 Parlay bridges the gap between design and code generation by providing:
@@ -40,7 +40,7 @@ go install github.com/ddwht/parlay/core/cmd/parlay@latest
 parlay init
 ```
 
-`parlay init` and `parlay upgrade` are the main CLI commands humans run directly (init for a new project, upgrade after the binary version changes). A few repair/inspection utilities are also human-facing; everything else is invoked by skills. The init prompt asks for your AI agent (Claude Code, Cursor, or Generic), SDD framework (GitHub SpecKit, Kiro, etc.), and prototype framework (React + Ant Design, Go CLI, etc.). It creates:
+`parlay init` and `parlay upgrade` are the main CLI commands humans run directly (init for a new project, upgrade after the binary version changes). A few repair/inspection utilities are also human-facing; everything else is invoked by skills. The init prompt asks for your AI agent (Claude Code, Cursor, or Generic), SDD framework (GitHub SpecKit, Kiro, or None), and prototype framework (Go CLI, React + Ant Design, Angular + Material, Angular + Clarity, or none). It then optionally offers a bundled adapter-set preset for multi-target projects (skip it to stay presentation-only). It creates:
 
 ```
 .parlay/
@@ -144,13 +144,14 @@ This generates complete dialog flows from your intents — triggers, happy paths
 /parlay-create-artifacts @task-list
 ```
 
-Parlay classifies each intent as **surface** (user-visible output), **infrastructure** (internal code changes with no visible output), or **ambiguous**, and creates the right artifacts:
+Parlay classifies each intent against four co-equal artifacts and creates whichever subset the feature needs. The four cover orthogonal concerns — what the user sees, what operations the backend exposes, what architectural prose constrains the codebase, and what entities the feature shares:
 
-- **surface.md** — framework-agnostic UI fragments (Shows, Actions, Flows)
-- **infrastructure.md** — cross-cutting code changes (affected scope, behavior, invariants)
-- **both** when a feature has visible output plus plumbing
+- **surface.yaml** — framework-agnostic UI fragments (Shows, Actions, Flows)
+- **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries against domain entities)
+- **infrastructure.md** — architectural prose (boundaries, probes, allowlists, dependency pins) that does not reduce to operations
+- **domain-model.yaml** — entities, relationships, and shared vocabulary
 
-You review the per-intent classification before any file is written. Generated surfaces look like:
+`capabilities.yaml` and `infrastructure.md` are co-equal, not stand-ins for each other: an operation-shaped intent flows to capabilities, an architectural intent flows to infrastructure directly. Intents with conflicting signals are flagged **ambiguous** and you're asked to disambiguate. You review the per-intent classification before any file is written. Generated surfaces look like:
 
 ```markdown
 ## Add Task Command
@@ -267,9 +268,9 @@ Every section is optional. Cross-reference checks (shell refs, guard refs, dupli
 /parlay-build-feature @task-list
 ```
 
-Loads your intents, dialogs, surface, infrastructure (if present), adapter, and blueprint, then generates:
+Loads your intents, dialogs, and whichever spec artifacts exist (surface, capabilities, infrastructure, domain-model), plus the adapter and blueprint, then generates:
 
-- `.parlay/build/task-list/buildfile.yaml` — structured intermediate representation with framework-specific widgets. Surface fragments become `components:`; infrastructure fragments become `cross-cutting:`.
+- `.parlay/build/task-list/buildfile.yaml` — structured intermediate representation with framework-specific widgets. Surface fragments become `components:`; infrastructure fragments become `cross-cutting:`; capabilities operations become the top-level `operations:` block (for multi-target projects). Domain entities are referenced by name from `domain-model.yaml` rather than copied in.
 - `.parlay/build/task-list/testcases.yaml` — verification tests (element-visibility and action-enabled assertions)
 
 The buildfile is tool-internal — you never edit it. It's the contract between design and code.
@@ -346,9 +347,11 @@ spec/
     <feature>/                  (or) <initiative>/<feature>/
       intents.md                Human-authored goals
       dialogs.md                Human-authored conversations
-      surface.md                Generated, human-reviewed UI fragments
-      infrastructure.md         Generated, human-reviewed cross-cutting changes
-      domain-model.md           Generated, human-reviewed entities
+      surface.yaml              Generated, human-reviewed UI fragments (surface.md = legacy)
+      capabilities.yaml         Generated, human-reviewed backend operations
+      infrastructure.md         Generated, human-reviewed architectural prose
+      domain-model.yaml         Generated, human-reviewed entities (domain-model.md = legacy)
+      <page>.page.md            Per-page layout (optional)
   handoff/                    Engineering output (per feature)
     <feature>/
       specification.md          Generated engineering spec
@@ -358,6 +361,7 @@ spec/
 .parlay/                      Tool internals (never user-facing)
   config.yaml                   Project configuration
   blueprint.yaml                Application architecture
+  adapter-set.yaml              Adapter slot topology (multi-target projects only)
   schemas/                      Schema definitions
   adapters/                     Framework adapters
   build/
@@ -381,18 +385,21 @@ Three zones with strict ownership:
 
 ## Schemas
 
-Parlay has 23 schemas defining every artifact. Key schemas include:
+Parlay has 24 schemas defining every artifact. Key schemas include:
 
 | Schema | What it defines |
 |---|---|
 | `intent.schema.md` | Goal, Persona, Priority, Context, Action, Objects, Constraints, Verify, Questions |
 | `dialog.schema.md` | User/System/Background/Conditional turns, Options, Branches |
 | `surface.schema.md` | Shows, Actions, Flows — closed interaction vocabulary |
-| `infrastructure.schema.md` | Affects, Behavior, Invariants, Source — framework-agnostic cross-cutting changes |
+| `capabilities.schema.md` | Operations (commands, queries) with input, steps, output, errors — closed-vocabulary backend behavior |
+| `infrastructure.schema.md` | Affects, Behavior, Invariants, Source — architectural prose for boundaries, probes, allowlists, dependency pins |
+| `domain-model.schema.md` | Entities, relationships, value types, and shared vocabulary |
 | `adapter.schema.md` | Widget mappings, design system, compositions, conventions, patterns |
+| `adapter-set.schema.md` | Adapter-kind slots, per-target source roots, cross-kind link relations (multi-target projects) |
 | `blueprint.schema.md` | Shells, navigation, authorization, data, errors, state, platform |
 | `design-spec.schema.md` | Per-fragment visual details from Figma (widget, layout, tokens, variants) |
-| `buildfile.schema.md` | Models, fixtures, routes, components, cross-cutting entries |
+| `buildfile.schema.md` | Fixtures, routes, components, cross-cutting entries, operations, bindings |
 | `testcases.schema.md` | Suites, cases, steps, verification types |
 | `page.schema.md` | Cross-feature page manifests with region ordering |
 | `feature-structure.schema.md` | Three-zone project layout, initiative nesting, ownership rules |
@@ -438,6 +445,9 @@ The `parlay` binary is a helper that skills call internally for parsing, validat
 |---|---|
 | `parlay init` | Bootstrap a new project (user-facing) |
 | `parlay upgrade` | Re-deploy schemas, skills, subagents, and agent config from the binary (user-facing) |
+| `parlay status [--json]` | Show the active root, its features (with pipeline phase), and any registered child roots (user-facing) |
+| `parlay add-root <subdir>` | Register a subfolder as a child parlay root (user-facing) |
+| `parlay promote-root` | Detach an orphaned child from a deleted parent, making it standalone (recovery, user-facing) |
 | `parlay loop <@feature> [--from <phase>]` | Skill-pointer for the end-to-end orchestrator |
 | `parlay add-feature <name> [--initiative <name>]` | Create a feature folder |
 | `parlay new-initiative <name>` | Create an empty initiative directory |
@@ -465,7 +475,11 @@ The `parlay` binary is a helper that skills call internally for parsing, validat
 | `parlay verify-generated [@<feature>]` | Detect hand-edits to generated files (JSON) |
 | `parlay save-build-state --source-root <root>` | Atomically commit build state (called by generate-code) |
 
-JSON-output commands are for agent consumption; human-facing commands print plain text.
+JSON-output commands are for agent consumption; human-facing commands print plain text. The table is deliberately partial — the agent-only JSON helpers not listed here are invoked by skills, not run by hand.
+
+### Multi-Root Projects
+
+A repository can register **child roots** — subfolders that are themselves parlay roots. Each child owns its own `spec/intents/`, `spec/handoff/`, and `.parlay/build/` trees; the schemas, adapters, and agent surface (`.claude/`, `CLAUDE.md`) live once at the repo-level parent root and are shared by every child. `parlay add-root <subdir>` registers a child (writing a `parent:` pointer into the child's config and listing it in the parent's `.parlay/roots.yaml`), `parlay status` shows the parent alongside each child's features, and `parlay promote-root` recovers a child whose parent was deleted. Nested children are not supported — the topology is exactly one level deep.
 
 ## Adapters
 
