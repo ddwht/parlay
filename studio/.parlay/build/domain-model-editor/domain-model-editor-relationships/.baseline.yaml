@@ -1,3 +1,39 @@
-generated-at: "2026-06-16T10:44:41Z"
-intents: {}
-sources: {}
+generated-at: "2026-07-23T14:17:04Z"
+intents:
+    deprecated-operations-handling:
+        content-hash: 6f83e4a74c2f0192
+        goal-hash: a33b8ce81a402788
+        constraints-hash: a750d4d7eded1251
+        verify-hash: 7d82f0c6c22faec3
+        objects-hash: c67ae330fb88bea2
+    er-diagram-view-with-draw-to-connect:
+        content-hash: 91459d87b77f9dfc
+        goal-hash: a36e728931e79724
+        constraints-hash: c410f0f68e40792c
+        verify-hash: f66c0f24740b2e64
+        objects-hash: 6cd8e0b47cbc3afe
+    relationship-editing:
+        content-hash: d925b25ffac5929e
+        goal-hash: 972d32e27f9898e3
+        constraints-hash: 826ae27e08cd882a
+        verify-hash: 52e5b8aff4ecb091
+        objects-hash: c870fcad84567bd0
+sources:
+    intents:
+        deprecated-operations-handling: f526353033402c61
+        er-diagram-view-with-draw-to-connect: b813fe3922cf4466
+        relationship-editing: bd116be22e713a52
+    dialogs:
+        deprecated-operations-handling: 2d374ca2415b8f8c
+        er-diagram-view-with-draw-to-connect: e6625cec01622f04
+        relationship-editing: af4ba1ab74964e7e
+    surface-fragments:
+        deprecated-operations-notice: 7afe951a33d73765
+        er-diagram-view: 523c2a1436dfa121
+        relationship-form-panel: a9ae3439e5a7c41a
+        relationship-list: 3ccf0d87e0afcc9d
+    infrastructure: 567621e566730fb8
+    surface-yaml: f38a39811bf917d4
+buildfile-sections:
+    fixtures: d83929fb0192893e
+    models: ca3d163bab055381

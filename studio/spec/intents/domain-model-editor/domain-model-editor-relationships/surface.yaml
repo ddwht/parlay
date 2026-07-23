@@ -1,0 +1,60 @@
+feature: domain-model-editor-relationships
+
+fragments:
+  - name: Relationship list
+    shows: data-list, empty-state
+    actions: invoke, invoke-destructive, navigate-drill, select-one
+    source: "@domain-model-editor-relationships/relationship-editing"
+    page: Domain Model Editor
+    region: sidebar
+    order: 30
+    notes:
+      - Lists the model's declared relationships; selecting one opens the relationship form panel in the main region.
+      - New-relationship opens the form; delete is immediate — nothing in the model references a relationship by name, so there are no dependents to check.
+      - Empty-state when the model has no relationships yet; peer to the entity list and enum list from the MVP (sidebar orders 10 and 20).
+
+  - name: Relationship form panel
+    shows: data-value, message
+    actions: provide-text, select-one, invoke, invoke-destructive
+    source: "@domain-model-editor-relationships/relationship-editing"
+    page: Domain Model Editor
+    region: main
+    order: 25
+    notes:
+      - Per-relationship form — a `from` entity picker, a `to` entity picker, a cardinality dropdown, and a freely-editable name field.
+      - The `from`/`to` pickers offer exactly the declared entities (no free-text endpoint entry), so `undeclared-entity-reference` is unrepresentable from the editor.
+      - The cardinality dropdown offers exactly `{one-to-one, one-to-many, many-to-one, many-to-many}`, so `relationship-cardinality-unknown` is unrepresentable from the editor.
+      - The name pre-fills from the endpoints (e.g. `customer-orders` from Customer → Order) as a convenience only; once manually renamed, editing endpoints does not regenerate it.
+      - Relationship names are unique within the model; a duplicate is rejected at entry with a field-level message, before any save round-trip.
+      - Self-referential relationships (`from` = `to`) are accepted — they are legal and the form does not special-case or block them.
+      - Edits mutate the in-memory draft and flow through the MVP's compare-and-swap save (see the MVP save bar and the infrastructure compare-and-swap fragment); declaration order is preserved to the file as edited.
+      - Entity rename (MVP propagation) rewrites relationship endpoints atomically; a manually-set relationship name is left untouched.
+
+  - name: ER diagram view
+    shows: data-chart
+    actions: navigate-tab, select-one, navigate-drill, move, invoke
+    source: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+    page: Domain Model Editor
+    region: main
+    order: 50
+    notes:
+      - A React-Flow graph of the whole model per the adapter's `domain-model-er-diagram` composition — one node per entity (name plus field list with type badges), one edge per relationship (labeled with name, cardinality encoded as one/many endpoint markers).
+      - A peer view of the form-based editor reached by a tab/route switch (`navigate-tab`); pan and zoom are always available with no minimum-entity-count gate — a one-entity model renders one node.
+      - Clicking a node opens the MVP entity form in the side panel; clicking an edge opens the relationship form — the diagram and form panels are views over one in-memory draft, so an edit in either is immediately reflected in the other and the save bar's dirty state covers both.
+      - Draw-to-connect — dragging a connection handle from one node to another (or back to the same node for a self-loop) opens the relationship form pre-filled with `from`/`to` as a proposal; committing creates the relationship (`invoke`), cancelling creates nothing.
+      - A draw-to-connect between an already-related pair pre-fills a colliding name and degrades to the same field-level duplicate-name rejection; a unique rename lets a distinct second edge commit.
+      - A `ref`-typed field renders inside its entity's node field list, not as an edge — the diagram distinguishes the schema's two reference constructs rather than conflating them.
+      - Dragging a node (`move`) repositions it within the live session only for readability; it does not mark the draft dirty and resets on reload. The no-persisted-layout / deterministic-auto-layout invariant is pinned in the infrastructure diagram-layout fragment.
+
+  - name: Deprecated operations notice
+    shows: data-list, message
+    actions: acknowledge
+    source: "@domain-model-editor-relationships/deprecated-operations-handling"
+    page: Domain Model Editor
+    region: main
+    order: 60
+    notes:
+      - Shown only when the loaded model has a non-empty `operations:` field — a read-only notice panel rendering the operation entries, an explanation that operations have moved to per-feature `capabilities.yaml`, and a pointer to run `parlay migrate-domain-operations`.
+      - The only offered action is the migration pointer; there is no create, edit, or delete affordance for the entries, and the notice contains no interactive controls other than dismissal/navigation.
+      - With an empty or absent `operations:` field, no operations panel, tab, menu entry, or empty-state renders anywhere in the editor — a designer on a clean model never learns the construct existed.
+      - The notice is informational, not blocking — it does not gate saves or any other editing. Structural passthrough of a populated `operations:` block on save is guaranteed by the MVP serialization/passthrough infrastructure fragment.

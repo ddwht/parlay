@@ -1,0 +1,404 @@
+feature: domain-model-editor/domain-model-editor-relationships
+schema_version: 1
+adapter-set: parlay-studio
+
+# Presentation-only depth feature. It fills ONLY the presentation slot
+# (react-vite-radix-tailwind, root studio/internal/ui). It adds relationship
+# editing, the React-Flow ER diagram, and the deprecated-operations notice to
+# the domain-model editor the mvp already stood up.
+#
+# There is NO application-slot work: relationship editing flows through the
+# mvp's already-built compare-and-swap save and deterministic serializer, and
+# the Go Model struct already carries `Relationships []Relationship
+# yaml:"relationships,omitempty"` (studio/internal/domain/loader.go) which the
+# typed encoder round-trips in declaration order for free. This feature
+# introduces no new persistence path, no new backend package, and no new
+# capability — so the top-level `operations:` block is absent, there are no
+# application/transport/persistence targets, and there is no `domain`
+# source-signature (the edited document is the PROJECT's runtime
+# domain-model.yaml, not a build-time entity set).
+#
+# There is no layout-bearing page (no <page>.layout.yaml under the feature),
+# so there is no `wiring:` and no `bindings:` section — codegen assembles the
+# shared "Domain Model Editor" page from routes + components + the
+# integration cross-cutting directly.
+#
+# Path convention: this buildfile lives under studio/.parlay/build/... so
+# `parlay check-buildfile` resolves the source root to studio/. Every plan
+# path is relative to that root (e.g. internal/ui/src/...). Existing shared
+# files this feature MODIFIES (all created by the mvp):
+#   internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+#     — assembles the new fragments into the sidebar + a diagram/form tab split
+#   internal/ui/src/store/editorStore.ts
+#     — relationship CRUD, diagram selection/tab, draw-to-connect proposal state
+#   internal/ui/package.json
+#     — adds the React Flow dependency the ER-diagram composition pins
+
+models: {}
+
+# No `models:` and no fixture `data:` blocks: the "model" edited here is the
+# PROJECT's domain-model.yaml document at runtime, not a build-time parlay
+# entity set. Each fixture is a named scenario described inline and reproduced
+# in the dialogs.
+fixtures:
+  related-model:
+    description: >
+      Two entities (Customer with id:uuid, name:string; Order with id:uuid,
+      status:string) and one relationship
+      {name: customer-orders, from: Customer, to: Order, cardinality:
+      one-to-many}. Primary fixture for relationship editing and for the ER
+      diagram rendering one node per entity and one labeled edge per
+      relationship.
+  three-entity-model:
+    description: >
+      Customer, Order, and Product entities plus the existing
+      `customer-orders` relationship. Drives the closed-set picker assertions
+      (from/to pickers offer exactly the three declared entities; cardinality
+      dropdown offers exactly the four values), the draw-to-connect Customer →
+      Product gesture, and the already-related-pair duplicate-name rejection.
+  self-ref-model:
+    description: >
+      A single Employee entity used to create a self-referential relationship
+      {from: Employee, to: Employee, cardinality: many-to-one, name:
+      reports-to} — the accepted from == to case, rendered as a self-loop edge.
+  ref-field-model:
+    description: >
+      Order with a `customer_id` field of type `ref` targeting Customer, and NO
+      declared relationship. Asserts the ref field renders inside the Order
+      node's field list with a type badge and produces no edge — the diagram
+      distinguishes the schema's two reference constructs.
+  operations-model:
+    description: >
+      A model whose loaded domain-model.yaml carries a populated deprecated
+      top-level `operations:` block with two entries. Drives the
+      deprecated-operations notice (read-only render of both entries plus the
+      `parlay migrate-domain-operations` pointer) and the passthrough guarantee
+      on an unrelated save.
+  clean-model:
+    description: >
+      A model with no `operations:` field at all (Customer, Order, one
+      relationship). Drives the "no operations UI renders anywhere" assertion —
+      a designer on a clean model never learns the construct existed.
+  one-entity-model:
+    description: >
+      A single-entity model (Customer only, no relationships). Drives the
+      "diagram usable at small scale" assertion — one node renders, pan and
+      zoom available, no minimum-entity-count gate.
+
+targets:
+  presentation:
+    adapter: react-vite-radix-tailwind
+    components:
+      relationship-list:
+        source: "@domain-model-editor-relationships/relationship-editing"
+        widget: "ul/li+Tailwind"
+        description: >
+          Sidebar list of the model's declared relationships (peer to the mvp's
+          entity-list and enum-list at sidebar orders 10 and 20; this is order
+          30). Selecting a relationship opens its form panel in the main region.
+          New-relationship opens the form; delete is immediate — nothing in the
+          model references a relationship by name, so there are no dependents to
+          check. Empty-state renders when the model has no relationships yet.
+        data:
+          inputs:
+            - { name: relationships, model: DomainModelDocument, field: relationships, from: file-read }
+        elements:
+          - { name: relationship-rows, widget: "ul/li+Tailwind", bind: relationships, visible-when: "relationships not empty" }
+          - { name: empty-relationships, widget: "Custom empty-state component", bind: relationships, visible-when: "relationships empty" }
+        actions:
+          - { name: new-relationship, widget: "Native button+Tailwind", enabled-when: always, effect: "emit:createRelationship", target: createRelationship }
+          - { name: select-relationship, widget: "Radix Select / Radio Group", enabled-when: always, effect: "emit:selectRelationship", target: selectRelationship }
+          - { name: open-relationship, widget: "Row click+useNavigate", enabled-when: always, effect: "emit:openRelationship", target: openRelationship }
+          - { name: delete-relationship, widget: "Native button+Radix AlertDialog", enabled-when: always, effect: "emit:deleteRelationship", target: deleteRelationship }
+
+      relationship-form-panel:
+        source: "@domain-model-editor-relationships/relationship-editing"
+        widget: "react-hook-form+Radix Form"
+        description: >
+          Per-relationship form (main region, order 25): a `from` entity
+          picker, a `to` entity picker, a cardinality dropdown over the closed
+          set, and a freely-editable name field pre-filled from the endpoints
+          (e.g. customer-orders from Customer → Order). The from/to pickers
+          offer exactly the declared entities (no free-text endpoint entry) so
+          `undeclared-entity-reference` is unrepresentable; the cardinality
+          dropdown offers exactly the four closed values so
+          `relationship-cardinality-unknown` is unrepresentable. Names are
+          unique within the model — a duplicate is rejected at entry with a
+          field-level message before any save round-trip. Self-referential
+          (from == to) is accepted and not special-cased. The name pre-fill is a
+          convenience only: once manually renamed, editing endpoints does not
+          regenerate it. Edits mutate the in-memory draft and flow through the
+          mvp's compare-and-swap save; declaration order is preserved.
+        data:
+          inputs:
+            - { name: relationship, model: DomainModelDocument, field: relationships, from: file-read }
+            - { name: entities, model: DomainModelDocument, field: entities, from: file-read }
+            - { name: relationships, model: DomainModelDocument, field: relationships, from: file-read }
+          computed:
+            - { name: entity-options, from: "the declared entity names, offered to both from and to pickers", type: "string[]" }
+            - { name: cardinality-options, from: "{one-to-one, one-to-many, many-to-one, many-to-many}", type: "string[]" }
+            - { name: name-prefill, from: "endpoints slugified as <from>-<plural(to)> until the name is manually edited", type: string }
+            - { name: existing-names, from: "names of all other relationships in the model, for the uniqueness check", type: "string[]" }
+        elements:
+          - { name: from-picker, widget: "Radix Select / Radio Group", bind: entity-options, visible-when: always }
+          - { name: to-picker, widget: "Radix Select / Radio Group", bind: entity-options, visible-when: always }
+          - { name: cardinality-picker, widget: "Radix Select / Radio Group", bind: cardinality-options, visible-when: always }
+          - { name: name-field, widget: "span+Tailwind", bind: relationship.name, visible-when: always }
+          - { name: duplicate-name-message, widget: "Radix Toast+Tailwind", bind: existing-names, visible-when: "relationship name duplicates an existing relationship" }
+        actions:
+          - { name: choose-from, widget: "Radix Select / Radio Group", enabled-when: always, effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+          - { name: choose-to, widget: "Radix Select / Radio Group", enabled-when: always, effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+          - { name: choose-cardinality, widget: "Radix Select / Radio Group", enabled-when: always, effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+          - { name: edit-name, widget: "Native input+Tailwind", enabled-when: always, effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+          - { name: delete-relationship, widget: "Native button+Radix AlertDialog", enabled-when: always, effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+
+      er-diagram-view:
+        source: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+        widget: "React Flow (domain-model-er-diagram composition)"
+        description: >
+          A React-Flow graph of the whole model (main region, order 50),
+          rendered per the adapter's `domain-model-er-diagram` composition
+          (state: nodes, edges, selectedNodeId; side panel renders the selected
+          node). One node per entity (entity name + field list with type
+          badges), one edge per relationship (labeled with name, cardinality
+          encoded as one/many endpoint markers). A peer view of the form-based
+          editor reached by a tab switch (navigate-tab). Clicking a node opens
+          the mvp entity form in the side panel; clicking an edge opens the
+          relationship form — both panels are views over the one in-memory
+          draft, so an edit in either is immediately reflected in the other and
+          the save bar's dirty state covers both. Draw-to-connect: dragging a
+          connection handle from one node to another (or back to the same node
+          for a self-loop) opens the relationship form pre-filled with from/to
+          as a proposal; committing creates the relationship, cancelling creates
+          nothing. A `ref`-typed field renders inside its node's field list, not
+          as an edge. Auto-layout is deterministic (see the erLayout
+          cross-cutting); manual node dragging repositions within the session
+          only and never marks the draft dirty. Pan and zoom are always
+          available with no minimum-entity-count gate.
+        data:
+          inputs:
+            - { name: entities, model: DomainModelDocument, field: entities, from: file-read }
+            - { name: relationships, model: DomainModelDocument, field: relationships, from: file-read }
+          computed:
+            - { name: nodes, from: "one node per entity, positioned by the deterministic computeLayout(model) auto-layout", type: "FlowNode[]" }
+            - { name: edges, from: "one edge per relationship, labeled name + cardinality endpoint markers; ref fields excluded", type: "FlowEdge[]" }
+            - { name: selectedNodeId, from: "the node/edge currently opened in the side panel", type: "string | null" }
+            - { name: connect-proposal, from: "the pending draw-to-connect {from, to} pre-fill, uncommitted until the form is confirmed", type: "object | null" }
+        elements:
+          - { name: entity-node, widget: "React Flow (domain-model-er-diagram composition)", bind: nodes, visible-when: always }
+          - { name: field-badge, widget: "Tailwind badge span", bind: "nodes[].fields", visible-when: always }
+          - { name: relationship-edge, widget: "React Flow (domain-model-er-diagram composition)", bind: edges, visible-when: always }
+          - { name: cardinality-markers, widget: "React Flow (domain-model-er-diagram composition)", bind: "edges[].cardinality", visible-when: always }
+          - { name: node-side-panel, widget: "Radix Dialog as Sheet", bind: selectedNodeId, visible-when: "a node is selected" }
+          - { name: edge-side-panel, widget: "Radix Dialog as Sheet", bind: selectedNodeId, visible-when: "an edge is selected" }
+          - { name: connect-proposal-form, widget: "react-hook-form+Radix Form", bind: connect-proposal, visible-when: "a draw-to-connect gesture is in flight" }
+        actions:
+          - { name: switch-to-diagram, widget: "Radix Tabs", enabled-when: always, effect: "emit:selectDiagramTab", target: selectDiagramTab }
+          - { name: click-node, widget: "Radix Select / Radio Group", enabled-when: always, effect: "emit:selectNode", target: selectNode }
+          - { name: click-edge, widget: "Row click+useNavigate", enabled-when: always, effect: "emit:selectEdge", target: selectEdge }
+          - { name: draw-to-connect, widget: "React Flow (domain-model-er-diagram composition)", enabled-when: always, effect: "emit:proposeRelationship", target: proposeRelationship }
+          - { name: commit-connection, widget: "Native button+Tailwind", enabled-when: "proposal has a unique name and a cardinality", effect: "mutate:DomainModelDocument.relationships", target: DomainModelDocument.relationships }
+          - { name: drag-node, widget: "React Flow (domain-model-er-diagram composition)", enabled-when: always, effect: "emit:repositionNode", target: repositionNode }
+
+      deprecated-operations-notice:
+        source: "@domain-model-editor-relationships/deprecated-operations-handling"
+        widget: "Custom empty-state component"
+        description: >
+          A read-only deprecation notice (main region, order 60) shown ONLY when
+          the loaded model has a non-empty top-level `operations:` field. It
+          renders each operation entry read-only, explains that operations have
+          moved to per-feature `capabilities.yaml`, and points the designer to
+          run `parlay migrate-domain-operations` (naming the actual command and
+          the destination artifact, not merely "deprecated"). The only offered
+          action is the migration pointer — no create/edit/delete affordance for
+          the entries, and no interactive control other than dismissal/
+          navigation. With an empty or absent `operations:` field, nothing
+          renders — no panel, tab, menu entry, or empty-state. The notice is
+          informational, not blocking, and never gates a save. Structural
+          passthrough of the operations block on save is guaranteed by the mvp
+          serializer (rawOperations passthrough).
+        data:
+          inputs:
+            - { name: operations, model: DomainModelDocument, field: operations, from: file-read }
+          computed:
+            - { name: has-operations, from: "true when the loaded operations field is present and non-empty", type: boolean }
+        elements:
+          - { name: notice-panel, widget: "Custom empty-state component", bind: has-operations, visible-when: "has-operations" }
+          - { name: operation-entries, widget: "ul/li+Tailwind", bind: operations, visible-when: "has-operations" }
+          - { name: deprecation-explanation, widget: "span+Tailwind", bind: has-operations, visible-when: "has-operations" }
+          - { name: migration-pointer, widget: "span+Tailwind", bind: has-operations, visible-when: "has-operations" }
+        actions:
+          - { name: acknowledge-notice, widget: "Radix Dialog with single OK", enabled-when: always, effect: "emit:ackDeprecationNotice", target: ackDeprecationNotice }
+
+    routes:
+      - path: /domain-model
+        page: Domain Model Editor
+        flow-pattern: "TanStack Table+Radix Dialog+react-hook-form+Radix AlertDialog"
+        # The page already exists (created by the mvp). This feature ADDS the
+        # relationship list to the sidebar and, in the main region, a tab split
+        # between the form-based editor and the ER diagram, plus the relationship
+        # form panel and the deprecated-operations notice. The assembly edit is
+        # carried by the relationships-editor-integration cross-cutting; this
+        # route documents where the new components land.
+        regions:
+          sidebar:
+            components: [relationship-list]
+          main:
+            components: [relationship-form-panel, er-diagram-view, deprecated-operations-notice]
+
+cross-cutting:
+  - id: er-diagram-deterministic-layout
+    source: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+    target-creates:
+      - internal/ui/src/features/domain-model-editor/erLayout.ts
+      - internal/ui/src/features/domain-model-editor/erLayout.test.ts
+    transform: |
+      Introduce the deterministic ER auto-layout module the ER-diagram view
+      consumes, and pin the presentation-state boundary the infrastructure
+      fragment "Diagram layout state stays out of the domain model" establishes.
+
+      CREATE internal/ui/src/features/domain-model-editor/erLayout.ts:
+        A pure function computeLayout(model) -> { nodes, edges } that derives
+        node positions DETERMINISTICALLY from the model alone: the same model
+        always yields the same initial arrangement, so a reload after save
+        reproduces the prior arrangement rather than surprising the designer.
+        Nodes are one-per-entity; edges are one-per-relationship (ref-typed
+        fields are NOT edges). The module holds no persisted state and reads no
+        sidecar file. It is a read-projection of the model: the ONLY mutation
+        path from the diagram is the draw-to-connect gesture, which enters
+        nothing into the draft until the pre-filled relationship form is
+        committed. Manual in-session node repositioning is view-only React-Flow
+        state (held in the component / editor store), never fed back into
+        computeLayout's inputs and never written to the domain model.
+
+      Invariants pinned (each seeds a testcase):
+        - Node positions and any diagram layout state are NEVER written to
+          domain-model.yaml under any code path; the file stays pure domain
+          vocabulary apart from the enum label/tone pair.
+        - No sidecar layout file is created, read, or required in v1.
+        - Auto-layout is deterministic: computeLayout(model) called twice on the
+          same model produces identical node positions.
+        - Manual in-session node repositioning does not mark the draft dirty and
+          does not survive a reload (deterministic re-layout on load).
+        - The diagram's only draft-mutation path is a committed draw-to-connect;
+          a cancelled proposal leaves the draft untouched.
+    introduces:
+      - "func computeLayout(model): { nodes: FlowNode[]; edges: FlowEdge[] } — deterministic, no persisted positions"
+      - "presentation-state boundary: layout is a view projection, never domain vocabulary"
+    caching: none
+    backward-compatible: yes
+
+  - id: relationships-editor-integration
+    source: "@domain-model-editor-relationships/relationship-editing"
+    target-files:
+      - internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+      - internal/ui/src/store/editorStore.ts
+      - internal/ui/package.json
+    transform: |
+      Wire the four new relationships fragments into the shared "Domain Model
+      Editor" page and editor store the mvp already built, and add the one new
+      runtime dependency the ER-diagram composition pins. All three files exist
+      on disk (mvp output) — this is a modifies-only integration.
+
+      MODIFY internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx:
+        Add RelationshipList to the sidebar (below EntityList and EnumList,
+        surface order 30). In the main region, introduce a Radix Tabs split
+        between the existing form-based editor and a new ER-diagram tab
+        (navigate-tab): the diagram tab renders ERDiagramView; the form tab
+        continues to render the entity/enum/relationship form panels by
+        selection, now including RelationshipFormPanel when a relationship is
+        selected. Mount DeprecatedOperationsNotice in the main region — it
+        self-hides unless the loaded model has a non-empty operations block, so
+        a clean model shows nothing operations-related. The diagram side panel
+        reuses the same entity/relationship form components (one draft, two
+        views): clicking a node opens the entity form, clicking an edge opens
+        the relationship form.
+
+      MODIFY internal/ui/src/store/editorStore.ts:
+        Extend the Zustand editor store with the relationships slice and the
+        diagram view state. The store already round-trips model.relationships
+        through save and already propagates entity rename into relationship
+        endpoints (renameEntityInModel), so this adds only the editing verbs and
+        view state:
+          - createRelationship / selectRelationship / openRelationship /
+            deleteRelationship (delete is immediate — no dependent check);
+          - relationship field mutations (from, to, cardinality, name) with the
+            unique-name check surfaced field-level before any save;
+          - the name pre-fill rule: track endpoints into the name until the name
+            is manually edited, then stop regenerating it;
+          - diagram view state: active tab (form | diagram), selectedNodeId, and
+            the uncommitted draw-to-connect proposal ({from, to}) that enters the
+            draft only on commit;
+          - in-session node positions kept as view-only state that never marks
+            the draft dirty and is discarded on reload.
+        Self-referential (from == to) relationships are accepted with no special
+        casing. Editing endpoints does not regenerate a manually-set name.
+
+      MODIFY internal/ui/package.json:
+        Add the React Flow dependency (@xyflow/react) — the substrate the
+        adapter's domain-model-er-diagram composition pins. This is the single
+        new runtime dependency; the npm-build-before-go-build pipeline the mvp
+        established (studio/internal/ui/embed.go //go:embed dist/*) picks it up
+        with no Go-side change.
+    introduces:
+      - "DomainModelEditorPage: sidebar RelationshipList; main Radix Tabs form|diagram split; RelationshipFormPanel; DeprecatedOperationsNotice"
+      - "editorStore: relationship CRUD + unique-name check + name-prefill rule; diagram tab/selectedNodeId/draw-to-connect proposal; view-only node positions"
+      - "package.json: @xyflow/react dependency"
+    caching: none
+    backward-compatible: yes
+
+plan:
+  modifies:
+    - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+      sources: [cross-cutting/relationships-editor-integration]
+    - path: internal/ui/src/store/editorStore.ts
+      sources: [cross-cutting/relationships-editor-integration]
+    - path: internal/ui/package.json
+      sources: [cross-cutting/relationships-editor-integration]
+  creates:
+    # Presentation — new relationships components (one per surface fragment)
+    - path: internal/ui/src/features/domain-model-editor/RelationshipList.tsx
+      sources: [component/relationship-list]
+    - path: internal/ui/src/features/domain-model-editor/RelationshipFormPanel.tsx
+      sources: [component/relationship-form-panel]
+    - path: internal/ui/src/features/domain-model-editor/ERDiagramView.tsx
+      sources: [component/er-diagram-view]
+    - path: internal/ui/src/features/domain-model-editor/DeprecatedOperationsNotice.tsx
+      sources: [component/deprecated-operations-notice]
+    # Presentation — deterministic ER auto-layout module
+    - path: internal/ui/src/features/domain-model-editor/erLayout.ts
+      sources: [cross-cutting/er-diagram-deterministic-layout]
+    - path: internal/ui/src/features/domain-model-editor/erLayout.test.ts
+      sources: [cross-cutting/er-diagram-deterministic-layout]
+  deletes: []
+  targets:
+    presentation:
+      modifies:
+        - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+          sources: [cross-cutting/relationships-editor-integration]
+        - path: internal/ui/src/store/editorStore.ts
+          sources: [cross-cutting/relationships-editor-integration]
+        - path: internal/ui/package.json
+          sources: [cross-cutting/relationships-editor-integration]
+      creates:
+        - path: internal/ui/src/features/domain-model-editor/RelationshipList.tsx
+          sources: [component/relationship-list]
+        - path: internal/ui/src/features/domain-model-editor/RelationshipFormPanel.tsx
+          sources: [component/relationship-form-panel]
+        - path: internal/ui/src/features/domain-model-editor/ERDiagramView.tsx
+          sources: [component/er-diagram-view]
+        - path: internal/ui/src/features/domain-model-editor/DeprecatedOperationsNotice.tsx
+          sources: [component/deprecated-operations-notice]
+        - path: internal/ui/src/features/domain-model-editor/erLayout.ts
+          sources: [cross-cutting/er-diagram-deterministic-layout]
+        - path: internal/ui/src/features/domain-model-editor/erLayout.test.ts
+          sources: [cross-cutting/er-diagram-deterministic-layout]
+      deletes: []
+
+source-signatures:
+  intents: "sha256:7f0dd0baebefdcd6a169e2f7a89e3221a36846a19c504f1db127cc8a429ee060"
+  dialogs: "sha256:fee9b97238344c1ccb4608041736bd949ae48e61317d66695b111d5bbd03533c"
+  surface: "sha256:f38a39811bf917d406a14536c469347f7601fb9062fbcd9e62adbf1534438223"
+  infrastructure: "sha256:567621e566730fb83f6de20b86905ed8095d8e8643d04c8499f99d47abc69533"
+  adapter-version: "sha256:c1a6484e29a03056b8cfb28c9548cb57bbfd2415cdb70f06333f1198e5e954d1"
+  adapter-set: "sha256:b4de337cdab071c0ccf3f0c45ae44b469e801360ebcb6977047bcee28d3a9c2f"

@@ -1,0 +1,384 @@
+feature: domain-model-editor/domain-model-editor-relationships
+framework: "Vitest + React Testing Library (presentation components); Vitest (erLayout unit + invariant suite)"
+
+# Presentation-only depth feature: four component suites plus one cross-cutting
+# suite for the deterministic ER auto-layout module. Cases derive from each
+# intent's Verify bullets and the dialog branches.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio), so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. The er-diagram-deterministic-layout suite is a presentation-slot
+# infrastructure invariant that fits neither kind cleanly, so — exactly as the
+# sibling domain-model-editor-mvp does for its cross-cutting suites — it is
+# emitted in the v1 shape. The v2 validator treats it as kind: presentation
+# with a testcases-source-refs-missing-legacy warning, which is acceptable for
+# a feature whose only non-component behavior is expressed as infrastructure
+# prose rather than a closed-vocabulary operation.
+
+suites:
+  # ===========================================================================
+  # Presentation — Relationship editing (list)
+  # ===========================================================================
+  - name: relationship-list
+    component: relationship-list
+    fixture: related-model
+    intent: "@domain-model-editor-relationships/relationship-editing"
+    cases:
+      - name: renders one row per declared relationship
+        description: The sidebar lists every relationship in the loaded model.
+        steps:
+          - action: render
+            target: relationship-list
+          - verify: count
+            target: relationship-rows
+            expected: 1
+      - name: empty-state shows when the model has no relationships
+        description: With no relationships the empty-state renders instead of a list.
+        steps:
+          - action: render
+            target: relationship-list
+            value: { fixture: one-entity-model }
+          - verify: visible
+            target: empty-relationships
+            expected: true
+      - name: delete is immediate — no dependent check
+        description: Deleting customer-orders removes it from the draft immediately; nothing references a relationship by name.
+        steps:
+          - action: click
+            target: delete-relationship
+            value: { name: customer-orders }
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "customer-orders absent from the draft"
+
+  # ===========================================================================
+  # Presentation — Relationship editing (form)
+  # ===========================================================================
+  - name: relationship-form-panel
+    component: relationship-form-panel
+    fixture: three-entity-model
+    intent: "@domain-model-editor-relationships/relationship-editing"
+    cases:
+      - name: endpoint pickers offer exactly the declared entities
+        description: For a three-entity model, from and to pickers each offer exactly Customer, Order, Product — no free-text endpoint entry.
+        steps:
+          - action: render
+            target: relationship-form-panel
+          - verify: count
+            target: from-picker
+            expected: 3
+          - verify: count
+            target: to-picker
+            expected: 3
+      - name: cardinality dropdown offers exactly the four closed values
+        description: The cardinality dropdown offers exactly {one-to-one, one-to-many, many-to-one, many-to-many}.
+        steps:
+          - action: render
+            target: relationship-form-panel
+          - verify: count
+            target: cardinality-picker
+            expected: 4
+      - name: create customer-orders one-to-many serializes to the schema shape and pre-fills the name
+        description: Creating Customer → Order one-to-many offers the pre-filled name customer-orders and serializes to the documented relationship shape.
+        steps:
+          - action: select
+            target: choose-from
+            value: Customer
+          - action: select
+            target: choose-to
+            value: Order
+          - verify: text
+            target: name-field
+            expected: "customer-orders"
+          - action: select
+            target: choose-cardinality
+            value: one-to-many
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "{name: customer-orders, from: Customer, to: Order, cardinality: one-to-many}"
+      - name: duplicate relationship name rejected at entry
+        description: Typing an already-used name shows a field-level message before any save round-trip.
+        steps:
+          - action: input
+            target: edit-name
+            value: customer-orders
+          - verify: visible
+            target: duplicate-name-message
+            expected: true
+      - name: self-referential relationship accepted and round-trips
+        description: Employee → Employee many-to-one is accepted, not special-cased, and round-trips through save.
+        steps:
+          - action: render
+            target: relationship-form-panel
+            value: { fixture: self-ref-model }
+          - action: select
+            target: choose-from
+            value: Employee
+          - action: select
+            target: choose-to
+            value: Employee
+          - action: select
+            target: choose-cardinality
+            value: many-to-one
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "{from: Employee, to: Employee, cardinality: many-to-one} accepted"
+      - name: name pre-fill is a convenience, not a constraint
+        description: After a manual rename to places, changing an endpoint does not regenerate the name.
+        steps:
+          - action: input
+            target: edit-name
+            value: places
+          - action: select
+            target: choose-to
+            value: Product
+          - verify: text
+            target: name-field
+            expected: "places"
+      - name: entity rename propagates into endpoints, manual name untouched
+        description: Renaming Order to Invoice rewrites relationship endpoints while a manually-set relationship name stays put.
+        steps:
+          - action: click
+            target: choose-to
+            value: { renameEntity: { from: Order, to: Invoice } }
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "endpoint Order becomes Invoice; manually-set name unchanged"
+
+  # ===========================================================================
+  # Presentation — ER diagram view with draw-to-connect
+  # ===========================================================================
+  - name: er-diagram-view
+    component: er-diagram-view
+    fixture: related-model
+    intent: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+    cases:
+      - name: one node per entity, one labeled edge per relationship
+        description: The diagram renders a node per entity with its fields listed and an edge per relationship labeled with name and cardinality markers.
+        steps:
+          - action: render
+            target: er-diagram-view
+          - verify: count
+            target: entity-node
+            expected: 2
+          - verify: count
+            target: relationship-edge
+            expected: 1
+          - verify: visible
+            target: cardinality-markers
+            expected: true
+      - name: clicking a node opens the entity form; clicking an edge opens the relationship form
+        description: The diagram and the form panels are views over one draft — node click opens the entity form, edge click opens the relationship form.
+        steps:
+          - action: click
+            target: click-node
+            value: { node: Order }
+          - verify: visible
+            target: node-side-panel
+            expected: true
+          - action: click
+            target: click-edge
+            value: { edge: customer-orders }
+          - verify: visible
+            target: edge-side-panel
+            expected: true
+      - name: draw-to-connect cancelled leaves the draft untouched
+        description: Dragging Customer → Order and cancelling the pre-filled form enters nothing into the draft; the save bar stays clean.
+        steps:
+          - action: click
+            target: draw-to-connect
+            value: { from: Customer, to: Order, then: cancel }
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "unchanged — nothing added"
+      - name: draw-to-connect committed adds an edge, a panel row, and serializes
+        description: Dragging Customer → Product and committing one-to-many creates the relationship as an edge, in the relationships panel, and in the serialized YAML after save.
+        steps:
+          - action: click
+            target: draw-to-connect
+            value: { fixture: three-entity-model, from: Customer, to: Product }
+          - action: select
+            target: choose-cardinality
+            value: one-to-many
+          - action: click
+            target: commit-connection
+          - verify: count
+            target: relationship-edge
+            expected: 2
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "customer-products present after save"
+      - name: draw-to-connect self-loop is a legal self-referential relationship
+        description: Dragging from the Employee node back onto itself pre-fills from == to; renaming to reports-to and committing many-to-one renders a self-edge.
+        steps:
+          - action: click
+            target: draw-to-connect
+            value: { fixture: self-ref-model, from: Employee, to: Employee }
+          - action: input
+            target: edit-name
+            value: reports-to
+          - action: select
+            target: choose-cardinality
+            value: many-to-one
+          - action: click
+            target: commit-connection
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "reports-to self-edge on Employee"
+      - name: draw-to-connect on an already-related pair degrades to duplicate-name rejection
+        description: Drawing a second Customer → Order pre-fills the colliding name customer-orders and is rejected until renamed unique.
+        steps:
+          - action: click
+            target: draw-to-connect
+            value: { fixture: three-entity-model, from: Customer, to: Order }
+          - verify: visible
+            target: duplicate-name-message
+            expected: true
+          - action: input
+            target: edit-name
+            value: customer-returns
+          - action: click
+            target: commit-connection
+          - verify: count
+            target: relationship-edge
+            expected: 2
+      - name: edit in one view reflects in the other from a single draft mutation
+        description: Editing the Order entity name to Invoice in the node side panel updates the node label, the entity list, and the dependent relationship endpoint together.
+        steps:
+          - action: click
+            target: click-node
+            value: { node: Order, rename: Invoice }
+          - verify: state
+            target: DomainModelDocument.entities
+            expected: "node label, entity list, and customer-orders endpoint all become Invoice"
+      - name: ref-typed field renders in the node, not as an edge
+        description: A ref field renders inside its entity node's field list with a badge and produces no edge.
+        steps:
+          - action: render
+            target: er-diagram-view
+            value: { fixture: ref-field-model }
+          - verify: visible
+            target: field-badge
+            expected: true
+          - verify: count
+            target: relationship-edge
+            expected: 0
+      - name: usable at small scale — one-entity model renders one node
+        description: A one-entity model renders one node with pan and zoom and no minimum-entity-count gate.
+        steps:
+          - action: render
+            target: er-diagram-view
+            value: { fixture: one-entity-model }
+          - verify: count
+            target: entity-node
+            expected: 1
+
+  # ===========================================================================
+  # Presentation — Deprecated operations handling
+  # ===========================================================================
+  - name: deprecated-operations-notice
+    component: deprecated-operations-notice
+    fixture: operations-model
+    intent: "@domain-model-editor-relationships/deprecated-operations-handling"
+    cases:
+      - name: populated operations block renders read-only entries with the migration command named
+        description: A model with two operations entries renders the notice with both entries read-only and the parlay migrate-domain-operations pointer.
+        steps:
+          - action: render
+            target: deprecated-operations-notice
+          - verify: visible
+            target: notice-panel
+            expected: true
+          - verify: count
+            target: operation-entries
+            expected: 2
+          - verify: text
+            target: migration-pointer
+            expected: "parlay migrate-domain-operations"
+      - name: no operations field means no operations UI anywhere
+        description: A clean model with no operations field renders no notice panel, entries, or pointer.
+        steps:
+          - action: render
+            target: deprecated-operations-notice
+            value: { fixture: clean-model }
+          - verify: visible
+            target: notice-panel
+            expected: false
+      - name: notice is informational only — no create/edit/delete affordance
+        description: The notice contains no interactive control other than dismissal/navigation; only the migration pointer is offered.
+        steps:
+          - action: render
+            target: deprecated-operations-notice
+          - verify: enabled
+            target: acknowledge-notice
+            expected: true
+          - verify: hidden
+            target: operation-entries
+            expected: false
+      - name: populated operations block survives an unrelated save unchanged
+        description: Editing an unrelated entity and saving leaves the operations block byte-for-byte identical (mvp rawOperations passthrough).
+        steps:
+          - action: render
+            target: deprecated-operations-notice
+          - verify: state
+            target: DomainModelDocument.operations
+            expected: "byte-for-byte identical after an unrelated save"
+
+  # ===========================================================================
+  # Cross-cutting — deterministic ER auto-layout module
+  # ===========================================================================
+  - name: er-diagram-deterministic-layout
+    component: cross-cutting/er-diagram-deterministic-layout
+    fixture: related-model
+    intent: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+    cases:
+      - name: layout module source exists
+        description: The deterministic auto-layout module lives alongside the ER-diagram component.
+        steps:
+          - verify: file-exists
+            target: studio/internal/ui/src/features/domain-model-editor/erLayout.ts
+      - name: auto-layout is deterministic
+        description: computeLayout(model) called twice on the same model produces identical node positions.
+        steps:
+          - action: invoke
+            target: computeLayout
+            value: { fixture: related-model, times: 2 }
+          - verify: state
+            target: positions
+            expected: "identical across both calls"
+      - name: node positions are never written to the domain model
+        description: No code path writes node positions or layout state to domain-model.yaml; the serialized file stays pure domain vocabulary.
+        steps:
+          - action: invoke
+            target: computeLayout
+            value: { fixture: related-model }
+          - verify: state
+            target: DomainModelDocument
+            expected: "no position/layout keys present after save"
+      - name: no sidecar layout file is created or read
+        description: v1 introduces no on-disk position store; the diagram reads and writes no sidecar layout file.
+        steps:
+          - action: invoke
+            target: computeLayout
+            value: { fixture: related-model }
+          - verify: state
+            target: sidecarLayoutFile
+            expected: "never created or read"
+      - name: in-session node drag does not dirty the draft and resets on reload
+        description: Manual repositioning is view-only React-Flow state; it does not mark the draft dirty and is discarded on reload (deterministic re-layout).
+        steps:
+          - action: invoke
+            target: repositionNode
+            value: { node: Order, then: reload }
+          - verify: state
+            target: DomainModelDocument.etag
+            expected: "draft stays clean; node returns to its computed position"
+      - name: draw-to-connect is the only draft-mutation path from the diagram
+        description: A cancelled proposal enters nothing; only a committed draw-to-connect mutates the draft.
+        steps:
+          - action: invoke
+            target: proposeRelationship
+            value: { from: Customer, to: Order, then: cancel }
+          - verify: state
+            target: DomainModelDocument.relationships
+            expected: "unchanged until a proposal is committed"

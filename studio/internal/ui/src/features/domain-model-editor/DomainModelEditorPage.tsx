@@ -1,11 +1,16 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: cross-cutting/embedded-ui-bundle-and-stack-pin
+// parlay-extends: domain-model-editor/domain-model-editor-relationships/cross-cutting/relationships-editor-integration
 import { useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { EntityList } from './EntityList';
 import { EnumList } from './EnumList';
+import { RelationshipList } from './RelationshipList';
 import { EntityFormPanel } from './EntityFormPanel';
 import { EnumFormPanel } from './EnumFormPanel';
+import { RelationshipFormPanel } from './RelationshipFormPanel';
+import { ERDiagramView } from './ERDiagramView';
+import { DeprecatedOperationsNotice } from './DeprecatedOperationsNotice';
 import { DoneControl } from './DoneControl';
 import { ConflictReloadPrompt } from './ConflictReloadPrompt';
 import { SaveBar } from '../../components/SaveBar';
@@ -14,17 +19,27 @@ import { SessionEndedScreen } from '../../components/SessionEndedScreen';
 
 /**
  * The Domain Model Editor page — the single route the SPA fallback lands on.
- * It assembles the nine editor fragments across the five layout regions:
+ * It assembles the editor fragments across the five layout regions:
  *
  *   header  → DoneControl
- *   sidebar → EntityList, EnumList
- *   main    → EntityFormPanel | EnumFormPanel (by selection), ErrorEnvelopeFeedback
+ *   sidebar → EntityList, EnumList, RelationshipList
+ *   main    → a Form|Diagram tab split:
+ *               form    → EntityFormPanel | EnumFormPanel | RelationshipFormPanel
+ *                         (by selection), ErrorEnvelopeFeedback
+ *               diagram → ERDiagramView
+ *             plus the self-hiding DeprecatedOperationsNotice
  *   footer  → SaveBar
  *   dialog  → ConflictReloadPrompt, SessionEndedScreen
+ *
+ * The form panels and the diagram side panels are views over one draft, so an
+ * edit in either is immediately reflected in the other and the save bar's dirty
+ * state covers both.
  */
 export function DomainModelEditorPage() {
   const isDirty = useEditorStore((s) => s.isDirty);
   const selection = useEditorStore((s) => s.selection);
+  const activeTab = useEditorStore((s) => s.activeTab);
+  const setActiveTab = useEditorStore((s) => s.setActiveTab);
 
   // A dirty draft warns before the tab is closed or reloaded.
   useEffect(() => {
@@ -54,11 +69,59 @@ export function DomainModelEditorPage() {
           <div className="flex flex-col gap-6">
             <EntityList />
             <EnumList />
+            <RelationshipList />
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          {selection?.kind === 'enum' ? <EnumFormPanel /> : <EntityFormPanel />}
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <div
+            role="tablist"
+            aria-label="Editor view"
+            className="flex shrink-0 gap-1 border-b border-slate-200 bg-white px-4"
+          >
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-form"
+              aria-selected={activeTab === 'form'}
+              onClick={() => setActiveTab('form')}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+                activeTab === 'form'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Form editor
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-diagram"
+              aria-selected={activeTab === 'diagram'}
+              onClick={() => setActiveTab('diagram')}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+                activeTab === 'diagram'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Diagram
+            </button>
+          </div>
+
+          <div role="tabpanel" className="min-h-0 flex-1">
+            {activeTab === 'diagram' ? (
+              <ERDiagramView />
+            ) : selection?.kind === 'enum' ? (
+              <EnumFormPanel />
+            ) : selection?.kind === 'relationship' ? (
+              <RelationshipFormPanel />
+            ) : (
+              <EntityFormPanel />
+            )}
+          </div>
+
+          <DeprecatedOperationsNotice />
           <ErrorEnvelopeFeedback />
         </main>
       </div>

@@ -1,4 +1,4 @@
-generated-at: "2026-07-23T12:57:22Z"
+generated-at: "2026-07-23T14:17:04Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
@@ -195,15 +195,27 @@ files:
     studio/internal/ui/src/features/domain-model-editor/ConflictReloadPrompt.tsx:
         component: conflict-reload-prompt
         hash: e3946c8c912143f2
+    studio/internal/ui/src/features/domain-model-editor/DeprecatedOperationsNotice.test.tsx:
+        component: deprecated-operations-notice
+        hash: d083a479d7bc757a
+    studio/internal/ui/src/features/domain-model-editor/DeprecatedOperationsNotice.tsx:
+        component: deprecated-operations-notice
+        hash: 90eb6c863e30a5c2
     studio/internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
-        hash: ba5f867370055d48
+        hash: 70fb9f8aaab68ad2
     studio/internal/ui/src/features/domain-model-editor/DoneControl.test.tsx:
         component: done-control
         hash: 856bd07cee215d09
     studio/internal/ui/src/features/domain-model-editor/DoneControl.tsx:
         component: done-control
         hash: 95579f969209e9c1
+    studio/internal/ui/src/features/domain-model-editor/ERDiagramView.test.tsx:
+        component: er-diagram-view
+        hash: ea8e1b469eda50cc
+    studio/internal/ui/src/features/domain-model-editor/ERDiagramView.tsx:
+        component: er-diagram-view
+        hash: 7ef2e921338b1ab0
     studio/internal/ui/src/features/domain-model-editor/EntityFormPanel.test.tsx:
         component: entity-form-panel
         hash: 9a765f18c427fa30
@@ -228,12 +240,33 @@ files:
     studio/internal/ui/src/features/domain-model-editor/EnumList.tsx:
         component: enum-list
         hash: 1693483697a19bcc
+    studio/internal/ui/src/features/domain-model-editor/RelationshipFormPanel.test.tsx:
+        component: relationship-form-panel
+        hash: eedb5800c723483b
+    studio/internal/ui/src/features/domain-model-editor/RelationshipFormPanel.tsx:
+        component: relationship-form-panel
+        hash: f12e6ca9b7de24f1
+    studio/internal/ui/src/features/domain-model-editor/RelationshipList.test.tsx:
+        component: relationship-list
+        hash: 24c9a067a9d37bca
+    studio/internal/ui/src/features/domain-model-editor/RelationshipList.tsx:
+        component: relationship-list
+        hash: 6e106e3b7c706ca3
+    studio/internal/ui/src/features/domain-model-editor/erLayout.test.ts:
+        component: cross-cutting/er-diagram-deterministic-layout
+        hash: af619ecbbd5470ee
+    studio/internal/ui/src/features/domain-model-editor/erLayout.ts:
+        component: ""
+        hash: fa298521d572b95c
     studio/internal/ui/src/lib/api.ts:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
         hash: 9ce633a2d20a6892
     studio/internal/ui/src/main.tsx:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
         hash: 730fec0e1788f755
+    studio/internal/ui/src/store/editorStore.ts:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: a2141d0fc249ad2c
     studio/pkg/vocabulary/errors_test.go:
         component: cross-cutting/stable-error-codes-tests
         hash: 49d9bbf9f1f77534

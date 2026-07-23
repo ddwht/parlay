@@ -1,0 +1,12 @@
+feature: domain-model-editor/domain-model-editor-relationships
+reviewed_at: "2026-07-23T13:59:49Z"
+reviewed_by: dwht
+review_method: cli
+buildfile_hash: sha256:0a08432d705d5ea77be886b143b05eca7ed4a0df3602afb7fb0b374644c529e1
+testcases_hash: sha256:8d73a8a6896dc8d8ff0d401bc94856f60cb6bcfa84542101ad10f63244a9cc04
+approved_suites:
+    - relationship-list
+    - relationship-form-panel
+    - er-diagram-view
+    - deprecated-operations-notice
+    - er-diagram-deterministic-layout
