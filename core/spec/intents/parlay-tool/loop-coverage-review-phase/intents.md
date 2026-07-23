@@ -1,0 +1,28 @@
+# Loop coverage-review phase
+
+> `/parlay-loop` walks a feature through five phases — intents → dialogs → artifacts → build → code — organized into three phase-groups (designer / build / code). For a multi-target project, `/parlay-generate-code` refuses to run until an approved `coverage-review.yaml` exists: it runs `parlay check-review-gate @<feature>` before any other read and hard-stops on `coverage-review-missing`. But the build phase-group never produces that file, and the loop has no phase between build and code that runs the coverage review. A code-phase subagent driven by the loop therefore hits `coverage-review-missing` and cannot proceed — the loop cannot carry a multi-target feature end-to-end. This feature inserts a coverage-review step so the loop produces the approved `coverage-review.yaml` before it enters the code phase-group.
+
+---
+
+## Insert a coverage-review step between the build and code phase-groups
+
+**Goal**: Make `/parlay-loop` run the coverage review — producing an approved `coverage-review.yaml` — after the build phase-group emits `buildfile.yaml` + `testcases.yaml` and before the code phase-group invokes `/parlay-generate-code`, so a multi-target feature clears `check-review-gate` inside the loop instead of dead-ending at `coverage-review-missing`. Presentation-only projects, which get `ready: true` from the gate automatically, skip the step.
+**Persona**: Parlay tool maintainer
+**Priority**: P1
+**Context**: `core/internal/embedded/skills/loop.skill.md` defines exactly five phases (`intents`, `dialogs`, `artifacts`, `build`, `code`) grouped into three subagents (`parlay-designer`, `parlay-build`, `parlay-code`). Step 7 ("Enter the code phase-group") invokes `/parlay-generate-code` inline with no preceding review. `core/internal/embedded/skills/generate-code.skill.md` (around line 412) states: when `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen "consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read" via `parlay check-review-gate @<feature>`, and "MUST stop on non-zero." The gate's failure codes include `coverage-review-missing` (the file does not exist), `coverage-review-stale`, `coverage-review-suite-unapproved`, and `coverage-review-uncovered`. The project already ships a `/parlay-review-coverage` skill that walks the suites, records approvals, and writes `coverage-review.yaml` — the loop simply never invokes it. So a multi-target loop run advances build → code and the code subagent stops at `coverage-review-missing` with no in-loop remedy.
+**Action**: Add a coverage-review phase (or a boundary step at the build→code transition) to `loop.skill.md` that, for multi-target projects, invokes `/parlay-review-coverage @<feature>` and confirms an approved, fresh `coverage-review.yaml` before the code phase-group starts. Gate entry to the code group on the review passing — mirror the existing build-group entry gate (step 6 runs `parlay check-readiness --stage build-feature` and treats errors as HARD BLOCKS). Presentation-only projects short-circuit the step (the gate returns `ready: true` automatically), so single-target loops are unchanged. Decide whether this is a fourth phase-group or a boundary step within the code group in dialogs; either way the loop must not reach `/parlay-generate-code` for a multi-target feature without a passing gate.
+**Objects**: loop-skill, phase-group, coverage-review-phase, check-review-gate, review-coverage-skill, generate-code, multi-target-project, phase-boundary-gate
+
+**Constraints**:
+- The step is conditional on multi-target: a project with only the presentation slot filled (or no `.parlay/adapter-set.yaml`) skips it entirely, matching the gate's own auto-`ready` behavior — no new prompt, no new subagent boundary for single-target loops.
+- Entry to the code phase-group is gated: an unapproved or stale `coverage-review.yaml` is a HARD BLOCK the user cannot advance past by acknowledgement, consistent with the build-group readiness gate. The remedy is to complete the review, not to proceed.
+- The loop keeps its no-persisted-resume-state invariant — the review step introduces no `.parlay/loop-state.yaml`, no phase cursor. Continuity remains the printed resume hint plus on-disk artifacts (`coverage-review.yaml` is a build artifact, not loop state).
+- The loop still orchestrates existing skills rather than re-implementing them — it invokes `/parlay-review-coverage` and reads `parlay check-review-gate`'s structured JSON; it does not compute coverage itself.
+- On a Generic CLI adapter (no native subagents), the review step degrades to the same fresh-session-handoff pattern the other phase-group boundaries use: print the exact resume command and exit.
+
+**Verify**:
+- A multi-target feature driven through `/parlay-loop` from `build` reaches an approved `coverage-review.yaml` and then completes `/parlay-generate-code` without hitting `coverage-review-missing`.
+- The same loop, if the review is left incomplete or the file is stale, HARD-BLOCKS at the build→code boundary and routes the user to finish the review — it never enters the code phase-group.
+- A presentation-only feature driven through `/parlay-loop` skips the coverage-review step with no extra prompt and completes exactly as it does today.
+- The loop persists no new on-disk state for the review step (no phase cursor); re-invoking with `--from code` on a feature that already has an approved, fresh `coverage-review.yaml` proceeds straight into codegen.
+- On a Generic CLI adapter, the build→review or review→code boundary prints a resume command and exits rather than silently continuing.
