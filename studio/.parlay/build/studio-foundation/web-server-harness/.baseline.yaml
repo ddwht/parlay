@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     figma-mcp-phase-0-wiring:
         content-hash: a7cacd78a9ed4722
@@ -35,3 +35,4 @@ sources:
         http-server-harness-chi-router-middleware-error-envelopes: 4664bf8f4fef54d9
         idle-timeout-activity-tracking: 26ad323b3fa81ae4
         studio-binary-startup-sequence-and-lifecycle: b63d43ab710a5ba7
+    infrastructure: e3c6d71c64c1cc42

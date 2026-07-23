@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     retract-the-studio-direct-mcp-code:
         content-hash: b54de495457e9cba
@@ -19,3 +19,4 @@ sources:
     dialogs:
         retract-the-studio-direct-mcp-code: 9c29ccdd36f0ea40
         studio-defers-figma-mcp-to-the-host-agent: ec51e4993625a1c6
+    infrastructure: 458577118c4ff50a

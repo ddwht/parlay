@@ -67,6 +67,13 @@ type BootDeps struct {
 	// URL. Defaults to a no-op so tests don't try to spawn a real browser.
 	OpenBrowser func(url string) error
 
+	// BrowserPath is the path suffix appended to the bound URL before the
+	// browser is opened. The bare invocation leaves it at the default "/";
+	// the domain-edit subcommand sets "/domain-model" so the operator lands
+	// on the editor route. It changes only the browser-open target — the same
+	// harness, tool route groups, and lifecycle run either way.
+	BrowserPath string
+
 	// SignalNotify wires SIGINT/SIGTERM onto a shutdown trigger. Defaults
 	// to a signal.Notify-backed implementation.
 	SignalNotify func(ch chan<- string)
@@ -181,9 +188,11 @@ func Boot(ctx context.Context, deps BootDeps) error {
 	url := fmt.Sprintf("http://%s", ln.Addr().String())
 	logger.Printf("INFO boot: listening url=%s", url)
 
-	// Step (7): open the operator's browser.
+	// Step (7): open the operator's browser at the bound URL plus the
+	// configured landing path (root for the bare invocation, /domain-model
+	// for domain-edit).
 	if cfg.OpenBrowser {
-		if oerr := deps.OpenBrowser(url); oerr != nil {
+		if oerr := deps.OpenBrowser(url + deps.BrowserPath); oerr != nil {
 			logger.Printf("WARN boot: open browser: %v", oerr)
 		}
 	}
@@ -251,6 +260,9 @@ func applyBootDefaults(deps BootDeps) BootDeps {
 	}
 	if deps.OpenBrowser == nil {
 		deps.OpenBrowser = func(string) error { return nil }
+	}
+	if deps.BrowserPath == "" {
+		deps.BrowserPath = "/"
 	}
 	if deps.SignalNotify == nil {
 		deps.SignalNotify = defaultSignalNotify

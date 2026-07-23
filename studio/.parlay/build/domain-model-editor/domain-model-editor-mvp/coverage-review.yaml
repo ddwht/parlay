@@ -1,0 +1,23 @@
+feature: domain-model-editor/domain-model-editor-mvp
+reviewed_at: "2026-07-23T11:58:27Z"
+reviewed_by: dwht
+review_method: cli
+buildfile_hash: sha256:73ba11d3f1c8c60b0067b0fac6caa8076b6a87327299bdb5df9ed05cd9c92f03
+testcases_hash: sha256:8870f386aaa8dfead7f5032e81a7a1e1b17372b88c6134ed675e02269604841f
+approved_suites:
+    - entity-list
+    - entity-form-panel
+    - enum-list
+    - enum-form-panel
+    - save-bar
+    - conflict-reload-prompt
+    - error-envelope-feedback
+    - session-ended-screen
+    - done-control
+    - domain-model-subsystem-registration
+    - domain-model-read-path-resolution
+    - domain-model-loader-reuse
+    - compare-and-swap-save
+    - deterministic-serialization-and-operations-passthrough
+    - blocking-domain-edit-invocation
+    - embedded-ui-bundle-and-stack-pin

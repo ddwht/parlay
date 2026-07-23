@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     figma-mcp-connection-configuration:
         content-hash: b79461d6d27eccc2
@@ -35,3 +35,4 @@ sources:
         studio-configuration-sources-precedence-and-file-layout: df2bc17be4e3606c
         studio-project-root-resolution: e19234541b0cf55d
         web-server-runtime-configuration: 33a21d04de05f5aa
+    infrastructure: 60883b7c2ed00331

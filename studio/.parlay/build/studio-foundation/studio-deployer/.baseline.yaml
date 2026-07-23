@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     file-ownership-atomic-writes-and-idempotency:
         content-hash: 798cd882eb140868
@@ -27,3 +27,4 @@ sources:
         file-ownership-atomic-writes-and-idempotency: 1f4d32120b012bfd
         multi-agent-target-resolution: 512ab7cc3dd5317a
         studio-binary-embeds-its-skills-and-deploys-them-via-initupgrade-subcommands: 7e75ba6e622cf416
+    infrastructure: 986151952a5b48cd

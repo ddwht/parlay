@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     design-loop-is-a-parlay-skill-executed-by-the-host-agent:
         content-hash: 6a4a9d6c0d5f7f0c
@@ -27,6 +27,7 @@ sources:
         design-loop-is-a-parlay-skill-executed-by-the-host-agent: 02a1d6b7e72ee058
         on-disk-artifact-contract-between-studio-binary-and-design-loop-skill: 73a84faf45b6ac25
         tool-call-orchestration-read-back-and-conflict-detection: ee58fe13ea543601
+    infrastructure: 9c1a4195e45aaa61
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

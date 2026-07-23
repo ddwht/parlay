@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     validation-rules-types-tokens-and-shape:
         content-hash: b15da88ecdfc3e5b
@@ -19,6 +19,7 @@ sources:
     dialogs:
         validation-rules-types-tokens-and-shape: 86c27a24a6a78dec
         vocabulary-source-resolution: 4206173f9708a135
+    infrastructure: 3d11223600b17533
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

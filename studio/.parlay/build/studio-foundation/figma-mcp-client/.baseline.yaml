@@ -1,4 +1,4 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 intents:
     adopt-the-official-go-mcp-sdk-as-the-client-library:
         content-hash: 623514f0dd63a434
@@ -27,3 +27,4 @@ sources:
         adopt-the-official-go-mcp-sdk-as-the-client-library: ab365e3ccafe49f5
         pin-the-bounded-figma-mcp-tool-surface-studio-is-allowed-to-call: 35f84deeca1438a6
         require-figmas-remote-mcp-server-not-the-desktop-variant: e76f26141088ea90
+    infrastructure: 668caeebc05696a5

@@ -25,8 +25,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/parlay-tool/parlay/studio/internal/config"
 	"github.com/parlay-tool/parlay/studio/internal/deployer"
+	"github.com/parlay-tool/parlay/studio/internal/domain"
 	"github.com/parlay-tool/parlay/studio/internal/server"
+	"github.com/parlay-tool/parlay/studio/internal/ui"
 )
 
 // Set by goreleaser ldflags at release time; defaults are sentinels that
@@ -57,9 +60,71 @@ func main() {
 			return
 		}
 	}
-	// Default: run the server harness.
-	if err := server.Boot(context.Background(), server.BootDeps{}); err != nil {
+
+	// Default and `domain-edit`: boot the server harness. Both run the
+	// identical boot sequence, the same registered tool route groups, and the
+	// same lifecycle; only the browser-open landing path differs.
+	if err := boot(context.Background(), args); err != nil {
 		fmt.Fprintf(os.Stderr, "parlay-studio: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// boot constructs the harness dependencies (the registered tool subsystems,
+// the embedded UI bundle, and the browser-open landing path) and runs the boot
+// sequence. The `domain-edit` subcommand differs from the bare invocation only
+// in landing the operator's browser on the editor route.
+func boot(ctx context.Context, args []string) error {
+	// domain-edit is an entry-point convenience, not a separate server mode:
+	// strip the subcommand token from the args the boot sequence parses and
+	// point the browser at the editor route.
+	bootArgs := args
+	browserPath := "/"
+	if len(args) > 0 && args[0] == "domain-edit" {
+		bootArgs = args[1:]
+		browserPath = "/domain-model"
+	}
+
+	// The domain-model editor is the first tool subsystem to consume the
+	// harness registration mechanism. It reads and writes the resolved project
+	// root's domain-model.yaml; resolve that root the same way the boot
+	// sequence does so the two agree.
+	root := resolveEditorRoot(bootArgs)
+
+	return server.Boot(ctx, server.BootDeps{
+		Args:        bootArgs,
+		Tools:       []server.ToolRegistration{domain.New(root)},
+		UIBundle:    ui.Bundle{},
+		BrowserPath: browserPath,
+	})
+}
+
+// resolveEditorRoot resolves the project root the domain-model editor targets,
+// using the same resolver the boot sequence uses. On failure it falls back to
+// the current working directory; the boot sequence re-resolves and surfaces the
+// actionable error before any request is served, so a handler never runs
+// against a bad root.
+func resolveEditorRoot(args []string) string {
+	cwd, _ := os.Getwd()
+	home := os.Getenv("HOME")
+	root, _, err := config.ResolveProjectRoot(args, envMap(), cwd, home)
+	if err != nil {
+		return cwd
+	}
+	return root
+}
+
+// envMap snapshots the process environment as a map for config resolution.
+func envMap() map[string]string {
+	env := os.Environ()
+	out := make(map[string]string, len(env))
+	for _, kv := range env {
+		for i := 0; i < len(kv); i++ {
+			if kv[i] == '=' {
+				out[kv[:i]] = kv[i+1:]
+				break
+			}
+		}
+	}
+	return out
 }

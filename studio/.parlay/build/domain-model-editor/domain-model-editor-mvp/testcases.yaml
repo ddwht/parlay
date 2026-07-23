@@ -1,0 +1,556 @@
+feature: domain-model-editor/domain-model-editor-mvp
+framework: "Vitest + React Testing Library (presentation components); Go testing, table-driven (application cross-cutting)"
+
+# Mixed feature: nine presentation-component suites plus seven cross-cutting
+# suites for the Go backend. Cases are derived from each intent's Verify
+# bullets and the dialog branches.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio), so
+# testcases v2's closed kind set {presentation, operation} would normally
+# apply. The cross-cutting infrastructure suites fit neither kind, so — as
+# the sibling studio-foundation/web-server-harness feature already does —
+# these suites are emitted in the v1 shape. The v2 validator treats them as
+# kind: presentation with a testcases-source-refs-missing-legacy warning,
+# which is acceptable for a feature whose backend behavior is expressed as
+# infrastructure prose rather than closed-vocabulary operations.
+
+suites:
+  # ===========================================================================
+  # Presentation — Entity and field editing
+  # ===========================================================================
+  - name: entity-list
+    component: entity-list
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/entity-and-field-editing"
+    cases:
+      - name: renders one row per entity
+        description: The sidebar lists every entity in the loaded model.
+        steps:
+          - action: render
+            target: entity-list
+          - verify: count
+            target: entity-rows
+            expected: 2
+      - name: empty-state shows for a fresh project
+        description: With no entities the empty-state entry point renders instead of a list.
+        steps:
+          - action: render
+            target: entity-list
+            value: { fixture: empty-model }
+          - verify: visible
+            target: empty-entities
+            expected: true
+      - name: delete blocked while entity referenced
+        description: Deleting Customer while Order.customer_id targets it surfaces a block naming the referent.
+        steps:
+          - action: click
+            target: delete-entity
+          - verify: error
+            target: delete-entity
+            expected: "Customer can't be deleted — referenced by Order.customer_id"
+
+  - name: entity-form-panel
+    component: entity-form-panel
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/entity-and-field-editing"
+    cases:
+      - name: field type dropdown offers exactly the closed vocabulary
+        description: For a model with enums OrderStatus, the type dropdown offers the seven scalar types plus ref plus the declared enum names — no free-text entry.
+        steps:
+          - action: render
+            target: entity-form-panel
+          - verify: count
+            target: choose-field-type
+            expected: 9
+      - name: choosing an enum type auto-sets the enum companion key
+        description: Selecting OrderStatus for a field auto-sets enum:OrderStatus so the two-key invariant is never the designer's job.
+        steps:
+          - action: select
+            target: choose-field-type
+            value: OrderStatus
+          - verify: state
+            target: DomainModelDocument.entities
+            expected: "field.enum == OrderStatus"
+      - name: ref requires a target before commit
+        description: Selecting ref requires choosing a declared target entity before the field commits.
+        steps:
+          - action: select
+            target: choose-field-type
+            value: ref
+          - verify: visible
+            target: choose-ref-target
+            expected: true
+          - verify: enabled
+            target: add-field
+            expected: false
+      - name: duplicate entity name rejected at entry
+        description: Typing an existing entity name shows a field-level message before any save round-trip.
+        steps:
+          - action: input
+            target: edit-entity-name
+            value: Order
+          - verify: visible
+            target: duplicate-name-message
+            expected: true
+      - name: rename propagates atomically
+        description: Renaming Customer to Client rewrites every ref target and relationship endpoint with no intermediate dangling state.
+        steps:
+          - action: click
+            target: rename-entity
+            value: { from: Customer, to: Client }
+          - verify: state
+            target: DomainModelDocument.entities
+            expected: "Order.customer_id.target == Client"
+      - name: field reordering is preserved
+        description: Reordering fields and saving lists them in the new declaration order.
+        steps:
+          - action: click
+            target: reorder-fields
+          - verify: state
+            target: DomainModelDocument.entities
+            expected: "field order reflects the edit"
+
+  # ===========================================================================
+  # Presentation — Enum editing
+  # ===========================================================================
+  - name: enum-list
+    component: enum-list
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/enum-editing"
+    cases:
+      - name: renders one row per enum
+        description: The sidebar lists every enum in the loaded model.
+        steps:
+          - action: render
+            target: enum-list
+          - verify: count
+            target: enum-rows
+            expected: 1
+      - name: enum name colliding with a scalar type rejected
+        description: Naming an enum "string" is rejected at entry with a field-level message.
+        steps:
+          - action: click
+            target: new-enum
+            value: string
+          - verify: error
+            target: new-enum
+            expected: "\"string\" is a built-in field type name"
+
+  - name: enum-form-panel
+    component: enum-form-panel
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/enum-editing"
+    cases:
+      - name: tone selector offers exactly five tones plus none with visual preview
+        description: The tone selector offers {neutral, info, warning, danger, success} plus none, each rendered as its badge treatment.
+        steps:
+          - action: render
+            target: enum-form-panel
+          - verify: count
+            target: tone-badge-preview
+            expected: 5
+      - name: unset label and tone omitted from serialized yaml
+        description: A value with no label and no tone serializes without empty-string keys.
+        steps:
+          - action: click
+            target: edit-value
+            value: { value: paid, tone: success }
+          - verify: state
+            target: DomainModelDocument.enums
+            expected: "no empty-string label/tone keys"
+      - name: duplicate value rejected at entry
+        description: Adding a second value "pending" is rejected field-level before save.
+        steps:
+          - action: input
+            target: edit-value
+            value: pending
+          - verify: error
+            target: edit-value
+            expected: "\"pending\" is already a value in this enum"
+      - name: enum rename rewrites referencing field companion keys
+        description: "Renaming OrderStatus to Status updates both type: and enum: of Order.status."
+        steps:
+          - action: click
+            target: rename-enum
+            value: { from: OrderStatus, to: Status }
+          - verify: state
+            target: DomainModelDocument.entities
+            expected: "Order.status.type == Status and Order.status.enum == Status"
+
+  # ===========================================================================
+  # Presentation — Editor UI shell
+  # ===========================================================================
+  - name: save-bar
+    component: save-bar
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    cases:
+      - name: dirty edit shows Save, clean shows last-saved time
+        description: An uncommitted edit shows the dirty indicator and enables Save; after save the bar returns to a last-saved timestamp.
+        steps:
+          - action: render
+            target: save-bar
+          - verify: enabled
+            target: save
+            expected: false
+          - action: input
+            target: save
+            value: { makeDirty: true }
+          - verify: visible
+            target: dirty-indicator
+            expected: true
+          - verify: enabled
+            target: save
+            expected: true
+          - action: click
+            target: save
+          - verify: visible
+            target: last-saved-time
+            expected: true
+
+  - name: conflict-reload-prompt
+    component: conflict-reload-prompt
+    fixture: stale-etag
+    intent: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    cases:
+      - name: 409 conflict presents reload-and-reapply, never silent overwrite
+        description: A save returning the 409 conflict envelope shows the reload-and-reapply prompt naming what happened; no second save fires without designer action.
+        steps:
+          - action: render
+            target: conflict-reload-prompt
+          - verify: visible
+            target: conflict-explanation
+            expected: true
+          - verify: element
+            target: reload-and-reapply
+          - verify: element
+            target: keep-my-draft
+      - name: reload refetches with a fresh etag
+        description: Choosing reload-and-reapply refetches the model; no automatic re-save occurs.
+        steps:
+          - action: click
+            target: reload-and-reapply
+          - verify: state
+            target: DomainModelDocument.etag
+            expected: "sha256:77e0-current"
+
+  - name: error-envelope-feedback
+    component: error-envelope-feedback
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    cases:
+      - name: validation-failed renders at the field, not only as a toast
+        description: Each fields[] entry from a validation-failed envelope renders at its form control.
+        steps:
+          - action: render
+            target: error-envelope-feedback
+            value: { envelope: validation-failed }
+          - verify: visible
+            target: inline-field-error
+            expected: true
+      - name: server-error toast carries the request id
+        description: A server-error envelope shows a toast naming the request id for log correlation.
+        steps:
+          - action: render
+            target: error-envelope-feedback
+            value: { envelope: server-error, request_id: xyz-456-pqr }
+          - verify: text
+            target: server-error-toast
+            expected: "xyz-456-pqr"
+
+  - name: session-ended-screen
+    component: session-ended-screen
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    cases:
+      - name: connection failure after activity shows the restart command and stops
+        description: After a successful session, a connection error shows the session-ended screen naming parlay-studio; the shell does not spin on retries.
+        steps:
+          - action: render
+            target: session-ended-screen
+            value: { connection: refused-after-activity }
+          - verify: visible
+            target: session-ended-message
+            expected: true
+          - verify: text
+            target: restart-command
+            expected: "parlay-studio"
+
+  # ===========================================================================
+  # Presentation — Blocking domain-edit (Done control)
+  # ===========================================================================
+  - name: done-control
+    component: done-control
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    cases:
+      - name: Done with a dirty draft prompts save-or-discard
+        description: Firing Done with unsaved edits shows the save/discard/keep-editing prompt; no shutdown fires until a choice is made.
+        steps:
+          - action: render
+            target: done-control
+            value: { fixture: populated-model, dirty: true }
+          - action: click
+            target: done
+          - verify: visible
+            target: dirty-done-prompt
+            expected: true
+      - name: save-and-finish persists before shutdown
+        description: Choosing save-and-finish saves the draft through the etag flow before the explicit-shutdown request fires.
+        steps:
+          - action: click
+            target: confirm-save-and-finish
+          - verify: state
+            target: DomainModelDocument.etag
+            expected: "a fresh saved etag before shutdown"
+
+  # ===========================================================================
+  # Application (cross-cutting) — domain-model subsystem registration
+  # ===========================================================================
+  - name: domain-model-subsystem-registration
+    component: cross-cutting/domain-model-subsystem-registration
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    cases:
+      - name: subsystem source files exist
+        description: The subsystem and its handlers live in studio/internal/domain.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/subsystem.go
+          - verify: file-exists
+            target: studio/internal/domain/handlers.go
+      - name: exactly one route group at /api/domain-model
+        description: Mount registers only the /api/domain-model prefix with the two persistence endpoints; no route mounted outside it.
+        steps:
+          - verify: file-content
+            target: studio/internal/domain/subsystem.go
+            expected:
+              contains: "/api/domain-model"
+      - name: main.go registers the domain-model tool
+        description: The entry point constructs the domain registration and adds it to server.BootDeps.Tools.
+        steps:
+          - verify: file-content
+            target: studio/cmd/parlay-studio/main.go
+            expected:
+              contains: "internal/domain"
+      - name: load against a project with no model returns empty, not not-found
+        description: A GET on a project with no domain-model.yaml returns the empty-model bootstrap.
+        steps:
+          - action: invoke
+            target: loadHandler
+            value: { fixture: empty-model }
+          - verify: state
+            target: response.etag
+            expected: "empty"
+
+  # ===========================================================================
+  # Application (cross-cutting) — read-path resolution
+  # ===========================================================================
+  - name: domain-model-read-path-resolution
+    component: cross-cutting/domain-model-read-path-resolution
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    cases:
+      - name: resolver source exists
+        description: The read-path resolver lives in studio/internal/domain.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/resolve.go
+      - name: legacy domain-model.md is never read
+        description: Only the resolved root's domain-model.yaml is targeted; a sibling domain-model.md is never parsed, merged, or consulted.
+        steps:
+          - action: invoke
+            target: resolveModelPath
+            value: { root: /project, hasLegacyMd: true }
+          - verify: state
+            target: resolvedPath
+            expected: "/project/domain-model.yaml"
+
+  # ===========================================================================
+  # Application (cross-cutting) — loader reuse and schema-version gating
+  # ===========================================================================
+  - name: domain-model-loader-reuse
+    component: cross-cutting/domain-model-loader-reuse
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    cases:
+      - name: loader source exists
+        description: The load path lives in studio/internal/domain/loader.go.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/loader.go
+      - name: older schema_version migrated in memory, on-disk untouched until save
+        description: A model older than the binary is served in the current shape via in-memory migration; the on-disk file is untouched by the load.
+        steps:
+          - action: invoke
+            target: Load
+            value: { fixture: populated-model, onDiskSchemaVersion: 1, binarySchemaVersion: 2 }
+          - verify: state
+            target: servedModel.schema_version
+            expected: 2
+      - name: schema_version newer than binary fails with actionable message
+        description: A model newer than the binary fails the load with schema-version-newer-than-binary, not a generic server-error.
+        steps:
+          - action: invoke
+            target: Load
+            value: { onDiskSchemaVersion: 3, binarySchemaVersion: 2 }
+          - verify: error
+            target: Load
+            expected: schema-version-newer-than-binary
+
+  # ===========================================================================
+  # Application (cross-cutting) — compare-and-swap save
+  # ===========================================================================
+  - name: compare-and-swap-save
+    component: cross-cutting/compare-and-swap-save
+    fixture: stale-etag
+    intent: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    cases:
+      - name: save source files exist
+        description: The etag derivation and the CAS write path live in studio/internal/domain.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/etag.go
+          - verify: file-exists
+            target: studio/internal/domain/save.go
+      - name: matching etag writes, edit lands on disk
+        description: A save presenting the load-time etag writes the file and the edit is reflected on disk.
+        steps:
+          - action: invoke
+            target: Save
+            value: { fixture: populated-model, presented: "sha256:9f2c-load" }
+          - verify: state
+            target: onDisk
+            expected: "edit reflected"
+      - name: stale etag returns 409 conflict and writes nothing
+        description: A save presenting a stale etag returns the conflict envelope carrying both etags and leaves the on-disk file unchanged.
+        steps:
+          - action: invoke
+            target: Save
+            value: { presented: "sha256:9f2c-load", currentOnDisk: "sha256:77e0-current" }
+          - verify: error
+            target: Save
+            expected: conflict
+          - verify: state
+            target: onDisk
+            expected: "unchanged"
+      - name: first save against empty-model sentinel creates the file
+        description: A first save presenting the empty sentinel etag creates domain-model.yaml on disk.
+        steps:
+          - action: invoke
+            target: Save
+            value: { fixture: empty-model, presented: "empty" }
+          - verify: file-exists
+            target: domain-model.yaml
+
+  # ===========================================================================
+  # Application (cross-cutting) — deterministic serialization + operations passthrough
+  # ===========================================================================
+  - name: deterministic-serialization-and-operations-passthrough
+    component: cross-cutting/deterministic-serialization-and-operations-passthrough
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    cases:
+      - name: serializer source exists
+        description: Deterministic serialization lives in studio/internal/domain/serialize.go.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/serialize.go
+      - name: two saves of the same model are byte-identical
+        description: Serializing the same in-memory model twice produces byte-identical output and the same etag.
+        steps:
+          - action: invoke
+            target: Serialize
+            value: { fixture: populated-model, times: 2 }
+          - verify: state
+            target: outputs
+            expected: "byte-identical"
+      - name: deprecated operations block round-trips untouched
+        description: A save touching only an unrelated entity leaves the populated operations block byte-for-byte identical.
+        steps:
+          - action: invoke
+            target: Save
+            value: { fixture: populated-model, edit: "unrelated entity" }
+          - verify: state
+            target: onDisk.operations
+            expected: "byte-for-byte identical"
+
+  # ===========================================================================
+  # Application (cross-cutting) — blocking domain-edit invocation
+  # ===========================================================================
+  - name: blocking-domain-edit-invocation
+    component: cross-cutting/blocking-domain-edit-invocation
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    cases:
+      - name: domain-edit lands the browser on /domain-model
+        description: domain-edit's browser-open hook receives the bound URL suffixed with /domain-model while the bare invocation receives the root URL.
+        steps:
+          - action: invoke
+            target: domain-edit
+            value: { injectedBrowserHook: true }
+          - verify: state
+            target: browserOpenURL
+            expected: "<bound>/domain-model"
+      - name: idle timeout exits zero with no requests
+        description: A domain-edit session with a short idle timeout and no requests exits zero (the walk-away guard unblocks a waiting caller).
+        steps:
+          - action: invoke
+            target: domain-edit
+            value: { idleTimeout: short, requests: 0 }
+          - verify: state
+            target: exitCode
+            expected: 0
+      - name: boot-step failure exits non-zero before any browser open
+        description: A boot-step failure in a domain-edit invocation exits non-zero before any browser opens.
+        steps:
+          - action: invoke
+            target: domain-edit
+            value: { injectBootFailure: true }
+          - verify: state
+            target: BootResult.BrowserOpened
+            expected: false
+          - verify: error
+            target: domain-edit
+            expected: "non-zero boot-step failure"
+
+  # ===========================================================================
+  # Application (cross-cutting) — embedded UI bundle and stack pin
+  # ===========================================================================
+  - name: embedded-ui-bundle-and-stack-pin
+    component: cross-cutting/embedded-ui-bundle-and-stack-pin
+    fixture: populated-model
+    intent: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    cases:
+      - name: embed wiring and app shell source files exist
+        description: The go:embed wiring and the Vite/React shell live under studio/internal/ui.
+        steps:
+          - verify: file-exists
+            target: studio/internal/ui/embed.go
+          - verify: file-exists
+            target: studio/internal/ui/src/App.tsx
+          - verify: file-exists
+            target: studio/internal/ui/src/main.tsx
+      - name: root path serves the editor shell, not the 503 placeholder
+        description: With the bundle embedded, fetching / serves the editor shell HTML and the studio-ui-bundle-not-built 503 no longer occurs.
+        steps:
+          - action: navigate
+            target: /
+          - verify: text
+            target: response
+            expected: "editor shell HTML (no studio-ui-bundle-not-built)"
+      - name: main.go wires the embedded bundle into BootDeps.UIBundle
+        description: The entry point passes the embedded bundle value so the SPA fallback serves it.
+        steps:
+          - verify: file-content
+            target: studio/cmd/parlay-studio/main.go
+            expected:
+              contains: "UIBundle"
+      - name: api routes are never served the SPA fallback
+        description: An unknown /api/* path still surfaces the harness not-found envelope, never index.html.
+        steps:
+          - action: navigate
+            target: /api/unknown-path
+          - verify: text
+            target: response
+            expected: "not-found"

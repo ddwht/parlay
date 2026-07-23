@@ -1,8 +1,8 @@
-generated-at: "2026-06-16T10:44:41Z"
+generated-at: "2026-07-23T12:57:22Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: 1fd3a9fdc7022db2
+        hash: 393a8166c6d1f21b
     studio/go.mod:
         component: cross-cutting/official-mcp-sdk-adoption
         hash: f9a481a9f56f9102
@@ -44,16 +44,19 @@ files:
         hash: 8f79692380845d16
     studio/internal/deployer/deployer.go:
         component: ""
-        hash: 3ac343050e3937c7
+        hash: 07acfa8a70d5f1fb
     studio/internal/deployer/deployer_test.go:
         component: ""
-        hash: a24d94e764481729
+        hash: 1b535a38c0eead91
     studio/internal/deployer/manifest.go:
         component: ""
         hash: 6fe4aa70b1d43636
     studio/internal/deployer/manifest_test.go:
         component: ""
         hash: 8178c23f61775fab
+    studio/internal/deployer/persist.go:
+        component: ""
+        hash: 742aeb222b2232d0
     studio/internal/deployer/status.go:
         component: ""
         hash: 3b7d3337074ebfc7
@@ -66,6 +69,48 @@ files:
     studio/internal/deployer/subcommands_test.go:
         component: ""
         hash: 39db605cd377cdb0
+    studio/internal/domain/etag.go:
+        component: cross-cutting/compare-and-swap-save
+        hash: fac17a6cb9bfef17
+    studio/internal/domain/etag_test.go:
+        component: cross-cutting/compare-and-swap-save
+        hash: 6fc16c7b7f546e9c
+    studio/internal/domain/handlers.go:
+        component: cross-cutting/domain-model-subsystem-registration
+        hash: 1c52f98e12fb3c1d
+    studio/internal/domain/handlers_test.go:
+        component: cross-cutting/domain-model-subsystem-registration
+        hash: 1ef69e7434b60d32
+    studio/internal/domain/loader.go:
+        component: cross-cutting/domain-model-loader-reuse
+        hash: 951d10612d843519
+    studio/internal/domain/loader_test.go:
+        component: cross-cutting/domain-model-loader-reuse
+        hash: 7b21aa8b6a406135
+    studio/internal/domain/resolve.go:
+        component: cross-cutting/domain-model-read-path-resolution
+        hash: fcf3f64eae196ed3
+    studio/internal/domain/resolve_test.go:
+        component: cross-cutting/domain-model-read-path-resolution
+        hash: 8b3203d9b0f6c0e3
+    studio/internal/domain/save.go:
+        component: cross-cutting/compare-and-swap-save
+        hash: 7c98b2dd9ee423da
+    studio/internal/domain/save_test.go:
+        component: cross-cutting/compare-and-swap-save
+        hash: 63c70ece36b5e524
+    studio/internal/domain/serialize.go:
+        component: cross-cutting/deterministic-serialization-and-operations-passthrough
+        hash: d8baf96acca3e251
+    studio/internal/domain/serialize_test.go:
+        component: cross-cutting/deterministic-serialization-and-operations-passthrough
+        hash: 341fd0d456f9c63d
+    studio/internal/domain/subsystem.go:
+        component: cross-cutting/domain-model-subsystem-registration
+        hash: f3de90687657233f
+    studio/internal/domain/subsystem_test.go:
+        component: cross-cutting/domain-model-subsystem-registration
+        hash: 4532b96697f847c1
     studio/internal/embedded/embed.go:
         component: ""
         hash: dc2f109455f822ce
@@ -77,7 +122,10 @@ files:
         hash: 80d3a2e20ed1e24c
     studio/internal/server/boot.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
-        hash: 83ad45b40e6efff1
+        hash: c8859d96417135f2
+    studio/internal/server/boot_domain_edit_test.go:
+        component: cross-cutting/blocking-domain-edit-invocation
+        hash: 003dc7a481d876c0
     studio/internal/server/boot_test.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
         hash: fb045c896b7c56e5
@@ -114,6 +162,78 @@ files:
     studio/internal/server/server_test.go:
         component: cross-cutting/http-server-harness
         hash: 99df4e74759ac7cb
+    studio/internal/ui/embed.go:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: 2fa6c65d343e6736
+    studio/internal/ui/embed_test.go:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: 1c784fca7ce8b071
+    studio/internal/ui/src/App.tsx:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: 2931ceba2751eb70
+    studio/internal/ui/src/components/ErrorEnvelopeFeedback.test.tsx:
+        component: error-envelope-feedback
+        hash: d85188ce52f95c53
+    studio/internal/ui/src/components/ErrorEnvelopeFeedback.tsx:
+        component: error-envelope-feedback
+        hash: e35bc0d733e996ca
+    studio/internal/ui/src/components/SaveBar.test.tsx:
+        component: save-bar
+        hash: 84ef9e3d0a913d84
+    studio/internal/ui/src/components/SaveBar.tsx:
+        component: save-bar
+        hash: 855a02b75e687e9d
+    studio/internal/ui/src/components/SessionEndedScreen.test.tsx:
+        component: session-ended-screen
+        hash: 8f5dea788d889e95
+    studio/internal/ui/src/components/SessionEndedScreen.tsx:
+        component: session-ended-screen
+        hash: 79db30d689c4a69d
+    studio/internal/ui/src/features/domain-model-editor/ConflictReloadPrompt.test.tsx:
+        component: conflict-reload-prompt
+        hash: 022c68643f29aaf4
+    studio/internal/ui/src/features/domain-model-editor/ConflictReloadPrompt.tsx:
+        component: conflict-reload-prompt
+        hash: e3946c8c912143f2
+    studio/internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: ba5f867370055d48
+    studio/internal/ui/src/features/domain-model-editor/DoneControl.test.tsx:
+        component: done-control
+        hash: 856bd07cee215d09
+    studio/internal/ui/src/features/domain-model-editor/DoneControl.tsx:
+        component: done-control
+        hash: 95579f969209e9c1
+    studio/internal/ui/src/features/domain-model-editor/EntityFormPanel.test.tsx:
+        component: entity-form-panel
+        hash: 9a765f18c427fa30
+    studio/internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx:
+        component: entity-form-panel
+        hash: fbdc41d77db2a8e7
+    studio/internal/ui/src/features/domain-model-editor/EntityList.test.tsx:
+        component: entity-list
+        hash: aa304216e880214b
+    studio/internal/ui/src/features/domain-model-editor/EntityList.tsx:
+        component: entity-list
+        hash: 99ba20a84c86097a
+    studio/internal/ui/src/features/domain-model-editor/EnumFormPanel.test.tsx:
+        component: enum-form-panel
+        hash: dd9e7fba7c0412b8
+    studio/internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx:
+        component: enum-form-panel
+        hash: 56cea62531796b00
+    studio/internal/ui/src/features/domain-model-editor/EnumList.test.tsx:
+        component: enum-list
+        hash: e9f3f638ec1f6f1f
+    studio/internal/ui/src/features/domain-model-editor/EnumList.tsx:
+        component: enum-list
+        hash: 1693483697a19bcc
+    studio/internal/ui/src/lib/api.ts:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: 9ce633a2d20a6892
+    studio/internal/ui/src/main.tsx:
+        component: cross-cutting/embedded-ui-bundle-and-stack-pin
+        hash: 730fec0e1788f755
     studio/pkg/vocabulary/errors_test.go:
         component: cross-cutting/stable-error-codes-tests
         hash: 49d9bbf9f1f77534

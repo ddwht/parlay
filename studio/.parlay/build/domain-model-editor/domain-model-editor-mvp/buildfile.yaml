@@ -1,0 +1,722 @@
+feature: domain-model-editor/domain-model-editor-mvp
+adapter-set: parlay-studio
+
+# Two-slot feature. It spans BOTH adapter-set slots:
+#
+#   presentation (react-vite-radix-tailwind, root studio/internal/ui) —
+#     the domain-model editor UI: nine surface fragments -> nine React
+#     components plus the Vite/React app shell that the harness's SPA
+#     fallback has been waiting on.
+#
+#   application (go-studio-app, root studio/) — the Go backend: the
+#     /api/domain-model tool subsystem, its load/save persistence path
+#     (loader reuse, compare-and-swap, deterministic serialization,
+#     deprecated-operations passthrough), the `domain-edit` blocking
+#     subcommand, and the //go:embed wiring for the UI bundle. These come
+#     from the seven infrastructure.md fragments -> cross-cutting entries.
+#
+# There is no capabilities.yaml for this feature (studio uses the
+# adapter-set model; the persistence contract is expressed as
+# infrastructure prose, not a closed-vocabulary operation set), so the
+# top-level `operations:` block is absent and there are no `kind: operation`
+# testcases. There is no domain-model.yaml owned by this feature (the model
+# it edits is the PROJECT's domain-model.yaml at runtime, not a build-time
+# entity set), so `models:` stays empty and there is no `domain`
+# source-signature. There is no layout-bearing page (no <page>.layout.yaml),
+# so there are no `wiring:` rules and no `bindings:` section.
+#
+# Path convention: this buildfile lives under studio/.parlay/build/... so
+# `parlay check-buildfile` resolves the source root to studio/. Every plan
+# path is relative to that root (e.g. internal/ui/src/... and
+# internal/domain/...). Existing files this feature MODIFIES:
+#   cmd/parlay-studio/main.go     — dispatch (+domain-edit), tool registration, UIBundle wiring
+#   internal/server/boot.go       — browser-open landing path for domain-edit
+#
+# Note on package naming: intent 1 pins the subsystem package at
+# studio/internal/domain/ (explicit in its Action). The go-studio-app
+# adapter's package-layout convention names studio/internal/domain/ for the
+# same role. The intent is the feature-level authority, so this buildfile
+# uses internal/domain/. Flagged for the code phase.
+
+models: {}
+
+# The "model" this feature edits is the PROJECT's domain-model.yaml document
+# at runtime, not a build-time parlay entity set — so there is no `models:`
+# entry and fixture `data:` blocks (which must resolve to a declared model)
+# are intentionally omitted. Each fixture is a named scenario; the sample
+# document it represents is described inline and reproduced in the dialogs.
+fixtures:
+  populated-model:
+    description: >
+      A representative on-disk domain-model.yaml the editor loads: two entities
+      (Customer with id:uuid, name:string; Order with id:uuid,
+      status:OrderStatus (enum companion key auto-set), customer_id:ref ->
+      Customer), one enum (OrderStatus: pending label "Pending" tone warning,
+      paid tone success), and a populated deprecated operations block that must
+      round-trip untouched. Load etag "sha256:9f2c-load". Drives the
+      load/edit/save round-trip and the operations-passthrough suites.
+  empty-model:
+    description: >
+      Fresh-project bootstrap: no domain-model.yaml on disk yet. The load
+      returns an empty model at the current schema_version with the sentinel
+      etag "empty" (never not-found); the first save creates the file. Drives
+      the empty-state entry point and the create-first-entity flow.
+  stale-etag:
+    description: >
+      The file changed on disk since load (hand-edit / second tab /
+      regeneration): on-disk current_etag "sha256:77e0-current", the browser's
+      attempted_etag "sha256:9f2c-load". A save presenting the stale etag
+      returns the 409 conflict envelope carrying current_etag != attempted_etag
+      and writes nothing. Drives the compare-and-swap conflict and the
+      reload-and-reapply prompt.
+
+targets:
+  presentation:
+    adapter: react-vite-radix-tailwind
+    components:
+      entity-list:
+        source: "@domain-model-editor-mvp/entity-and-field-editing"
+        widget: "ul/li+Tailwind"
+        description: >
+          Sidebar list of the model's entities. Selecting one opens its form
+          panel in the main region. New-entity requires a name unique within
+          the model; delete is blocked while the entity is referenced.
+        data:
+          inputs:
+            - { name: entities, model: DomainModelDocument, field: entities, from: file-read }
+        elements:
+          - { name: entity-rows, widget: "ul/li+Tailwind", bind: entities, visible-when: "entities not empty" }
+          - { name: empty-entities, widget: "Custom empty-state component", bind: entities, visible-when: "entities empty" }
+        actions:
+          - { name: new-entity, widget: "Native button+Tailwind", enabled-when: always, effect: "emit:createEntity", target: createEntity }
+          - { name: select-entity, widget: "Radix Select / Radio Group", enabled-when: always, effect: "emit:selectEntity", target: selectEntity }
+          - { name: open-entity, widget: "Row click+useNavigate", enabled-when: always, effect: "emit:openEntity", target: openEntity }
+          - { name: delete-entity, widget: "Native button+Radix AlertDialog", enabled-when: "entity not referenced", effect: "emit:deleteEntity", target: deleteEntity }
+
+      enum-list:
+        source: "@domain-model-editor-mvp/enum-editing"
+        widget: "ul/li+Tailwind"
+        description: >
+          Sidebar list of the model's enums. Selecting one opens its form
+          panel. New-enum names must be unique and must not collide with the
+          closed scalar type vocabulary.
+        data:
+          inputs:
+            - { name: enums, model: DomainModelDocument, field: enums, from: file-read }
+        elements:
+          - { name: enum-rows, widget: "ul/li+Tailwind", bind: enums, visible-when: "enums not empty" }
+          - { name: empty-enums, widget: "Custom empty-state component", bind: enums, visible-when: "enums empty" }
+        actions:
+          - { name: new-enum, widget: "Native button+Tailwind", enabled-when: always, effect: "emit:createEnum", target: createEnum }
+          - { name: select-enum, widget: "Radix Select / Radio Group", enabled-when: always, effect: "emit:selectEnum", target: selectEnum }
+          - { name: open-enum, widget: "Row click+useNavigate", enabled-when: always, effect: "emit:openEnum", target: openEnum }
+          - { name: delete-enum, widget: "Native button+Radix AlertDialog", enabled-when: "enum not referenced", effect: "emit:deleteEnum", target: deleteEnum }
+
+      entity-form-panel:
+        source: "@domain-model-editor-mvp/entity-and-field-editing"
+        widget: "react-hook-form+Radix Form"
+        description: >
+          Per-entity form (entity-form-panel composition): entity name plus
+          inline field rows. Each field row has a name, a type dropdown (the
+          seven closed scalar types plus `ref` plus declared enum names), a
+          required toggle, and a conditional companion control (ref-target
+          picker or auto-set enum companion key). Rename propagates atomically
+          to every referencing ref target and relationship endpoint; delete is
+          blocked while referenced with the referents enumerated.
+        data:
+          inputs:
+            - { name: entity, model: DomainModelDocument, field: entities, from: file-read }
+            - { name: entities, model: DomainModelDocument, field: entities, from: file-read }
+            - { name: enums, model: DomainModelDocument, field: enums, from: file-read }
+          computed:
+            - { name: type-options, from: "seven closed scalar types + ref + declared enum names", type: "string[]" }
+            - { name: referents, from: "ref fields and relationship endpoints naming this entity", type: "string[]" }
+        elements:
+          - { name: entity-name, widget: "span+Tailwind", bind: entity.name, visible-when: always }
+          - { name: field-rows, widget: "span+Tailwind", bind: entity.fields, visible-when: always }
+          - { name: delete-block-message, widget: "Radix Toast+Tailwind", bind: referents, visible-when: "delete attempted while referenced" }
+          - { name: duplicate-name-message, widget: "Radix Toast+Tailwind", bind: entity.name, visible-when: "entity name duplicates an existing entity" }
+        actions:
+          - { name: edit-entity-name, widget: "Native input+Tailwind", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: add-field, widget: "react-hook-form+Radix Form", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: choose-field-type, widget: "Radix Select / Radio Group", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: choose-ref-target, widget: "Radix Select / Radio Group", enabled-when: "field type is ref", effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: toggle-required, widget: "Radix Switch", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: reorder-fields, widget: "@dnd-kit/sortable", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: rename-entity, widget: "Native button+Tailwind", enabled-when: always, effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+          - { name: delete-entity, widget: "Native button+Radix AlertDialog", enabled-when: "entity not referenced", effect: "mutate:DomainModelDocument.entities", target: DomainModelDocument.entities }
+
+      enum-form-panel:
+        source: "@domain-model-editor-mvp/enum-editing"
+        widget: "react-hook-form+Radix Form"
+        description: >
+          Per-enum form: value rows with a raw value, an optional label, and a
+          tone selector rendering each closed-set tone as its actual badge
+          treatment. Unset label/tone are omitted from the serialized YAML.
+          Rename propagates to referencing fields; delete is blocked while
+          referenced; value rows are unique on value and reorderable.
+        data:
+          inputs:
+            - { name: enum, model: DomainModelDocument, field: enums, from: file-read }
+          computed:
+            - { name: tone-options, from: "{neutral, info, warning, danger, success} + none", type: "string[]" }
+            - { name: enum-referents, from: "fields whose enum companion key names this enum", type: "string[]" }
+        elements:
+          - { name: enum-name, widget: "span+Tailwind", bind: enum.name, visible-when: always }
+          - { name: value-rows, widget: "span+Tailwind", bind: enum.values, visible-when: always }
+          - { name: tone-badge-preview, widget: "Tailwind badge span", bind: tone-options, visible-when: always }
+          - { name: enum-delete-block-message, widget: "Radix Toast+Tailwind", bind: enum-referents, visible-when: "delete attempted while referenced" }
+        actions:
+          - { name: edit-value, widget: "Native input+Tailwind", enabled-when: always, effect: "mutate:DomainModelDocument.enums", target: DomainModelDocument.enums }
+          - { name: choose-tone, widget: "Radix Select / Radio Group", enabled-when: always, effect: "mutate:DomainModelDocument.enums", target: DomainModelDocument.enums }
+          - { name: reorder-values, widget: "@dnd-kit/sortable", enabled-when: always, effect: "mutate:DomainModelDocument.enums", target: DomainModelDocument.enums }
+          - { name: rename-enum, widget: "Native button+Tailwind", enabled-when: always, effect: "mutate:DomainModelDocument.enums", target: DomainModelDocument.enums }
+          - { name: delete-enum, widget: "Native button+Radix AlertDialog", enabled-when: "enum not referenced", effect: "mutate:DomainModelDocument.enums", target: DomainModelDocument.enums }
+
+      save-bar:
+        source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+        widget: "Native button+Tailwind"
+        description: >
+          Sticky footer save bar (editor-with-save-bar composition) tracking
+          dirty state across all editor panels: any uncommitted edit shows the
+          Save affordance, saving shows progress, a clean state shows the
+          last-saved time. A beforeunload warning fires while dirty. Save flows
+          through the compare-and-swap write endpoint.
+        data:
+          inputs:
+            - { name: isDirty, model: DomainModelDocument, field: etag, from: computed }
+          computed:
+            - { name: lastSavedAt, from: "timestamp of the last successful save", type: string }
+        elements:
+          - { name: dirty-indicator, widget: "Tailwind badge span", bind: isDirty, visible-when: "isDirty" }
+          - { name: saving-progress, widget: "Radix Progress", bind: isDirty, visible-when: "save in flight" }
+          - { name: last-saved-time, widget: "span+Tailwind", bind: lastSavedAt, format: relative, visible-when: "not isDirty" }
+        actions:
+          - { name: save, widget: "Native button+Tailwind", enabled-when: "isDirty", effect: "call:save-model", target: save-model }
+
+      done-control:
+        source: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+        widget: "Native button+Tailwind"
+        description: >
+          Header "Done" control that ends the editing session. With a clean
+          draft it fires the explicit-shutdown request and shows the
+          session-ended screen. With a dirty draft it first prompts save /
+          discard / keep-editing; edits are never silently dropped and never
+          saved without confirmation.
+        data:
+          inputs:
+            - { name: isDirty, model: DomainModelDocument, field: etag, from: computed }
+        elements:
+          - { name: dirty-done-prompt, widget: "Radix Toast+Tailwind", bind: isDirty, visible-when: "Done pressed while isDirty" }
+        actions:
+          - { name: done, widget: "Native button+Tailwind", enabled-when: always, effect: "call:end-session", target: end-session }
+          - { name: confirm-save-and-finish, widget: "Radix AlertDialog", enabled-when: "isDirty", effect: "call:save-then-end", target: save-then-end }
+          - { name: dismiss-keep-editing, widget: "Radix Dialog/Sheet onOpenChange", enabled-when: "isDirty", effect: "emit:keepEditing", target: keepEditing }
+
+      conflict-reload-prompt:
+        source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+        widget: "Radix AlertDialog"
+        description: >
+          Shown when a save returns the 409 conflict envelope — the file
+          changed on disk since load. Names what happened and offers
+          reload-and-reapply or keep-my-draft; never offers a silent
+          overwrite. Reload refetches the model with a fresh etag; no second
+          save fires without designer action.
+        data:
+          inputs:
+            - { name: current_etag, model: DomainModelDocument, field: etag, from: computed }
+            - { name: attempted_etag, model: DomainModelDocument, field: attempted_etag, from: computed }
+        elements:
+          - { name: conflict-explanation, widget: "Radix Toast+Tailwind", bind: current_etag, visible-when: "409 conflict received" }
+        actions:
+          - { name: reload-and-reapply, widget: "Radix AlertDialog", enabled-when: always, effect: "call:reload-model", target: reload-model }
+          - { name: keep-my-draft, widget: "Radix Dialog/Sheet onOpenChange", enabled-when: always, effect: "emit:keepDraft", target: keepDraft }
+
+      error-envelope-feedback:
+        source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+        widget: "Radix Toast+Tailwind"
+        description: >
+          Maps harness error envelopes to feedback (toast-async-feedback
+          composition): validation-failed field entries render inline at their
+          form control (not only as a toast); server-error shows a toast
+          carrying the request id for log correlation.
+        data:
+          inputs:
+            - { name: fields, model: DomainModelDocument, field: entities, from: computed }
+            - { name: request_id, model: DomainModelDocument, field: etag, from: computed }
+        elements:
+          - { name: inline-field-error, widget: "span+Tailwind", bind: fields, visible-when: "validation-failed received" }
+          - { name: server-error-toast, widget: "Radix Toast+Tailwind", bind: request_id, visible-when: "server-error received" }
+        actions:
+          - { name: acknowledge, widget: "Radix Dialog with single OK", enabled-when: always, effect: "emit:ackError", target: ackError }
+
+      session-ended-screen:
+        source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+        widget: "Custom empty-state component"
+        description: >
+          Full-screen "Session ended — run parlay-studio to resume" state,
+          shown after Done fires or when API calls start failing with
+          connection errors following a period of activity. The shell does not
+          spin on retries; it names the restart command and stops.
+        data:
+          inputs:
+            - { name: sessionEnded, model: DomainModelDocument, field: etag, from: computed }
+        elements:
+          - { name: session-ended-message, widget: "Custom empty-state component", bind: sessionEnded, visible-when: "session ended" }
+          - { name: restart-command, widget: "span+Tailwind", bind: sessionEnded, visible-when: "session ended" }
+        actions:
+          - { name: acknowledge-ended, widget: "Radix Dialog with single OK", enabled-when: always, effect: "emit:ackEnded", target: ackEnded }
+
+    routes:
+      - path: /domain-model
+        page: Domain Model Editor
+        flow-pattern: "TanStack Table+Radix Dialog+react-hook-form+Radix AlertDialog"
+        regions:
+          header:
+            components: [done-control]
+          sidebar:
+            components: [entity-list, enum-list]
+          main:
+            components: [entity-form-panel, enum-form-panel, error-envelope-feedback, session-ended-screen]
+          footer:
+            components: [save-bar]
+          dialog:
+            components: [conflict-reload-prompt]
+
+cross-cutting:
+  - id: domain-model-subsystem-registration
+    source: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    target-files:
+      - cmd/parlay-studio/main.go
+    target-creates:
+      - internal/domain/subsystem.go
+      - internal/domain/handlers.go
+      - internal/domain/subsystem_test.go
+      - internal/domain/handlers_test.go
+    transform: |
+      Introduce the domain-model editor as one tool subsystem on the
+      web-server harness (studio/internal/server), mounting exactly one route
+      group at the /api/domain-model prefix and exposing exactly two
+      persistence endpoints.
+
+      CREATE studio/internal/domain/subsystem.go:
+        A ToolRegistration implementation (satisfies
+        server.ToolRegistration): Name() returns "domain-model"; Mount(r
+        chi.Router) mounts the route group at /api/domain-model with exactly:
+          GET  /api/domain-model/model   -> load handler (see loader.go)
+          PUT  /api/domain-model/model   -> compare-and-swap save handler (see save.go)
+        No editor route is mounted outside the /api/domain-model prefix. The
+        subsystem depends on the harness ONLY for the registration mechanism
+        and the closed error-envelope kinds (validation-failed, not-found,
+        conflict, server-error); it imports nothing else from server, and the
+        harness never imports this package (dependency is one-way, acyclic).
+        A second registration under the "domain-model" tool name is rejected
+        at router-construction time via the harness's existing
+        studio-tool-name-collision path.
+
+      CREATE studio/internal/domain/handlers.go:
+        The two HTTP handlers. The load handler returns the parsed model plus
+        the content identity token (see loader.go / etag.go); its error
+        surface is closed to validation-failed and server-error, and a load
+        against a project with no model file returns the empty-model bootstrap,
+        never not-found. The save handler accepts an edited model plus the
+        token from its originating load; its error surface is closed to
+        validation-failed, conflict, and server-error. Handlers take
+        context.Context first and wrap internal errors with %w so the harness
+        error-envelope middleware can translate them.
+
+      MODIFY studio/cmd/parlay-studio/main.go:
+        Construct the domain registration and pass it into
+        server.BootDeps.Tools (currently the bare invocation passes an empty
+        BootDeps). This is the first tool subsystem to consume the harness
+        registration mechanism after the harness's own universal endpoints —
+        it is a registration call, not a harness change.
+    introduces:
+      - "package studio/internal/domain"
+      - "type Subsystem — satisfies server.ToolRegistration; Name()=\"domain-model\", Mount() at /api/domain-model"
+      - "GET /api/domain-model/model load handler; PUT /api/domain-model/model save handler"
+      - "main.go: construct domain registration and add to server.BootDeps.Tools"
+    caching: none
+    backward-compatible: yes
+
+  - id: domain-model-read-path-resolution
+    source: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    target-creates:
+      - internal/domain/resolve.go
+      - internal/domain/resolve_test.go
+    transform: |
+      Introduce the read-path resolver at studio/internal/domain/resolve.go.
+      All reads and writes target the resolved project root's
+      domain-model.yaml and no other file. In a multi-root project, v1 offers
+      no root selector and no configuration override — the resolved root's
+      file is the sole target. The legacy domain-model.md is never parsed,
+      never merged, and never consulted as a fallback under any code path,
+      matching the domain-model artifact's documented read-path precedence
+      rule. resolve_test.go asserts: the .md is never opened; only the
+      resolved root's domain-model.yaml path is produced; no root selector or
+      config override exists in v1.
+    introduces:
+      - "func resolveModelPath(root string) string — returns <root>/domain-model.yaml only"
+      - "invariant test: legacy domain-model.md is never read"
+    caching: none
+    backward-compatible: yes
+
+  - id: domain-model-loader-reuse
+    source: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    target-creates:
+      - internal/domain/loader.go
+      - internal/domain/loader_test.go
+    transform: |
+      Introduce the load path at studio/internal/domain/loader.go, routed
+      through the SAME domain-model loader the command-line read paths use
+      (parse, schema_version check, per-version in-memory migration) — the
+      load-bearing decision is that editor and CLI agree on schema-version
+      semantics because they share one loader, not two parallel ones.
+
+      Behavior pinned by the loader-reuse infrastructure fragment:
+        - Missing or unreachable schema_version fails the load with the
+          loader's stable code, surfaced through the error envelope (mapped to
+          validation-failed).
+        - A schema_version newer than the running binary fails the load with
+          the actionable "run parlay upgrade" message
+          (schema-version-newer-than-binary) surfaced through the error
+          envelope — NOT a generic server-error.
+        - A model older than the running binary is migrated in memory to the
+          binary's current shape and served to the editor in that shape; the
+          on-disk file is untouched until a save.
+        - A project with no domain-model.yaml returns an empty model at the
+          current schema_version with a sentinel identity (etag "empty"),
+          never a not-found; the first save creates the file.
+      loader_test.go covers each branch against fixtures.
+    introduces:
+      - "func Load(ctx, root string) (Model, Etag, error) — reuses the core domain-model loader"
+      - "empty-model bootstrap with sentinel etag; schema-version gating branches"
+    caching: none
+    backward-compatible: yes
+
+  - id: compare-and-swap-save
+    source: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    target-creates:
+      - internal/domain/etag.go
+      - internal/domain/save.go
+      - internal/domain/save_test.go
+    transform: |
+      Introduce the content identity token (etag.go) and the compare-and-swap
+      write path (save.go).
+
+      etag.go: derive the content identity token from the on-disk file's raw
+      bytes at load time. The empty-model bootstrap uses the distinguished
+      sentinel token "empty".
+
+      save.go: a save must present the token from its originating load. When
+      the presented token matches the current on-disk bytes, the save writes
+      the file (through internal/files-style atomic write-temp-then-rename, per
+      the application adapter's transaction-required mapping). When it does not
+      match — a second browser tab, a hand-edit, or a CLI regeneration changed
+      the file since load — the save writes NOTHING and fails with the harness
+      conflict envelope carrying both current_etag and attempted_etag, so the
+      UI can prompt reload-and-reapply. A save never merges. The first
+      successful save of a migrated model persists it at the binary's current
+      schema_version; a first save against the empty-model sentinel creates the
+      file.
+      save_test.go: happy-path round-trip; stale-etag 409 with unchanged
+      on-disk file; migrated-save persists current schema_version; empty-model
+      first save creates the file.
+    introduces:
+      - "func computeEtag(raw []byte) Etag; const sentinel Etag = \"empty\""
+      - "func Save(ctx, root string, model Model, presented Etag) (Etag, error) — CAS; conflict carries current+attempted"
+    caching: none
+    backward-compatible: yes
+
+  - id: deterministic-serialization-and-operations-passthrough
+    source: "@domain-model-editor-mvp/domain-model-tool-subsystem-and-persistence-api"
+    target-creates:
+      - internal/domain/serialize.go
+      - internal/domain/serialize_test.go
+    transform: |
+      Introduce deterministic serialization at
+      studio/internal/domain/serialize.go. Saving the same in-memory
+      model twice produces byte-identical files: a stable key order per the
+      schema's documented shape and the declaration order of enums, entities,
+      fields, and values preserved exactly as the designer arranged them
+      (reordering in the UI reflects to the file). The deprecated operations
+      field, when present in the loaded file, is carried through load and save
+      structurally unchanged — no code path mutates, reorders, or drops its
+      entries, and a save that touched only an unrelated entity leaves the
+      operations block byte-for-byte identical. Unset enum-value label/tone are
+      OMITTED from the serialized YAML, never written as empty strings.
+      serialize_test.go: byte-identical double-save (same etag); populated
+      operations block survives an unrelated edit unchanged; unset label/tone
+      omitted.
+    introduces:
+      - "func Serialize(model Model) ([]byte, error) — deterministic, stable key + declaration order"
+      - "deprecated operations passthrough; omit unset optional keys"
+    caching: none
+    backward-compatible: yes
+
+  - id: blocking-domain-edit-invocation
+    source: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    target-files:
+      - cmd/parlay-studio/main.go
+      - internal/server/boot.go
+    target-creates:
+      - internal/server/boot_domain_edit_test.go
+    transform: |
+      Add the `domain-edit` subcommand and the blocking-until-shutdown
+      invocation contract agent hooks consume.
+
+      MODIFY studio/cmd/parlay-studio/main.go:
+        Add a `domain-edit` case to the os.Args[1] dispatch (alongside init /
+        upgrade / version). It runs the identical boot sequence as the bare
+        invocation — same harness, same registered tool route groups, same
+        lifecycle — differing only in the browser-open target, which lands on
+        the editor route /domain-model instead of the root. Non-zero exits
+        remain reserved for boot-step failures (before any browser opens), so a
+        hook can branch "session ran" (exit 0) vs "Studio failed to start".
+
+      MODIFY studio/internal/server/boot.go:
+        Thread the browser-open landing path through BootDeps so main.go can
+        request the /domain-model suffix for domain-edit while the bare
+        invocation keeps the root URL. Add a BootDeps field (e.g.
+        BrowserPath string, default "/") and apply it where step (7) currently
+        opens deps.OpenBrowser(url) — open url+BrowserPath. The invocation still
+        blocks until graceful shutdown and exits zero on every graceful path
+        (Done control's explicit shutdown, idle timeout, signal); the idle
+        timeout stays armed for the duration of a domain-edit session so an
+        abandoned tab cannot block a waiting agent forever. Process exit is the
+        sole completion signal; v1 encodes no side-channel for how the session
+        ended or whether the model changed.
+
+      CREATE studio/internal/server/boot_domain_edit_test.go:
+        domain-edit boots and the browser-open hook receives the bound URL
+        suffixed with /domain-model, while the bare invocation's hook receives
+        the root URL; a short idle timeout exits zero with no requests; a
+        boot-step failure exits non-zero before any browser open.
+    introduces:
+      - "main.go: `domain-edit` subcommand dispatch case"
+      - "BootDeps.BrowserPath string (default \"/\"); step (7) opens url+BrowserPath"
+      - "boot_domain_edit_test.go: landing-URL, idle-exit-zero, boot-failure-nonzero"
+    caching: none
+    backward-compatible: yes
+
+  - id: embedded-ui-bundle-and-stack-pin
+    source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    target-files:
+      - cmd/parlay-studio/main.go
+    target-creates:
+      - internal/ui/embed.go
+      - internal/ui/embed_test.go
+      - internal/ui/index.html
+      - internal/ui/src/main.tsx
+      - internal/ui/src/App.tsx
+      - internal/ui/src/lib/api.ts
+      - internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+    transform: |
+      Stand up the Studio UI bundle and embed it into the binary, turning the
+      harness's root path from the 503 studio-ui-bundle-not-built placeholder
+      into the working editor shell. This entry spans both slots: it creates
+      the Go embed wiring (application) and the Vite/React app scaffolding
+      (presentation) that hosts the nine editor components.
+
+      CREATE studio/internal/ui/embed.go (application slot):
+        A Go file with a //go:embed dist/* directive exposing a value that
+        satisfies the harness's server.UIBundle interface (ServeIndex writes
+        the UI's index.html). The build pipeline runs `npm run build` in
+        studio/internal/ui/ before `go build` so dist/ exists at compile time;
+        the embed directive is the single integration point between the TS and
+        Go halves of the binary. A released binary serves the UI with no
+        runtime network fetches and no on-disk asset directory.
+
+      CREATE studio/internal/ui/embed_test.go (application slot):
+        Build-integration coverage: boot the harness with the bundle embedded,
+        fetch / and assert the editor shell HTML is served (the 503
+        studio-ui-bundle-not-built envelope no longer occurs).
+
+      CREATE the presentation scaffolding under studio/internal/ui/ :
+        index.html, src/main.tsx (entry point), src/App.tsx (client-side router
+        with /domain-model as the editor route and initial redirect target;
+        unmatched client routes render within the shell; /api/* is never
+        intercepted by the client router), src/lib/api.ts (thin typed fetch
+        client wrapping the /api/domain-model endpoints and the harness error
+        envelopes), and src/features/domain-model-editor/DomainModelEditorPage.tsx
+        (the page assembly composing the nine editor components across the
+        header/sidebar/main/footer/dialog regions). The stack is the one the
+        registered studio adapter pins (React + Vite + Radix + Tailwind); the
+        editor's forms and save flow follow the adapter's entity-form-panel,
+        editor-with-save-bar, and toast-async-feedback compositions.
+
+      MODIFY studio/cmd/parlay-studio/main.go (application slot):
+        Pass the embedded bundle value into server.BootDeps.UIBundle so the
+        SPA fallback serves it instead of returning 503.
+    introduces:
+      - "studio/internal/ui/embed.go: //go:embed dist/*; value satisfying server.UIBundle"
+      - "Vite/React app shell: index.html, main.tsx, App.tsx (router), lib/api.ts, DomainModelEditorPage.tsx"
+      - "main.go: wire server.BootDeps.UIBundle to the embedded bundle"
+    caching: none
+    backward-compatible: yes
+
+# No wiring rules and no bindings: this feature has no layout-bearing page
+# (no <page>.layout.yaml under the feature), so there are no layout nodes to
+# resolve. Codegen assembles the page from routes + components directly.
+
+plan:
+  modifies:
+    - path: cmd/parlay-studio/main.go
+      sources:
+        - cross-cutting/domain-model-subsystem-registration
+        - cross-cutting/blocking-domain-edit-invocation
+        - cross-cutting/embedded-ui-bundle-and-stack-pin
+    - path: internal/server/boot.go
+      sources:
+        - cross-cutting/blocking-domain-edit-invocation
+  creates:
+    # Presentation — editor components (one per surface fragment)
+    - path: internal/ui/src/features/domain-model-editor/EntityList.tsx
+      sources: [component/entity-list]
+    - path: internal/ui/src/features/domain-model-editor/EnumList.tsx
+      sources: [component/enum-list]
+    - path: internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx
+      sources: [component/entity-form-panel]
+    - path: internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx
+      sources: [component/enum-form-panel]
+    - path: internal/ui/src/components/SaveBar.tsx
+      sources: [component/save-bar]
+    - path: internal/ui/src/features/domain-model-editor/DoneControl.tsx
+      sources: [component/done-control]
+    - path: internal/ui/src/features/domain-model-editor/ConflictReloadPrompt.tsx
+      sources: [component/conflict-reload-prompt]
+    - path: internal/ui/src/components/ErrorEnvelopeFeedback.tsx
+      sources: [component/error-envelope-feedback]
+    - path: internal/ui/src/components/SessionEndedScreen.tsx
+      sources: [component/session-ended-screen]
+    # Presentation — app shell scaffolding (from the embedded-ui-bundle entry)
+    - path: internal/ui/index.html
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    - path: internal/ui/src/main.tsx
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    - path: internal/ui/src/App.tsx
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    - path: internal/ui/src/lib/api.ts
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    # Application — domain-model tool subsystem
+    - path: internal/domain/subsystem.go
+      sources: [cross-cutting/domain-model-subsystem-registration]
+    - path: internal/domain/handlers.go
+      sources: [cross-cutting/domain-model-subsystem-registration]
+    - path: internal/domain/subsystem_test.go
+      sources: [cross-cutting/domain-model-subsystem-registration]
+    - path: internal/domain/handlers_test.go
+      sources: [cross-cutting/domain-model-subsystem-registration]
+    - path: internal/domain/resolve.go
+      sources: [cross-cutting/domain-model-read-path-resolution]
+    - path: internal/domain/resolve_test.go
+      sources: [cross-cutting/domain-model-read-path-resolution]
+    - path: internal/domain/loader.go
+      sources: [cross-cutting/domain-model-loader-reuse]
+    - path: internal/domain/loader_test.go
+      sources: [cross-cutting/domain-model-loader-reuse]
+    - path: internal/domain/etag.go
+      sources: [cross-cutting/compare-and-swap-save]
+    - path: internal/domain/save.go
+      sources: [cross-cutting/compare-and-swap-save]
+    - path: internal/domain/save_test.go
+      sources: [cross-cutting/compare-and-swap-save]
+    - path: internal/domain/serialize.go
+      sources: [cross-cutting/deterministic-serialization-and-operations-passthrough]
+    - path: internal/domain/serialize_test.go
+      sources: [cross-cutting/deterministic-serialization-and-operations-passthrough]
+    - path: internal/server/boot_domain_edit_test.go
+      sources: [cross-cutting/blocking-domain-edit-invocation]
+    # Application — embedded UI bundle wiring
+    - path: internal/ui/embed.go
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+    - path: internal/ui/embed_test.go
+      sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+  deletes: []
+  targets:
+    presentation:
+      modifies: []
+      creates:
+        - path: internal/ui/src/features/domain-model-editor/EntityList.tsx
+          sources: [component/entity-list]
+        - path: internal/ui/src/features/domain-model-editor/EnumList.tsx
+          sources: [component/enum-list]
+        - path: internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx
+          sources: [component/entity-form-panel]
+        - path: internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx
+          sources: [component/enum-form-panel]
+        - path: internal/ui/src/components/SaveBar.tsx
+          sources: [component/save-bar]
+        - path: internal/ui/src/features/domain-model-editor/DoneControl.tsx
+          sources: [component/done-control]
+        - path: internal/ui/src/features/domain-model-editor/ConflictReloadPrompt.tsx
+          sources: [component/conflict-reload-prompt]
+        - path: internal/ui/src/components/ErrorEnvelopeFeedback.tsx
+          sources: [component/error-envelope-feedback]
+        - path: internal/ui/src/components/SessionEndedScreen.tsx
+          sources: [component/session-ended-screen]
+        - path: internal/ui/index.html
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+        - path: internal/ui/src/main.tsx
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+        - path: internal/ui/src/App.tsx
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+        - path: internal/ui/src/lib/api.ts
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+        - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+      deletes: []
+    application:
+      modifies:
+        - path: cmd/parlay-studio/main.go
+          sources:
+            - cross-cutting/domain-model-subsystem-registration
+            - cross-cutting/blocking-domain-edit-invocation
+            - cross-cutting/embedded-ui-bundle-and-stack-pin
+        - path: internal/server/boot.go
+          sources:
+            - cross-cutting/blocking-domain-edit-invocation
+      creates:
+        - path: internal/domain/subsystem.go
+          sources: [cross-cutting/domain-model-subsystem-registration]
+        - path: internal/domain/handlers.go
+          sources: [cross-cutting/domain-model-subsystem-registration]
+        - path: internal/domain/subsystem_test.go
+          sources: [cross-cutting/domain-model-subsystem-registration]
+        - path: internal/domain/handlers_test.go
+          sources: [cross-cutting/domain-model-subsystem-registration]
+        - path: internal/domain/resolve.go
+          sources: [cross-cutting/domain-model-read-path-resolution]
+        - path: internal/domain/resolve_test.go
+          sources: [cross-cutting/domain-model-read-path-resolution]
+        - path: internal/domain/loader.go
+          sources: [cross-cutting/domain-model-loader-reuse]
+        - path: internal/domain/loader_test.go
+          sources: [cross-cutting/domain-model-loader-reuse]
+        - path: internal/domain/etag.go
+          sources: [cross-cutting/compare-and-swap-save]
+        - path: internal/domain/save.go
+          sources: [cross-cutting/compare-and-swap-save]
+        - path: internal/domain/save_test.go
+          sources: [cross-cutting/compare-and-swap-save]
+        - path: internal/domain/serialize.go
+          sources: [cross-cutting/deterministic-serialization-and-operations-passthrough]
+        - path: internal/domain/serialize_test.go
+          sources: [cross-cutting/deterministic-serialization-and-operations-passthrough]
+        - path: internal/server/boot_domain_edit_test.go
+          sources: [cross-cutting/blocking-domain-edit-invocation]
+        - path: internal/ui/embed.go
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+        - path: internal/ui/embed_test.go
+          sources: [cross-cutting/embedded-ui-bundle-and-stack-pin]
+      deletes: []
+
+source-signatures:
+  intents: "sha256:60b55b6b30a6b460187f78c82e31de1003a3e0bf74adff6a68c56ed03009c858"
+  dialogs: "sha256:570745e2d04a3f34dbefd992d07063f1fad6f96d03c6c43ac65e1f8d3ae1dd24"
+  surface: "sha256:1be21b4853d9b65f018267a8952b4867a75412795457a8b40fea71141385226a"
+  infrastructure: "sha256:e98dcf44c66f7396a81afbb011af804a66c23a1c8bd3183c56d243e69612b866"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"
+  adapter-set: "sha256:b4de337cdab071c0ccf3f0c45ae44b469e801360ebcb6977047bcee28d3a9c2f"

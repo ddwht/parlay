@@ -1,0 +1,106 @@
+feature: domain-model-editor-mvp
+
+fragments:
+  - name: Entity list
+    shows: data-list, empty-state
+    actions: invoke, invoke-destructive, navigate-drill, select-one
+    source: "@domain-model-editor-mvp/entity-and-field-editing"
+    page: Domain Model Editor
+    region: sidebar
+    order: 10
+    notes:
+      - Lists the model's entities; selecting one opens its form panel in the main region.
+      - New-entity requires a name unique within the model; delete is blocked while the entity is referenced (see the form panel's block message).
+      - Empty-state is the fresh-project entry point — no domain-model.yaml on disk yet.
+
+  - name: Enum list
+    shows: data-list, empty-state
+    actions: invoke, invoke-destructive, navigate-drill, select-one
+    source: "@domain-model-editor-mvp/enum-editing"
+    page: Domain Model Editor
+    region: sidebar
+    order: 20
+    notes:
+      - Lists the model's enums; selecting one opens its form panel.
+      - New-enum names must be unique and must not collide with the closed scalar type vocabulary.
+
+  - name: Entity form panel
+    shows: data-value, message
+    actions: provide-text, provide-structured-input, select-one, select-toggle, reorder, invoke, invoke-destructive
+    source: "@domain-model-editor-mvp/entity-and-field-editing"
+    page: Domain Model Editor
+    region: main
+    order: 10
+    notes:
+      - Per-entity form — entity name plus inline field rows. Each field row has a name, a type chosen from a dropdown (the closed scalar set plus `ref` plus declared enum names — free-text type entry does not exist), a required toggle, and a conditional companion control.
+      - Selecting `ref` requires choosing a target from declared entities before the field commits; selecting an enum name auto-sets the `enum:` companion key.
+      - Field rows are reorderable; declaration order is designer-controlled and preserved to the file.
+      - Rename propagates atomically to every referencing `ref` target and relationship endpoint; delete is blocked while referenced, with the referents enumerated in a message.
+      - Duplicate entity/field names are rejected at entry with a field-level message, not on save.
+
+  - name: Enum form panel
+    shows: data-value, status, message
+    actions: provide-text, select-one, reorder, invoke, invoke-destructive
+    source: "@domain-model-editor-mvp/enum-editing"
+    page: Domain Model Editor
+    region: main
+    order: 20
+    notes:
+      - Per-enum form — value rows with a raw value, an optional label, and a tone selector.
+      - The tone selector offers exactly the closed set {neutral, info, warning, danger, success} plus "none"; each option renders as its actual badge treatment (the `status` show) so the designer picks by appearance.
+      - Unset label/tone are omitted from the serialized YAML, never written as empty strings.
+      - Value rows are unique on value and reorderable; rename propagates to referencing fields; delete is blocked while referenced.
+
+  - name: Save bar
+    shows: status, message
+    actions: invoke
+    source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    page: Domain Model Editor
+    region: footer
+    order: 10
+    notes:
+      - Sticky save bar tracking dirty state across all editor panels — any uncommitted in-memory edit shows the Save affordance; saving shows progress; a clean state shows the last-saved time.
+      - A beforeunload warning fires while the draft is dirty.
+      - Save flows through the subsystem's compare-and-swap write endpoint, whose etag mechanics are pinned in the infrastructure compare-and-swap-save fragment.
+
+  - name: Done control
+    shows: message
+    actions: invoke, confirm, dismiss
+    source: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    page: Domain Model Editor
+    region: header
+    order: 10
+    notes:
+      - The editor-shell "Done" control ends the editing session. With a clean draft it fires the explicit-shutdown request and shows the session-ended screen.
+      - With a dirty draft it first prompts save / discard / keep-editing — edits are never silently dropped and never saved without the designer's confirmation.
+
+  - name: Conflict reload prompt
+    shows: message
+    actions: confirm, dismiss
+    source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    page: Domain Model Editor
+    region: dialog
+    order: 10
+    notes:
+      - Shown when a save returns the 409 conflict envelope — the file changed on disk since load. Names what happened and offers reload-and-reapply or keep-my-draft; never offers a silent overwrite.
+      - Reload refetches the model with a fresh etag; no second save fires without designer action.
+
+  - name: Error-envelope feedback
+    shows: message, status
+    actions: acknowledge
+    source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    page: Domain Model Editor
+    region: main
+    order: 30
+    notes:
+      - Maps the harness error envelopes to feedback — `validation-failed` field entries render inline at their form control (not only as a toast); `server-error` shows a toast carrying the request id for log correlation.
+
+  - name: Session-ended screen
+    shows: message, empty-state
+    actions: acknowledge
+    source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer, @domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    page: Domain Model Editor
+    region: main
+    order: 40
+    notes:
+      - Full-screen "Session ended — run parlay-studio to resume" state, shown after Done fires or when API calls start failing with connection errors following a period of activity. The shell does not spin on retries; it names the restart command and stops.

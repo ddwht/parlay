@@ -1,3 +1,60 @@
-generated-at: "2026-06-16T10:44:41Z"
-intents: {}
-sources: {}
+generated-at: "2026-07-23T12:57:22Z"
+intents:
+    blocking-domain-edit-invocation-for-agent-handoff:
+        content-hash: 3b8086d58139dc81
+        goal-hash: 6777a87e43d80c9b
+        constraints-hash: c25b096702c6dcdb
+        verify-hash: de24baaa8295cf95
+        objects-hash: 48e215e6d35ae075
+    domain-model-tool-subsystem-and-persistence-api:
+        content-hash: 96ca74fd56236969
+        goal-hash: 3e6db19e0023d981
+        constraints-hash: d6afdd3aec8446cf
+        verify-hash: 1d5cbb80647a7044
+        objects-hash: 9af1f2b561ca4cf9
+    editor-ui-shell-as-the-first-embedded-ui-bundle-consumer:
+        content-hash: 4f527b4fc49fd115
+        goal-hash: 347b914fc7528193
+        constraints-hash: fa4dc8257dfe671e
+        verify-hash: 76db4fddbd304f0c
+        objects-hash: 4edf5cdcd3e88cf2
+    entity-and-field-editing:
+        content-hash: b8acd9218c99f082
+        goal-hash: 19159af61047b9f7
+        constraints-hash: 46bbfadd655ff350
+        verify-hash: 724063a71b6b96ad
+        objects-hash: 7a4cdcf3eaea34d3
+    enum-editing:
+        content-hash: 235a696dec471fcd
+        goal-hash: c45cde83915047f9
+        constraints-hash: 568e178a8442c48c
+        verify-hash: bf40e3e1ab29765d
+        objects-hash: 654a2a6c2e26585e
+sources:
+    intents:
+        blocking-domain-edit-invocation-for-agent-handoff: b7644a7ee8375319
+        domain-model-tool-subsystem-and-persistence-api: 61de8d85b63c895c
+        editor-ui-shell-as-the-first-embedded-ui-bundle-consumer: d40464f5131bbb4f
+        entity-and-field-editing: bf5f8ba00255a10c
+        enum-editing: 4c75789356830d94
+    dialogs:
+        blocking-domain-edit-invocation-for-agent-handoff: 31740d07e30a0ca0
+        domain-model-tool-subsystem-and-persistence-api: 8555e45b4831b44f
+        editor-ui-shell-as-the-first-embedded-ui-bundle-consumer: a0d396c5f053221e
+        entity-and-field-editing: b2a005c4fd731ebf
+        enum-editing: c44b70b5e3390039
+    surface-fragments:
+        conflict-reload-prompt: d6448fceb3fc8fdd
+        done-control: c2c37179c6c9e69a
+        entity-form-panel: 04e56c00af1aa283
+        entity-list: 1651825b9180f377
+        enum-form-panel: 8e79d30f01c2811f
+        enum-list: 9eb1565cd24973b9
+        error-envelope-feedback: 3782948f4dbd76a6
+        save-bar: 8a98e097b497bfb5
+        session-ended-screen: e98f51b14beab2e9
+    infrastructure: e98dcf44c66f7396
+    surface-yaml: 1be21b4853d9b65f
+buildfile-sections:
+    fixtures: ff53602e4d0c55c7
+    models: ca3d163bab055381
