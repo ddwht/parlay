@@ -83,18 +83,3 @@ func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
 
 	return fragments, scanner.Err()
 }
-
-func splitCSV(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	var result []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
-}

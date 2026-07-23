@@ -151,7 +151,9 @@ func runMigrateDomainOperations(cmd *cobra.Command, args []string) error {
       Migrated from domain-model.operations: %s
 `, slugify(title), entity, title)
 
-		appendStubToCapabilities(filepath.Join(intentsRoot, choice), choice, stub)
+		if err := appendStubToCapabilities(filepath.Join(intentsRoot, choice), choice, stub); err != nil {
+			return err
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "  -> wrote stub to %s/capabilities.yaml\n", choice)
 		migrated++
 	}
@@ -170,14 +172,22 @@ func slugify(s string) string {
 	return out
 }
 
-func appendStubToCapabilities(featDir, feature, stub string) {
+func appendStubToCapabilities(featDir, feature, stub string) error {
 	capPath := filepath.Join(featDir, "capabilities.yaml")
 	if _, err := os.Stat(capPath); os.IsNotExist(err) {
 		header := fmt.Sprintf("schema_version: 1\nfeature: %s\n\noperations:\n", feature)
-		_ = os.WriteFile(capPath, []byte(header+stub), 0o644)
-		return
+		if err := os.WriteFile(capPath, []byte(header+stub), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", capPath, err)
+		}
+		return nil
 	}
-	content, _ := os.ReadFile(capPath)
+	content, err := os.ReadFile(capPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", capPath, err)
+	}
 	out := append(content, []byte("\n"+stub)...)
-	_ = os.WriteFile(capPath, out, 0o644)
+	if err := os.WriteFile(capPath, out, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", capPath, err)
+	}
+	return nil
 }

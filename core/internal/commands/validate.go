@@ -190,7 +190,7 @@ func runValidateProject(cmd *cobra.Command) error {
 	root := cfg.Root.Path
 	verdicts, err := agent.ValidateBuildfilesProjectStructured(root)
 	if err != nil {
-		return fmt.Errorf("project-pass walk failed: %s", err)
+		return fmt.Errorf("project-pass walk failed: %w", err)
 	}
 
 	// parlay-feature: parlay-tool/multi-adapter

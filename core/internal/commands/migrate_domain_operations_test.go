@@ -121,6 +121,34 @@ func TestMigrateDomainOperations_UnambiguousSingleCandidate_StillWorksHeadless(t
 	}
 }
 
+// TestMigrateDomainOperations_WriteFailure_PropagatesError confirms a failed
+// capabilities.yaml write surfaces as an error instead of being silently
+// swallowed: a read-only feature directory makes the stub write fail, and
+// runMigrateDomainOperations must report it rather than claiming success.
+func TestMigrateDomainOperations_WriteFailure_PropagatesError(t *testing.T) {
+	intentsRoot := setupMigrateDomainOperationsProject(t, "feature-a")
+
+	// Make the single candidate's directory read-only so creating
+	// capabilities.yaml inside it fails with a permission error.
+	featDir := filepath.Join(intentsRoot, "feature-a")
+	if err := os.Chmod(featDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	// Restore write permission so t.TempDir()'s cleanup can remove the tree.
+	t.Cleanup(func() { os.Chmod(featDir, 0o755) })
+
+	resetFlagsAfterTest(t, migrateDomainOperationsCmd.Flags())
+	migrateDomainOperationsNonInteractive = true
+
+	err := runMigrateDomainOperations(testCommandWithContext(t, testContext(t)), nil)
+	if err == nil {
+		t.Fatal("expected error when capabilities.yaml write fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "capabilities.yaml") {
+		t.Errorf("expected error to name the capabilities.yaml path, got: %v", err)
+	}
+}
+
 // TestMigrateDomainOperations_QualifiedNestedFeatureCandidate is the
 // regression test for the Phase 4 finding: candidate detection used to
 // be a bare os.ReadDir(intentsRoot) that only saw top-level entries, so
