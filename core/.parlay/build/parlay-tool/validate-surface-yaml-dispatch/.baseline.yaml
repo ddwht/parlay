@@ -1,0 +1,11 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    type-surface-validates-surfaceyaml-through-the-yaml-surface-validator:
+        content-hash: d9c34e9f12571774
+        goal-hash: 63879eb1c7025fa1
+        constraints-hash: f8a5ea95719e0843
+        verify-hash: e5bc1d63d48812fe
+        objects-hash: abbb2cd6a1db8c0a
+sources:
+    intents:
+        type-surface-validates-surfaceyaml-through-the-yaml-surface-validator: cb2e0e3cea86db00

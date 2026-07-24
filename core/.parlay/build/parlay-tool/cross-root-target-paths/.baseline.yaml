@@ -1,0 +1,11 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    a-buildfile-plancross-cutting-entry-can-reference-a-file-in-another-root:
+        content-hash: 04ac3019b99daafd
+        goal-hash: 22372f6a977c803d
+        constraints-hash: b9631de8576c66ab
+        verify-hash: e7db830dd749c785
+        objects-hash: aeb27fe7de9e1581
+sources:
+    intents:
+        a-buildfile-plancross-cutting-entry-can-reference-a-file-in-another-root: 4674deea8465c379

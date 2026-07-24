@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     define-a-versioned-yaml-schema-for-the-domain-model:
         content-hash: 8a1d41ec41631073
@@ -38,6 +38,8 @@ sources:
         migrate-domain-model-force-overwrite-warning: 76efaad7187770bb
         migrate-domain-model-multi-root-targeting: 3feb64e6357aa68e
         open-questions-surfaced-from-dialogs: 530e107ba985bd99
+    infrastructure: 024b5edbc0af10ad
+    surface-yaml: 322ce2bdb5a72a9f
 buildfile-sections:
     fixtures: 31ee07ee558a0ce2
     models: 1fcd35668f99d5bd

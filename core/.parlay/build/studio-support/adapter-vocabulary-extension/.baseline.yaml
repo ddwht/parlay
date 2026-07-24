@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     declare-a-named-component-vocabulary-in-the-adapter:
         content-hash: b896b75c40276dc2
@@ -19,6 +19,7 @@ sources:
     dialogs:
         declare-a-named-component-vocabulary-in-the-adapter: 3fbb2ac1a2669c4c
         declare-design-tokens-in-the-adapter: cd5aa46d9bd83b2b
+    infrastructure: ad34217f6814d81a
 buildfile-sections:
     fixtures: 647200200276b57c
     models: 073afe96ca265582

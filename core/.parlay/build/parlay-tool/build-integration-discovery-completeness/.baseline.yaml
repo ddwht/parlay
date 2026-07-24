@@ -1,0 +1,18 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    integration-discovery-traces-reverse-dependencies-of-deleted-symbols:
+        content-hash: a7706ab0d789d7a9
+        goal-hash: 632299b93bed72e9
+        constraints-hash: 2c5099714a983187
+        verify-hash: 8c444774d7eac2b6
+        objects-hash: ef3f7999695a449e
+    package-placement-respects-the-adapters-visibility-and-layout-rules:
+        content-hash: 3b3189491bf8be97
+        goal-hash: 804d39841e5ea121
+        constraints-hash: 5b6ea87a8349e471
+        verify-hash: 0f517a2188ba59f9
+        objects-hash: c3bd739efd04d58a
+sources:
+    intents:
+        integration-discovery-traces-reverse-dependencies-of-deleted-symbols: e4f475d81496f918
+        package-placement-respects-the-adapters-visibility-and-layout-rules: f171e018c01953ff

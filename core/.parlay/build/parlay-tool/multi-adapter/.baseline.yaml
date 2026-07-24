@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     adapter-kinds-and-adapter-set-topology:
         content-hash: 4d7d974ca287b08f
@@ -168,6 +168,8 @@ sources:
         spec-migration-report: f68e9ee292ddad25
         surface-validation-output: b50c3d070ca5615c
         testcases-validation-output: 04e4fdacf256fc50
+    infrastructure: 4950ec442fcd37d4
+    surface-yaml: 37f4b9cea66a7b27
 buildfile-sections:
     fixtures: b728976eaed1ab12
     models: 026c842d52b34d89

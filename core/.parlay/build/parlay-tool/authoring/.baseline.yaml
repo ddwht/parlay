@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     author-intents:
         content-hash: 0eedf5f52d571df2
@@ -40,6 +40,8 @@ sources:
         dialog-generation-report: 7023f837ea65a202
         dialog-update-proposals: 49286e6c893a9285
         feature-scaffold-confirmation: 37d45000bfa61252
+    infrastructure: dbd543aafaad0fc1
+    surface-yaml: bc4b28987df4d512
 buildfile-sections:
     fixtures: ddc160700de6b96c
     models: 7bbe64bd10b995a4

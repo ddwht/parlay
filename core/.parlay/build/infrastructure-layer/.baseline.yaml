@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     bridge-infrastructure-to-framework-specific-cross-cutting:
         content-hash: b69fa47e5838c4db
@@ -40,6 +40,8 @@ sources:
         check-readiness-infrastructure-support: 4d83a78137c7a726
         cross-cutting-merge-review: 7eea389f3d02329f
         infrastructure-validation-result: 8444c457587da22b
+    infrastructure: c752d8d1ce0e5845
+    surface-yaml: 8e0bfa36ea33a6aa
 buildfile-sections:
     fixtures: 8815604fde10e1e4
     models: e8a57be7e3438785

@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     create-a-feature-inside-an-initiative:
         content-hash: dba5d389998834ce
@@ -31,6 +31,8 @@ sources:
         empty-initiative-creation-result: b098576594b39594
         feature-creation-result: 5bc29263cda01c02
         initiative-orientation: bea865aeb8b18734
+    infrastructure: 4051a7e2a16f139b
+    surface-yaml: a5da9313b3dca55a
 buildfile-sections:
     fixtures: e9a3635e39a3449b
     models: d3373d399f3224df

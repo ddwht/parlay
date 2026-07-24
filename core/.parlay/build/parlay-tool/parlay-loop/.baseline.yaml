@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     adapt-between-new-and-existing-features:
         content-hash: d0c02572d381f5e5
@@ -87,6 +87,8 @@ sources:
         phase-progress-announcement: c6eba2aad2a02fca
         readiness-check-result: 7924dbb1e6d8684e
         sub-skill-failure-prompt: 6f3b88918eca9a87
+    infrastructure: d362e635a74c1765
+    surface-yaml: 743b3c2df937d613
 buildfile-sections:
     fixtures: 45b06d98733ec4d4
     models: 9b9a62ee5d604484

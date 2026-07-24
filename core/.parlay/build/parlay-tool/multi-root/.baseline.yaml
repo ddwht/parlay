@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     add-a-child-root-to-an-existing-project:
         content-hash: be69a984ceac4477
@@ -109,6 +109,8 @@ sources:
         status-with-bare-parent: 6054ccd393243550
         upgrade-refresh-confirmation: 9d87cb70cd4a6913
         verbose-field-resolution-listing: 058e6a13edbfa55e
+    infrastructure: dc63a8991649f66d
+    surface-yaml: 4e5cbd66e6f21f9e
 buildfile-sections:
     fixtures: c350b78fb95a7854
     models: d0f7bdfdc207395a

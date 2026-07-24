@@ -1,4 +1,4 @@
-generated-at: "2026-07-09T14:14:14Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     add-optional-layout-block-to-the-page-schema:
         content-hash: f6a1e9923f0f91a1
@@ -27,6 +27,7 @@ sources:
         add-optional-layout-block-to-the-page-schema: 25bbd4ff0c6a8fd5
         define-the-layout-tree-schema: a648c0e2775f9d6e
         surface-layout-validation-as-a-precheck-contract-for-codegen: dae8501f3412aad8
+    infrastructure: 750fce91b6d17866
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

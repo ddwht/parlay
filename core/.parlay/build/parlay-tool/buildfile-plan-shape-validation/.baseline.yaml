@@ -1,0 +1,18 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    child-root-buildfile-path-prefixes-are-validated-against-the-resolved-root:
+        content-hash: 95194c1cd84bec66
+        goal-hash: e5e512e924bb87ba
+        constraints-hash: a701417871aa2f16
+        verify-hash: ffc01b5c6e2c51bb
+        objects-hash: 1c91052be99d2cad
+    deep-validator-reads-and-reconciles-plantargetskind-rows:
+        content-hash: 33246fe796cbab49
+        goal-hash: 323654fee4ac3b6b
+        constraints-hash: 20fbc7a0420a02fc
+        verify-hash: a43e7e5927ab2eca
+        objects-hash: afc9a2c2f21b676f
+sources:
+    intents:
+        child-root-buildfile-path-prefixes-are-validated-against-the-resolved-root: 57382052f7ceb663
+        deep-validator-reads-and-reconciles-plantargetskind-rows: 844d2757856391bc

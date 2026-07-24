@@ -1,0 +1,11 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    add-target-deletes-to-the-cross-cutting-entry-schema:
+        content-hash: cd2d1ccca0c88b9a
+        goal-hash: 424789fe0106228d
+        constraints-hash: a57b0b127f555592
+        verify-hash: 1b7cc4faa49c8e99
+        objects-hash: e011c6036fb9ffd7
+sources:
+    intents:
+        add-target-deletes-to-the-cross-cutting-entry-schema: 0e98418f723099eb

@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     integrate-with-ai-agent-via-skills:
         content-hash: 14947a5271a8335d
@@ -18,3 +18,4 @@ sources:
         resolve-ambiguities-through-ai-dialogue: d1f6cbbea5392c0a
     dialogs:
         resolve-ambiguities: 76f1f47666b06b56
+        run-an-ai-heavy-command-via-skill: cf8184ed9d3eda8c

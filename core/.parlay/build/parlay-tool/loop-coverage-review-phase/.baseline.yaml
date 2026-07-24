@@ -1,0 +1,11 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    insert-a-coverage-review-step-between-the-build-and-code-phase-groups:
+        content-hash: aaac2e9d5d1f90a9
+        goal-hash: ae8a638b774b492a
+        constraints-hash: 5f47935023fed47f
+        verify-hash: 753848f5728596e0
+        objects-hash: 714cc05c116c9915
+sources:
+    intents:
+        insert-a-coverage-review-step-between-the-build-and-code-phase-groups: 516c0b8c08d0a7a4

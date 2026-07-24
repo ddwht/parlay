@@ -1,0 +1,11 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    add-an-infrastructure-suite-kind-to-the-v2-testcases-schema:
+        content-hash: c69316e1c55b9d3d
+        goal-hash: d7c9ab6716626dd8
+        constraints-hash: 1ae351636de0828a
+        verify-hash: 3dcf361c85c8cf9d
+        objects-hash: 68094f5d95c84d76
+sources:
+    intents:
+        add-an-infrastructure-suite-kind-to-the-v2-testcases-schema: e6629ab6032af85c

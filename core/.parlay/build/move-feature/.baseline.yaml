@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     move-a-feature-between-locations:
         content-hash: a39f49fbee12076a
@@ -13,6 +13,7 @@ sources:
         move-a-feature-between-locations: 0f083b87f9d4872f
     surface-fragments:
         move-result: 71d2dd429361277f
+    surface-yaml: c5786429ece0a79f
 buildfile-sections:
     fixtures: 3cf1a01a53ef042f
     models: b91a7e33facfe1d5

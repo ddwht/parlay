@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     backward-compatible-path-for-layout-free-pages:
         content-hash: 87313d148bb92a25
@@ -43,6 +43,7 @@ sources:
         codegen-consumes-resolved-bindings-from-the-buildfile: 2f890fda111a5c8e
         codegen-is-non-interactive-and-ci-safe: 7acd686dbd232f76
         codegen-reads-the-layout-block-when-present: 4fdb7a1d81af17f0
+    infrastructure: e902a136680a63a0
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

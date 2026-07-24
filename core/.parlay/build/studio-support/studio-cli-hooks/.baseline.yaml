@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     detect-parlay-studio-at-runtime:
         content-hash: ef8ad4a190c8be7e
@@ -27,6 +27,8 @@ sources:
         studio-prompt-after-parlay-create-domain-model: 5f09de98414fb4fb
         studio-prompt-after-parlay-sync: 043d73b8aeac1198
         version-mismatch-warning-at-first-detection: d0e5cd927e902e39
+    infrastructure: 68db2dc87b51e189
+    surface-yaml: 9671203ad509d404
 buildfile-sections:
     fixtures: a138c4ab4d486db8
     models: 9c603f560f1e590d

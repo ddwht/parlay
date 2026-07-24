@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     extract-duplicated-helpers-into-shared-packages:
         content-hash: d0e808fbd68b8cd1
@@ -14,6 +14,7 @@ sources:
     surface-fragments:
         duplication-scan-results: 580ef68ada55290a
         extraction-proposal-review: 23aa829ea3002b48
+    surface-yaml: 975c3e9fe9cb5d07
 buildfile-sections:
     fixtures: c7770da92b99cbb8
     models: 6b7760f42db4dee0

@@ -1,4 +1,4 @@
-generated-at: "2026-06-17T17:43:29Z"
+generated-at: "2026-07-23T16:13:50Z"
 intents:
     aggregate-status-across-parent-and-child-roots:
         content-hash: f99e329b260df924
@@ -41,6 +41,8 @@ sources:
         machine-readable-json-output-via-json: 9552fd31b29d0e66
         per-feature-phase-column-in-human-listing: 3e5c8e8f3e7b80cf
         unavailable-child-root-inline-diagnostic: d458f9874e23a2b0
+    infrastructure: eaf10e61953116db
+    surface-yaml: 44d7ed2e9086ace8
 buildfile-sections:
     fixtures: 8d016f69eeb53741
     models: f3a3d1de244e5c86

@@ -1,0 +1,18 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    migrated-stubs-carry-the-operations-effects-prose:
+        content-hash: c4a5376a1b24468b
+        goal-hash: 313edd68c2284c77
+        constraints-hash: 3d04986177d50cf6
+        verify-hash: f1c1888f707fdf9f
+        objects-hash: a05a6958c3bd3cd5
+    per-operation-feature-routing-in-a-headless-run:
+        content-hash: 3e67494e438d698e
+        goal-hash: 4f6a099fbd8ab7c5
+        constraints-hash: 31eeaee96b80cfc7
+        verify-hash: 9093a7d2857e8808
+        objects-hash: d3819d027ce25bb1
+sources:
+    intents:
+        migrated-stubs-carry-the-operations-effects-prose: 6eef96a133426817
+        per-operation-feature-routing-in-a-headless-run: e909ec325fceebdb
