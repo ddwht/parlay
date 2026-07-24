@@ -35,9 +35,14 @@ endef
 # Build the parlay binary from current source.
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
 # faster and works in environments without a C toolchain.
+#
+# studio/ is a nested module with its own go.mod, so the root module does
+# not contain ./studio/cmd/parlay-studio — it must be built from its own
+# directory (same two-module reasoning as `test` and `vet` below). The
+# binary is emitted to the repo root alongside parlay.
 build:
 	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
-	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
+	cd studio && CGO_ENABLED=0 $(GO) build -o ../parlay-studio ./cmd/parlay-studio
 
 # Run the test suite across BOTH Go modules. studio/ is a nested module
 # with its own go.mod, so the root module's `./...` never reaches it — it
