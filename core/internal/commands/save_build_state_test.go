@@ -165,34 +165,46 @@ func TestSaveBuildState_MissingIntentsFails(t *testing.T) {
 	}
 }
 
-// TestSaveBuildState_EmptyDialogsStubFails confirms that a dialogs.md that
-// exists on disk but parses to zero dialogs (a scaffolded-but-never-written
-// stub) refuses to baseline, instead of silently committing a baseline with
-// an empty dialogs section as if the dialogs phase were complete.
-func TestSaveBuildState_EmptyDialogsStubFails(t *testing.T) {
+// TestSaveBuildState_EmptyDialogsStubBaselines confirms that a dialogs.md
+// that exists on disk but parses to zero dialog blocks (the intentional
+// terminal stub of a CLI/backend feature — "no interactive dialog turns")
+// baselines successfully, contributing no dialogs source-hash section. This
+// keeps buildBaseline consistent with check-readiness and build-feature,
+// which treat dialogs as recommended-but-not-required; refusing here would
+// strand a legitimate CLI feature at the final save-build-state step.
+func TestSaveBuildState_EmptyDialogsStubBaselines(t *testing.T) {
 	dir := setupTestDir(t)
 
 	featureDir := testContext(t).FeaturePath("stub-dialogs")
 	os.MkdirAll(featureDir, 0755)
 	os.WriteFile(filepath.Join(featureDir, "intents.md"),
 		[]byte("## Do Something\n\n**Goal**: Do the thing\n**Persona**: User\n"), 0644)
-	// A dialogs.md that exists but has no dialog blocks — header only.
+	// A dialogs.md that exists but has no dialog blocks — header only,
+	// the form an intentional CLI/backend stub takes.
 	os.WriteFile(filepath.Join(featureDir, "dialogs.md"),
-		[]byte("# Stub Dialogs — Dialogs\n\n---\n"), 0644)
+		[]byte("# Stub Dialogs — Dialogs\n\n_CLI/backend feature — no interactive dialog turns._\n\n---\n"), 0644)
 
 	sourceRoot := filepath.Join(dir, "cmd", "stub-dialogs")
 	os.MkdirAll(sourceRoot, 0755)
 
-	err := saveBuildStateForFeature(testContext(t), "stub-dialogs", sourceRoot)
-	if err == nil {
-		t.Fatal("expected error for empty dialogs.md stub, got nil")
-	}
-	if !strings.Contains(err.Error(), "dialogs.md") {
-		t.Errorf("error = %v, want it to name dialogs.md", err)
+	if err := saveBuildStateForFeature(testContext(t), "stub-dialogs", sourceRoot); err != nil {
+		t.Fatalf("expected success for a zero-block CLI dialogs stub, got: %v", err)
 	}
 
-	if _, statErr := os.Stat(baselinePath(testContext(t), "stub-dialogs")); statErr == nil {
-		t.Error("baseline.yaml must not be written when dialogs.md is an empty stub")
+	blPath := baselinePath(testContext(t), "stub-dialogs")
+	if _, statErr := os.Stat(blPath); statErr != nil {
+		t.Fatalf("baseline.yaml must be written for a CLI feature with a zero-block dialogs stub: %v", statErr)
+	}
+
+	// The dialogs source-hash section is omitted (nothing to hash), exactly
+	// as it would be for a feature whose dialogs.md is simply absent.
+	blData, _ := os.ReadFile(blPath)
+	var loaded Baseline
+	if err := yaml.Unmarshal(blData, &loaded); err != nil {
+		t.Fatalf("baseline yaml invalid: %v", err)
+	}
+	if loaded.Sources != nil && len(loaded.Sources.Dialogs) != 0 {
+		t.Errorf("dialogs source-hash section = %v, want empty for a zero-block stub", loaded.Sources.Dialogs)
 	}
 }
 

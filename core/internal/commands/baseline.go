@@ -119,14 +119,17 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 
 	// A missing dialogs.md is fine — dialogs may not be authored yet, and
 	// the source-hash is simply omitted. A dialogs.md that exists but
-	// parses to zero dialogs is different: it's a stub that should never
-	// have been baselined as if the dialogs phase were complete. Refuse
-	// rather than silently commit a baseline with an empty dialogs section.
+	// parses to zero dialog blocks is treated the same way: for a
+	// CLI/backend feature it is the intentional terminal stub ("no
+	// interactive dialog turns"), which check-readiness and build-feature
+	// already accept as a complete dialogs phase (dialogs are recommended,
+	// not required). Refusing here would strand any feature that
+	// legitimately has no dialogs at the final save-build-state step, so a
+	// zero-block dialogs.md simply contributes no dialogs source-hash
+	// section rather than erroring. (The empty-intents guard above stays:
+	// intents, unlike dialogs, are required for every feature.)
 	dialogsPath := filepath.Join(featurePath, "dialogs.md")
-	if dialogs, err := parser.ParseDialogsFile(dialogsPath); err == nil {
-		if len(dialogs) == 0 {
-			return nil, fmt.Errorf("baseline refuses empty artifact: %s exists but has no dialog blocks", dialogsPath)
-		}
+	if dialogs, err := parser.ParseDialogsFile(dialogsPath); err == nil && len(dialogs) > 0 {
 		baseline.Sources.Dialogs = make(map[string]string)
 		for _, dialog := range dialogs {
 			baseline.Sources.Dialogs[dialog.Slug] = hashDialogContent(dialog)
