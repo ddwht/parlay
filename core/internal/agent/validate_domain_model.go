@@ -91,6 +91,34 @@ var closedEnumTones = map[string]bool{
 // closedEnumTones, used in error messages.
 const closedEnumToneList = "neutral, info, warning, danger, success"
 
+// wholeModelPathToken is the distinguished element-path token used for
+// ownerless (whole-model) findings — those not attributable to a single
+// entity / relationship / enum / operation element. It is angle-bracketed
+// so it can never collide with a real dotted element path, whose roots are
+// always entities. / relationships. / enums. / operations. . Every finding
+// emitted by the structured validator carries a non-blank element path in
+// its Context field: either a dotted element path or this token.
+//
+// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-component: cross-cutting/element-path-on-every-finding
+const wholeModelPathToken = "<domain-model>"
+
+// applyDomainModelSeverity resolves each finding's Severity from the
+// per-mode RuleSeverity table (authoring vs build). Codes absent from the
+// table default to error in both modes (RuleSeverity's own default), so
+// hard structural findings (invalid-yaml, missing-schema-version,
+// field-type-outside-closed-set, ...) read as error regardless of mode;
+// only mode-varying rules such as domain-operations-deprecated differ.
+//
+// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-component: cross-cutting/json-validation-mode
+func applyDomainModelSeverity(errs []ValidationError, mode ValidationMode) []ValidationError {
+	for i := range errs {
+		errs[i].Severity = string(RuleSeverity(errs[i].Code, mode))
+	}
+	return errs
+}
+
 // deepDomainModel mirrors the on-disk YAML shape declared in
 // internal/embedded/schemas/domain-model.schema.md. The flat-only
 // resolution means fields cannot be inline object literals; they are
@@ -184,21 +212,56 @@ func ValidateDomainModel(path string, content []byte) error {
 }
 
 // ValidateDomainModelStructured returns the structured ValidationError
-// list for a domain-model.yaml. Used by the agent-facing validate
-// command (--json) and by the JSON-emitting --type domain-model path
-// in internal/commands/validate.go.
+// list for a domain-model.yaml. This is the backward-compatible entry
+// point, preserved for existing in-repo callers: it runs in authoring
+// mode and does NOT emit the domain-operations-deprecated finding, so its
+// finding set for a given model is unchanged from before the structured-
+// validation feature. It still benefits from the guaranteed element-path
+// contract (every finding's Context is a dotted path or the whole-model
+// token) and carries per-finding severity.
+//
+// New callers that need the mode-aware behavior — per-mode severity AND
+// the domain-operations-deprecated finding (warning in authoring, error
+// in build) — use ValidateDomainModelStructuredMode. The --type
+// domain-model --json CLI branch and the build path route through that.
 func ValidateDomainModelStructured(path string, content []byte) []ValidationError {
+	return validateDomainModelStructured(path, content, ModeAuthoring, false)
+}
+
+// ValidateDomainModelStructuredMode is the mode-aware structured validator.
+// It resolves each finding's Severity from the per-mode RuleSeverity table
+// and, when the model carries a populated (non-empty) deprecated
+// operations: block, emits exactly one domain-operations-deprecated
+// finding — warning in authoring mode (the --json / editor path), error in
+// build mode (the build path fails, exactly as the RuleSeverity table
+// promises). The operations-block check is read-only: it never mutates,
+// reorders, or drops the block.
+//
+// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-component: cross-cutting/emit-domain-operations-deprecated
+func ValidateDomainModelStructuredMode(path string, content []byte, mode ValidationMode) []ValidationError {
+	return validateDomainModelStructured(path, content, mode, true)
+}
+
+// validateDomainModelStructured is the shared implementation behind both
+// the backward-compatible ValidateDomainModelStructured (mode=authoring,
+// emitDeprecation=false) and the mode-aware ValidateDomainModelStructuredMode
+// (emitDeprecation=true). Every returned finding carries a non-blank
+// element path in Context (a dotted path or wholeModelPathToken) and a
+// severity resolved for the given mode.
+func validateDomainModelStructured(path string, content []byte, mode ValidationMode, emitDeprecation bool) []ValidationError {
 	var errors []ValidationError
+	_ = path // ownerless findings now use wholeModelPathToken, not the file path
 
 	// Pass 0: YAML parse.
 	var dm deepDomainModel
 	if err := yaml.Unmarshal(content, &dm); err != nil {
-		return []ValidationError{{
+		return applyDomainModelSeverity([]ValidationError{{
 			Code:    "invalid-yaml",
 			Message: fmt.Sprintf("domain-model.yaml is not valid YAML: %s", err),
-			Context: path,
+			Context: wholeModelPathToken,
 			Fix:     "fix the YAML syntax errors and re-run validation",
-		}}
+		}}, mode)
 	}
 
 	// Pass 1: schema_version is present and integer (yaml.Unmarshal of
@@ -211,19 +274,19 @@ func ValidateDomainModelStructured(path string, content []byte) []ValidationErro
 		errors = append(errors, ValidationError{
 			Code:    "missing-schema-version",
 			Message: "domain-model.yaml is missing required top-level field 'schema_version'",
-			Context: "schema_version",
+			Context: wholeModelPathToken,
 			Fix:     "add 'schema_version: 1' to the top of the file",
 		})
-		return errors
+		return applyDomainModelSeverity(errors, mode)
 	}
 	if _, ok := rawTop["schema_version"].(int); !ok {
 		errors = append(errors, ValidationError{
 			Code:    "missing-schema-version",
 			Message: fmt.Sprintf("domain-model.yaml schema_version must be an integer (got %T)", rawTop["schema_version"]),
-			Context: "schema_version",
+			Context: wholeModelPathToken,
 			Fix:     "set schema_version to a plain integer (e.g., 'schema_version: 1' — no quotes, no semver)",
 		})
-		return errors
+		return applyDomainModelSeverity(errors, mode)
 	}
 
 	// Pass 2: compare schema_version to the binary's expected version.
@@ -236,18 +299,18 @@ func ValidateDomainModelStructured(path string, content []byte) []ValidationErro
 		errors = append(errors, ValidationError{
 			Code:    "schema-version-newer-than-binary",
 			Message: fmt.Sprintf("domain-model.yaml schema_version %d is newer than this Core release supports (%d); run parlay upgrade", dm.SchemaVersion, DomainModelBinaryVersion),
-			Context: "schema_version",
+			Context: wholeModelPathToken,
 			Fix:     "run parlay upgrade to install a Core release that supports the file's schema_version",
 		})
-		return errors
+		return applyDomainModelSeverity(errors, mode)
 	case DomainModelVersionUnreachable:
 		errors = append(errors, ValidationError{
 			Code:    "schema-version-unreachable",
 			Message: fmt.Sprintf("domain-model.yaml schema_version %d has no migrator chain reaching the binary version (%d); upgrade in steps via the documented migration path", dm.SchemaVersion, DomainModelBinaryVersion),
-			Context: "schema_version",
+			Context: wholeModelPathToken,
 			Fix:     "run an intermediate parlay release that supports the file's schema_version, migrate, then upgrade further",
 		})
-		return errors
+		return applyDomainModelSeverity(errors, mode)
 	}
 
 	// Build lookup tables for cross-reference passes.
@@ -449,7 +512,25 @@ func ValidateDomainModelStructured(path string, content []byte) []ValidationErro
 		}
 	}
 
-	return errors
+	// domain-operations-deprecated: read-only presence check for a
+	// populated deprecated operations: block. Emitted only by the
+	// mode-aware entry point (emitDeprecation). The block spans the whole
+	// model, so the finding carries the whole-model element-path token.
+	// This check never mutates, reorders, or drops the block — validation
+	// operates on []byte and never writes.
+	//
+	// parlay-feature: studio-support/structured-domain-model-validation
+	// parlay-component: cross-cutting/emit-domain-operations-deprecated
+	if emitDeprecation && len(dm.Operations) > 0 {
+		errors = append(errors, ValidationError{
+			Code:    "domain-operations-deprecated",
+			Message: "domain-model.yaml carries a populated deprecated 'operations:' block; the top-level operations: field is deprecated in favor of per-feature capabilities.yaml",
+			Context: wholeModelPathToken,
+			Fix:     "migrate the operations: block via `parlay migrate-domain-operations`",
+		})
+	}
+
+	return applyDomainModelSeverity(errors, mode)
 }
 
 // ============================================================================

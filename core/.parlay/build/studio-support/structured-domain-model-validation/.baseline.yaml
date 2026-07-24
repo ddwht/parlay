@@ -1,0 +1,28 @@
+generated-at: "2026-07-23T16:13:50Z"
+intents:
+    emit-domain-operations-deprecated-in-authoring-mode:
+        content-hash: ef0fa4782c5e1e50
+        goal-hash: c43638c154ed86cb
+        constraints-hash: cd52beef0868b633
+        verify-hash: eb21481a5c01fe3b
+        objects-hash: fea23271f5c86cda
+    json-validation-mode-for-parlay-validate-type-domain-model:
+        content-hash: fd2e1dc38988f466
+        goal-hash: b4b8f91b9f0088c2
+        constraints-hash: e43527b56ea9a64d
+        verify-hash: b3f63e3e6066481b
+        objects-hash: a61fbda55b89af60
+    machine-usable-element-path-on-every-finding:
+        content-hash: 685e80c83bf94974
+        goal-hash: c2498aafda1f6498
+        constraints-hash: 6ff84c5bee45cc8c
+        verify-hash: fd409af8eae59fc6
+        objects-hash: ab98945f7cf5e1b0
+sources:
+    intents:
+        emit-domain-operations-deprecated-in-authoring-mode: 2072cd55bd3008f8
+        json-validation-mode-for-parlay-validate-type-domain-model: cdd2f77c36d0f228
+        machine-usable-element-path-on-every-finding: afc945fbeb375671
+    infrastructure: 2b1b30adc6695262
+buildfile-sections:
+    fixtures: e9ee57854130a35e

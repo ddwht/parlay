@@ -9,6 +9,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +91,19 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	path := args[0]
 
+	// Structured JSON mode for domain-model (intent: json-validation-mode).
+	// When --json is set with --type domain-model, emit the full per-violation
+	// finding list as a bare JSON array (one entry per violation, [] for a
+	// clean model) and exit 0 whether or not findings are present — a finding
+	// list is a query result, not a command failure. Accepts `-` to read the
+	// model from stdin. The non-JSON domain-model path below is unchanged.
+	//
+	// parlay-feature: studio-support/structured-domain-model-validation
+	// parlay-component: cross-cutting/json-validation-mode
+	if validateJSON && validateType == "domain-model" {
+		return runValidateDomainModelJSON(cmd, path)
+	}
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return outputValidate(cmd, path, []agent.ValidationError{{
@@ -169,6 +183,66 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	return outputValidate(cmd, path, nil)
 }
+
+// runValidateDomainModelJSON implements `validate --type domain-model --json`.
+// It emits the structured per-violation finding list as a bare JSON array,
+// reusing the agent.ValidationError finding shape (code, message, context,
+// fix, severity) — no parallel finding schema. Findings are resolved in
+// authoring mode, so domain-operations-deprecated surfaces at warning
+// severity (the editor's context). A clean model prints "[]".
+//
+// The command exits 0 regardless of whether findings are present: the list
+// is a query result, not a command failure. Unlike the generic
+// outputValidate path, a non-empty list does NOT set a non-zero exit code.
+//
+// The positional path may be "-" to read the model bytes from stdin; a real
+// path and "-" are mutually exclusive and, for identical bytes, produce an
+// identical finding set. Even a read failure or unparseable input yields
+// valid JSON on stdout (a single-element array), never a crash or non-JSON
+// error.
+//
+// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-component: cross-cutting/json-validation-mode
+func runValidateDomainModelJSON(cmd *cobra.Command, path string) error {
+	var (
+		content []byte
+		err     error
+	)
+	// Use a stable synthetic label for stdin so the messages / whole-model
+	// token stay consistent regardless of the actual source.
+	label := path
+	if path == "-" {
+		label = "<stdin>"
+		content, err = io.ReadAll(cmd.InOrStdin())
+	} else {
+		content, err = os.ReadFile(path)
+	}
+
+	var findings []agent.ValidationError
+	if err != nil {
+		findings = []agent.ValidationError{{
+			Code:     "file-not-readable",
+			Message:  fmt.Sprintf("cannot read %s: %s", label, err),
+			Context:  wholeModelTokenForCLI,
+			Fix:      "verify the file path is correct, or pass `-` to read the model from stdin",
+			Severity: string(agent.SeverityError),
+		}}
+	} else {
+		findings = agent.ValidateDomainModelStructuredMode(label, content, agent.ModeAuthoring)
+	}
+	if findings == nil {
+		findings = []agent.ValidationError{}
+	}
+
+	data, _ := json.MarshalIndent(findings, "", "  ")
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	return nil
+}
+
+// wholeModelTokenForCLI mirrors agent's wholeModelPathToken for the one
+// CLI-owned finding (file-not-readable) that never reaches the validator.
+// Kept in sync with agent.wholeModelPathToken ("<domain-model>").
+const wholeModelTokenForCLI = "<domain-model>"
 
 // runValidateProject implements the --project mode: walk every buildfile
 // under the resolved root and validate each in project-pass mode (which

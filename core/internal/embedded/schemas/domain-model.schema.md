@@ -195,6 +195,43 @@ effects:
   operation's domain consequences. The schema does **no** syntactic
   check on them.
 
+## Finding element paths
+
+<!-- parlay-feature: studio-support/structured-domain-model-validation -->
+<!-- parlay-component: cross-cutting/element-path-on-every-finding -->
+
+Every finding emitted by deep validation carries a **machine-usable
+element path** in its `context` field — a deterministic, dotted locator
+for the offending value. The path is computed from the model position of
+the offending value, so two runs over identical bytes produce identical
+paths (no map-iteration order leaks into a path). No finding carries a
+blank path.
+
+The grammar is **closed and versioned** — it is extended only in the same
+change that adds a validation rule pointing at a new element kind, and
+that extension is a `schema_version` bump alongside the schema, exactly
+like the closed type / tone / cardinality sets above.
+
+| Element kind            | Path form                                          |
+| ----------------------- | -------------------------------------------------- |
+| Entity field type       | `entities.<name>.fields.<name>.type`               |
+| Entity field ref target | `entities.<name>.fields.<name>.target`             |
+| Entity field enum key   | `entities.<name>.fields.<name>.enum`               |
+| Relationship end        | `relationships.<name>.<end>` — `<end>` ∈ {`from`, `to`, `cardinality`} |
+| Enum value tone         | `enums.<name>.values.<value>.tone`                 |
+| Operation input         | `operations.<name>.input[<index>]`                 |
+| Whole model (ownerless) | `<domain-model>`                                   |
+
+The dotted paths always root at `entities.` / `relationships.` / `enums.`
+/ `operations.`. The whole-model token `<domain-model>` is
+angle-bracketed so it can never collide with a real dotted path; it is
+used for findings that are not attributable to a single element — parse
+failure (`invalid-yaml`), a missing or non-integer `schema_version`
+(`missing-schema-version`), a newer-than-binary or unreachable version
+(`schema-version-newer-than-binary`, `schema-version-unreachable`), and
+the deprecated-operations-block finding (`domain-operations-deprecated`),
+whose block spans the whole model.
+
 ## Read-path precedence
 
 Every domain-model consumer routes through the CLI's standard domain-model

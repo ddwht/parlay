@@ -200,11 +200,22 @@ type deepInput struct {
 // ValidationError is a structured error returned by deep validation.
 // Fields are designed for agent consumption: code identifies the error class,
 // context provides specifics about where it occurred, and fix suggests recovery.
+//
+// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-component: cross-cutting/json-validation-mode
+// (Severity field added — findings reuse the single JSON finding convention.)
 type ValidationError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Context string `json:"context,omitempty"`
 	Fix     string `json:"fix"`
+	// Severity is the per-mode severity of the finding, resolved from the
+	// RuleSeverity table (authoring vs build). Populated by the mode-aware
+	// structured validators (e.g. ValidateDomainModelStructuredMode); left
+	// blank by the legacy string-Validator paths that have no mode context.
+	// Emitting it here keeps the JSON finding convention single-schema
+	// (code, message, context, fix, severity) — no parallel finding shape.
+	Severity string `json:"severity,omitempty"`
 }
 
 // ValidateBuildfileDeep performs cross-reference validation on a buildfile.
