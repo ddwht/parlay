@@ -23,10 +23,22 @@ package commands
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
+
+// studioProbeTimeout bounds how long a test will wait on a
+// parlay-studio subprocess before treating it as a hang. A real
+// quick-exit subcommand (e.g. one that honors --help) returns in well
+// under a second; anything that blocks past this deadline — notably a
+// subcommand that boots the long-running server harness instead of
+// exiting — is killed so the test fails/propagates rather than hanging
+// the suite indefinitely.
+const studioProbeTimeout = 15 * time.Second
 
 // resolveParlayStudioBinary returns the absolute path to a
 // parlay-studio binary on PATH, or "" when none is found. Both
@@ -66,6 +78,13 @@ func TestInvokeStudioSubprocess_EndToEnd(t *testing.T) {
 	t.Run("domain-edit propagates exit code and waits", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
+		// Bound the subprocess: today's parlay-studio boots a blocking
+		// server harness for domain-edit and never exits on its own, so
+		// an unbounded invocation would hang this suite forever. With a
+		// deadline the subprocess is killed and surfaces through the
+		// non-zero-exit failure-line contract asserted below.
+		ctx, cancel := context.WithTimeout(context.Background(), studioProbeTimeout)
+		defer cancel()
 		err := invokeStudioSubprocess(invokeStudioOptions{
 			BinaryPath: binary,
 			Subcommand: "domain-edit",
@@ -74,6 +93,7 @@ func TestInvokeStudioSubprocess_EndToEnd(t *testing.T) {
 			Stdin:      strings.NewReader(""),
 			Stdout:     stdout,
 			Stderr:     stderr,
+			Ctx:        ctx,
 		})
 		// The contract: invokeStudioSubprocess returns nil on a
 		// zero exit, returns an error AND prints the failure line
@@ -142,11 +162,22 @@ func TestParlayStudioSubcommandContract(t *testing.T) {
 				t.Errorf("parlay-studio not on PATH — contract for subcommand %q cannot be verified; this is a fail-hard signal that Studio is still pending", subcommand)
 				return
 			}
-			cmd := exec.Command(binary, subcommand, "--help")
+			// Bound the probe: the contract is that `--help` exits
+			// non-error and quickly. A subcommand that instead blocks
+			// (today's parlay-studio boots the server harness rather
+			// than honoring --help) must register as an unhonored
+			// contract — a red failure — not hang the suite. The
+			// deadline turns that block into a clean red.
+			ctx, cancel := context.WithTimeout(context.Background(), studioProbeTimeout)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, binary, subcommand, "--help")
 			cmd.Stdin = strings.NewReader("")
 			cmd.Stdout = &bytes.Buffer{}
 			cmd.Stderr = &bytes.Buffer{}
-			if err := cmd.Run(); err != nil {
+			err := cmd.Run()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				t.Errorf("parlay-studio %s --help did not exit within %s; the binary is on PATH but blocks (boots the server harness) instead of honoring the %q subcommand (red until Studio ships and recognizes it)", subcommand, studioProbeTimeout, subcommand)
+			} else if err != nil {
 				t.Errorf("parlay-studio %s --help returned error %v; the binary is on PATH but does not honor the %q subcommand (red until Studio ships and recognizes it)", subcommand, err, subcommand)
 			}
 		})

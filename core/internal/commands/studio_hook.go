@@ -22,6 +22,7 @@ package commands
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -240,6 +241,15 @@ type invokeStudioOptions struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
+
+	// Ctx bounds the subprocess lifetime. Production callers leave it
+	// nil — the hand-off waits for the designer to close Studio, which
+	// must not be time-bounded — and it defaults to context.Background()
+	// (never cancels), so production behavior is identical to a plain
+	// exec.Command. Tests supply a deadline-bearing context so a
+	// subcommand that blocks (e.g. one that boots the server harness
+	// instead of exiting) is killed rather than hanging the test.
+	Ctx context.Context
 }
 
 // invokeStudioSubprocess runs the configured parlay-studio
@@ -253,7 +263,11 @@ func invokeStudioSubprocess(opts invokeStudioOptions) error {
 	if opts.FeatureCtx != "" {
 		args = append(args, opts.FeatureCtx)
 	}
-	cmd := exec.Command(opts.BinaryPath, args...)
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, opts.BinaryPath, args...)
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
