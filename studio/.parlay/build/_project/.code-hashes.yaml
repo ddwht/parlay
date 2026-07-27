@@ -1,4 +1,4 @@
-generated-at: "2026-07-23T14:17:04Z"
+generated-at: "2026-07-27T13:19:12Z"
 files:
     studio/cmd/parlay-studio/main.go:
         component: cross-cutting/studio-binary-boot-and-shutdown
@@ -77,16 +77,22 @@ files:
         hash: 6fc16c7b7f546e9c
     studio/internal/domain/handlers.go:
         component: cross-cutting/domain-model-subsystem-registration
-        hash: 1c52f98e12fb3c1d
+        hash: 674b7283c5e80c20
     studio/internal/domain/handlers_test.go:
         component: cross-cutting/domain-model-subsystem-registration
-        hash: 1ef69e7434b60d32
+        hash: ccf8df6b47f1fd56
     studio/internal/domain/loader.go:
         component: cross-cutting/domain-model-loader-reuse
         hash: 951d10612d843519
     studio/internal/domain/loader_test.go:
         component: cross-cutting/domain-model-loader-reuse
         hash: 7b21aa8b6a406135
+    studio/internal/domain/no_core_import_test.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: ec978147a3b7ad50
+    studio/internal/domain/parity_test.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: 1c5192375e1c8ba8
     studio/internal/domain/resolve.go:
         component: cross-cutting/domain-model-read-path-resolution
         hash: fcf3f64eae196ed3
@@ -107,10 +113,16 @@ files:
         hash: 341fd0d456f9c63d
     studio/internal/domain/subsystem.go:
         component: cross-cutting/domain-model-subsystem-registration
-        hash: f3de90687657233f
+        hash: bbea53889feb1597
     studio/internal/domain/subsystem_test.go:
         component: cross-cutting/domain-model-subsystem-registration
-        hash: 4532b96697f847c1
+        hash: 164252d4c30339ce
+    studio/internal/domain/validate.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: 2be27118eb1d24a7
+    studio/internal/domain/validate_test.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: 01b3023344cbc492
     studio/internal/embedded/embed.go:
         component: ""
         hash: dc2f109455f822ce
@@ -182,7 +194,13 @@ files:
         hash: 84ef9e3d0a913d84
     studio/internal/ui/src/components/SaveBar.tsx:
         component: save-bar
-        hash: 855a02b75e687e9d
+        hash: 3e246ee5ead4b9db
+    studio/internal/ui/src/components/SaveGatingState.test.tsx:
+        component: save-gating-state
+        hash: a11a1988c1046308
+    studio/internal/ui/src/components/SaveGatingState.tsx:
+        component: save-gating-state
+        hash: cb667c3ae5d51f9d
     studio/internal/ui/src/components/SessionEndedScreen.test.tsx:
         component: session-ended-screen
         hash: 8f5dea788d889e95
@@ -203,7 +221,7 @@ files:
         hash: 90eb6c863e30a5c2
     studio/internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
-        hash: 70fb9f8aaab68ad2
+        hash: 17cd03f815b8532a
     studio/internal/ui/src/features/domain-model-editor/DoneControl.test.tsx:
         component: done-control
         hash: 856bd07cee215d09
@@ -221,7 +239,7 @@ files:
         hash: 9a765f18c427fa30
     studio/internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx:
         component: entity-form-panel
-        hash: fbdc41d77db2a8e7
+        hash: fdebf0cf02f5f5b2
     studio/internal/ui/src/features/domain-model-editor/EntityList.test.tsx:
         component: entity-list
         hash: aa304216e880214b
@@ -233,13 +251,19 @@ files:
         hash: dd9e7fba7c0412b8
     studio/internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx:
         component: enum-form-panel
-        hash: 56cea62531796b00
+        hash: 62257dc5ce6379f1
     studio/internal/ui/src/features/domain-model-editor/EnumList.test.tsx:
         component: enum-list
         hash: e9f3f638ec1f6f1f
     studio/internal/ui/src/features/domain-model-editor/EnumList.tsx:
         component: enum-list
         hash: 1693483697a19bcc
+    studio/internal/ui/src/features/domain-model-editor/InlineFindingMarker.test.tsx:
+        component: inline-finding-marker
+        hash: 74441b154ec9167d
+    studio/internal/ui/src/features/domain-model-editor/InlineFindingMarker.tsx:
+        component: inline-finding-marker
+        hash: 3a642ce148a3665d
     studio/internal/ui/src/features/domain-model-editor/RelationshipFormPanel.test.tsx:
         component: relationship-form-panel
         hash: eedb5800c723483b
@@ -252,6 +276,18 @@ files:
     studio/internal/ui/src/features/domain-model-editor/RelationshipList.tsx:
         component: relationship-list
         hash: 6e106e3b7c706ca3
+    studio/internal/ui/src/features/domain-model-editor/ValidationCountIndicator.test.tsx:
+        component: validation-count-indicator
+        hash: c1c1032794908fbc
+    studio/internal/ui/src/features/domain-model-editor/ValidationCountIndicator.tsx:
+        component: validation-count-indicator
+        hash: b673c518dc170fa1
+    studio/internal/ui/src/features/domain-model-editor/ValidationPanel.test.tsx:
+        component: validation-panel
+        hash: 44d54688256879b6
+    studio/internal/ui/src/features/domain-model-editor/ValidationPanel.tsx:
+        component: validation-panel
+        hash: 73b64abfa7824872
     studio/internal/ui/src/features/domain-model-editor/erLayout.test.ts:
         component: cross-cutting/er-diagram-deterministic-layout
         hash: af619ecbbd5470ee
@@ -260,13 +296,13 @@ files:
         hash: fa298521d572b95c
     studio/internal/ui/src/lib/api.ts:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
-        hash: 9ce633a2d20a6892
+        hash: 17d1a9970690c873
     studio/internal/ui/src/main.tsx:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
         hash: 730fec0e1788f755
     studio/internal/ui/src/store/editorStore.ts:
         component: cross-cutting/embedded-ui-bundle-and-stack-pin
-        hash: a2141d0fc249ad2c
+        hash: 81fdc050c6969487
     studio/pkg/vocabulary/errors_test.go:
         component: cross-cutting/stable-error-codes-tests
         hash: 49d9bbf9f1f77534
