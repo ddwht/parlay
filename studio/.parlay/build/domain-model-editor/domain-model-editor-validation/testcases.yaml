@@ -1,0 +1,433 @@
+feature: domain-model-editor/domain-model-editor-validation
+framework: "Vitest + React Testing Library (presentation components); Go testing, table-driven (application cross-cutting: validate wrapper, save gate, parity corpus, no-Core-import guard)"
+
+# Two-slot depth feature: four presentation-component suites plus four
+# cross-cutting suites for the Go backend (the validate endpoint/wrapper, the
+# parity fixture-corpus alarm, the no-Core-import guard, and the save gate).
+# Cases derive from each intent's Verify bullets and the infrastructure
+# Invariants, and are cross-checked against the dialog branches.
+#
+# Schema note: this project is multi-target (adapter-set parlay-studio), so
+# testcases v2's closed kind set {presentation, operation} would normally apply.
+# The cross-cutting infrastructure suites (subprocess wrapper, parity guard,
+# import guard, HTTP save gate) fit neither kind — this feature declares no
+# capabilities.yaml operation — so, exactly as the sibling
+# domain-model-editor-mvp does, they are emitted in the v1 shape. The v2
+# validator treats them as kind: presentation with a
+# testcases-source-refs-missing-legacy warning, which is acceptable for a
+# feature whose backend behavior is expressed as infrastructure prose rather
+# than a closed-vocabulary operation.
+
+suites:
+  # ===========================================================================
+  # Presentation — Validation panel (live surfacing)
+  # ===========================================================================
+  - name: validation-panel
+    component: validation-panel
+    fixture: orphan-enum-ref-draft
+    intent: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    cases:
+      - name: load-time orphan reference renders in the panel with error style
+        description: A hand-edited fixture whose Order.status names a deleted enum renders an undeclared-entity-reference-class finding in the panel, styled as an error, before any edit.
+        steps:
+          - action: render
+            target: validation-panel
+          - verify: count
+            target: finding-rows
+            expected: 1
+          - verify: text
+            target: element-path
+            expected: "entities.Order.fields.status"
+          - verify: visible
+            target: severity-badge
+            expected: true
+      - name: finding message carries the schema's actionable fix phrasing, not the bare code
+        description: The panel row shows the schema's fix message alongside the closed code, so the designer's "what do I do" is answered.
+        steps:
+          - action: render
+            target: validation-panel
+          - verify: visible
+            target: finding-message
+            expected: true
+      - name: clicking a finding navigates to and highlights its owning element
+        description: Clicking the panel finding for relationships.customer-orders.to opens the relationships panel with that relationship highlighted.
+        steps:
+          - action: click
+            target: navigate-to-element
+            value: { path: "relationships.customer-orders.to" }
+          - verify: state
+            target: DomainModelDocument.selectedElement
+            expected: "relationships panel open, customer-orders highlighted"
+      - name: whole-model finding highlights nothing but keeps its fix text in place
+        description: A missing-schema-version finding (distinguished top-level path) has no element to anchor; clicking it highlights nothing and the row stays expanded with the fix text.
+        steps:
+          - action: render
+            target: validation-panel
+            value: { fixture: whole-model-missing-schema-version-draft }
+          - action: click
+            target: navigate-to-element
+          - verify: state
+            target: DomainModelDocument.selectedElement
+            expected: "nothing highlighted; row fix text stays expanded"
+      - name: warnings are visually distinct from errors in the panel
+        description: A mixed-severity draft renders the domain-operations-deprecated finding as a warning row distinct from the error row.
+        steps:
+          - action: render
+            target: validation-panel
+            value: { fixture: mixed-severity-draft }
+          - verify: count
+            target: finding-rows
+            expected: 2
+      - name: zero findings shows the explicit clean state, not merely no rows
+        description: A clean draft renders the empty-state (explicit clean state), not just an absence of finding rows.
+        steps:
+          - action: render
+            target: validation-panel
+            value: { fixture: clean-draft }
+          - verify: visible
+            target: empty-clean-state
+            expected: true
+
+  # ===========================================================================
+  # Presentation — Inline finding marker (anchored, in-view)
+  # ===========================================================================
+  - name: inline-finding-marker
+    component: inline-finding-marker
+    fixture: orphan-enum-ref-draft
+    intent: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    cases:
+      - name: orphan reference renders an inline error marker at the field row
+        description: The undeclared-entity-reference finding renders inline at the Order.status field row with error styling — the panel is the complete list, this is the same finding anchored in view.
+        steps:
+          - action: render
+            target: inline-finding-marker
+          - verify: visible
+            target: marker-badge
+            expected: true
+      - name: marker carries the finding message on inspect
+        description: Inspecting the marker surfaces the finding's actionable message.
+        steps:
+          - action: click
+            target: inspect-marker
+          - verify: visible
+            target: marker-message
+            expected: true
+      - name: warning markers are visually distinct from error markers
+        description: A domain-operations-deprecated warning marker is styled distinctly from an error marker, matching the finding severity.
+        steps:
+          - action: render
+            target: inline-finding-marker
+            value: { fixture: mixed-severity-draft }
+          - verify: visible
+            target: marker-badge
+            expected: true
+      - name: fixing the last error clears the inline marker
+        description: After the offending field is retyped to a declared enum, the trailing revalidation returns no error for that element and the inline marker clears.
+        steps:
+          - action: render
+            target: inline-finding-marker
+            value: { fixture: clean-draft }
+          - verify: visible
+            target: marker-badge
+            expected: false
+
+  # ===========================================================================
+  # Presentation — Validation count indicator (header)
+  # ===========================================================================
+  - name: validation-count-indicator
+    component: validation-count-indicator
+    fixture: mixed-severity-draft
+    intent: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    cases:
+      - name: mixed severities count and style errors and warnings distinctly
+        description: A draft with one error and one warning shows "1 error, 1 warning" with distinct error/warning styling.
+        steps:
+          - action: render
+            target: validation-count-indicator
+          - verify: visible
+            target: error-count-badge
+            expected: true
+          - verify: visible
+            target: warning-count-badge
+            expected: true
+      - name: fixing the last error flips the indicator to the explicit clean state
+        description: When the trailing revalidation returns an empty finding list, the count flips to an explicit clean state ("No problems"), not merely the absence of markers.
+        steps:
+          - action: render
+            target: validation-count-indicator
+            value: { fixture: clean-draft }
+          - verify: visible
+            target: clean-state
+            expected: true
+      - name: clicking the indicator opens the validation panel
+        description: The count indicator is a drill affordance into the validation panel.
+        steps:
+          - action: click
+            target: open-validation-panel
+          - verify: state
+            target: DomainModelDocument.validationPanelOpen
+            expected: true
+      - name: debounce collapses a burst of edits into one trailing revalidation
+        description: Five rapid field edits produce one trailing validate call against the final draft; the indicator updates once. (Store-level debounce; see the validation-surfacing-integration cross-cutting.)
+        steps:
+          - action: render
+            target: validation-count-indicator
+          - verify: state
+            target: DomainModelDocument.validateCallCount
+            expected: "one trailing call after the burst settles"
+      - name: a stale validate response is discarded, never rendered over fresher findings
+        description: When an older validate response (edit A) arrives after a newer one (edit B), it is recognized as superseded and dropped; the indicator keeps edit B's findings.
+        steps:
+          - action: render
+            target: validation-count-indicator
+          - verify: state
+            target: DomainModelDocument.findings
+            expected: "edit B's findings; edit A's stale set discarded"
+
+  # ===========================================================================
+  # Presentation — Save gating state (footer, error-gated save bar)
+  # ===========================================================================
+  - name: save-gating-state
+    component: save-gating-state
+    fixture: two-error-draft
+    intent: "@domain-model-editor-validation/save-gating-on-validation-findings"
+    cases:
+      - name: load-time errors show the blocked save-bar state naming the count before any edit
+        description: A freshly-loaded fixture carrying two errors shows the blocked state naming the count, present before the designer touches anything.
+        steps:
+          - action: render
+            target: save-gating-state
+          - verify: visible
+            target: blocked-save-bar
+            expected: true
+          - verify: text
+            target: blocked-save-bar
+            expected: "2 errors"
+      - name: the blocked state links to the validation panel
+        description: The blocked save bar offers a path to the validation panel rather than a bare disabled button.
+        steps:
+          - action: click
+            target: view-problems
+          - verify: state
+            target: DomainModelDocument.validationPanelOpen
+            expected: true
+      - name: warning-only findings never gate — the normal save affordance shows
+        description: A draft whose only finding is domain-operations-deprecated shows the normal dirty/save affordance, not the blocked state.
+        steps:
+          - action: render
+            target: save-gating-state
+            value: { fixture: deprecated-operations-draft }
+          - verify: visible
+            target: blocked-save-bar
+            expected: false
+      - name: fixing both errors transitions the bar back to the normal dirty/save state
+        description: After both errors are fixed and the trailing revalidation returns empty, the blocked state clears and the normal dirty/save affordance returns.
+        steps:
+          - action: render
+            target: save-gating-state
+            value: { fixture: clean-draft }
+          - verify: visible
+            target: blocked-save-bar
+            expected: false
+
+  # ===========================================================================
+  # Application (cross-cutting) — out-of-process validate endpoint + wrapper
+  # ===========================================================================
+  - name: out-of-process-validate-endpoint
+    component: cross-cutting/out-of-process-validate-endpoint
+    fixture: field-type-error-draft
+    intent: "@domain-model-editor-validation/validation-parity-with-cores-deep-validation"
+    cases:
+      - name: subprocess wrapper source exists
+        description: The out-of-process validate wrapper lives in studio/internal/domain/validate.go.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/validate.go
+      - name: field-type violation returns 200 with the closed code and an anchored path
+        description: A draft with entities.Order.fields.qty typed "quantity" POSTed to /api/domain-model/validate returns 200 with exactly field-type-outside-closed-set and an element path resolving to the offending field.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: field-type-error-draft }
+          - verify: state
+            target: response.status
+            expected: 200
+          - verify: state
+            target: response.fields
+            expected: "[{field: entities.Order.fields.qty, code: field-type-outside-closed-set, severity: error}]"
+      - name: a clean draft returns 200 with an empty finding list
+        description: A schema-clean draft returns 200 with an empty fields[] — a finding list is a query result, so a draft with findings is never an HTTP error.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: clean-draft }
+          - verify: state
+            target: response.status
+            expected: 200
+          - verify: state
+            target: response.fields
+            expected: "[]"
+      - name: deprecated operations block is a warning while other codes are errors
+        description: A draft with a populated deprecated operations block returns domain-operations-deprecated at warning severity, with severity taken from Core's authoring-mode table, not recomputed in Studio.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: deprecated-operations-draft }
+          - verify: state
+            target: response.fields
+            expected: "[{field: operations, code: domain-operations-deprecated, severity: warning}]"
+      - name: whole-model violation carries the distinguished top-level path
+        description: A draft with no schema_version returns missing-schema-version carrying the distinguished top-level path, not a blank or fabricated element path.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: whole-model-missing-schema-version-draft }
+          - verify: state
+            target: response.fields
+            expected: "[{field: <top-level>, code: missing-schema-version, severity: error}]"
+      - name: a malformed request is a validation-failed HTTP error, distinct from a finding list
+        description: Unparseable draft bytes / a bad request envelope return validation-failed at 400 — the subprocess is never run — distinct from a 200 finding-list response for a well-formed but invalid draft.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: malformed-request }
+          - verify: error
+            target: validateHandler
+            expected: validation-failed
+          - verify: state
+            target: response.status
+            expected: 400
+      - name: the endpoint is side-effect-free — validates the submitted bytes alone
+        description: With a clean on-disk domain-model.yaml but an error-carrying POSTed draft, the response reflects the draft; the call writes nothing and mutates nothing, independent of the on-disk model.
+        steps:
+          - action: invoke
+            target: validateHandler
+            value: { fixture: orphan-enum-ref-draft, onDisk: clean-draft }
+          - verify: state
+            target: response.fields
+            expected: "[{field: entities.Order.fields.status, code: undeclared-entity-reference, severity: error}]"
+          - verify: state
+            target: onDisk
+            expected: "unchanged; nothing written"
+      - name: validate route is mounted as a query without widening the persistence surface
+        description: Mount registers POST /api/domain-model/validate inside the existing route group; the two persistence endpoints (GET/PUT /model) are unchanged and the persistence surface does not widen (three routes total, two persistence).
+        steps:
+          - action: invoke
+            target: Mount
+          - verify: state
+            target: routes
+            expected: "GET /api/domain-model/model, PUT /api/domain-model/model, POST /api/domain-model/validate — all under prefix; persistence endpoints still exactly two"
+      - name: the parlay binary is located once at subsystem construction, not per request
+        description: New() resolves the parlay executable once and stores it on the subsystem; the validate path does not re-resolve per request.
+        steps:
+          - action: invoke
+            target: New
+            value: { root: /project }
+          - verify: state
+            target: subsystem.parlayBin
+            expected: "resolved once at construction"
+
+  # ===========================================================================
+  # Application (cross-cutting) — parity fixture-corpus alarm
+  # ===========================================================================
+  - name: validate-endpoint-parity-corpus
+    component: cross-cutting/out-of-process-validate-endpoint
+    fixture: parity-corpus
+    intent: "@domain-model-editor-validation/validation-parity-with-cores-deep-validation"
+    cases:
+      - name: parity suite source exists
+        description: The shared fixture-corpus parity suite lives in studio/internal/domain/parity_test.go.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/parity_test.go
+      - name: every corpus fixture yields identical finding sets through the endpoint and the direct CLI
+        description: One fixture per closed code plus clean fixtures, each run through /api/domain-model/validate and through `parlay validate --type domain-model --json` directly, yields identical finding sets — the parity/drift alarm guarding the Studio wrapper (request shaping, stdin transport, path mapping).
+        steps:
+          - action: invoke
+            target: parity-suite
+            value: { fixture: parity-corpus }
+          - verify: state
+            target: findingSets
+            expected: "identical per fixture across endpoint and direct CLI"
+
+  # ===========================================================================
+  # Application (cross-cutting) — no-Core-import guard
+  # ===========================================================================
+  - name: no-core-import-guard
+    component: cross-cutting/out-of-process-validate-endpoint
+    fixture: clean-draft
+    intent: "@domain-model-editor-validation/validation-parity-with-cores-deep-validation"
+    cases:
+      - name: guard test source exists
+        description: The no-Core-import guard lives in studio/internal/domain/no_core_import_test.go.
+        steps:
+          - verify: file-exists
+            target: studio/internal/domain/no_core_import_test.go
+      - name: no Studio package imports Core
+        description: Walking the studio module's import graph finds no package under core/; the editor reaches the validator only out of process. Failing this blocks the build.
+        steps:
+          - action: invoke
+            target: no-core-import-guard
+          - verify: state
+            target: coreImports
+            expected: "none — no Studio package imports Core"
+
+  # ===========================================================================
+  # Application (cross-cutting) — server-side save gate before the CAS
+  # ===========================================================================
+  - name: save-validation-gate-before-cas
+    component: cross-cutting/save-validation-gate-before-cas
+    fixture: field-type-error-draft
+    intent: "@domain-model-editor-validation/save-gating-on-validation-findings"
+    cases:
+      - name: an error-carrying save is rejected with validation-failed and writes nothing
+        description: A save whose draft carries a field-type-outside-closed-set finding returns the validation-failed envelope with the finding listed and leaves the on-disk file untouched.
+        steps:
+          - action: invoke
+            target: saveHandler
+            value: { fixture: field-type-error-draft }
+          - verify: error
+            target: saveHandler
+            expected: validation-failed
+          - verify: state
+            target: onDisk
+            expected: "unchanged"
+      - name: a warning-only save succeeds and writes the file
+        description: A save whose only finding is domain-operations-deprecated saves normally through the mvp compare-and-swap; the file is written.
+        steps:
+          - action: invoke
+            target: saveHandler
+            value: { fixture: deprecated-operations-draft }
+          - verify: state
+            target: response.status
+            expected: 200
+          - verify: state
+            target: onDisk
+            expected: "written"
+      - name: the gate orders before the etag compare-and-swap
+        description: An invalid draft with a stale etag returns validation-failed (the gate), not conflict (the etag); once the draft is fixed with the same still-stale etag it then returns conflict.
+        steps:
+          - action: invoke
+            target: saveHandler
+            value: { fixture: stale-etag-invalid-draft }
+          - verify: error
+            target: saveHandler
+            expected: validation-failed
+          - action: invoke
+            target: saveHandler
+            value: { fixture: stale-etag-invalid-draft, fixDraft: true, sameStaleEtag: true }
+          - verify: error
+            target: saveHandler
+            expected: conflict
+      - name: a direct API save bypassing the UI is gated identically
+        description: A save submitted directly to PUT /api/domain-model/model with an error-carrying draft is rejected by the server-side gate identically; there is no force-save path.
+        steps:
+          - action: invoke
+            target: saveHandler
+            value: { fixture: field-type-error-draft, viaDirectAPI: true }
+          - verify: error
+            target: saveHandler
+            expected: validation-failed
+          - verify: state
+            target: onDisk
+            expected: "unchanged"

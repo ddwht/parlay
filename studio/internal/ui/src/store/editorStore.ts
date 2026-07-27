@@ -13,8 +13,11 @@ import { BASE_FIELD_TYPES } from '../types/domain';
 import {
   loadModel,
   saveModel,
+  validateModel,
   ApiError,
+  WHOLE_MODEL_PATH,
   type FieldError,
+  type Finding,
   type ModelEnvelope,
 } from '../lib/api';
 
@@ -200,6 +203,16 @@ export interface EditorState {
   sessionEnded: boolean;
   hadActivity: boolean;
 
+  // validation surfaces (out-of-process, recomputed per response)
+  findings: Finding[];
+  validationPanelOpen: boolean;
+  /** Element path currently highlighted from a finding, or null (whole-model / none). */
+  selectedElement: string | null;
+  /** How many validate calls have been issued — observed by the debounce test. */
+  validateCallCount: number;
+  /** Monotonic draft version; a validate response for an older version is discarded. */
+  draftSeq: number;
+
   // relationships & diagram view state
   relNameManual: boolean;
   activeTab: EditorTab;
@@ -252,7 +265,22 @@ export interface EditorState {
   keepDraft: () => void;
   dismissConflict: () => void;
   clearServerError: () => void;
+
+  // validation lifecycle
+  /** Debounced trigger: a burst of edits collapses to one trailing validate. */
+  scheduleRevalidation: () => void;
+  /** Issue one validate call against the current draft; stale responses are discarded. */
+  runValidation: () => Promise<void>;
+  openValidationPanel: () => void;
+  closeValidationPanel: () => void;
+  /** Navigate to a finding's owning element and highlight it; whole-model highlights nothing. */
+  selectFinding: (finding: Finding) => void;
 }
+
+// Debounce window for trailing revalidation. Module-scoped so a rapid burst of
+// edits across store actions collapses into a single trailing validate call.
+const REVALIDATE_DEBOUNCE_MS = 250;
+let revalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
 function initialModel(): DomainModelDocument {
   return { schema_version: 1, enums: [], entities: [] };
@@ -271,13 +299,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   serverError: null,
   sessionEnded: false,
   hadActivity: false,
+  findings: [],
+  validationPanelOpen: false,
+  selectedElement: null,
+  validateCallCount: 0,
+  draftSeq: 0,
   relNameManual: false,
   activeTab: 'form',
   diagramSelection: null,
   connectProposal: null,
   nodePositions: {},
 
-  resetStore: () =>
+  resetStore: () => {
+    if (revalidateTimer) {
+      clearTimeout(revalidateTimer);
+      revalidateTimer = null;
+    }
     set({
       model: initialModel(),
       etag: 'empty',
@@ -291,33 +328,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       serverError: null,
       sessionEnded: false,
       hadActivity: false,
+      findings: [],
+      validationPanelOpen: false,
+      selectedElement: null,
+      validateCallCount: 0,
+      draftSeq: 0,
       relNameManual: false,
       activeTab: 'form',
       diagramSelection: null,
       connectProposal: null,
       nodePositions: {},
-    }),
+    });
+  },
 
   hydrate: (env) =>
-    set({
+    set((s) => ({
       model: env.model,
       etag: env.etag,
       isDirty: false,
       fieldErrors: [],
       conflict: null,
       serverError: null,
+      // Findings are recomputed from scratch on the load-time revalidation; a
+      // fresh model discards the prior finding set and bumps the draft version
+      // so any in-flight validate response is dropped.
+      findings: [],
+      selectedElement: null,
+      draftSeq: s.draftSeq + 1,
       // Diagram view state is derived, not persisted: a reload re-lays-out
       // deterministically and discards any in-session node repositioning.
       diagramSelection: null,
       connectProposal: null,
       nodePositions: {},
-    }),
+    })),
 
   load: async () => {
     set({ isLoading: true });
     try {
       const env = await loadModel();
       get().hydrate(env);
+      // Load-time revalidation: a freshly-loaded invalid file shows findings —
+      // and the blocked save bar — before any edit.
+      await get().runValidation();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'network-error') {
         // initial load failure before any activity: not a session-ended case
@@ -520,8 +572,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return index;
   },
 
-  applyModel: (next) =>
-    set({ model: next, isDirty: true, hadActivity: true, fieldErrors: [] }),
+  applyModel: (next) => {
+    set((s) => ({
+      model: next,
+      isDirty: true,
+      hadActivity: true,
+      fieldErrors: [],
+      draftSeq: s.draftSeq + 1,
+    }));
+    // A committed mutation triggers the debounced trailing revalidation.
+    get().scheduleRevalidation();
+  },
 
   save: async () => {
     const { model, etag } = get();
@@ -580,7 +641,83 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   keepDraft: () => set({ conflict: null }),
   dismissConflict: () => set({ conflict: null }),
   clearServerError: () => set({ serverError: null }),
+
+  // --- validation lifecycle -------------------------------------------------
+
+  scheduleRevalidation: () => {
+    // Collapse a burst of edits into one trailing call against the final draft.
+    if (revalidateTimer) clearTimeout(revalidateTimer);
+    revalidateTimer = setTimeout(() => {
+      revalidateTimer = null;
+      void get().runValidation();
+    }, REVALIDATE_DEBOUNCE_MS);
+  },
+
+  runValidation: async () => {
+    // Tag this call to the draft version it was issued for; a response that a
+    // newer draft has superseded is discarded, never rendered over fresher
+    // findings.
+    const issuedFor = get().draftSeq;
+    set((s) => ({ validateCallCount: s.validateCallCount + 1 }));
+    try {
+      const findings = await validateModel(get().model);
+      if (get().draftSeq !== issuedFor) return; // stale — discard
+      // Findings recomputed from scratch per response (no client-side cache).
+      set({ findings });
+    } catch {
+      // A malformed request / transport failure leaves the prior findings in
+      // place rather than clearing them; validation is presentation-only and
+      // never blocks editing. Errors are swallowed here by design.
+    }
+  },
+
+  openValidationPanel: () => set({ validationPanelOpen: true }),
+  closeValidationPanel: () => set({ validationPanelOpen: false }),
+
+  selectFinding: (finding) => {
+    // A whole-model finding (distinguished top-level path) anchors to nothing:
+    // highlight nothing and leave the current selection untouched.
+    if (finding.field === WHOLE_MODEL_PATH || finding.field === '') {
+      set({ selectedElement: null });
+      return;
+    }
+    const target = resolveElementSelection(get().model, finding.field);
+    set({
+      selectedElement: finding.field,
+      selection: target ?? get().selection,
+      activeTab: 'form',
+    });
+  },
 }));
+
+// Element-path navigation --------------------------------------------------
+
+/**
+ * Resolve a finding's dotted element path to its owning editor surface:
+ *   entities.<E>.fields.<F>[.type]  → the entity form
+ *   enums.<E>.values.<V>            → the enum form
+ *   relationships.<R>.<end>         → the relationship form
+ * Returns null when the path names the whole model or cannot be resolved.
+ */
+export function resolveElementSelection(
+  model: DomainModelDocument,
+  path: string,
+): Selection {
+  const parts = path.split('.');
+  if (parts[0] === 'entities' && parts[1]) {
+    return { kind: 'entity', name: parts[1] };
+  }
+  if (parts[0] === 'enums' && parts[1]) {
+    return { kind: 'enum', name: parts[1] };
+  }
+  if (parts[0] === 'relationships' && parts[1]) {
+    const index = (model.relationships ?? []).findIndex(
+      (r) => r.name === parts[1],
+    );
+    if (index >= 0) return { kind: 'relationship', index };
+  }
+  return null;
+}
 
 // Convenience selectors ------------------------------------------------------
 
@@ -606,4 +743,62 @@ export function selectedRelationship(
 /** Index of the currently-selected relationship, or -1. */
 export function selectedRelationshipIndex(state: EditorState): number {
   return state.selection?.kind === 'relationship' ? state.selection.index : -1;
+}
+
+// Validation selectors -------------------------------------------------------
+
+export function errorFindings(state: EditorState): Finding[] {
+  return state.findings.filter((f) => f.severity === 'error');
+}
+
+export function warningFindings(state: EditorState): Finding[] {
+  return state.findings.filter((f) => f.severity === 'warning');
+}
+
+export function errorCount(state: EditorState): number {
+  return errorFindings(state).length;
+}
+
+export function warningCount(state: EditorState): number {
+  return warningFindings(state).length;
+}
+
+/** A model is clean exactly when the current validate response had no findings. */
+export function isClean(state: EditorState): boolean {
+  return state.findings.length === 0;
+}
+
+/** The save is blocked exactly while any error-severity finding exists. */
+export function isBlocked(state: EditorState): boolean {
+  return errorCount(state) > 0;
+}
+
+/**
+ * Map from element path to the finding anchored there, for the inline markers
+ * and navigation. Whole-model findings are excluded — they anchor to nothing.
+ */
+export function findingsByPath(state: EditorState): Record<string, Finding> {
+  const out: Record<string, Finding> = {};
+  for (const f of state.findings) {
+    if (f.field && f.field !== WHOLE_MODEL_PATH) out[f.field] = f;
+  }
+  return out;
+}
+
+/**
+ * The finding anchored at `path`, or null. Anchoring tolerates Core's optional
+ * trailing sub-path on a finding (e.g. entities.E.fields.F.type,
+ * enums.E.values.V.tone), matching it to the row at entities.E.fields.F /
+ * enums.E.values.V. An exact match or a `path.`-prefixed match anchors; a
+ * sibling with a longer name (statusX vs status) does not.
+ */
+export function findingForElement(
+  state: EditorState,
+  path: string,
+): Finding | null {
+  for (const f of state.findings) {
+    if (!f.field || f.field === WHOLE_MODEL_PATH) continue;
+    if (f.field === path || f.field.startsWith(`${path}.`)) return f;
+  }
+  return null;
 }

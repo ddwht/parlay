@@ -1,6 +1,8 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: entity-form-panel
+// parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/validation-surfacing-integration
 import { useEffect, useState } from 'react';
+import { InlineFindingMarker } from './InlineFindingMarker';
 import * as Select from '@radix-ui/react-select';
 import * as Switch from '@radix-ui/react-switch';
 import * as Label from '@radix-ui/react-label';
@@ -81,6 +83,9 @@ function SortableFieldRow({
         {field.target ? ` → ${field.target}` : ''}
         {field.enum ? ` (${field.enum})` : ''}
       </span>
+      <InlineFindingMarker
+        path={`entities.${entity.name}.fields.${field.name}`}
+      />
       <button
         type="button"
         data-testid="move-field-up"

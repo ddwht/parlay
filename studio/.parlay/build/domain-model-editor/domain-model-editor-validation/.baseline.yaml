@@ -1,3 +1,39 @@
-generated-at: "2026-06-16T10:44:41Z"
-intents: {}
-sources: {}
+generated-at: "2026-07-27T13:19:12Z"
+intents:
+    live-in-editor-validation-surfacing:
+        content-hash: 10d4440256318d77
+        goal-hash: f7c2f94492a3fdae
+        constraints-hash: 363dc3bdf91b7ce7
+        verify-hash: ddf3fc8cc8b4d88e
+        objects-hash: e3c32fe4bf33d0ec
+    save-gating-on-validation-findings:
+        content-hash: 495f81ed3af46906
+        goal-hash: 1f292bbdf750a9e5
+        constraints-hash: 65a55d76bc1695c8
+        verify-hash: 086d89f7b7829245
+        objects-hash: e9315e510543dfd7
+    validation-parity-with-cores-deep-validation:
+        content-hash: 0612885a659a7926
+        goal-hash: c29d74c0e06faaf2
+        constraints-hash: ff7aed8360c75c22
+        verify-hash: 21fcbaa8a681fe3d
+        objects-hash: cd009dceba92335f
+sources:
+    intents:
+        live-in-editor-validation-surfacing: f5a609f5a762adff
+        save-gating-on-validation-findings: a077571ec459f7e9
+        validation-parity-with-cores-deep-validation: 918bee7baa129a55
+    dialogs:
+        live-in-editor-validation-surfacing: 599f9f6a2d360084
+        save-gating-on-validation-findings: 6f387f1f2aa3d3c3
+        validation-parity-with-cores-deep-validation: 3b275994be5c41d5
+    surface-fragments:
+        inline-finding-marker: 0722dcd41c426f6e
+        save-gating-state: 7d4b601149fc2364
+        validation-count-indicator: 8afc97a29a448850
+        validation-panel: d84c922a9af385bf
+    infrastructure: 0aa79db64e21b7c2
+    surface-yaml: 9c3f6e4629f7d028
+buildfile-sections:
+    fixtures: 53a0048023db0cfb
+    models: ca3d163bab055381

@@ -1,0 +1,621 @@
+feature: domain-model-editor/domain-model-editor-validation
+schema_version: 1
+adapter-set: parlay-studio
+
+# Two-slot depth feature layered onto the domain-model editor the mvp stood up
+# and the relationships feature extended. It spans BOTH adapter-set slots:
+#
+#   application (go-studio-app, root studio/) — adds ONE query endpoint
+#     (POST /api/domain-model/validate) that shells the in-memory draft through
+#     Core's `parlay validate --type domain-model --json` subprocess and maps
+#     the emitted findings into a fields[] payload, and GATES the mvp's existing
+#     save path on error-severity findings BEFORE its compare-and-swap. Both
+#     come from the two infrastructure.md fragments -> two cross-cutting entries.
+#     Real integration sites in the mvp-owned internal/domain/ package:
+#       subsystem.go  — Mount() gains the POST /validate route; New() resolves
+#                       the `parlay` executable once at construction
+#       handlers.go   — new validateHandler; saveHandler runs the gate before Save
+#       subsystem_test.go — the "exactly two endpoints" assertion is reconciled
+#                       (see the persistence-surface note below)
+#
+#   presentation (react-vite-radix-tailwind, root studio/internal/ui) — surfaces
+#     findings live in the editor: a validation panel, inline markers, a header
+#     count indicator, and an error-gated save-bar state. Four surface fragments
+#     -> four React components plus an integration cross-cutting that wires them
+#     into the shared editor page, store, and api client the mvp/relationships
+#     already built.
+#
+# There is no capabilities.yaml for this feature. The validate endpoint is
+# expressed as infrastructure prose (a subprocess wrapper + an HTTP query), not
+# a closed-vocabulary operation over a project entity — matching the sibling
+# mvp/relationships features, whose backend behavior is likewise infrastructure,
+# not `operations:`. So the top-level `operations:` block is absent and there
+# are no `kind: operation` testcases. There is no domain-model.yaml owned by
+# this feature (the model it validates is the PROJECT's runtime
+# domain-model.yaml, serialized from the draft and piped on stdin — not a
+# build-time entity set), so `models:` stays empty and there is no `domain`
+# source-signature. There is no layout-bearing page (no <page>.layout.yaml), so
+# there are no `wiring:` rules and no `bindings:` section.
+#
+# Path convention: this buildfile lives under studio/.parlay/build/... so
+# `parlay check-buildfile` resolves the source root to studio/. Every plan path
+# is relative to that root (internal/domain/... and internal/ui/src/...).
+#
+# Reconciling the mvp's persistence-surface invariant: the mvp infrastructure
+# pins "/api/domain-model exposes exactly two PERSISTENCE endpoints" (GET load,
+# PUT save). This feature adds a THIRD route, POST /api/domain-model/validate,
+# but it is a QUERY, not a persistence operation — it reads nothing from disk
+# and writes nothing. It mounts inside the SAME /api/domain-model route group,
+# so it does not widen the persistence surface: persistence endpoints stay at
+# two. The mvp's subsystem_test.go currently asserts "exactly two routes total";
+# this feature's out-of-process-validate-endpoint cross-cutting updates that
+# assertion to "exactly two persistence endpoints (GET load, PUT save) plus one
+# query endpoint (POST validate), all under the /api/domain-model prefix" — the
+# route count becomes three, the persistence count stays two. This is the
+# coherent registration story the invariant intends.
+
+models: {}
+
+# No `models:` and no fixture `data:` blocks: the "model" validated here is a
+# domain-model.yaml DRAFT submitted in the request body at runtime, not a
+# build-time parlay entity set. Each fixture is a named scenario — the sample
+# draft it represents is described inline and reproduced in the dialogs.
+fixtures:
+  field-type-error-draft:
+    description: >
+      A draft where entities.Order.fields.qty is typed "quantity" — an
+      out-of-set field type. Validated, it yields exactly one finding: code
+      field-type-outside-closed-set, severity error, element path
+      entities.Order.fields.qty, carrying the schema's actionable message.
+      Drives the endpoint's error case, the save-gate block, and the
+      gate-before-etag ordering.
+  clean-draft:
+    description: >
+      A schema-clean draft (two entities, one enum, all field types in the
+      closed set, no orphan refs, schema_version present). Validated, it yields
+      an empty finding list at HTTP 200. Drives the clean-is-empty-list case,
+      the explicit clean count state, and the warning-only save baseline.
+  deprecated-operations-draft:
+    description: >
+      A draft carrying a populated deprecated top-level `operations:` block.
+      Validated, it yields one finding: code domain-operations-deprecated at
+      WARNING severity (the sole warning in the closed vocabulary), element path
+      `operations`. Drives the warning-severity classification and the
+      warning-never-blocks-save rule.
+  whole-model-missing-schema-version-draft:
+    description: >
+      A draft with no schema_version. Validated, it yields code
+      missing-schema-version at error severity carrying the DISTINGUISHED
+      top-level path (not a blank or fabricated element path). Drives the
+      whole-model-finding path token and the panel's highlight-nothing behavior.
+  orphan-enum-ref-draft:
+    description: >
+      A hand-edited draft: the OrderStatus enum was deleted but Order.status
+      still names it ({type: OrderStatus, enum: OrderStatus}). Validated, it
+      yields an undeclared-entity-reference-class finding at error severity,
+      element path entities.Order.fields.status. Drives the load-time inline +
+      panel surfacing and the side-effect-freedom case (on-disk model differs
+      from the submitted draft).
+  mixed-severity-draft:
+    description: >
+      A draft carrying both a field-type-outside-closed-set error AND a
+      populated deprecated `operations:` block (a domain-operations-deprecated
+      warning). Validated, it yields one error finding and one warning finding.
+      Drives the "1 error, 1 warning" count indicator and the visually-distinct
+      error/warning styling across panel, marker, and count.
+  two-error-draft:
+    description: >
+      A freshly-loaded draft carrying two error-severity findings. Drives the
+      blocked save-bar state naming the count before any edit, and the
+      transition back to the normal dirty/save state once both are fixed.
+  stale-etag-invalid-draft:
+    description: >
+      A draft carrying a field-type error whose accompanying etag is ALSO stale
+      (the file changed on disk since load). Drives the gate-before-CAS
+      ordering: the save fails with validation-failed (the gate), not conflict
+      (the etag); once the draft is fixed with the same still-stale etag it then
+      yields conflict.
+  malformed-request:
+    description: >
+      Unparseable draft bytes / a bad request envelope. Drives the one
+      HTTP-error case: validation-failed at 400, distinct from a 200 finding
+      list for a well-formed but schema-invalid draft — the subprocess is never
+      run.
+  parity-corpus:
+    description: >
+      The shared parity fixture corpus: one draft fixture per closed error code
+      (missing-schema-version, schema-version-newer-than-binary,
+      schema-version-unreachable, field-type-outside-closed-set,
+      enum-tone-outside-closed-set, undeclared-entity-reference,
+      relationship-cardinality-unknown, operation-input-field-not-found,
+      domain-operations-deprecated) plus clean fixtures. Each is run through
+      `parlay validate --type domain-model --json` directly AND through the
+      endpoint; the two finding sets must be identical. Drives the parity/drift
+      alarm — since both paths run the same binary it guards the Studio wrapper
+      (request shaping, stdin transport, path mapping), not Core's rules.
+
+targets:
+  presentation:
+    adapter: react-vite-radix-tailwind
+    components:
+      validation-panel:
+        source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+        widget: "ul/li+Tailwind"
+        description: >
+          Sidebar panel (region sidebar, order 40 — peer to the mvp's
+          entity/enum lists at 10/20 and the relationships list at 30) listing
+          every current validation finding. Each row shows the severity, the
+          closed error code, the schema's actionable fix message, and the
+          element path. It is the COMPLETE finding list; inline markers are the
+          in-view subset. Selecting a finding navigates to the owning editor
+          surface (entity form, enum form, relationships panel, diagram) and
+          highlights the element; a whole-model finding (distinguished top-level
+          path) highlights nothing and keeps its fix text expanded in place.
+          Errors and warnings are visually distinct rows. Populated by the
+          trailing revalidation on load and after every committed mutation,
+          recomputed from scratch per validate response with no client-side
+          cache, so it never renders stale findings over fresher ones. The
+          empty state is the explicit clean state — zero findings reads as
+          clean, not merely as the absence of rows.
+        data:
+          inputs:
+            - { name: draft, model: DomainModelDocument, field: "(whole draft)", from: file-read }
+          computed:
+            - { name: findings, from: "the validate endpoint's fields[] for the current draft, recomputed per validate response (no client cache)", type: "Finding[]" }
+            - { name: error-findings, from: "findings whose severity is error", type: "Finding[]" }
+            - { name: warning-findings, from: "findings whose severity is warning (domain-operations-deprecated)", type: "Finding[]" }
+        elements:
+          - { name: finding-rows, widget: "ul/li+Tailwind", bind: findings, visible-when: "findings not empty" }
+          - { name: severity-badge, widget: "Tailwind badge span", bind: "findings[].severity", visible-when: always }
+          - { name: finding-code, widget: "span+Tailwind", bind: "findings[].code", visible-when: always }
+          - { name: finding-message, widget: "Radix Toast+Tailwind", bind: "findings[].message", visible-when: always }
+          - { name: element-path, widget: "span+Tailwind", bind: "findings[].path", visible-when: always }
+          - { name: empty-clean-state, widget: "Custom empty-state component", bind: findings, visible-when: "findings empty" }
+        actions:
+          - { name: select-finding, widget: "Radix Select / Radio Group", enabled-when: always, effect: "emit:selectFinding", target: selectFinding }
+          - { name: navigate-to-element, widget: "Row click+useNavigate", enabled-when: "finding has an element path (not whole-model)", effect: "emit:navigateToElement", target: navigateToElement }
+          - { name: inspect-finding, widget: "Radix Dialog as Sheet", enabled-when: always, effect: "emit:inspectFinding", target: inspectFinding }
+
+      inline-finding-marker:
+        source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+        widget: "Tailwind badge span"
+        description: >
+          The anchored, in-view rendering of a finding at the element it names
+          (region main, order 35) — a marker on the entity field row, enum value
+          row, relationship row, or (when the diagram is in view) a node/edge
+          badge, carrying the finding's message on inspect. Renders ONLY for
+          findings whose element is representable in the current view; the
+          validation panel remains the complete list. Error and warning markers
+          are visually distinct, matching the finding's severity. Presentation
+          only — a marker never blocks an editing gesture and never mutates the
+          draft. Markers for cross-element states a form cannot see locally (a
+          `ref` whose target was hand-deleted, a fixture migrated with an
+          out-of-set type) are exactly what this surfaces that the mvp's
+          closed-vocabulary form guards cannot. Anchoring is driven by a
+          findings-by-element-path selector on the editor store (see the
+          validation-surfacing-integration cross-cutting), which the mvp entity
+          and enum form panels consume to place the marker at the offending row.
+        data:
+          computed:
+            - { name: finding, from: "the finding whose element path resolves to this in-view element, from the store's findings-by-path selector", type: "Finding | null" }
+        elements:
+          - { name: marker-badge, widget: "Tailwind badge span", bind: finding.severity, visible-when: "a finding anchors to this in-view element" }
+          - { name: marker-message, widget: "Radix Toast+Tailwind", bind: finding.message, visible-when: "marker inspected" }
+        actions:
+          - { name: inspect-marker, widget: "Radix Dialog as Sheet", enabled-when: "a finding anchors to this element", effect: "emit:inspectMarker", target: inspectMarker }
+
+      validation-count-indicator:
+        source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+        widget: "Tailwind badge span"
+        description: >
+          Persistent header indicator (region header, order 20) near the save
+          bar showing the current finding tally (e.g. "2 errors, 1 warning"), so
+          a clean model reads as clean at a glance. Errors and warnings are
+          counted and styled distinctly. A model with zero findings shows an
+          explicit clean state ("No problems"), not merely a hidden indicator.
+          Clicking it opens the validation panel. The count flips to the clean
+          state after the trailing revalidation that clears the last finding,
+          driven by the debounced revalidation whose trigger and stale-response
+          discarding are pinned in the infrastructure out-of-process-validation
+          fragment.
+        data:
+          computed:
+            - { name: error-count, from: "count of error-severity findings from the current validate response", type: number }
+            - { name: warning-count, from: "count of warning-severity findings from the current validate response", type: number }
+            - { name: is-clean, from: "true when the validate response is an empty finding list", type: boolean }
+        elements:
+          - { name: error-count-badge, widget: "Tailwind badge span", bind: error-count, visible-when: "error-count > 0" }
+          - { name: warning-count-badge, widget: "Tailwind badge span", bind: warning-count, visible-when: "warning-count > 0" }
+          - { name: clean-state, widget: "span+Tailwind", bind: is-clean, visible-when: "is-clean" }
+        actions:
+          - { name: open-validation-panel, widget: "Row click+useNavigate", enabled-when: always, effect: "emit:openValidationPanel", target: openValidationPanel }
+
+      save-gating-state:
+        source: "@domain-model-editor-validation/save-gating-on-validation-findings"
+        widget: "Tailwind badge span"
+        description: >
+          The save affordance's error-gated state, layered onto the mvp save bar
+          (region footer, order 20 — the mvp save bar is footer order 10). While
+          any error-severity finding exists, the save bar shows a BLOCKED state
+          naming the error count and linking to the validation panel — it
+          REPLACES the Save affordance with an explanation rather than disabling
+          it silently, so the blocked save is never a surprise. Warning-only
+          findings (domain-operations-deprecated) never gate — the save bar
+          shows the normal dirty/save affordance and the save proceeds. The
+          blocked state is present on load before any edit when a freshly-loaded
+          file already carries errors, so the repair scope is visible up front;
+          it transitions back to the normal dirty/save state once the trailing
+          revalidation clears the last error. There is no force-save or override
+          affordance — the client-side blocked state is an affordance, not the
+          enforcement point; the authoritative server-side gate (and its
+          ordering before the compare-and-swap etag check) is the
+          save-validation-gate-before-cas cross-cutting.
+        data:
+          computed:
+            - { name: error-count, from: "count of error-severity findings from the current validate response", type: number }
+            - { name: is-blocked, from: "true when error-count > 0 (warnings never block)", type: boolean }
+        elements:
+          - { name: blocked-save-bar, widget: "Tailwind badge span", bind: error-count, visible-when: "is-blocked" }
+          - { name: view-problems-link, widget: "span+Tailwind", bind: error-count, visible-when: "is-blocked" }
+        actions:
+          - { name: view-problems, widget: "Row click+useNavigate", enabled-when: "is-blocked", effect: "emit:openValidationPanel", target: openValidationPanel }
+
+    routes:
+      - path: /domain-model
+        page: Domain Model Editor
+        flow-pattern: "TanStack Table+Radix Dialog+react-hook-form+Radix AlertDialog"
+        # The page already exists (created by the mvp, extended by relationships).
+        # This feature ADDS the validation-count-indicator to the header, the
+        # validation-panel to the sidebar, inline-finding-marker anchoring in the
+        # main region, and the save-gating-state to the footer. The assembly edit
+        # is carried by the validation-surfacing-integration cross-cutting; this
+        # route documents where the new components land.
+        regions:
+          header:
+            components: [validation-count-indicator]
+          sidebar:
+            components: [validation-panel]
+          main:
+            components: [inline-finding-marker]
+          footer:
+            components: [save-gating-state]
+
+cross-cutting:
+  - id: out-of-process-validate-endpoint
+    source: "@domain-model-editor-validation/validation-parity-with-cores-deep-validation"
+    target-files:
+      - internal/domain/subsystem.go
+      - internal/domain/handlers.go
+      - internal/domain/subsystem_test.go
+    target-creates:
+      - internal/domain/validate.go
+      - internal/domain/validate_test.go
+      - internal/domain/parity_test.go
+      - internal/domain/no_core_import_test.go
+    transform: |
+      Add the out-of-process validation query endpoint to the mvp's
+      domain-model subsystem, obtaining findings ONLY by shelling out to Core's
+      `parlay validate --type domain-model --json` — Studio imports no Core
+      package and reimplements no rule.
+
+      CREATE internal/domain/validate.go:
+        The subprocess wrapper. Validate(ctx, parlayBin string, model Model)
+        ([]Finding, error):
+          - Serializes the in-memory draft to YAML (reuse the mvp's
+            deterministic Serialize where possible; the validator needs the
+            submitted bytes, not the on-disk file).
+          - Runs `<parlayBin> validate --type domain-model --json` with the YAML
+            on the subprocess's stdin (exec.CommandContext, stdin pipe).
+          - Parses the emitted structured finding list; maps each finding into a
+            Finding{Field (element path), Code, Severity, Message} — the closed
+            error code UNCHANGED as Core emits it, the element path anchoring it
+            to an entity/field/enum/enum-value/relationship (the distinguished
+            top-level path for whole-model findings), the schema's actionable
+            message, and the severity taken verbatim from Core's authoring-mode
+            table (domain-operations-deprecated is the sole warning; every other
+            code is an error). Studio invents, renames, and reclassifies
+            nothing.
+          - Is a PURE function over the submitted draft: reads nothing from
+            disk, mutates nothing, returns findings computed from the draft
+            bytes alone, independent of the on-disk model.
+          - Distinguishes a well-formed-but-schema-invalid draft (a finding
+            list, possibly empty) from a malformed request (unparseable bytes) —
+            the latter never runs the subprocess.
+        Also resolve the `parlay` executable ONCE, not per request:
+        locateParlayBinary() resolving from the running Studio process's own
+        binary location or an explicit configured path (mirror Core's
+        parlay-studio detection in core/internal/config/studio.go — an env/PATH
+        LookPath gate plus an executable-bit stat check). The resolved path is
+        stored on the Subsystem at construction (see subsystem.go) so both the
+        endpoint and the save gate reuse it.
+
+      MODIFY internal/domain/subsystem.go:
+        - New(root) resolves the `parlay` binary path once (locateParlayBinary)
+          and stores it on Subsystem (e.g. a parlayBin field) alongside Root.
+          Signature stays New(root string) *Subsystem.
+        - Mount() gains ONE route in the SAME /api/domain-model group:
+            POST /api/domain-model/validate -> validateHandler
+          This is a QUERY, not persistence: the two persistence endpoints (GET
+          /model load, PUT /model save) are unchanged and the persistence
+          surface does not widen. No route is mounted outside the prefix.
+
+      MODIFY internal/domain/handlers.go:
+        Add validateHandler(w, r): decode the submitted draft; on unparseable
+        bytes / a bad envelope return the validation-failed envelope at 400
+        (field "body") WITHOUT running the subprocess. Otherwise call
+        Validate(ctx, s.parlayBin, draft) and return HTTP 200 with a fields[]
+        payload carrying every finding (EMPTY list when clean — a finding list
+        is a query result, never a 4xx). Wrap internal errors with %w for the
+        harness envelope middleware.
+
+      MODIFY internal/domain/subsystem_test.go:
+        Reconcile TestMountRegistersExactlyTwoEndpointsUnderPrefix with the new
+        query route: assert exactly two PERSISTENCE endpoints (GET /model, PUT
+        /model) plus one QUERY endpoint (POST /validate) — three routes total,
+        all under the /api/domain-model prefix, none outside it. The persistence
+        surface stays at two; the query does not widen it.
+
+      CREATE internal/domain/validate_test.go:
+        Wrapper-level unit coverage against the draft fixtures: a
+        field-type-outside-closed-set draft yields exactly that code with the
+        entities.<E>.fields.<F> path; a clean draft yields an empty list; a
+        deprecated-operations draft yields domain-operations-deprecated at
+        WARNING severity while other codes are errors; a
+        missing-schema-version draft yields the distinguished top-level path;
+        malformed bytes are rejected before the subprocess runs; validating a
+        draft writes nothing and returns findings from the draft bytes alone
+        regardless of the on-disk model (side-effect-freedom). Subprocess exec
+        is faked/injected so the unit suite does not require a live `parlay`.
+
+      CREATE internal/domain/parity_test.go:
+        The parity/drift alarm. Run the shared parity-corpus (one fixture per
+        closed code plus clean fixtures) through BOTH `parlay validate --type
+        domain-model --json` directly AND POST /api/domain-model/validate, and
+        assert the two finding sets are identical per fixture. Because both run
+        the same binary this guards the Studio wrapper (request shaping, stdin
+        transport, path mapping), not Core's rules; a mismatch fails the build.
+        Tag with //go:build integration if it needs a live built `parlay`
+        (mirror the adapter's integration-tag convention), and place the corpus
+        under package_test/testdata.
+
+      CREATE internal/domain/no_core_import_test.go:
+        The no-Core-import guard. Assert NO Studio package imports Core (walk
+        the studio module's import graph — go/packages or `go list -deps` /
+        parsed imports — and fail if any path under core/ appears). Mirrors the
+        existing forbidden-import guard style in
+        internal/deployer/subcommands_test.go. Failing it blocks the build: the
+        editor reaches the validator only out of process.
+    introduces:
+      - "func Validate(ctx, parlayBin string, model Model) ([]Finding, error) — subprocess wrapper; pure over the draft"
+      - "func locateParlayBinary() (string, error) — resolve the parlay executable once (env/PATH/own-binary), executable-bit checked"
+      - "type Finding { Field/path, Code, Severity, Message } — closed code + element path + message + Core-emitted severity, unchanged"
+      - "Subsystem.parlayBin field set at New(); Mount adds POST /api/domain-model/validate -> validateHandler"
+      - "handlers.go: validateHandler — 200 fields[] for well-formed drafts (empty when clean); validation-failed 400 only for malformed requests"
+    caching: "parlay binary path resolved once at subsystem construction, not per request"
+    backward-compatible: yes
+
+  - id: save-validation-gate-before-cas
+    source: "@domain-model-editor-validation/save-gating-on-validation-findings"
+    target-files:
+      - internal/domain/handlers.go
+      - internal/domain/handlers_test.go
+    transform: |
+      Gate the mvp's save path on error-severity findings, ordered BEFORE the
+      compare-and-swap, reusing the same out-of-process validator the validate
+      endpoint uses (no second validation code path, no Studio-side rule).
+
+      MODIFY internal/domain/handlers.go (saveHandler):
+        After decoding the save request and BEFORE calling Save (which owns the
+        etag compare-and-swap), run the gate:
+          - Validate(ctx, s.parlayBin, req.Model).
+          - If ANY finding is error-severity: reject with the validation-failed
+            envelope listing the error findings and return WITHOUT calling Save
+            — nothing touches disk. Warning-severity findings
+            (domain-operations-deprecated) NEVER block, alone or alongside
+            errors.
+          - Otherwise proceed into the unchanged Save (CAS): a stale etag then
+            yields the conflict envelope exactly as before.
+        Placing the gate in saveHandler ahead of Save gives the required
+        ordering (validation-failed precedes conflict) WITHOUT changing Save's
+        signature or the mvp's CAS logic — so save.go, save_test.go, and the
+        deterministic serializer are untouched and their invariants hold. The
+        gate is server-side and authoritative: a save submitted directly to the
+        PUT endpoint (bypassing the UI's blocked-save affordance) is gated
+        identically; there is no force-save or override path through the editor.
+
+      MODIFY internal/domain/handlers_test.go:
+        Add gate coverage at the handler level: a save whose draft carries a
+        field-type-outside-closed-set error returns validation-failed with the
+        finding listed and the on-disk file untouched; a save whose only finding
+        is domain-operations-deprecated succeeds and writes the file; an invalid
+        draft with a stale etag returns validation-failed (the gate), not
+        conflict (the etag), and a follow-up with the draft fixed and the same
+        stale etag then returns conflict (gate-before-CAS ordering); a direct
+        API save with an error-carrying draft is rejected identically. Fake the
+        validator so the handler suite does not require a live `parlay`.
+    introduces:
+      - "handlers.go saveHandler: error-severity gate via Validate() before Save; validation-failed precedes conflict; warnings never block"
+    caching: none
+    backward-compatible: yes
+
+  - id: validation-surfacing-integration
+    source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    target-files:
+      - internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+      - internal/ui/src/store/editorStore.ts
+      - internal/ui/src/lib/api.ts
+      - internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx
+      - internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx
+      - internal/ui/src/components/SaveBar.tsx
+    transform: |
+      Wire the four validation components into the shared "Domain Model Editor"
+      page and editor store the mvp/relationships already built, and drive the
+      live-revalidation lifecycle. All six files exist on disk (mvp/relationships
+      output) — this is a modifies-only integration.
+
+      MODIFY internal/ui/src/lib/api.ts:
+        Add a typed validateModel(draft) client wrapping POST
+        /api/domain-model/validate and its fields[] payload (each entry: closed
+        code, element path, severity, message). It returns the finding list for
+        a well-formed draft (empty when clean) and surfaces a malformed-request
+        validation-failed as the harness error envelope, distinct from a finding
+        list. Follows the thin-fetch-client + typed error-envelope convention
+        the mvp established.
+
+      MODIFY internal/ui/src/store/editorStore.ts:
+        Extend the Zustand editor store with the validation slice:
+          - findings state recomputed from scratch per validate response (NO
+            client-side finding cache);
+          - revalidation triggered on LOAD and on every committed draft mutation,
+            DEBOUNCED so a rapid burst produces one trailing call against the
+            final draft;
+          - each validate call tagged to the draft it was issued for; a response
+            superseded by a newer draft is DISCARDED, never rendered over fresher
+            findings (stale-response discarding);
+          - derived selectors: error-count, warning-count, is-clean, and a
+            findings-by-element-path map the inline markers and navigation
+            consume;
+          - finding navigation: resolve an element path to its owning editor
+            surface (entity form, enum form, relationships panel, diagram) and
+            highlight the element; a whole-model finding highlights nothing;
+          - the error-gated save state (is-blocked = any error finding) the save
+            bar reads.
+        Validation state is presentation-only — it never blocks editing gestures
+        and never mutates the draft.
+
+      MODIFY internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx:
+        Mount ValidationCountIndicator in the header (near the save bar),
+        ValidationPanel in the sidebar (order 40, below the entity/enum/
+        relationship lists), and SaveGatingState in the footer (layered onto the
+        mvp SaveBar). Provide the store's findings/selectors to the form panels
+        so inline markers anchor at their elements. Trigger the initial
+        load-time revalidation so a freshly-loaded invalid file shows findings —
+        and the blocked save bar — before any edit.
+
+      MODIFY internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx:
+        Render InlineFindingMarker at the offending field row, anchored via the
+        store's findings-by-element-path selector (entities.<E>.fields.<F>).
+        Error and warning markers are visually distinct; the marker is
+        presentation-only and never blocks the form.
+
+      MODIFY internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx:
+        Render InlineFindingMarker at the offending enum value row, anchored via
+        the same selector (enum-value paths). Presentation-only.
+
+      MODIFY internal/ui/src/components/SaveBar.tsx:
+        When error findings exist, defer the Save affordance to SaveGatingState's
+        blocked state (naming the error count, linking to the panel) rather than
+        rendering a bare disabled button; with no errors (warnings only or
+        clean) render the mvp's normal dirty/save affordance. The client-side
+        blocked state is an affordance only — the authoritative gate is
+        server-side (save-validation-gate-before-cas).
+    introduces:
+      - "api.ts: validateModel(draft) -> Finding[] | validation-failed envelope"
+      - "editorStore: validation slice — debounced revalidate on load + committed mutation, stale-response discarding, findings recomputed per response, error/warning counts + is-clean + findings-by-path + is-blocked selectors, element-path navigation"
+      - "DomainModelEditorPage: mounts ValidationCountIndicator (header), ValidationPanel (sidebar), SaveGatingState (footer); provides findings to form panels"
+      - "EntityFormPanel / EnumFormPanel: InlineFindingMarker anchored at the offending row"
+      - "SaveBar: defers to the blocked gating state when errors exist"
+    caching: none
+    backward-compatible: yes
+
+plan:
+  modifies:
+    # Application — mvp-owned domain subsystem files this feature extends
+    - path: internal/domain/subsystem.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    - path: internal/domain/handlers.go
+      sources:
+        - cross-cutting/out-of-process-validate-endpoint
+        - cross-cutting/save-validation-gate-before-cas
+    - path: internal/domain/subsystem_test.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    - path: internal/domain/handlers_test.go
+      sources: [cross-cutting/save-validation-gate-before-cas]
+    # Presentation — shared editor files the mvp/relationships built
+    - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+      sources: [cross-cutting/validation-surfacing-integration]
+    - path: internal/ui/src/store/editorStore.ts
+      sources: [cross-cutting/validation-surfacing-integration]
+    - path: internal/ui/src/lib/api.ts
+      sources: [cross-cutting/validation-surfacing-integration]
+    - path: internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx
+      sources: [cross-cutting/validation-surfacing-integration]
+    - path: internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx
+      sources: [cross-cutting/validation-surfacing-integration]
+    - path: internal/ui/src/components/SaveBar.tsx
+      sources: [cross-cutting/validation-surfacing-integration]
+  creates:
+    # Application — new subprocess wrapper + guard/parity tests
+    - path: internal/domain/validate.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    - path: internal/domain/validate_test.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    - path: internal/domain/parity_test.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    - path: internal/domain/no_core_import_test.go
+      sources: [cross-cutting/out-of-process-validate-endpoint]
+    # Presentation — four validation components (one per surface fragment)
+    - path: internal/ui/src/features/domain-model-editor/ValidationPanel.tsx
+      sources: [component/validation-panel]
+    - path: internal/ui/src/features/domain-model-editor/InlineFindingMarker.tsx
+      sources: [component/inline-finding-marker]
+    - path: internal/ui/src/features/domain-model-editor/ValidationCountIndicator.tsx
+      sources: [component/validation-count-indicator]
+    - path: internal/ui/src/components/SaveGatingState.tsx
+      sources: [component/save-gating-state]
+  deletes: []
+  targets:
+    presentation:
+      modifies:
+        - path: internal/ui/src/features/domain-model-editor/DomainModelEditorPage.tsx
+          sources: [cross-cutting/validation-surfacing-integration]
+        - path: internal/ui/src/store/editorStore.ts
+          sources: [cross-cutting/validation-surfacing-integration]
+        - path: internal/ui/src/lib/api.ts
+          sources: [cross-cutting/validation-surfacing-integration]
+        - path: internal/ui/src/features/domain-model-editor/EntityFormPanel.tsx
+          sources: [cross-cutting/validation-surfacing-integration]
+        - path: internal/ui/src/features/domain-model-editor/EnumFormPanel.tsx
+          sources: [cross-cutting/validation-surfacing-integration]
+        - path: internal/ui/src/components/SaveBar.tsx
+          sources: [cross-cutting/validation-surfacing-integration]
+      creates:
+        - path: internal/ui/src/features/domain-model-editor/ValidationPanel.tsx
+          sources: [component/validation-panel]
+        - path: internal/ui/src/features/domain-model-editor/InlineFindingMarker.tsx
+          sources: [component/inline-finding-marker]
+        - path: internal/ui/src/features/domain-model-editor/ValidationCountIndicator.tsx
+          sources: [component/validation-count-indicator]
+        - path: internal/ui/src/components/SaveGatingState.tsx
+          sources: [component/save-gating-state]
+      deletes: []
+    application:
+      modifies:
+        - path: internal/domain/subsystem.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+        - path: internal/domain/handlers.go
+          sources:
+            - cross-cutting/out-of-process-validate-endpoint
+            - cross-cutting/save-validation-gate-before-cas
+        - path: internal/domain/subsystem_test.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+        - path: internal/domain/handlers_test.go
+          sources: [cross-cutting/save-validation-gate-before-cas]
+      creates:
+        - path: internal/domain/validate.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+        - path: internal/domain/validate_test.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+        - path: internal/domain/parity_test.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+        - path: internal/domain/no_core_import_test.go
+          sources: [cross-cutting/out-of-process-validate-endpoint]
+      deletes: []
+
+source-signatures:
+  intents: "sha256:b5687da943fc6462a43fd1d0716e735e7b959ccd54f9dd0f7f470997ee9710d3"
+  dialogs: "sha256:4e1ce9b1bb899dedab4f3b9a5b13e2bf77c634419041fa060341e40308207220"
+  surface: "sha256:9c3f6e4629f7d028b6f3af98f53bd22a481d66fbb83ba020efc8f80f3e8a8fbb"
+  infrastructure: "sha256:0aa79db64e21b7c21c4d8625c9b783d69938fad9eee41099e43739bbfa0265d0"
+  adapter-version: "sha256:e47713c5116af2b1a9b9c20463d4bf77b1db3121290e7f24ed887e47c03e57be"
+  adapter-set: "sha256:b4de337cdab071c0ccf3f0c45ae44b469e801360ebcb6977047bcee28d3a9c2f"

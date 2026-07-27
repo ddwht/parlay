@@ -1,6 +1,7 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: cross-cutting/domain-model-subsystem-registration
 // parlay-artifact: test
+// parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/out-of-process-validate-endpoint
 
 package domain
 
@@ -30,10 +31,12 @@ func TestSubsystemSatisfiesToolRegistration(t *testing.T) {
 	var _ server.ToolRegistration = New("/project")
 }
 
-// TestMountRegistersExactlyTwoEndpointsUnderPrefix asserts Mount registers only
-// the two persistence endpoints, both under /api/domain-model, and nothing
-// outside that prefix.
-func TestMountRegistersExactlyTwoEndpointsUnderPrefix(t *testing.T) {
+// TestMountRegistersPersistencePlusQueryUnderPrefix asserts Mount registers
+// exactly two PERSISTENCE endpoints (GET load, PUT save) plus one QUERY
+// endpoint (POST validate) — three routes total, all under /api/domain-model
+// and nothing outside it. The validate route is a query; the persistence
+// surface stays at exactly two.
+func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 	r := chi.NewRouter()
 	New("/project").Mount(r)
 
@@ -47,23 +50,35 @@ func TestMountRegistersExactlyTwoEndpointsUnderPrefix(t *testing.T) {
 		t.Fatalf("chi.Walk: %v", err)
 	}
 
-	if len(routes) != 2 {
-		t.Fatalf("registered %d routes, want exactly 2: %+v", len(routes), routes)
+	if len(routes) != 3 {
+		t.Fatalf("registered %d routes, want exactly 3 (2 persistence + 1 query): %+v", len(routes), routes)
 	}
-	var haveGet, havePut bool
+
+	var haveGet, havePut, havePost bool
+	var persistence int
 	for _, rt := range routes {
 		if !strings.HasPrefix(rt.path, "/api/domain-model") {
 			t.Fatalf("route %s %s is mounted outside the /api/domain-model prefix", rt.method, rt.path)
 		}
-		switch rt.method {
-		case http.MethodGet:
+		switch {
+		case rt.method == http.MethodGet && rt.path == "/api/domain-model/model":
 			haveGet = true
-		case http.MethodPut:
+			persistence++
+		case rt.method == http.MethodPut && rt.path == "/api/domain-model/model":
 			havePut = true
+			persistence++
+		case rt.method == http.MethodPost && rt.path == "/api/domain-model/validate":
+			havePost = true
 		}
 	}
 	if !haveGet || !havePut {
-		t.Fatalf("want a GET (load) and a PUT (save) endpoint; got %+v", routes)
+		t.Fatalf("want a GET (load) and a PUT (save) persistence endpoint; got %+v", routes)
+	}
+	if !havePost {
+		t.Fatalf("want a POST /validate query endpoint; got %+v", routes)
+	}
+	if persistence != 2 {
+		t.Fatalf("persistence surface widened: want exactly 2 persistence endpoints, got %d: %+v", persistence, routes)
 	}
 }
 

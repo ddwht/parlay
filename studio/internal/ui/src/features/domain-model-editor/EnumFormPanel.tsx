@@ -1,6 +1,8 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: enum-form-panel
+// parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/validation-surfacing-integration
 import { useEffect, useState } from 'react';
+import { InlineFindingMarker } from './InlineFindingMarker';
 import {
   DndContext,
   closestCenter,
@@ -87,6 +89,9 @@ function SortableValueRow({
         <GripVertical className="h-4 w-4" aria-hidden />
       </button>
       <span className="flex-1 text-sm text-slate-800">{value.value}</span>
+      <InlineFindingMarker
+        path={`enums.${enumName}.values.${value.value}`}
+      />
       {value.label && (
         <span className="text-xs text-slate-500">{value.label}</span>
       )}

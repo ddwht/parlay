@@ -1,6 +1,7 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: cross-cutting/embedded-ui-bundle-and-stack-pin
 // parlay-extends: domain-model-editor/domain-model-editor-relationships/cross-cutting/relationships-editor-integration
+// parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/validation-surfacing-integration
 import { useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { EntityList } from './EntityList';
@@ -11,9 +12,12 @@ import { EnumFormPanel } from './EnumFormPanel';
 import { RelationshipFormPanel } from './RelationshipFormPanel';
 import { ERDiagramView } from './ERDiagramView';
 import { DeprecatedOperationsNotice } from './DeprecatedOperationsNotice';
+import { ValidationPanel } from './ValidationPanel';
+import { ValidationCountIndicator } from './ValidationCountIndicator';
 import { DoneControl } from './DoneControl';
 import { ConflictReloadPrompt } from './ConflictReloadPrompt';
 import { SaveBar } from '../../components/SaveBar';
+import { SaveGatingState } from '../../components/SaveGatingState';
 import { ErrorEnvelopeFeedback } from '../../components/ErrorEnvelopeFeedback';
 import { SessionEndedScreen } from '../../components/SessionEndedScreen';
 
@@ -61,7 +65,10 @@ export function DomainModelEditorPage() {
     <div className="flex h-screen flex-col bg-slate-50 text-slate-900">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
         <h1 className="text-base font-semibold">Domain Model Editor</h1>
-        <DoneControl onShutdown={endSession} />
+        <div className="flex items-center gap-3">
+          <ValidationCountIndicator />
+          <DoneControl onShutdown={endSession} />
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -70,6 +77,7 @@ export function DomainModelEditorPage() {
             <EntityList />
             <EnumList />
             <RelationshipList />
+            <ValidationPanel />
           </div>
         </aside>
 
@@ -127,6 +135,9 @@ export function DomainModelEditorPage() {
       </div>
 
       <footer className="shrink-0">
+        <div className="px-4 pt-2">
+          <SaveGatingState />
+        </div>
         <SaveBar />
       </footer>
 

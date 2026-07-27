@@ -1,0 +1,53 @@
+feature: domain-model-editor-validation
+
+fragments:
+  - name: Validation panel
+    shows: data-list, status, message, empty-state
+    actions: select-one, navigate-drill, inspect
+    source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    page: Domain Model Editor
+    region: sidebar
+    order: 40
+    notes:
+      - Model-wide list of every current validation finding — the complete finding list, of which the inline markers are the in-view subset. Each row shows the severity, the closed error code, the schema's actionable fix message, and the element path.
+      - Selecting a finding navigates to the owning editor surface (entity form, enum form, relationships panel, diagram) and highlights the element; a whole-model finding (distinguished top-level path) highlights nothing and keeps its fix text expanded in place.
+      - Errors and warnings are visually distinct rows; `domain-operations-deprecated` is the sole warning, everything else an error — the classification is Core's, surfaced through the validate response, never recomputed here.
+      - Populated by the trailing revalidation on load and after every committed mutation; recomputed from scratch per validate response with no client-side finding cache, so it never renders stale findings over fresher ones.
+      - Empty-state is the explicit clean state — zero findings reads as clean, not merely as the absence of rows. Peer to the entity/enum/relationship lists (sidebar orders 10, 20, 30).
+
+  - name: Inline finding marker
+    shows: status, message
+    actions: inspect
+    source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    page: Domain Model Editor
+    region: main
+    order: 35
+    notes:
+      - The anchored, in-view rendering of a finding at the element it names — a marker on the entity field row, enum value row, relationship row, or (when the diagram is in view) a node/edge badge, carrying the finding's message on inspect.
+      - Renders only for findings whose element is representable in the current view; the validation panel remains the complete list. Error and warning markers are visually distinct, matching the finding's severity.
+      - Presentation-only — a marker never blocks an editing gesture and never mutates the draft. Markers for cross-element states a form cannot see locally (a `ref` whose target was hand-deleted, a fixture migrated with an out-of-set type) are exactly what this surfaces that the MVP's closed-vocabulary form guards cannot.
+
+  - name: Validation count indicator
+    shows: status, message
+    actions: navigate-drill
+    source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    page: Domain Model Editor
+    region: header
+    order: 20
+    notes:
+      - Persistent header indicator near the save bar showing the current finding tally (e.g. "2 errors, 1 warning"), so a clean model reads as clean at a glance. Errors and warnings are counted and styled distinctly.
+      - A model with zero findings shows an explicit clean state ("No problems"), not merely a hidden indicator.
+      - Clicking it opens the validation panel. The count flips to the clean state after the trailing revalidation that clears the last finding — driven by the debounced revalidation, whose trigger and stale-response discarding are pinned alongside the endpoint in the infrastructure out-of-process-validation fragment.
+
+  - name: Save gating state
+    shows: status, message
+    actions: navigate-drill
+    source: "@domain-model-editor-validation/save-gating-on-validation-findings"
+    page: Domain Model Editor
+    region: footer
+    order: 20
+    notes:
+      - The save affordance's error-gated state, layered onto the MVP save bar (footer order 10). While any error-severity finding exists, the save bar shows a blocked state naming the error count and linking to the validation panel — it replaces the Save affordance with an explanation rather than disabling it silently, so the blocked save is never a surprise.
+      - Warning-only findings (`domain-operations-deprecated`) never gate — the save bar shows the normal dirty/save affordance and the save proceeds.
+      - The blocked state is present on load before any edit when a freshly-loaded file already carries errors, so the repair scope is visible up front. It transitions back to the normal dirty/save state once the trailing revalidation clears the last error.
+      - There is no force-save or override affordance. The client-side blocked state is an affordance, not the enforcement point; the authoritative server-side gate (and its ordering before the compare-and-swap etag check) is pinned in the infrastructure save-gate fragment.

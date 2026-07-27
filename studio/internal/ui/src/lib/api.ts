@@ -1,11 +1,32 @@
 // parlay-feature: domain-model-editor/domain-model-editor-mvp
 // parlay-component: cross-cutting/embedded-ui-bundle-and-stack-pin
+// parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/validation-surfacing-integration
 import type { DomainModelDocument } from '../types/domain';
 
 export interface ModelEnvelope {
   model: DomainModelDocument;
   etag: string;
 }
+
+/** Finding severity — the closed set Core emits. */
+export type FindingSeverity = 'error' | 'warning';
+
+/**
+ * One validation finding as returned by the validate endpoint: the element
+ * path (`field`, the distinguished top-level token for a whole-model finding),
+ * the closed error `code`, the Core-emitted `severity`, and the human
+ * `message` / actionable `fix`. Studio renders these verbatim.
+ */
+export interface Finding {
+  field: string;
+  code: string;
+  severity: FindingSeverity;
+  message: string;
+  fix?: string;
+}
+
+/** The distinguished element path a whole-model finding carries. */
+export const WHOLE_MODEL_PATH = '<domain-model>';
 
 export interface FieldError {
   field: string;
@@ -46,6 +67,11 @@ export class ApiError extends Error {
 }
 
 const MODEL_URL = '/api/domain-model/model';
+const VALIDATE_URL = '/api/domain-model/validate';
+
+interface ValidateEnvelope {
+  fields: Finding[];
+}
 
 interface ConflictEnvelope {
   code: 'conflict';
@@ -116,6 +142,40 @@ export async function loadModel(): Promise<ModelEnvelope> {
     throwFromEnvelope(await res.json().catch(() => ({})));
   }
   return (await res.json()) as ModelEnvelope;
+}
+
+/**
+ * Validate a draft out of process via POST /api/domain-model/validate. It
+ * returns the complete finding list for a well-formed draft (an empty array
+ * when clean) and surfaces a malformed-request `validation-failed` as an
+ * ApiError, distinct from a finding list. Follows the thin-fetch-client +
+ * typed error-envelope convention the mvp established.
+ */
+export async function validateModel(
+  model: DomainModelDocument,
+): Promise<Finding[]> {
+  let res: Response;
+  try {
+    res = await fetch(VALIDATE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ model }),
+    });
+  } catch (err) {
+    throw new ApiError('network-error', {
+      message: err instanceof Error ? err.message : 'Network request failed.',
+    });
+  }
+  if (!res.ok) {
+    // A malformed request is the one HTTP-error case (validation-failed);
+    // a well-formed-but-invalid draft is a 200 finding list, never a 4xx.
+    throwFromEnvelope(await res.json().catch(() => ({})));
+  }
+  const env = (await res.json()) as ValidateEnvelope;
+  return env.fields ?? [];
 }
 
 export async function saveModel(

@@ -1,0 +1,15 @@
+feature: domain-model-editor/domain-model-editor-validation
+reviewed_at: "2026-07-27T12:55:59Z"
+reviewed_by: dwht
+review_method: cli
+buildfile_hash: sha256:d3e78b23561d3b28437e8707fc53c399611d259487021df1b6f8008e63776fdb
+testcases_hash: sha256:2c7e578148180cc814a44f5c08937ee009b80b7c3adecc089f0014c5dfc08644
+approved_suites:
+    - validation-panel
+    - inline-finding-marker
+    - validation-count-indicator
+    - save-gating-state
+    - out-of-process-validate-endpoint
+    - validate-endpoint-parity-corpus
+    - no-core-import-guard
+    - save-validation-gate-before-cas
