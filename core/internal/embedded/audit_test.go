@@ -435,7 +435,12 @@ func TestBuildfileSourceSignaturesEnforcementLayerDocumented(t *testing.T) {
 	body := string(content)
 
 	required := []string{
-		"Enforcement layer: skill-mechanical, not CLI",
+		// The gate stays skill-side even though the values it compares are
+		// now computed by `parlay internal scaffold-signatures`. Splitting
+		// those two is the point: hashing a file is mechanical and belongs
+		// in Go, while refusing to emit is a phase decision.
+		"The gate itself stays skill-mechanical, not CLI",
+		"scaffold-signatures",
 		"HashedSources",
 		".baseline.yaml",
 	}
