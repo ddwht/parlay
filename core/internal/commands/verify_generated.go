@@ -31,11 +31,11 @@ type verifyFileEntry struct {
 }
 
 type verifyOutput struct {
-	Feature      string            `json:"feature"`
-	HasHashes    bool              `json:"has_hashes"`
-	Stable       []verifyFileEntry `json:"stable,omitempty"`
-	Modified     []verifyFileEntry `json:"modified,omitempty"`
-	Missing      []verifyFileEntry `json:"missing,omitempty"`
+	Feature   string            `json:"feature"`
+	HasHashes bool              `json:"has_hashes"`
+	Stable    []verifyFileEntry `json:"stable,omitempty"`
+	Modified  []verifyFileEntry `json:"modified,omitempty"`
+	Missing   []verifyFileEntry `json:"missing,omitempty"`
 }
 
 func runVerifyGenerated(cmd *cobra.Command, args []string) error {

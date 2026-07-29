@@ -60,8 +60,8 @@ Leave the filesystem coherent before you stop — a decision is a pause, not a h
 
 - `parlay add-feature {name} [--initiative {i}]` — only if the feature folder does not yet exist, and only on confirmed intent.
 - `parlay create-dialogs @{feature}` — scaffolds dialog templates; you write the content.
-- `parlay collect-questions @{feature}` — gap analysis after intents; surfaces unresolved `Questions:` blocks.
-- `parlay check-coverage @{feature}` — gap analysis after dialogs. It matches intents to dialogs on title overlap, so read the pairs it calls matched and confirm they correspond in meaning; a renamed intent shows as a false gap, and a dialog that contradicts its intent shows as covered.
+- `parlay internal collect-questions @{feature}` — gap analysis after intents; surfaces unresolved `Questions:` blocks.
+- `parlay internal check-coverage @{feature}` — gap analysis after dialogs. It matches intents to dialogs on title overlap, so read the pairs it calls matched and confirm they correspond in meaning; a renamed intent shows as a false gap, and a dialog that contradicts its intent shows as covered.
 - `parlay validate --type {surface,capabilities,infrastructure,domain-model} <path>` — verify each artifact passes its schema before raising the boundary decision.
 - `parlay status --root <root>` — drift check before handing off to the build group.
 

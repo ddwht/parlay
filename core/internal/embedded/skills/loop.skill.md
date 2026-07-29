@@ -108,11 +108,11 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 3. **Plan the phase sequence, and warn about what is being skipped** — Starting at the resolved phase, the loop runs forward through every remaining phase to `code` (unless the user exits at a confirmation boundary). Never backward — to revise an upstream artifact, the user exits and re-invokes with `--from`.
 
-   When `--from` skips phases, the artifacts those phases own are **not** re-derived; they are read as-is, and any change made upstream since they were written is carried no further. Before starting, run `parlay check-drift @{feature-ref}` and name the concrete consequence rather than the abstraction:
+   When `--from` skips phases, the artifacts those phases own are **not** re-derived; they are read as-is, and any change made upstream since they were written is carried no further. Before starting, run `parlay internal check-drift @{feature-ref}` and name the concrete consequence rather than the abstraction:
 
    > `--from artifacts` skips dialogs. `intents.md` changed after `dialogs.md` was last written (constraint "reject requires a reason" is new). The artifacts phase reads dialogs, so that constraint will not reach `surface.yaml`.
 
-   Offer to back up to the earliest phase whose output is stale. This is the only gate that catches an intents↔dialogs contradiction — `parlay check-coverage` matches on structure and titles, not meaning, so a dialog that contradicts its intent passes it cleanly.
+   Offer to back up to the earliest phase whose output is stale. This is the only gate that catches an intents↔dialogs contradiction — `parlay internal check-coverage` matches on structure and titles, not meaning, so a dialog that contradicts its intent passes it cleanly.
 
 4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.
 
@@ -125,7 +125,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
-   - Run `parlay check-readiness --stage build-feature @{feature-ref}`. **Errors are hard blocks** — not acknowledgeable; route the user back to the artifacts phase. Warnings are informational.
+   - Run `parlay internal check-readiness --stage build-feature @{feature-ref}`. **Errors are hard blocks** — not acknowledgeable; route the user back to the artifacts phase. Warnings are informational.
    - Invoke the `parlay-build` subagent with the feature reference.
    - At the end it returns a `phase-boundary` decision; the driver prompts.
 
@@ -141,8 +141,8 @@ A phase that emits a decision request must have left the filesystem in a coheren
    - Exit the current session. The loop persists NO resume state — no on-disk phase cursor, no acknowledged-gap log. Continuity is the user's memory plus the printed hint.
 
 9. **Gap analysis** (at the end of intents and dialogs phases):
-   - **intents phase**: intents with unresolved `Questions:` sections, intents missing required fields, contradictory constraints. `parlay collect-questions @{feature}` finds the first class.
-   - **dialogs phase**: intents without dialogs (coverage gaps), dialogs without matching intents (orphans), dialogs missing branches implied by the intent's Constraints or Verify items. `parlay check-coverage` finds structural gaps; read the pairs it reports as matched and confirm they actually correspond — it matches on title overlap, so it both misses renames and blesses contradictions.
+   - **intents phase**: intents with unresolved `Questions:` sections, intents missing required fields, contradictory constraints. `parlay internal collect-questions @{feature}` finds the first class.
+   - **dialogs phase**: intents without dialogs (coverage gaps), dialogs without matching intents (orphans), dialogs missing branches implied by the intent's Constraints or Verify items. `parlay internal check-coverage` finds structural gaps; read the pairs it reports as matched and confirm they actually correspond — it matches on title overlap, so it both misses renames and blesses contradictions.
    - Classify each gap as **critical** or **minor**. Rule of thumb: gaps that cascade into ambiguous downstream artifacts (unresolved Questions, missing required fields, contradictory constraints, intents without dialogs, orphan dialogs) are critical; stylistic or partial-coverage gaps are minor.
    - Critical gaps go in the boundary decision's `context:` with a recommendation to stay. The user may still advance — no acknowledgement state is persisted, so the same gaps are re-analyzed on a later `--from`.
 
@@ -180,7 +180,7 @@ The driver — never a phase — uses AskUserQuestion for:
 - NEVER run phases backward — forward only.
 - NEVER silently overwrite designer-authored files (intents.md, dialogs.md) — per CLAUDE.md file-ownership rules.
 - NEVER create a new feature without explicit user confirmation — zero matches must prompt, never auto-create.
-- NEVER advance past a `parlay check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
+- NEVER advance past a `parlay internal check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
 
 ## Error Handling
 

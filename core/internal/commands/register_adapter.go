@@ -29,16 +29,16 @@ var registerAdapterCmd = &cobra.Command{
 // componentVocabulary and tokens sections are optional — adapters that
 // omit them continue to register cleanly.
 type adapterFile struct {
-	Name                string                 `yaml:"name"`
-	Framework           string                 `yaml:"framework"`
-	Version             string                 `yaml:"version"`
-	Shows               map[string]interface{} `yaml:"shows"`
-	Actions             map[string]interface{} `yaml:"actions"`
-	Flows               map[string]interface{} `yaml:"flows"`
-	FileConventions     map[string]interface{} `yaml:"file-conventions"`
-	MountStrategies     map[string]interface{} `yaml:"mount-strategies,omitempty"`
+	Name                string                      `yaml:"name"`
+	Framework           string                      `yaml:"framework"`
+	Version             string                      `yaml:"version"`
+	Shows               map[string]interface{}      `yaml:"shows"`
+	Actions             map[string]interface{}      `yaml:"actions"`
+	Flows               map[string]interface{}      `yaml:"flows"`
+	FileConventions     map[string]interface{}      `yaml:"file-conventions"`
+	MountStrategies     map[string]interface{}      `yaml:"mount-strategies,omitempty"`
 	ComponentVocabulary *adapterComponentVocabulary `yaml:"componentVocabulary,omitempty"`
-	Tokens              *adapterTokens         `yaml:"tokens,omitempty"`
+	Tokens              *adapterTokens              `yaml:"tokens,omitempty"`
 }
 
 // adapterComponentVocabulary captures the versioned component vocabulary an
@@ -50,11 +50,11 @@ type adapterComponentVocabulary struct {
 }
 
 type adapterVocabularyComponent struct {
-	Type            string                       `yaml:"type"`
-	Category        string                       `yaml:"category"`
-	Variants        []string                     `yaml:"variants,omitempty"`
-	Properties      []adapterVocabularyProperty  `yaml:"properties,omitempty"`
-	AllowedChildren []string                     `yaml:"allowed-children,omitempty"`
+	Type            string                      `yaml:"type"`
+	Category        string                      `yaml:"category"`
+	Variants        []string                    `yaml:"variants,omitempty"`
+	Properties      []adapterVocabularyProperty `yaml:"properties,omitempty"`
+	AllowedChildren []string                    `yaml:"allowed-children,omitempty"`
 }
 
 type adapterVocabularyProperty struct {
@@ -68,10 +68,10 @@ type adapterVocabularyProperty struct {
 // adapterTokens captures the design-token block an adapter declares. See
 // internal/embedded/schemas/adapter.schema.md Section 9.
 type adapterTokens struct {
-	Modes      []string                  `yaml:"modes"`
-	Spacing    []adapterSpacingToken     `yaml:"spacing,omitempty"`
-	Color      []adapterColorToken       `yaml:"color,omitempty"`
-	Typography []adapterTypographyToken  `yaml:"typography,omitempty"`
+	Modes      []string                 `yaml:"modes"`
+	Spacing    []adapterSpacingToken    `yaml:"spacing,omitempty"`
+	Color      []adapterColorToken      `yaml:"color,omitempty"`
+	Typography []adapterTypographyToken `yaml:"typography,omitempty"`
 }
 
 type adapterSpacingToken struct {
@@ -146,13 +146,13 @@ var universalContainerFields = map[string]bool{
 // the YAML each time. ParseCount tracks how many distinct parse operations
 // occurred; lookups against an already-cached path do NOT increment it.
 type adapterCacheEntry struct {
-	Adapter   *adapterFile
-	ParsedAt  string
+	Adapter  *adapterFile
+	ParsedAt string
 }
 
 var (
-	adapterCacheMu sync.RWMutex
-	adapterCache   = map[string]*adapterCacheEntry{}
+	adapterCacheMu         sync.RWMutex
+	adapterCache           = map[string]*adapterCacheEntry{}
 	adapterCacheParseCount int
 )
 

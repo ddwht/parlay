@@ -80,10 +80,10 @@ func TestMigrateConfig_Idempotent(t *testing.T) {
 
 func TestSlugifyFramework(t *testing.T) {
 	cases := map[string]string{
-		"Go CLI":                 "go-cli",
-		"React + Ant Design":     "react-antd",
-		"Angular + Clarity":      "angular-clarity",
-		"Some Custom Framework":  "some-custom-framework",
+		"Go CLI":                "go-cli",
+		"React + Ant Design":    "react-antd",
+		"Angular + Clarity":     "angular-clarity",
+		"Some Custom Framework": "some-custom-framework",
 	}
 	for input, want := range cases {
 		if got := slugifyFramework(input); got != want {

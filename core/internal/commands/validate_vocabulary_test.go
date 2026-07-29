@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -220,21 +221,33 @@ func TestCLISurfacesStableErrorCodes(t *testing.T) {
 
 // TestCommandRegistration pins Suite 2 "Cobra command is registered
 // against rootCmd": the validateVocabularyCmd value is non-nil and is
-// in rootCmd's command tree.
+// reachable from rootCmd's command tree.
+//
+// Reachability, not direct parentage — the command emits JSON for a skill
+// to parse and now lives under `parlay internal`. What the suite item is
+// actually about is that the command can be invoked at all.
 func TestCommandRegistration(t *testing.T) {
 	if validateVocabularyCmd == nil {
 		t.Fatal("validateVocabularyCmd is nil")
 	}
-	found := false
-	for _, c := range rootCmd.Commands() {
-		if c == validateVocabularyCmd {
-			found = true
-			break
+	if !reachableFromRoot(validateVocabularyCmd) {
+		t.Fatal("validateVocabularyCmd is not reachable from rootCmd")
+	}
+}
+
+// reachableFromRoot reports whether target appears anywhere in rootCmd's
+// command tree, at any depth.
+func reachableFromRoot(target *cobra.Command) bool {
+	var walk func(*cobra.Command) bool
+	walk = func(c *cobra.Command) bool {
+		for _, sub := range c.Commands() {
+			if sub == target || walk(sub) {
+				return true
+			}
 		}
+		return false
 	}
-	if !found {
-		t.Fatal("validateVocabularyCmd not registered against rootCmd")
-	}
+	return walk(rootCmd)
 }
 
 // TestImportPathIsStudioVocabulary pins Suite 2 "Core command imports the

@@ -17,7 +17,7 @@ Read `.parlay/modules/build-feature.md` for the component vocabulary, the plan d
 
 1. **build** — produce `.parlay/build/{feature}/buildfile.yaml` and `.parlay/build/{feature}/testcases.yaml` from the finalized `spec/intents/{feature}/` artifacts.
 
-Before starting, run `parlay check-readiness --stage build-feature @{feature}`. Its **errors are hard blocks** — nobody can acknowledge past them, including you. Return a `failure` decision naming the blocking artifact so the driver can route the user back to the designer group. Warnings are informational; carry them into your boundary decision's `context:`.
+Before starting, run `parlay internal check-readiness --stage build-feature @{feature}`. Its **errors are hard blocks** — nobody can acknowledge past them, including you. Return a `failure` decision naming the blocking artifact so the driver can route the user back to the designer group. Warnings are informational; carry them into your boundary decision's `context:`.
 
 ## Returning a decision request
 
@@ -52,8 +52,8 @@ Raise one for: the phase boundary; a readiness error (`kind: failure`); and any 
 
 ## Recommended commands
 
-- `parlay check-readiness --stage build-feature @{feature}` — pre-flight; ERRORS are hard blocks routed back to the designer group, warnings are acknowledgeable.
-- `parlay check-buildfile @{feature}` — post-flight validation of the generated buildfile.
+- `parlay internal check-readiness --stage build-feature @{feature}` — pre-flight; ERRORS are hard blocks routed back to the designer group, warnings are acknowledgeable.
+- `parlay internal check-buildfile @{feature}` — post-flight validation of the generated buildfile.
 - `parlay validate --type yaml <path>` — sanity-check buildfile / testcases YAML structure.
 - `parlay status --root <root>` — drift check before handing off to the code group.
 

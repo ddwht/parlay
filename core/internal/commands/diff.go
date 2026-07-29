@@ -55,14 +55,14 @@ type componentDiff struct {
 
 // diffOutput is the top-level JSON shape for `parlay diff @<feature>`.
 type diffOutput struct {
-	Feature      string            `json:"feature"`
-	FirstBuild   bool              `json:"first_build"`
-	HasBuildfile bool              `json:"has_buildfile"`
-	Intents      sourceLevelDiff   `json:"intents"`
-	Dialogs      sourceLevelDiff   `json:"dialogs"`
-	Fragments    sourceLevelDiff   `json:"surface_fragments"`
-	DesignSpec   sourceLevelDiff   `json:"design_spec"`
-	Components   componentDiff     `json:"components"`
+	Feature      string          `json:"feature"`
+	FirstBuild   bool            `json:"first_build"`
+	HasBuildfile bool            `json:"has_buildfile"`
+	Intents      sourceLevelDiff `json:"intents"`
+	Dialogs      sourceLevelDiff `json:"dialogs"`
+	Fragments    sourceLevelDiff `json:"surface_fragments"`
+	DesignSpec   sourceLevelDiff `json:"design_spec"`
+	Components   componentDiff   `json:"components"`
 
 	// Sections compares THIS feature's buildfile sections against THIS
 	// feature's baseline. It is not the project-wide answer, and the two

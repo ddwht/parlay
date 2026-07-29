@@ -11,7 +11,7 @@ import (
 // parlayVerbPattern matches "parlay <verb>" occurrences in skill prose —
 // used to catch skills that reference a CLI command by a name that was
 // renamed, removed, or never existed.
-var parlayVerbPattern = regexp.MustCompile(`\bparlay ([a-z][a-z0-9-]*)\b`)
+var parlayVerbPattern = regexp.MustCompile(`\bparlay ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?\b`)
 
 // parlayVerbLintAllowlist holds words that legitimately follow "parlay"
 // in prose without naming a CLI command — e.g. "parlay commands are
@@ -34,14 +34,7 @@ var parlayVerbLintAllowlist = map[string]bool{
 // otherwise only surface as an "unknown command" shell error at agent
 // run time, potentially releases after the drift was introduced.
 func TestSkillsOnlyReferenceRegisteredCLIVerbs(t *testing.T) {
-	registered := map[string]bool{}
-	for _, c := range rootCmd.Commands() {
-		fields := strings.Fields(c.Use)
-		if len(fields) == 0 {
-			continue
-		}
-		registered[fields[0]] = true
-	}
+	registered, groups := registeredVerbs()
 	if len(registered) == 0 {
 		t.Fatal("no commands registered on rootCmd — init() may not have run")
 	}
@@ -51,16 +44,69 @@ func TestSkillsOnlyReferenceRegisteredCLIVerbs(t *testing.T) {
 		t.Fatalf("ReadAllSkills: %v", err)
 	}
 
-	for _, s := range skills {
-		matches := parlayVerbPattern.FindAllStringSubmatch(string(s.Content), -1)
-		for _, m := range matches {
-			verb := m[1]
+	check := func(kind, name, body string) {
+		for _, m := range parlayVerbPattern.FindAllStringSubmatch(body, -1) {
+			verb, sub := m[1], m[2]
+
+			// A group name followed by a subcommand — `parlay internal
+			// check-buildfile` — must resolve at both levels. Checking only
+			// the first token would let every reference under a group go
+			// unvalidated, which is exactly the coverage the namespacing
+			// change would otherwise have quietly removed.
+			if subs, ok := groups[verb]; ok && sub != "" {
+				if !subs[sub] {
+					t.Errorf("%s %s references `parlay %s %s`, but %q has no subcommand %q",
+						kind, name, verb, sub, verb, sub)
+				}
+				continue
+			}
+
 			if registered[verb] || parlayVerbLintAllowlist[verb] {
 				continue
 			}
-			t.Errorf("skill %s references `parlay %s`, which is not a registered CLI command and not in parlayVerbLintAllowlist — "+
+			t.Errorf("%s %s references `parlay %s`, which is not a registered CLI command and not in parlayVerbLintAllowlist — "+
 				"fix the reference if the command was renamed/removed, or add %q to the allowlist if this is legitimate prose",
-				s.Name, verb, verb)
+				kind, name, verb, verb)
 		}
 	}
+
+	for _, s := range skills {
+		check("skill", s.Name, string(s.Content))
+	}
+
+	// Agent briefs name CLI commands as freely as skills do, and drift
+	// there is harder to notice: nobody opens .claude/agents/ to read.
+	agents, err := embedded.ReadAllAgents()
+	if err != nil {
+		t.Fatalf("ReadAllAgents: %v", err)
+	}
+	for _, a := range agents {
+		check("agent", a.Name, string(a.Content))
+	}
+}
+
+// registeredVerbs returns the top-level command names and, for any command
+// that has subcommands, the set of names beneath it.
+func registeredVerbs() (top map[string]bool, groups map[string]map[string]bool) {
+	top = map[string]bool{}
+	groups = map[string]map[string]bool{}
+	for _, c := range rootCmd.Commands() {
+		fields := strings.Fields(c.Use)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[0]
+		top[name] = true
+		if subs := c.Commands(); len(subs) > 0 {
+			set := map[string]bool{}
+			for _, sc := range subs {
+				sf := strings.Fields(sc.Use)
+				if len(sf) > 0 {
+					set[sf[0]] = true
+				}
+			}
+			groups[name] = set
+		}
+	}
+	return top, groups
 }

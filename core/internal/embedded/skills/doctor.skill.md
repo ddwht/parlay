@@ -31,9 +31,9 @@ Gather state before proposing anything. None of these mutate:
 
 - `parlay status` — active root, features, phases, orphaned build dirs
 - `parlay repair --dry-run` — three-tree consistency
-- `parlay check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
-- `parlay collect-questions @{feature}` — unresolved `Questions:` blocks
-- `parlay check-drift @{feature}` — sources changed since the last build
+- `parlay internal check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
+- `parlay internal collect-questions @{feature}` — unresolved `Questions:` blocks
+- `parlay internal check-drift @{feature}` — sources changed since the last build
 
 Then detect pending migrations by looking at what is on disk:
 

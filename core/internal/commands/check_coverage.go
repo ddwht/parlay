@@ -43,10 +43,10 @@ type coverageOutput struct {
 }
 
 type chainCoverage struct {
-	IntentsWithoutSurface    []chainGap `json:"intents_without_surface,omitempty"`
+	IntentsWithoutSurface     []chainGap `json:"intents_without_surface,omitempty"`
 	FragmentsWithoutBuildfile []chainGap `json:"fragments_without_buildfile,omitempty"`
-	ComponentsWithoutTests   []chainGap `json:"components_without_tests,omitempty"`
-	OrphanedReferences       []chainGap `json:"orphaned_references,omitempty"`
+	ComponentsWithoutTests    []chainGap `json:"components_without_tests,omitempty"`
+	OrphanedReferences        []chainGap `json:"orphaned_references,omitempty"`
 }
 
 func runCheckCoverage(cmd *cobra.Command, args []string) error {

@@ -73,11 +73,11 @@ type featureEntry struct {
 }
 
 type rootSection struct {
-	Path              string         `json:"path"`
+	Path              string          `json:"path"`
 	Kind              config.RootKind `json:"kind"`
-	Source            string         `json:"source"`
-	Features          []featureEntry `json:"features"`
-	OrphanedBuildDirs []string       `json:"orphaned_build_dirs"`
+	Source            string          `json:"source"`
+	Features          []featureEntry  `json:"features"`
+	OrphanedBuildDirs []string        `json:"orphaned_build_dirs"`
 }
 
 type childRootEntry struct {

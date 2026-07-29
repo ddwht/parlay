@@ -39,11 +39,11 @@ type checkBuildfileIssue struct {
 }
 
 type checkBuildfileOutput struct {
-	Feature  string                 `json:"feature"`
-	Path     string                 `json:"path"`
-	Adapter  string                 `json:"adapter,omitempty"`
-	Ready    bool                   `json:"ready"`
-	Issues   []checkBuildfileIssue  `json:"issues"`
+	Feature string                `json:"feature"`
+	Path    string                `json:"path"`
+	Adapter string                `json:"adapter,omitempty"`
+	Ready   bool                  `json:"ready"`
+	Issues  []checkBuildfileIssue `json:"issues"`
 }
 
 func runCheckBuildfile(cmd *cobra.Command, args []string) error {

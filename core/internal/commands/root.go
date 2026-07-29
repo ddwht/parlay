@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -89,6 +90,26 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get cwd: %w", err)
 	}
 
+	// `--root <path>` is resolved before the cwd walk-up, not after. The
+	// point of naming a project explicitly is that you are not standing in
+	// one — resolving cwd first meant the walk-up failed with "no parlay
+	// root found" and returned before the flag was ever read, so the path
+	// form worked only from inside the very project it was naming.
+	if pathRes, resolved, perr := resolveRootFlagAsPath(rootFlag); perr != nil {
+		return perr
+	} else if resolved {
+		return finishResolution(cmd, pathRes, nil)
+	} else if unambiguouslyPath(rootFlag) {
+		// A value with a separator, or a ~ or ./ prefix, can only have been
+		// meant as a path, so failing to resolve it is the error worth
+		// reporting. Falling through would run the cwd walk-up and fail
+		// with "no parlay root found below cwd" — an accurate sentence
+		// about a question nobody asked, which never mentions the flag that
+		// was actually wrong.
+		return fmt.Errorf("--root %s: not a parlay project directory — no %s/%s there",
+			rootFlag, config.ParlayDir, config.ConfigFile)
+	}
+
 	res, err := config.ResolveActiveRoot(cwd, envMap())
 	if err != nil {
 		// On ErrNoRootFound, look for candidates below cwd. If any
@@ -133,74 +154,49 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 		// one via their parent if needed.
 	}
 
-	// --root flag override (validated against the index).
+	// --root flag override. Two accepted forms: a registered child-root
+	// name, or a path to a parlay project.
+	//
+	// The path form exists because every skill and agent brief in the tree
+	// says `--root <root>`, and an agent reasonably writes a path there.
+	// Requiring a registered name made that unusable on a standalone
+	// project — the index is empty, so every path lost a lookup against
+	// nothing and the caller retried variations of a path that could never
+	// have worked. A path that resolves to a real parlay root is a clear,
+	// checkable intent, so honor it.
 	if rootFlag != "" {
-		if idx == nil {
-			return fmt.Errorf("--root %s: no roots index at %s; --root only applies at a parent root",
-				rootFlag, res.ActiveRoot.Path)
-		}
-		child, ok := idx.Lookup(rootFlag)
-		if !ok {
-			// A path-shaped argument is the common mistake — several
-			// skills and agent briefs recommend `--root <path>`, which
-			// cannot work: --root selects a *registered child-root name*
-			// from the roots index, and a standalone project's index is
-			// empty. Say so explicitly instead of reporting "unknown
-			// root; known: []", which reads as a lookup failure and
-			// leaves the caller retrying variations of the path.
-			if looksLikePath(rootFlag) {
-				return fmt.Errorf("--root %s: --root takes a registered child-root name, not a filesystem path. "+
-					"Known names: %v. To operate on a different project, run parlay from inside it (or set PARLAY_ROOT); "+
-					"to register a subfolder as a child root, use `parlay add-root`",
-					rootFlag, idx.Names())
+		switch {
+		case idx == nil:
+			return fmt.Errorf("--root %s: not a parlay project directory (no %s/%s), and there is no roots index at %s to look up a child-root name in",
+				rootFlag, config.ParlayDir, config.ConfigFile, res.ActiveRoot.Path)
+
+		default:
+			child, ok := idx.Lookup(rootFlag)
+			if !ok {
+				// Path-shaped and not a parlay root: the caller meant a
+				// directory, so say what was wrong with that directory
+				// rather than listing child-root names they never wanted.
+				if looksLikePath(rootFlag) {
+					return fmt.Errorf("--root %s: not a parlay project directory — no %s/%s there. "+
+						"Pass a path to a parlay project, or one of the registered child-root names: %v",
+						rootFlag, config.ParlayDir, config.ConfigFile, idx.Names())
+				}
+				return fmt.Errorf("--root %s: unknown root; known: %v", rootFlag, idx.Names())
 			}
-			return fmt.Errorf("--root %s: unknown root; known: %v", rootFlag, idx.Names())
-		}
-		// Re-resolve the active root to point at the chosen child.
-		childRes, err := config.ResolveActiveRoot(child.Path, nil)
-		if err != nil {
-			return fmt.Errorf("--root %s: %w", rootFlag, err)
-		}
-		childRes.Source = config.SourceRootFlag
-		childRes.AnnouncementRequired = true
-		res = childRes
-		idx = nil
-	}
-
-	// Validate the parent pointer (detects orphaned children).
-	// Commands that exist to recover from this state (promote-root) opt
-	// out via annotationAllowOrphan.
-	if cmd.Annotations[annotationAllowOrphan] != "true" {
-		if err := config.ValidateParentPointer(res.ActiveRoot); err != nil {
-			return err
+			// Re-resolve the active root to point at the chosen child.
+			childRes, err := config.ResolveActiveRoot(child.Path, nil)
+			if err != nil {
+				return fmt.Errorf("--root %s: %w", rootFlag, err)
+			}
+			childRes.Source = config.SourceRootFlag
+			childRes.AnnouncementRequired = true
+			res = childRes
+			idx = nil
 		}
 	}
 
-	// Forbidden-directory check for child roots — surface paths come
-	// from the deployer registry.
-	if v := config.ValidateChildRootForbiddenDirectories(res.ActiveRoot, deployer.AllAgentSurfacePaths()); v != nil {
-		return v
-	}
+	return finishResolution(cmd, res, idx)
 
-	if verboseFlag {
-		fmt.Fprintf(cmd.ErrOrStderr(), "resolved root: %s (source: %s)\n",
-			res.ActiveRoot.Path, res.Source)
-	}
-
-	// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
-	// Use the studio-detection-aware constructor so every command
-	// handler sees the per-process record of parlay-studio's
-	// availability without re-checking PATH or env. Detection is
-	// read-only — we never invoke Studio just to confirm.
-	pctx := config.NewContextWithStudioDetection(res, idx)
-	// One-line stderr warning at first successful detection when the
-	// reported Studio version is outside Core's expected range. The
-	// helper is sync.Once-guarded — every subsequent invocation in the
-	// same process is a no-op, so concurrent or repeated PreRun calls
-	// stay quiet.
-	emitStudioVersionWarningOnceFromCtx(pctx)
-	cmd.SetContext(config.WithCtx(cmd.Context(), pctx))
-	return nil
 }
 
 // emitStudioVersionWarningOnceFromCtx is a thin wrapper around
@@ -281,17 +277,6 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 	// parlay-feature: design-loop/vocabulary-validation
 	// parlay-component: cross-cutting/core-cli-wiring
-	rootCmd.AddCommand(validateVocabularyCmd)
-	rootCmd.AddCommand(parseCmd)
-	rootCmd.AddCommand(checkCoverageCmd)
-	rootCmd.AddCommand(collectQuestionsCmd)
-	rootCmd.AddCommand(checkDriftCmd)
-	rootCmd.AddCommand(checkReadinessCmd)
-	rootCmd.AddCommand(checkBuildfileCmd)
-	rootCmd.AddCommand(diffCmd)
-	rootCmd.AddCommand(scanGeneratedCmd)
-	rootCmd.AddCommand(verifyGeneratedCmd)
-	rootCmd.AddCommand(saveBuildStateCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(upgradeCmd)
 
@@ -302,13 +287,16 @@ func init() {
 	rootCmd.AddCommand(migrateCapabilitiesCmd)
 	rootCmd.AddCommand(migrateDomainOperationsCmd)
 	rootCmd.AddCommand(reviewCoverageCmd)
-	rootCmd.AddCommand(checkSupportsCmd)
-	rootCmd.AddCommand(checkReviewGateCmd)
 
 	// Multi-root commands.
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
 	rootCmd.AddCommand(statusCmd)
+
+	// Agent-facing probes live under `parlay internal`; the AI-agent stubs
+	// stay runnable but out of the help listing. See internal_group.go.
+	registerInternalCommands()
+	hideAgentOnlyStubs()
 }
 
 // looksLikePath reports whether s is shaped like a filesystem path rather
@@ -327,4 +315,101 @@ func looksLikePath(s string) bool {
 		return true
 	}
 	return false
+}
+
+// resolveRootFlagAsPath handles the `--root <path>` form. It reports
+// resolved=true only when rootFlag is path-shaped AND the directory is a
+// real parlay project (has .parlay/config.yaml).
+//
+// The two conditions are deliberately both required. Path-shaped alone
+// would swallow a mistyped child-root name that happens to match a
+// directory; a config.yaml check alone would try to stat every name. When
+// either fails, the caller falls through to the child-root-name lookup, so
+// the name form keeps working unchanged.
+func resolveRootFlagAsPath(rootFlag string) (*config.ResolutionResult, bool, error) {
+	if !looksLikePath(rootFlag) {
+		return nil, false, nil
+	}
+	abs, err := filepath.Abs(expandHome(rootFlag))
+	if err != nil {
+		return nil, false, nil
+	}
+	if _, err := os.Stat(filepath.Join(abs, config.ParlayDir, config.ConfigFile)); err != nil {
+		return nil, false, nil
+	}
+	res, err := config.ResolveActiveRoot(abs, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("--root %s: %w", rootFlag, err)
+	}
+	res.Source = config.SourceRootFlag
+	res.AnnouncementRequired = true
+	return res, true, nil
+}
+
+// expandHome resolves a leading ~ so `--root ~/projects/app` behaves the
+// way it does in every other tool. Without this the path form works
+// everywhere except the one place users most often type by hand.
+func expandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, p[2:])
+}
+
+// finishResolution runs the checks that apply however the active root was
+// chosen — cwd walk-up, PARLAY_ROOT, `--root <name>`, or `--root <path>` —
+// and installs the resulting context. Shared so the path form cannot
+// accidentally skip the orphan and forbidden-directory checks the other
+// paths perform.
+func finishResolution(cmd *cobra.Command, res *config.ResolutionResult, idx *config.RootsIndex) error {
+	// Validate the parent pointer (detects orphaned children).
+	// Commands that exist to recover from this state (promote-root) opt
+	// out via annotationAllowOrphan.
+	if cmd.Annotations[annotationAllowOrphan] != "true" {
+		if err := config.ValidateParentPointer(res.ActiveRoot); err != nil {
+			return err
+		}
+	}
+
+	// Forbidden-directory check for child roots — surface paths come
+	// from the deployer registry.
+	if v := config.ValidateChildRootForbiddenDirectories(res.ActiveRoot, deployer.AllAgentSurfacePaths()); v != nil {
+		return v
+	}
+
+	if verboseFlag {
+		fmt.Fprintf(cmd.ErrOrStderr(), "resolved root: %s (source: %s)\n",
+			res.ActiveRoot.Path, res.Source)
+	}
+
+	// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
+	// Use the studio-detection-aware constructor so every command
+	// handler sees the per-process record of parlay-studio's
+	// availability without re-checking PATH or env. Detection is
+	// read-only — we never invoke Studio just to confirm.
+	pctx := config.NewContextWithStudioDetection(res, idx)
+	// One-line stderr warning at first successful detection when the
+	// reported Studio version is outside Core's expected range. The
+	// helper is sync.Once-guarded — every subsequent invocation in the
+	// same process is a no-op, so concurrent or repeated PreRun calls
+	// stay quiet.
+	emitStudioVersionWarningOnceFromCtx(pctx)
+	cmd.SetContext(config.WithCtx(cmd.Context(), pctx))
+	return nil
+}
+
+// unambiguouslyPath reports whether s could only have been meant as a
+// filesystem path. Narrower than looksLikePath, which also treats a bare
+// name that happens to match a directory as path-shaped — that case stays
+// ambiguous with a child-root name and must fall through to the name
+// lookup rather than hard-erroring.
+func unambiguouslyPath(s string) bool {
+	return strings.ContainsAny(s, "/\\") || strings.HasPrefix(s, "~") || s == "." || s == ".."
 }

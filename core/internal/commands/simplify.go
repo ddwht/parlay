@@ -25,12 +25,12 @@ var simplifyCmd = &cobra.Command{
 }
 
 type duplicateGroup struct {
-	FunctionName    string
-	Similarity      string // "identical" or "near-identical"
-	SourceFiles     []string
-	ProposedTarget  string
-	BodyHash        string
-	Differences     string
+	FunctionName   string
+	Similarity     string // "identical" or "near-identical"
+	SourceFiles    []string
+	ProposedTarget string
+	BodyHash       string
+	Differences    string
 }
 
 func runSimplify(cmd *cobra.Command, args []string) error {

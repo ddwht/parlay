@@ -109,17 +109,17 @@ Concretely:
 
 7. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
 
-8. **Compute the project-level diff** — Run: `parlay diff` (no @feature) to get the unified change report. The JSON output has:
+8. **Compute the project-level diff** — Run: `parlay internal diff` (no @feature) to get the unified change report. The JSON output has:
    - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
    - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration.
 
-9. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file to its owner.
+9. **Scan generated files** — Run: `parlay internal scan-generated {source-root}` to map each file to its owner.
    - Files with `parlay-feature: X + parlay-component: Y` belong to feature X's component Y.
    - Files with `parlay-scope: project + parlay-section: Z` are project-scoped cross-cutting files.
    - Files with `parlay-artifact: test` are test files for their parent component.
    - Files without ANY parlay marker are user-owned; never modify or delete them.
 
-10. **Verify generated files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+10. **Verify generated files haven't been hand-edited** — Run: `parlay internal verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
    - If `has_hashes` is `false`, this is the very first generation — treat everything as new and skip the modified-file check.
    - Otherwise, check **every** component that has a generated file — dirty and stable alike — against `verify.modified[]`. If a file is listed there, the user has hand-edited it — STOP and surface the situation:
      ```
@@ -356,14 +356,14 @@ Concretely:
 
    4. **Apply or skip**: on approval, write the modified file. On skip, continue.
 
-   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
+   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay internal diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
 16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
     - **If any test fails, STOP.** Do not proceed to step 17. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-17. **Commit the build state** — Only if all tests passed in step 16: run `parlay save-build-state --source-root {source-root}`. This atomically writes:
+17. **Commit the build state** — Only if all tests passed in step 16: run `parlay internal save-build-state --source-root {source-root}`. This atomically writes:
     - Per-feature baselines for ALL features (source hashes for per-feature diff)
     - Project-level baseline at `.parlay/build/_project/.baseline.yaml` (merged section hashes)
     - Project-level code-hashes at `.parlay/build/_project/.code-hashes.yaml` (all generated files)
@@ -389,21 +389,21 @@ It is never a "minor difference" to be ignored.
 
 Three read helpers and one write helper cooperate to make incremental rebuilds safe:
 
-- **`parlay diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
-- **`parlay scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
-- **`parlay verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
-- **`parlay save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
+- **`parlay internal diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
+- **`parlay internal scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
+- **`parlay internal verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
+- **`parlay internal save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
 
-The skill calls the three read helpers before regenerating, then `parlay save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
+The skill calls the three read helpers before regenerating, then `parlay internal save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
 
 **Multi-component (extended) files** — files produced by intelligent merge (step 14.5 Tier 2) carry a primary `parlay-component:` marker plus one or more `parlay-extends:` lines. These files belong to multiple components at once, with consequences for the read helpers:
 
-- `parlay scan-generated` reports the file's primary component AND its extending components. A single file path appears once but maps to multiple `(feature, component)` owners.
-- `parlay verify-generated` hashes the file as a unit; the file is `stable` only if every component named in its marker block (primary + all `parlay-extends:`) is currently `stable` per `parlay diff`. If ANY claimed component is dirty in the diff, the file requires regeneration via re-merge.
+- `parlay internal scan-generated` reports the file's primary component AND its extending components. A single file path appears once but maps to multiple `(feature, component)` owners.
+- `parlay internal verify-generated` hashes the file as a unit; the file is `stable` only if every component named in its marker block (primary + all `parlay-extends:`) is currently `stable` per `parlay internal diff`. If ANY claimed component is dirty in the diff, the file requires regeneration via re-merge.
 - Re-merge re-runs step 14.5 for the dirty component(s) against the current state of the file (which includes the other components' contributions). The agent must preserve all currently-claimed components in the resulting file; dropping any without explicit removal would silently un-extend the file.
 - A component being `removed` in the diff means its claim on the file should be revoked: drop its `parlay-extends:` line and remove the spans it owned (identified by per-function markers if present). If the removed component was the primary owner, ownership transfers to the first remaining `parlay-extends:` line, which is promoted to the primary marker.
 
-**The very first generation** of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
+**The very first generation** of a feature is detected by `parlay internal verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay internal diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
 
 If **any** generated file is reported as `modified` by verify-generated — whether its component is stable or dirty — the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
 
@@ -413,11 +413,11 @@ Because re-emission is only *functionally* deterministic (see "Determinism contr
 
 ## Why save-build-state is at the end (and only at the end)
 
-The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) have a **consistency invariant**: they must always represent the same point in time — the end of a successful end-to-end generation. If either file is updated independently of the other, subsequent `parlay diff` and `parlay verify-generated` calls describe inconsistent states and the agent gets stuck (e.g., diff says "stable" but no code exists).
+The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) have a **consistency invariant**: they must always represent the same point in time — the end of a successful end-to-end generation. If either file is updated independently of the other, subsequent `parlay internal diff` and `parlay internal verify-generated` calls describe inconsistent states and the agent gets stuck (e.g., diff says "stable" but no code exists).
 
 Earlier versions of the skill saved the baseline at the end of `build-feature`, before code generation. That broke the invariant: after build-feature ran but before generate-code ran, the baseline said "this source state is committed" but no code state existed for that source state. The next run would see all components as stable and skip everything.
 
-The fix is structural: the baseline and code-hashes are written together by a single command (`parlay save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
+The fix is structural: the baseline and code-hashes are written together by a single command (`parlay internal save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
 
 ## Error Handling
 
@@ -436,7 +436,7 @@ The fix is structural: the baseline and code-hashes are written together by a si
 <!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
 <!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
 
-When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
+When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay internal check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
 
 | Code | When it fires |
 |---|---|

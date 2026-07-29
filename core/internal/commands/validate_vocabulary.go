@@ -74,8 +74,8 @@ type validateVocabularyOutput struct {
 // intentionally permissive — the validator uses only Type/Properties/...
 // downstream, and any unknown keys are passed through to children.
 type layoutShape struct {
-	ComponentVocabulary string             `yaml:"componentVocabulary"`
-	Root                vocabulary.Node    `yaml:"root"`
+	ComponentVocabulary string          `yaml:"componentVocabulary"`
+	Root                vocabulary.Node `yaml:"root"`
 }
 
 func runValidateVocabulary(cmd *cobra.Command, args []string) error {

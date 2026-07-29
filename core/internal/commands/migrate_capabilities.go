@@ -82,18 +82,18 @@ type fragment struct {
 // featurePartition is the per-feature result of classifying every
 // fragment in its infrastructure.md.
 type featurePartition struct {
-	feature      string
-	featDir      string
-	infraPath    string
-	capPath      string
-	header       string // optional preamble before the first `---` / `## `
-	separator    string // "\n\n---\n\n" or whatever joined the original fragments
-	extracted    []extractedOp
-	retained     []fragment
-	skipped      bool // capabilities.yaml already existed
-	skipReason   string
-	readErr      error
-	unrouted     []agent.ClassificationResult // classifier output for retained fragments
+	feature    string
+	featDir    string
+	infraPath  string
+	capPath    string
+	header     string // optional preamble before the first `---` / `## `
+	separator  string // "\n\n---\n\n" or whatever joined the original fragments
+	extracted  []extractedOp
+	retained   []fragment
+	skipped    bool // capabilities.yaml already existed
+	skipReason string
+	readErr    error
+	unrouted   []agent.ClassificationResult // classifier output for retained fragments
 }
 
 type extractedOp struct {

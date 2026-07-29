@@ -61,7 +61,7 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 
 // projectSaveResult is the summary returned by saveProjectBuildState.
 type projectSaveResult struct {
-	Features []featureSaveResult
+	Features  []featureSaveResult
 	FileCount int
 }
 

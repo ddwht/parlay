@@ -120,7 +120,7 @@ func walkSurfaceMDFiles(root string) ([]string, error) {
 // matching the LoadSurfaceYAML expected layout.
 func surfaceYAMLEmit(feature string, fragments []parser.Fragment) []byte {
 	doc := struct {
-		Feature   string                  `yaml:"feature,omitempty"`
+		Feature   string                   `yaml:"feature,omitempty"`
 		Fragments []map[string]interface{} `yaml:"fragments"`
 	}{Feature: feature}
 	for _, f := range fragments {
