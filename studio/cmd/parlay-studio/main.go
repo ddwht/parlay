@@ -23,7 +23,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/parlay-tool/parlay/studio/internal/config"
 	"github.com/parlay-tool/parlay/studio/internal/deployer"
@@ -58,6 +60,31 @@ func main() {
 		case "version", "--version", "-v":
 			fmt.Printf("parlay-studio %s (commit %s)\n", version, commit)
 			return
+		case "help", "--help", "-h":
+			usage(os.Stdout)
+			return
+		}
+
+		// A help flag anywhere in the argument list is a request for usage,
+		// not for a server. Without this, `parlay-studio domain-edit --help`
+		// fell through to boot() and started listening — on a random port,
+		// and with open_browser defaulting on, it also opened a browser. The
+		// one invocation a person makes when they do not yet know what the
+		// command does was the one that took an irreversible action.
+		for _, a := range args {
+			if a == "--help" || a == "-h" || a == "help" {
+				usage(os.Stdout)
+				return
+			}
+		}
+
+		// An unrecognized subcommand is a mistake, not a request to serve.
+		// Booting on it means a typo silently starts a server, and the
+		// operator sees a working URL rather than "no such command".
+		if !strings.HasPrefix(args[0], "-") && args[0] != "domain-edit" {
+			fmt.Fprintf(os.Stderr, "parlay-studio: unknown command %q\n\n", args[0])
+			usage(os.Stderr)
+			os.Exit(1)
 		}
 	}
 
@@ -127,4 +154,24 @@ func envMap() map[string]string {
 		}
 	}
 	return out
+}
+
+// usage prints the command surface. Kept here rather than delegated to a flag
+// package because main dispatches on os.Args directly — the subcommands parse
+// their own flags off the residual slice — so there is no single FlagSet whose
+// defaults would describe the whole surface.
+func usage(w io.Writer) {
+	fmt.Fprint(w, `parlay-studio — the visual companion to parlay
+
+Usage:
+  parlay-studio [flags]              boot the server, landing on /
+  parlay-studio domain-edit [flags]  boot the server, landing on /domain-model
+  parlay-studio init [flags]         deploy studio's skills into a project
+  parlay-studio upgrade [flags]      re-deploy studio's skills
+  parlay-studio version              print the version
+  parlay-studio help                 print this message
+
+Flags are parsed by the boot sequence and the deployer subcommands; run a
+subcommand with no arguments to see what it accepts.
+`)
 }
