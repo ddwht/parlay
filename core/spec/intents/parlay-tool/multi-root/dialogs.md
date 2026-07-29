@@ -280,8 +280,8 @@ System: cd to ==/abs/path/to/repo== and try again.
 
 #### Branch: Skill invoked from agent cwd inside a child root
 
-User: /parlay-sync @feat   (agent cwd is apps/web/)
-System (background): Skill is loaded from `<repo>/.claude/skills/parlay-sync/SKILL.md`.
+User: parlay sync @feat   (agent cwd is apps/web/)
+System (background): Skill is loaded from `<repo>/.claude/skillsparlay sync/SKILL.md`.
 System (background): Skill resolves active root via walk-up — finds `apps/web/.parlay/`.
 System (background): Operates on the child root, not the repo root.
 System: synced @feat in root ==web==.
@@ -317,8 +317,8 @@ System (background): Refuses to run; user must remove the directory.
 
 **Trigger**: User invokes any deployed `/parlay-*` skill from the agent (Claude Code, Cursor, Generic CLI)
 
-User: /parlay-sync @feat   (agent cwd is apps/web/)
-System (background): Skill is loaded from `<repo-root>/.claude/skills/parlay-sync/SKILL.md`.
+User: parlay sync @feat   (agent cwd is apps/web/)
+System (background): Skill is loaded from `<repo-root>/.claude/skillsparlay sync/SKILL.md`.
 System (background): Skill invokes `parlay sync @feat` from the agent's cwd (`apps/web/`).
 System (background): CLI walk-up finds `apps/web/.parlay/`. Skill receives output scoped to root ==web==.
 System: Synced @feat in root ==web==.
@@ -339,14 +339,14 @@ System (background): Build proceeds against the chosen root.
 
 #### Branch: Skill receives single-match auto-resolution — surfaces the announcement
 
-User: /parlay-sync @intent/A   (agent cwd is repo root, parent has no match, exactly one child has it)
+User: parlay sync @intent/A   (agent cwd is repo root, parent has no match, exactly one child has it)
 System (background): Skill invokes the CLI; the CLI auto-selects the single matching child root and prints "using root: web (only match)".
 System: operating on root: ==web== (auto-resolved — only match)
 System (background): Skill displays the rest of the CLI output unchanged.
 
 #### Branch: Explicit root-prefix in skill argument
 
-User: /parlay-sync web:@feat   (agent cwd unimportant)
+User: parlay sync web:@feat   (agent cwd unimportant)
 System (background): Skill passes the prefix through to the CLI verbatim.
 System: operating on root: ==web== (prefix)
 System (background): Sync proceeds against root ==web==.
@@ -360,7 +360,7 @@ System (background): Domain model extracted for the chosen root only.
 
 #### Branch: Feature-empty parent — skill at repo root with no parent features prompts
 
-User: /parlay-sync @feat   (agent cwd is repo root, parent spec/intents/ is empty, two child roots exist)
+User: parlay sync @feat   (agent cwd is repo root, parent spec/intents/ is empty, two child roots exist)
 System (background): Skill invokes the CLI; the CLI returns "feature not found in active root; matches roots [web, api]".
 System: @feat does not exist in this root. Which root would you like to use?
   A: ==web== (apps/web)
@@ -371,7 +371,7 @@ System (background): Skill re-invokes against the chosen root.
 
 #### Branch: Forbidden directory — skill renders actionable guidance
 
-User: /parlay-sync @feat   (agent cwd is apps/web/, which has a stray .parlay/schemas/)
+User: parlay sync @feat   (agent cwd is apps/web/, which has a stray .parlay/schemas/)
 System (background): Skill invokes the CLI; the CLI errors with "schemas live at the parent root only".
 System: This child root has a `.parlay/schemas/` directory, but schemas are managed at the repo-level root.
 System: Run `rm -rf apps/web/.parlay/schemas/` to remove it; schemas will be loaded from the parent automatically.
@@ -381,18 +381,18 @@ System (condition: agent supports tool execution): Want me to remove the directo
 
 #### Branch: Forbidden agent-surface directory inside a child
 
-User: /parlay-sync @feat   (agent cwd is apps/web/, which has a stray .claude/)
+User: parlay sync @feat   (agent cwd is apps/web/, which has a stray .claude/)
 System (background): Skill catches the CLI's "deployed agent surface lives at the repo-level root only" error.
 System: This child root has a `.claude/` directory, but the agent surface lives only at the repo root.
 System: Remove `apps/web/.claude/`; the parent's `.claude/` is shared by all roots.
 
 #### Branch: Skill works identically across adapters
 
-User: /parlay-sync @feat   (project uses Cursor)
+User: parlay sync @feat   (project uses Cursor)
 System (background): Cursor invokes its `parlay-sync` skill via the same CLI invocation pattern. Walk-up resolution and disambiguation behave identically.
 System: Synced @feat in root ==web==.
 
-User: /parlay-sync @feat   (project uses Generic CLI)
+User: parlay sync @feat   (project uses Generic CLI)
 System (background): Generic CLI's `AGENT_INSTRUCTIONS.md` describes the same invocation pattern; skill content is identical to Claude/Cursor.
 System: Synced @feat in root ==web==.
 

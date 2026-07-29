@@ -313,7 +313,7 @@ Surface the diff to the designer for review before any write. `wiring.rules` and
 ### Migration entry points
 
 For projects upgrading FROM the legacy single-adapter shape:
-- `/parlay-migrate-config` — converts `prototype-framework:` into a single-target presentation adapter-set
-- `/parlay-migrate-spec` — converts each feature's `surface.md` into `surface.yaml`
-- `/parlay-migrate-capabilities` — extracts operation-shaped fragments from `infrastructure.md` into `capabilities.yaml`
-- `/parlay-migrate-domain-operations` — migrates deprecated `domain-model.operations:` into per-feature capabilities stubs
+- `parlay migrate-config` — converts `prototype-framework:` into a single-target presentation adapter-set
+- `parlay migrate-spec` — converts each feature's `surface.md` into `surface.yaml`
+- `parlay migrate-capabilities` — extracts operation-shaped fragments from `infrastructure.md` into `capabilities.yaml`
+- `parlay migrate-domain-operations` — migrates deprecated `domain-model.operations:` into per-feature capabilities stubs

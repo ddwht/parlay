@@ -163,7 +163,7 @@
 
 ## Skill Invocation in a Multi-Root Project
 
-**Goal**: Make every `/parlay-*` skill behave correctly in a multi-root project — the user invokes a skill the same way they always have (e.g. `/parlay-sync @feat`) and the skill resolves the right root, disambiguates interactively when needed, and announces which root it's acting on.
+**Goal**: Make every `/parlay-*` skill behave correctly in a multi-root project — the user invokes a skill the same way they always have (e.g. `parlay sync @feat`) and the skill resolves the right root, disambiguates interactively when needed, and announces which root it's acting on.
 **Persona**: UX Designer (working through the AI agent rather than the raw CLI)
 **Priority**: P0
 **Context**: The user works primarily through deployed skills, not the bare `parlay` binary. A skill is invoked while the agent's cwd is somewhere in the repo — possibly inside a child root, possibly at the parent. The skill must produce the same multi-root semantics as the CLI, but render any user prompts through the agent's interactive question mechanism (e.g. `AskUserQuestion` for Claude Code) and surface chosen-root announcements as visible agent text.
@@ -172,7 +172,7 @@
 
 **Constraints**:
 - Skills must NOT bake assumptions about a single `.parlay/` location into their prompt text; every path reference must be relative to "the active root resolved at invocation time"
-- Skills accept the same root-prefixed feature references as the CLI — `/parlay-sync web:@feat` resolves the `web` root, `/parlay-sync @feat` uses cwd walk-up
+- Skills accept the same root-prefixed feature references as the CLI — `parlay sync web:@feat` resolves the `web` root, `parlay sync @feat` uses cwd walk-up
 - When the underlying CLI invocation would prompt for disambiguation interactively, the skill MUST detect the prompt (via a structured signal — JSON output, exit code + stderr metadata, or the existing AskUserQuestion adapter contract) and re-render the same prompt through the agent's question mechanism, then re-invoke the CLI with the user's choice
 - The skill MUST NOT auto-pick a root on disambiguation — it must surface the question, exactly as the CLI would in interactive mode
 - When the auto-resolved root differs from the cwd-default root (single match in another root, or `--root` flag, or prefix), the skill includes a "operating on root: <name>" line in its visible response — same announcement requirement as the CLI
@@ -181,9 +181,9 @@
 - The same skill-side multi-root behavior must apply uniformly across adapters (Claude Code, Cursor, Generic CLI) — the skill source authored under `internal/embedded/skills/` is one file, deployed identically by every deployer
 
 **Verify**:
-- `/parlay-sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting
+- `parlay sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting
 - `/parlay-build-feature @intent/A` invoked while agent cwd is the parent and the feature exists in two child roots — the skill surfaces an `AskUserQuestion` (or adapter equivalent) with the candidate roots, then re-invokes the CLI against the user's choice
-- `/parlay-sync web:@feat` works regardless of agent cwd
+- `parlay sync web:@feat` works regardless of agent cwd
 - `/parlay-create-domain-model --root web` works as a skill argument the same way it works as a CLI flag
 - A skill invoked while the user is in a feature-empty parent project (no parent-owned features in `spec/intents/`) does not show "no features found" — it shows the registered children and prompts for the target root if needed
 - When a skill auto-resolves to a non-cwd root (e.g. single child match for a bare reference), the visible response begins with "operating on root: <name>"

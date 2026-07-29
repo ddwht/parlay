@@ -8,23 +8,16 @@ All operations are available as /parlay-* slash commands.
 
 - `/parlay-add-feature` — Create a new feature
 - `/parlay-build-feature` — Generate buildfile and testcases
-- `/parlay-collect-questions` — Collect open questions from intents
 - `/parlay-create-artifacts` — Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs
 - `/parlay-create-domain-model` — Create domain model from features
+- `/parlay-doctor` — Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations
 - `/parlay-generate-code` — Generate prototype code from buildfile
 - `/parlay-generate-enggspec` — Generate engineering specification
 - `/parlay-load-domain-model` — Load and integrate external domain model
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
-- `/parlay-migrate-capabilities` — Move operation-shaped fragments from infrastructure.md into capabilities.yaml; retain architectural prose in place (partial migration is the success case)
-- `/parlay-migrate-config` — Convert legacy prototype-framework into a single-target presentation adapter-set
-- `/parlay-migrate-domain-model` — Convert domain-model.md to domain-model.yaml
-- `/parlay-migrate-domain-operations` — Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs
-- `/parlay-migrate-spec` — Convert each feature's surface.md to surface.yaml
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
 - `/parlay-reference-design-spec` — Extract design spec from Figma
-- `/parlay-review-coverage` — Walk suites, record approvals, write coverage-review.yaml
 - `/parlay-scaffold-dialogs` — Scaffold dialog templates from intents
-- `/parlay-sync` — Check intent-dialog coverage
 
 ## Schema Loading
 

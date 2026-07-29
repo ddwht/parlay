@@ -442,7 +442,7 @@ When the project's `.parlay/adapter-set.yaml` has more than the presentation slo
 | `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
 | `coverage-review-uncovered` | A canonical-form-required term lacks both a covering testcase and an explicit exemption. |
 
-Hashes are computed over canonical form (sorted keys, normalized whitespace) — cosmetic edits don't drift the hash. Run `/parlay-review-coverage @<feature>` to record approval; codegen does NOT auto-record.
+Hashes are computed over canonical form (sorted keys, normalized whitespace) — cosmetic edits don't drift the hash. Run `parlay review-coverage @<feature>` to record approval; codegen does NOT auto-record.
 
 ### Codegen read-set
 

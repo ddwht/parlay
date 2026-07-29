@@ -105,9 +105,9 @@ System: [OK] Added branch. Dialogs are up to date.
 
 ### Sync Intents and Dialogs
 
-**Trigger**: /parlay-sync @feature-name
+**Trigger**: parlay sync @feature-name
 
-User: /parlay-sync @upgrade-plan-creation
+User: parlay sync @upgrade-plan-creation
 System (background): Runs `parlay check-coverage @upgrade-plan-creation` to get coverage and drift data.
 System (background): Runs `parlay collect-questions @upgrade-plan-creation` to check for open questions.
 System: Here's the sync report for @upgrade-plan-creation:

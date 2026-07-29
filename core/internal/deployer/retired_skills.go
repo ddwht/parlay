@@ -27,6 +27,19 @@ var retiredCoreSkills = map[string]bool{
 	"lock-page":        true,
 	"repair":           true,
 	"view-page":        true,
+
+	// Retired in 0.2.0 — folded into the doctor skill, which decides which
+	// of these apply by inspecting the project rather than requiring the
+	// designer to know which of five migrations fits their situation.
+	// Every underlying CLI command still exists.
+	"sync":                      true,
+	"collect-questions":         true,
+	"review-coverage":           true,
+	"migrate-spec":              true,
+	"migrate-config":            true,
+	"migrate-capabilities":      true,
+	"migrate-domain-model":      true,
+	"migrate-domain-operations": true,
 }
 
 // shouldPruneSkill reports whether a deployed parlay-<slug> skill directory

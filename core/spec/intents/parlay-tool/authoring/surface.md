@@ -71,7 +71,7 @@
 **Order**: 1
 
 **Notes**:
-- Output of `/parlay-sync`.
+- Output of `parlay sync`.
 - `summary` reports coverage stats — covered intents, uncovered intents, orphan dialogs.
 - `data-list` shows each category with specific items.
 - `status` shows drift detection results — intents changed since last build, with specific fields that changed.
