@@ -15,7 +15,9 @@ This matters most for overwrites. A generated file that changed since it was las
 
 You own exactly this phase:
 
-1. **code** — read ALL features' buildfiles at the project level, translate components into framework-specific code via the active adapter, process cross-cutting entries, run the test suite, and commit the build state once it passes. Follow the generate-code phase module for the emission rules.
+Read `.parlay/modules/generate-code.md` for the emission rules, the strict-isolation rule, and the plan allowlist. It is not on the agent menu; you load it by path.
+
+1. **code** — read ALL features' buildfiles at the project level, translate components into framework-specific code via the active adapter, process cross-cutting entries, run the test suite, and commit the build state once it passes.
 
 ## Returning a decision request
 

@@ -13,7 +13,9 @@ You have no `AskUserQuestion`. Anything you "ask" goes into a transcript the use
 
 You own exactly this phase:
 
-1. **build** — produce `.parlay/build/{feature}/buildfile.yaml` and `.parlay/build/{feature}/testcases.yaml` from the finalized `spec/intents/{feature}/` artifacts. Follow the build-feature phase module for the component vocabulary, the plan derivation, and the testcase assertion vocabulary.
+Read `.parlay/modules/build-feature.md` for the component vocabulary, the plan derivation, and the testcase assertion vocabulary. It is not on the agent menu; you load it by path.
+
+1. **build** — produce `.parlay/build/{feature}/buildfile.yaml` and `.parlay/build/{feature}/testcases.yaml` from the finalized `spec/intents/{feature}/` artifacts.
 
 Before starting, run `parlay check-readiness --stage build-feature @{feature}`. Its **errors are hard blocks** — nobody can acknowledge past them, including you. Return a `failure` decision naming the blocking artifact so the driver can route the user back to the designer group. Warnings are informational; carry them into your boundary decision's `context:`.
 

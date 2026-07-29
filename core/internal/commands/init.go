@@ -50,9 +50,9 @@ var knownAgentNames = []string{"Claude Code", "Cursor", "Generic"}
 // rather than guessing when signals are ambiguous.
 //
 // Detection signals (in priority order):
-//   1. CLAUDECODE / CLAUDE_CODE_ENTRYPOINT / ANTHROPIC_* env vars → Claude Code
-//   2. CURSOR_* env vars → Cursor
-//   3. CI / non-TTY contexts → no detection (return false)
+//  1. CLAUDECODE / CLAUDE_CODE_ENTRYPOINT / ANTHROPIC_* env vars → Claude Code
+//  2. CURSOR_* env vars → Cursor
+//  3. CI / non-TTY contexts → no detection (return false)
 //
 // Detection is read-only — it never writes to disk or mutates env state.
 func DetectRunningAgent() (name string, detected bool) {
@@ -98,6 +98,7 @@ func promptAgentWithDefault(cmd *cobra.Command, reader *bufio.Reader, detected s
 	}
 	return promptChoice(cmd, reader, "What AI agent would you like to use?", agentOptions)
 }
+
 var frameworks = []frameworkEntry{
 	{Display: "Go CLI", Adapter: "go-cli", NavStrategy: "cli-subcommands"},
 	{Display: "React + Ant Design", Adapter: "react-antd", NavStrategy: "browser"},
@@ -202,8 +203,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create .parlay/build/: %w", err)
 	}
 
-	// Operation: deploy skills and agent config
-	skills, _ := embedded.ReadAllSkills()
+	// Operation: copy-embedded phase modules → ".parlay/modules/"
+	modulesPath := filepath.Join(config.ParlayDir, config.ModulesDir)
+	if _, err := embedded.WriteModules(modulesPath); err != nil {
+		return fmt.Errorf("failed to write modules: %w", err)
+	}
+
+	// Operation: deploy skills and agent config. Only command-surface
+	// skills reach the agent menu — phase modules were written above.
+	allSkills, _ := embedded.ReadAllSkills()
+	skills := embedded.CommandSkills(allSkills)
 	dep, err := deployer.Get(agent)
 	if err != nil {
 		fmt.Fprintf(cmd.OutOrStdout(), "  Warning: no deployer for agent %q, using generic\n", agent)

@@ -75,20 +75,33 @@ func renderProjectConfigBody(skills []embedded.SkillEntry, projectRoot string) s
 	return fmt.Sprintf(`# Parlay Project
 
 This project uses the Parlay intent-driven design toolkit.
-All operations are available as /parlay-* slash commands.
+Start with %s/parlay-loop%s — it walks a feature through the whole pipeline and
+runs the individual phases for you. The other two commands are for entering
+from somewhere other than the start.
 
 ## Available Commands
 
 %s
+The pipeline phases (intents, dialogs, artifacts, build, code) are not commands.
+Their instructions live in .parlay/modules/, and the loop's phase subagents read
+the one they need. The full CLI is still there — run %sparlay --help%s.
+
 ## Schema Loading
 
 Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
 
 ## Interactive Questions
 
-When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
+When a skill step says to "ask the user", "present options", or "wait for the user's response", use the AskUserQuestion tool to pause and collect the answer before continuing. Do not output the question as plain text and keep going — the step needs the answer to decide what happens next.
 
-%s%s`, renderAvailableCommands(skills), fileOwnershipSection, renderMultiRootSection(projectRoot))
+**Unless you are a subagent.** A parlay phase subagent (parlay-designer, parlay-build, parlay-code) has no AskUserQuestion, so a question asked there reaches nobody and the phase ends up answering itself — a skipped confirmation is indistinguishable from a granted one. In a subagent, stop and return a %sparlay-decision%s block instead; the loop driver prompts and resumes you with the answer.
+
+%s%s`,
+		"`", "`",
+		renderAvailableCommands(skills),
+		"`", "`",
+		"`", "`",
+		fileOwnershipSection, renderMultiRootSection(projectRoot))
 }
 
 var registry = map[string]func() Deployer{}

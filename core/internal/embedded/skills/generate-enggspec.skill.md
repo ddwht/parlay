@@ -1,6 +1,7 @@
 ---
 name: generate-enggspec
 description: "Generate engineering specification"
+surface: module
 ---
 
 # Generate Engineering Specification

@@ -1,6 +1,7 @@
 ---
 name: generate-code
 description: "Generate prototype code from buildfile"
+surface: module
 ---
 
 <!--

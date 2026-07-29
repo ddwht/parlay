@@ -1,6 +1,7 @@
 ---
 name: reference-design-spec
 description: "Extract design spec from Figma"
+surface: module
 ---
 
 # Reference Design Spec

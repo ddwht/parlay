@@ -1,6 +1,7 @@
 ---
 name: scaffold-dialogs
 description: "Scaffold dialog templates from intents"
+surface: module
 ---
 
 # Scaffold Dialogs

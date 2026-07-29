@@ -1,6 +1,7 @@
 ---
 name: load-domain-model
 description: "Load and integrate external domain model"
+surface: module
 ---
 
 # Load Domain Model

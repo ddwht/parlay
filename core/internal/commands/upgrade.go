@@ -38,6 +38,7 @@ Run this after updating the parlay binary (e.g., brew upgrade parlay).`,
 // runUpgrade to render its summary line.
 type upgradeResult struct {
 	SchemaCount  int
+	ModuleCount  int
 	SkillCount   int
 	DeployerName string
 }
@@ -102,20 +103,36 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 	}
 	schemaNames, _ := embedded.SchemaNames()
 
-	// Re-deploy skills and agent config.
-	skills, _ := embedded.ReadAllSkills()
+	// Re-deploy the phase modules. These are skill sources that no longer
+	// appear on the agent's menu — the driver and the phase subagents load
+	// them by path. They land beside the schemas because the content is
+	// adapter-independent.
+	modulesPath := filepath.Join(rootPath, config.ParlayDir, config.ModulesDir)
+	moduleCount, err := embedded.WriteModules(modulesPath)
+	if err != nil {
+		return upgradeResult{}, fmt.Errorf("write modules: %w", err)
+	}
+	if err := embedded.PruneStaleModules(modulesPath); err != nil {
+		return upgradeResult{}, fmt.Errorf("prune modules: %w", err)
+	}
+
+	// Re-deploy skills and agent config. Only command-surface skills reach
+	// the menu; module-surface ones were written above.
+	allSkills, _ := embedded.ReadAllSkills()
+	skills := embedded.CommandSkills(allSkills)
 	dep, err := deployer.Get(cfg.AIAgent)
 	if err != nil {
 		dep, _ = deployer.Get("generic")
 	}
 	if dep == nil {
-		return upgradeResult{SchemaCount: len(schemaNames)}, nil
+		return upgradeResult{SchemaCount: len(schemaNames), ModuleCount: moduleCount}, nil
 	}
 	if err := dep.Deploy(rootPath, skills); err != nil {
 		return upgradeResult{}, fmt.Errorf("deploy skills: %w", err)
 	}
 	return upgradeResult{
 		SchemaCount:  len(schemaNames),
+		ModuleCount:  moduleCount,
 		SkillCount:   len(skills),
 		DeployerName: dep.Name(),
 	}, nil
@@ -136,6 +153,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded to parlay %s:\n", appVersion)
 	fmt.Fprintf(cmd.OutOrStdout(), "  schemas — %d updated\n", result.SchemaCount)
+	if result.ModuleCount > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  modules — %d written\n", result.ModuleCount)
+	}
 	if result.SkillCount > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
 	}

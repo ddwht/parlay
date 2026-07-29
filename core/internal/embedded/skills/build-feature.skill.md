@@ -1,6 +1,7 @@
 ---
 name: build-feature
 description: "Generate buildfile and testcases"
+surface: module
 ---
 
 <!--

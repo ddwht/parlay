@@ -1,6 +1,7 @@
 ---
 name: create-domain-model
 description: "Create domain model from features"
+surface: module
 ---
 
 # Create Domain Model

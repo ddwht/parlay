@@ -12,6 +12,25 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 - `feature`: The feature reference in standard parlay form — `{feature}` for a top-level feature, `@{initiative}/{feature}` for a feature nested inside an initiative.
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
 
+## Subcommands
+
+The pipeline is the default. Four operations sit alongside it rather than inside it — they are short, they need the user, and none of them belongs at a phase boundary. The driver runs them in its own context:
+
+| Invocation | What it does | Module |
+|---|---|---|
+| `handoff @{feature}` | Generate the engineering specification into `spec/handoff/{feature}/` | `.parlay/modules/generate-enggspec.md` |
+| `design-spec` | Extract a design spec from Figma into the project | `.parlay/modules/reference-design-spec.md` |
+| `domain-model` | Create the project domain model from existing features | `.parlay/modules/create-domain-model.md` |
+| `domain-model --from {path}` | Load and integrate an externally-authored domain model | `.parlay/modules/load-domain-model.md` |
+
+Read the named module and follow it. Because you are the driver, `AskUserQuestion` works here — prompt directly; there is no decision request to round-trip.
+
+`domain-model` picks its module from whether `--from` is present. Both write the same artifact under the same conflict-resolution rules; the only difference is where the entities come from.
+
+## Phase modules
+
+The five phases are not menu entries. Their instructions live at `.parlay/modules/{add-feature,scaffold-dialogs,create-artifacts,build-feature,generate-code}.md`, and the subagent that owns a phase reads the module it needs. Nobody has to know which of five skills comes next — the driver knows the sequence, and each phase-group agent loads its own instructions.
+
 ## Prerequisites
 
 The loop invokes three pre-defined subagents — one per phase-group — shipped by parlay and deployed by each agent adapter:

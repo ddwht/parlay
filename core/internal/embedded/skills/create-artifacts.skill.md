@@ -1,6 +1,7 @@
 ---
 name: create-artifacts
 description: "Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs"
+surface: module
 ---
 
 # Create Artifacts

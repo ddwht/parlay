@@ -37,6 +37,7 @@ const (
 	ConfigFile    = "config.yaml"
 	BlueprintFile = "blueprint.yaml"
 	SchemasDir    = "schemas"
+	ModulesDir    = "modules"
 	AdaptersDir   = "adapters"
 	BuildDir      = "build"
 	SpecDir       = "spec"

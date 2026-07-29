@@ -3,7 +3,10 @@ package embedded
 import (
 	"bytes"
 	"embed"
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +19,33 @@ type SkillEntry struct {
 	Name        string
 	Description string
 	Content     []byte
+	Surface     Surface
 }
+
+// Surface says where a skill belongs on the agent surface.
+//
+// The distinction exists because two very different things were sharing one
+// namespace. A designer opening the skill menu saw 24 entries and had to
+// know which of five migrations fit their project, or which of five phases
+// came next — when the tool can answer both by looking at the project. Yet
+// the phase content itself is substantial and good; the problem was never
+// the prose, only that every piece of it was also a menu entry.
+//
+// So: SurfaceCommand skills are the ones a person invokes by name.
+// SurfaceModule skills are loaded by the driver or a phase subagent, which
+// knows which one it needs. Same source tree, same authoring rules, same
+// marker expansion — different destination.
+type Surface string
+
+const (
+	// SurfaceCommand deploys to the agent's skill menu (.claude/skills/,
+	// .cursor/rules/). This is the default when frontmatter omits `surface:`.
+	SurfaceCommand Surface = "command"
+
+	// SurfaceModule deploys to .parlay/modules/<name>.md, readable by any
+	// agent but absent from the menu.
+	SurfaceModule Surface = "module"
+)
 
 // activeRootMarker is the placeholder a skill author drops in place of
 // the full "## Active root" section (right after the existing
@@ -94,16 +123,17 @@ func expandMarkers(content []byte) []byte {
 // re-declaring it. A file with no leading `---` frontmatter block
 // returns an empty description and the content unchanged, so malformed
 // input degrades gracefully rather than panicking.
-func parseSkillFrontmatter(content []byte) (description string, body []byte) {
+func parseSkillFrontmatter(content []byte) (description string, surface Surface, body []byte) {
+	surface = SurfaceCommand
 	const open = "---\n"
 	s := string(content)
 	if !strings.HasPrefix(s, open) {
-		return "", content
+		return "", surface, content
 	}
 	rest := s[len(open):]
 	closeIdx := strings.Index(rest, "\n---")
 	if closeIdx == -1 {
-		return "", content
+		return "", surface, content
 	}
 	frontmatter := rest[:closeIdx]
 	after := rest[closeIdx+len("\n---"):]
@@ -115,8 +145,17 @@ func parseSkillFrontmatter(content []byte) (description string, body []byte) {
 		if v, ok := strings.CutPrefix(line, "description:"); ok {
 			description = strings.Trim(strings.TrimSpace(v), `"`)
 		}
+		if v, ok := strings.CutPrefix(line, "surface:"); ok {
+			// An unrecognized value falls back to command rather than
+			// erroring: the failure mode of a typo'd `surface:` should be a
+			// skill that shows up in the menu, not one that silently
+			// vanishes from it.
+			if Surface(strings.Trim(strings.TrimSpace(v), `"`)) == SurfaceModule {
+				surface = SurfaceModule
+			}
+		}
 	}
-	return description, []byte(after)
+	return description, surface, []byte(after)
 }
 
 // ReadAllSkills returns all embedded skill files: name, frontmatter
@@ -142,8 +181,94 @@ func ReadAllSkills() ([]SkillEntry, error) {
 		if len(name) > 9 {
 			name = name[:len(name)-9] // remove ".skill.md"
 		}
-		description, body := parseSkillFrontmatter(data)
-		skills = append(skills, SkillEntry{Name: name, Description: description, Content: expandMarkers(body)})
+		description, surface, body := parseSkillFrontmatter(data)
+		skills = append(skills, SkillEntry{
+			Name:        name,
+			Description: description,
+			Content:     expandMarkers(body),
+			Surface:     surface,
+		})
 	}
 	return skills, nil
+}
+
+// CommandSkills returns the subset that belongs on the agent's skill menu.
+func CommandSkills(all []SkillEntry) []SkillEntry {
+	return filterSurface(all, SurfaceCommand)
+}
+
+// ModuleSkills returns the subset the driver and phase subagents load by
+// path rather than by name.
+func ModuleSkills(all []SkillEntry) []SkillEntry {
+	return filterSurface(all, SurfaceModule)
+}
+
+func filterSurface(all []SkillEntry, want Surface) []SkillEntry {
+	var out []SkillEntry
+	for _, s := range all {
+		if s.Surface == want {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// WriteModules materializes the module-surface skills into targetDir (by
+// convention .parlay/modules/). Returns the number written.
+//
+// Modules land at the repo-level root next to the schemas, not in an
+// agent-specific directory: the content is adapter-independent, and a phase
+// subagent reads it by path regardless of which agent is driving. Writing
+// it once here rather than once per deployer also means Claude and Cursor
+// projects cannot drift to different phase instructions.
+func WriteModules(targetDir string) (int, error) {
+	all, err := ReadAllSkills()
+	if err != nil {
+		return 0, err
+	}
+	modules := ModuleSkills(all)
+	if len(modules) == 0 {
+		return 0, nil
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return 0, err
+	}
+	for _, m := range modules {
+		content := fmt.Sprintf("# %s\n\n_%s_\n\n%s", m.Name, m.Description, string(m.Content))
+		dst := filepath.Join(targetDir, m.Name+".md")
+		if err := os.WriteFile(dst, []byte(content), 0644); err != nil {
+			return 0, err
+		}
+	}
+	return len(modules), nil
+}
+
+// PruneStaleModules removes .parlay/modules/<name>.md files that no longer
+// correspond to an embedded module. Without it, a module renamed or
+// promoted back to a command leaves a stale copy on disk that a phase
+// subagent would happily read — stale instructions being strictly worse
+// than missing ones, because nothing reports them.
+func PruneStaleModules(targetDir string) error {
+	all, err := ReadAllSkills()
+	if err != nil {
+		return err
+	}
+	wanted := map[string]bool{}
+	for _, m := range ModuleSkills(all) {
+		wanted[m.Name+".md"] = true
+	}
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		// Missing directory on a fresh project — nothing to prune.
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || wanted[e.Name()] || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(targetDir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }

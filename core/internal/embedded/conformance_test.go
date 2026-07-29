@@ -408,3 +408,92 @@ func TestConformance_DriverDocumentsTheDecisionProtocol(t *testing.T) {
 		}
 	}
 }
+
+// moduleRef matches a `.parlay/modules/<name>.md` path in prose.
+var moduleRef = regexp.MustCompile(`\.parlay/modules/([a-z0-9-]+)\.md`)
+
+// TestConformance_ModuleReferencesResolve checks that every
+// .parlay/modules/<name>.md a skill or agent points at is actually shipped
+// as a module.
+//
+// The failure this prevents is quiet and late: a phase subagent told to read
+// a module that does not exist has no menu entry to fall back on and no
+// error to report — it proceeds without the instructions and produces
+// plausible output built on nothing. Retiring or renaming a module is
+// exactly when this happens, which is exactly when nobody re-reads the
+// agent briefs.
+func TestConformance_ModuleReferencesResolve(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	agents, err := ReadAllAgents()
+	if err != nil {
+		t.Fatalf("ReadAllAgents: %v", err)
+	}
+
+	shipped := map[string]bool{}
+	for _, m := range ModuleSkills(skills) {
+		shipped[m.Name] = true
+	}
+	if len(shipped) == 0 {
+		t.Fatal("no module-surface skills — the surface split is not wired")
+	}
+
+	check := func(kind, name, body string) {
+		for _, m := range moduleRef.FindAllStringSubmatch(body, -1) {
+			if !shipped[m[1]] {
+				t.Errorf("%s %q references .parlay/modules/%s.md, which is not "+
+					"shipped as a module — either the skill is command-surface "+
+					"(and should be invoked by name) or the reference is stale",
+					kind, name, m[1])
+			}
+		}
+	}
+	for _, s := range skills {
+		check("skill", s.Name, string(s.Content))
+	}
+	for _, a := range agents {
+		check("agent", a.Name, string(a.Content))
+	}
+}
+
+// TestConformance_CommandSurfaceStaysSmall pins the result of the 0.2.0
+// consolidation. The regression run needed 5 of 24 deployed skills; the
+// other 19 were menu entries a designer had to choose between, several of
+// them one-line wrappers around a CLI call.
+//
+// This is a deliberate ratchet, not a description. Adding a command-surface
+// skill should require deciding that a person will invoke it by name — which
+// is the question the count kept nobody from skipping.
+func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+
+	want := map[string]bool{
+		"loop":    true, // the driver
+		"doctor":  true, // diagnosis-first repair and migration
+		"onboard": true, // brownfield entry
+	}
+
+	got := map[string]bool{}
+	for _, s := range CommandSkills(skills) {
+		got[s.Name] = true
+	}
+
+	for name := range got {
+		if !want[name] {
+			t.Errorf("%q is command-surface but not in the expected set. "+
+				"If a person really invokes it by name, add it here with a "+
+				"note saying why; otherwise mark it `surface: module`.", name)
+		}
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%q is expected to be command-surface but is not — "+
+				"the user-facing entry point disappeared from the menu", name)
+		}
+	}
+}

@@ -1,5 +1,7 @@
 package deployer
 
+import "github.com/ddwht/parlay/core/internal/embedded"
+
 // retiredCoreSkills lists skill slugs that parlay core has shipped in the
 // past and no longer ships. The stale-skill prune removes a deployed
 // .claude/skills/parlay-<slug>/ (or .cursor equivalent) only when its slug
@@ -45,9 +47,36 @@ var retiredCoreSkills = map[string]bool{
 // shouldPruneSkill reports whether a deployed parlay-<slug> skill directory
 // should be removed: it must be a slug core owns (currently or historically)
 // and must not be in the currently-wanted set.
+// "Owns" covers three cases. A slug in retiredCoreSkills is one we shipped
+// and dropped. A slug still in the embedded set but no longer command-
+// surface — a phase module — was on the menu in an earlier version and must
+// come off it now. Anything else belongs to another tool and is left alone.
 func shouldPruneSkill(slug string, wanted map[string]bool) bool {
 	if wanted[slug] {
 		return false
 	}
-	return retiredCoreSkills[slug]
+	if retiredCoreSkills[slug] {
+		return true
+	}
+	return isDemotedCoreSkill(slug)
+}
+
+// isDemotedCoreSkill reports whether the slug is still shipped by core but
+// has moved off the agent menu to the module surface. Such a slug needs
+// pruning from .claude/skills/ for the same reason a retired one does —
+// otherwise last version's copy stays on the menu, and a designer invoking
+// it gets stale instructions with nothing saying so.
+func isDemotedCoreSkill(slug string) bool {
+	all, err := embedded.ReadAllSkills()
+	if err != nil {
+		// Cannot prove ownership — leave the directory alone. Deleting on a
+		// read error risks removing another tool's skill.
+		return false
+	}
+	for _, s := range all {
+		if s.Name == slug {
+			return s.Surface == embedded.SurfaceModule
+		}
+	}
+	return false
 }

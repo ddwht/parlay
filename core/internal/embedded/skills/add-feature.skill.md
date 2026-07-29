@@ -1,6 +1,7 @@
 ---
 name: add-feature
 description: "Create a new feature"
+surface: module
 ---
 
 # Add Feature
