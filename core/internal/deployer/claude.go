@@ -106,7 +106,10 @@ func pruneStaleClaudeSkills(projectRoot string, wanted map[string]bool) error {
 			continue
 		}
 		slug := strings.TrimPrefix(name, prefix)
-		if wanted[slug] {
+		// Only prune slugs core owns. Another tool's skill living in the
+		// same directory (parlay-studio deploys parlay-design-loop here)
+		// must survive — see retiredCoreSkills.
+		if !shouldPruneSkill(slug, wanted) {
 			continue
 		}
 		stale := filepath.Join(skillsDir, name)

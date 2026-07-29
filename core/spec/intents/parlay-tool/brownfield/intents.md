@@ -25,6 +25,6 @@
 - Adapter YAML is generated with shows, actions, flows, compositions, conventions, file-conventions, and mount-strategies sections
 - Detected mount-strategy patterns match widgets that actually exist in the codebase
 - The adapter is framework-level — another project using the same framework could use it with convention adjustments
-- Team can review and edit the draft before registering via `/parlay-register-adapter`
+- Team can review and edit the draft before registering via `parlay register-adapter`
 
 ---

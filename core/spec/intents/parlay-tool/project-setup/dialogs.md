@@ -21,9 +21,9 @@ System: The project is bootstrapped and ready. All operations are available as /
 
 ### Register Framework Adapter
 
-**Trigger**: /parlay-register-adapter ==path-to-adapter==
+**Trigger**: parlay register-adapter ==path-to-adapter==
 
-User: /parlay-register-adapter ./adapters/go-cli.adapter.yaml
+User: parlay register-adapter ./adapters/go-cli.adapter.yaml
 System (background): Reads and validates the adapter definition.
 System: Registered framework adapter "go-cli":
 System: - Component types: ==number==

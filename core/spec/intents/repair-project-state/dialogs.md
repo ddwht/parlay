@@ -4,9 +4,9 @@
 
 ### Repair Project State
 
-**Trigger**: /parlay-repair (or `parlay repair`)
+**Trigger**: parlay repair (or `parlay repair`)
 
-User: /parlay-repair
+User: parlay repair
 System (background): Scans all three trees: spec/intents/, spec/handoff/, .parlay/build/. Classifies each directory (feature, initiative, deferred) using spec/intents/ as the authoritative source. Compares the directory sets across the three trees to find mismatches.
 System (background): Found 2 mismatches:
 System: Detected 2 inconsistencies:
@@ -32,13 +32,13 @@ System: Repair complete. Applied 2 fixes. Project is now in lockstep.
 
 #### Branch: Project already in lockstep
 
-User: /parlay-repair
+User: parlay repair
 System (background): Scans all three trees. Compares directory sets. No mismatches found.
 System: Project is in lockstep. No repairs needed.
 
 #### Branch: Unambiguous feature move
 
-User: /parlay-repair
+User: parlay repair
 System (background): Detects that spec/intents/auth-overhaul/password-reset/ exists but spec/intents/password-reset/ does not. Meanwhile, spec/handoff/password-reset/ and .parlay/build/password-reset/ still exist at the top level.
 System: Detected 1 inconsistency:
 System: **Feature move detected**
@@ -52,7 +52,7 @@ System: Repair complete. Applied 1 fix. Project is now in lockstep.
 
 #### Branch: Ambiguous — multiple renames
 
-User: /parlay-repair
+User: parlay repair
 System (background): Detects that spec/intents/ has auth-redesign/ and payments/ where spec/handoff/ and .parlay/build/ have auth-overhaul/ and billing/. Two old names, two new names — multiple possible pairings.
 System: Detected 1 ambiguous inconsistency:
 System: **Ambiguous rename — two initiatives changed simultaneously**
@@ -69,7 +69,7 @@ System: Repair complete. Applied 2 fixes. Project is now in lockstep.
 
 #### Branch: Extra directory on handoff/build
 
-User: /parlay-repair
+User: parlay repair
 System (background): Finds spec/handoff/old-feature/ exists but there is no corresponding spec/intents/old-feature/.
 System: Detected 1 inconsistency:
 System: **Extra directory** — spec/handoff/old-feature/ (3 files) has no matching entry in spec/intents/.
@@ -82,7 +82,7 @@ System: [OK] Deleted spec/handoff/old-feature/ (3 files).
 
 #### Branch: Destructive prompt defaults to no
 
-User: /parlay-repair
+User: parlay repair
 System: **Extra directory** — .parlay/build/archived-feature/ (18 files) has no matching entry in spec/intents/.
   A: Delete .parlay/build/archived-feature/ (18 files) [default: no]
   B: Keep it
@@ -91,7 +91,7 @@ System: Kept .parlay/build/archived-feature/ — no changes.
 
 #### Branch: Unrecognized mismatch
 
-User: /parlay-repair
+User: parlay repair
 System (background): Detects a directory structure that doesn't match any known category — e.g., spec/intents/foo/ is a feature, spec/handoff/foo/ is an initiative (contains subdirs with intents.md), and .parlay/build/foo/ doesn't exist.
 System: Detected 1 inconsistency:
 System: **Unresolved** — spec/intents/foo/ classifies as a feature but spec/handoff/foo/ classifies as an initiative. This mismatch doesn't fit any repair category.
@@ -127,7 +127,7 @@ System: [OK] Applied. Repair complete. 3 fixes applied. Project is now in lockst
 
 #### Branch: Rollback on single repair failure
 
-User: /parlay-repair
+User: parlay repair
 System (background): Detects 2 mismatches. Applies the first successfully.
 System: [OK] Renamed auth-overhaul → auth-redesign on spec/handoff/ and .parlay/build/.
 System (background): Attempts the second repair — creating spec/handoff/billing/. Permission denied on spec/handoff/.

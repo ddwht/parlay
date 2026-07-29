@@ -426,7 +426,7 @@ The fix is structural: the baseline and code-hashes are written together by a si
 ## Error Handling
 
 - `buildfile-not-found` — `.parlay/build/{feature}/buildfile.yaml` does not exist. Tell the user to run `/parlay-build-feature @{feature}` first.
-- `adapter-not-found` — `.parlay/adapters/{framework}.adapter.yaml` does not exist. Tell the user to run `/parlay-register-adapter` or `parlay init`.
+- `adapter-not-found` — `.parlay/adapters/{framework}.adapter.yaml` does not exist. Tell the user to run `parlay register-adapter <path>` or `parlay init`.
 - `invalid-buildfile-yaml` — YAML parse error. Show the error and ask the user to regenerate via `/parlay-build-feature`.
 - `unknown-component-type` — buildfile uses a component type not in the adapter. Either the buildfile is stale (regenerate it) or the adapter needs extending.
 - `source-root-collision` — adapter's source root conflicts with existing non-generated files. Ask the user how to proceed.

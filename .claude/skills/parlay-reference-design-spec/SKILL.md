@@ -107,7 +107,7 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
 
 - `figma-mcp-unavailable`: Figma MCP tool is not available. Tell the user to configure Figma MCP and retry.
 - `no-surface`: surface.md does not exist. Tell user to run `/parlay-create-artifacts @{feature}` first.
-- `no-adapter`: adapter file not found. Tell user to run `parlay init` or `/parlay-register-adapter`.
+- `no-adapter`: adapter file not found. Tell user to run `parlay init` or `parlay register-adapter <path>`.
 - `figma-read-failed`: MCP could not read the Figma file. Check the link and permissions.
 - `no-fragments-mapped`: No Figma components could be mapped to surface fragments. Ask user if they want to proceed with manual annotation or cancel.
 

@@ -25,7 +25,7 @@ System: How would you like to start?
   B: Create an empty initiative first, then populate it
   C: Create a brand-new feature directly inside an initiative
 User: Selects A
-System: Run /parlay-move-feature @password-reset --to auth-overhaul (and the same for @sso-setup and @login-flow). The initiative auto-creates on the first move, so you don't need to create it separately.
+System: Run parlay move-feature @password-reset --to auth-overhaul (and the same for @sso-setup and @login-flow). The initiative auto-creates on the first move, so you don't need to create it separately.
 System: After the moves, the three features will live at spec/intents/auth-overhaul/<feature>/ and be addressed as @auth-overhaul/<feature>. Their slug-keyed build and handoff artifacts get relocated in lockstep; nothing is lost.
 
 #### Branch: Asking about qualified addressing
@@ -41,7 +41,7 @@ System: That's a **hybrid directory** — it contains both an `intents.md` at it
 System: [ERR] Hybrid directory at `spec/intents/auth-overhaul/`: contains `intents.md` (feature) and subdirectories with `intents.md` (initiative). A directory cannot be both — pick one role.
 System: To fix, choose:
 System: - **Keep it as an initiative**: remove the top-level `intents.md` — move its content into a new feature subdirectory instead (e.g., `spec/intents/auth-overhaul/overview/intents.md`).
-System: - **Keep it as a feature**: move the subdirectories out with /parlay-move-feature.
+System: - **Keep it as a feature**: move the subdirectories out with parlay move-feature.
 
 #### Branch: Sub-initiative detected
 
@@ -56,7 +56,7 @@ System: - **Flatten**: move the child features directly under `auth-overhaul/` a
 
 User: I duplicated a feature directory by hand and now parlay won't resolve the slug.
 System: Parlay found two directories under the same parent whose names slugify to the same identifier. Different directory names can produce identical slugs — for example, `password-reset/` and `password_reset/` both become `password-reset`.
-System: [ERR] Duplicate slug `password-reset` under `spec/intents/auth-overhaul/`: both `password-reset/` and `password_reset/` resolve to the same identifier. Remove or rename one, then run /parlay-repair to reconcile the three trees.
+System: [ERR] Duplicate slug `password-reset` under `spec/intents/auth-overhaul/`: both `password-reset/` and `password_reset/` resolve to the same identifier. Remove or rename one, then run parlay repair to reconcile the three trees.
 System: This can't happen through parlay commands — they enforce per-scope uniqueness. It results from external filesystem operations (copy, manual mkdir).
 
 #### Branch: Empty initiative not appearing in listings
@@ -65,13 +65,13 @@ User: I created an initiative and added a README.md, but it doesn't show up when
 System: An initiative with no feature subdirectories is in **deferred classification** — valid, accepted by parlay commands, but invisible to listing commands until it contains at least one feature.
 System: A `README.md` is narrative, not a classification signal. The directory won't appear in listings until you add a feature:
 System: - /parlay-add-feature <name> --initiative auth-overhaul
-System: - /parlay-move-feature @<feature> --to auth-overhaul
+System: - parlay move-feature @<feature> --to auth-overhaul
 
 #### Branch: Asking about external tools
 
 User: What if I just rename a folder with mv or drag it in my IDE?
 System: Parlay can't see external filesystem operations, so plain mv or IDE renames will leave spec/handoff/ and .parlay/build/ stale. Commands that resolve qualified identifiers under the new name will fail until you reconcile.
-System: To put the project back in lockstep after external operations, run /parlay-repair. It validates the three trees and asks interactive questions when the correct reconciliation is ambiguous.
+System: To put the project back in lockstep after external operations, run parlay repair. It validates the three trees and asks interactive questions when the correct reconciliation is ambiguous.
 
 ---
 
@@ -110,7 +110,7 @@ System: [ERR] Feature `password-reset` already exists inside initiative `auth-ov
 
 User: /parlay-add-feature login --initiative password-reset
 System (background): Finds spec/intents/password-reset/ already exists as an orphan feature (it has an intents.md directly, not subdirectories).
-System: [ERR] `password-reset` exists at the top level as a feature, not an initiative. A feature and an initiative can't share a top-level slug. Either pick a different initiative name, or first move the existing `password-reset` feature into an initiative with /parlay-move-feature.
+System: [ERR] `password-reset` exists at the top level as a feature, not an initiative. A feature and an initiative can't share a top-level slug. Either pick a different initiative name, or first move the existing `password-reset` feature into an initiative with parlay move-feature.
 
 #### Branch: Partial failure — initiative created, feature creation fails
 
@@ -122,9 +122,9 @@ System: [WARN] Created initiative auth-overhaul (in deferred classification — 
 
 ### Create an Empty Initiative
 
-**Trigger**: /parlay-new-initiative ==initiative-name==
+**Trigger**: parlay new-initiative ==initiative-name==
 
-User: /parlay-new-initiative auth overhaul
+User: parlay new-initiative auth overhaul
 System (background): Runs `parlay new-initiative "auth overhaul"`. Slugifies to `auth-overhaul`. Checks the top-level namespace.
 System (background): Creates spec/intents/auth-overhaul/, spec/handoff/auth-overhaul/, and .parlay/build/auth-overhaul/ as empty directories in lockstep.
 System: Initiative auth-overhaul created at spec/intents/auth-overhaul/ (with matching empty parallel paths under spec/handoff/ and .parlay/build/).
@@ -132,23 +132,23 @@ System: The directory is empty and in deferred classification — it becomes a p
 System: Next steps:
 System: - Optionally write spec/intents/auth-overhaul/README.md with the initiative's "why" and scope notes.
 System: - Add features with /parlay-add-feature <name> --initiative auth-overhaul.
-System: - Or move existing features in with /parlay-move-feature @<feature> --to auth-overhaul.
+System: - Or move existing features in with parlay move-feature @<feature> --to auth-overhaul.
 
 #### Branch: Idempotent second run
 
-User: /parlay-new-initiative auth overhaul
+User: parlay new-initiative auth overhaul
 System (background): Finds spec/intents/auth-overhaul/ already exists at the top level. No changes to any tree.
 System: Initiative auth-overhaul already exists at spec/intents/auth-overhaul/ — no changes made.
 
 #### Branch: Top-level collision with an existing orphan feature
 
-User: /parlay-new-initiative password-reset
+User: parlay new-initiative password-reset
 System (background): Finds spec/intents/password-reset/ already exists as an orphan feature (has intents.md directly).
-System: [ERR] `password-reset` exists at the top level as a feature. An initiative can't share a top-level slug with a feature. Pick a different name, or first move the existing feature into an initiative with /parlay-move-feature.
+System: [ERR] `password-reset` exists at the top level as a feature. An initiative can't share a top-level slug with a feature. Pick a different name, or first move the existing feature into an initiative with parlay move-feature.
 
 #### Branch: Same slug allowed as a nested feature
 
-User: /parlay-new-initiative password-reset
+User: parlay new-initiative password-reset
 System (background): `password-reset` exists inside auth-overhaul/ as a nested feature — that's a different scope from the top level. No top-level collision.
 System: Initiative password-reset created at spec/intents/password-reset/.
 

@@ -67,9 +67,9 @@ System: Design spec generated. Run /parlay-build-feature to produce a richer bui
 
 ### View Assembled Page
 
-**Trigger**: /parlay-view-page ==page-name==
+**Trigger**: parlay view-page ==page-name==
 
-User: /parlay-view-page dashboard
+User: parlay view-page dashboard
 System (background): Collects all fragments targeting "dashboard" from all feature surfaces.
 System: Here's the assembled dashboard view:
 System: **header**:
@@ -85,9 +85,9 @@ System (condition: unplaced fragments exist): ==number== fragments have no page 
 
 ### Lock Page Layout
 
-**Trigger**: /parlay-lock-page ==page-name==
+**Trigger**: parlay lock-page ==page-name==
 
-User: /parlay-lock-page dashboard
+User: parlay lock-page dashboard
 System (background): Assembles the current page view for "dashboard".
 System: Here's the layout I'll lock. Who should own this page?
 User: Platform UX Team

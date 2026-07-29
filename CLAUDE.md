@@ -14,22 +14,17 @@ All operations are available as /parlay-* slash commands.
 - `/parlay-generate-code` — Generate prototype code from buildfile
 - `/parlay-generate-enggspec` — Generate engineering specification
 - `/parlay-load-domain-model` — Load and integrate external domain model
-- `/parlay-lock-page` — Lock a page layout into a manifest
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
 - `/parlay-migrate-capabilities` — Move operation-shaped fragments from infrastructure.md into capabilities.yaml; retain architectural prose in place (partial migration is the success case)
 - `/parlay-migrate-config` — Convert legacy prototype-framework into a single-target presentation adapter-set
 - `/parlay-migrate-domain-model` — Convert domain-model.md to domain-model.yaml
 - `/parlay-migrate-domain-operations` — Migrate deprecated domain-model.operations entries into per-feature capabilities.yaml stubs
 - `/parlay-migrate-spec` — Convert each feature's surface.md to surface.yaml
-- `/parlay-new-initiative` — Create an empty initiative directory
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
 - `/parlay-reference-design-spec` — Extract design spec from Figma
-- `/parlay-register-adapter` — Register a framework adapter
-- `/parlay-repair` — Validate and reconcile the three parallel trees
 - `/parlay-review-coverage` — Walk suites, record approvals, write coverage-review.yaml
 - `/parlay-scaffold-dialogs` — Scaffold dialog templates from intents
 - `/parlay-sync` — Check intent-dialog coverage
-- `/parlay-view-page` — Assemble and display a page view
 
 ## Schema Loading
 
