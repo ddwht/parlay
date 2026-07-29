@@ -102,6 +102,9 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 		return upgradeResult{}, fmt.Errorf("write schemas: %w", err)
 	}
 	schemaNames, _ := embedded.SchemaNames()
+	if err := writeSchemaDigest(schemasPath); err != nil {
+		return upgradeResult{}, fmt.Errorf("write schema digest: %w", err)
+	}
 
 	// Re-deploy the phase modules. These are skill sources that no longer
 	// appear on the agent's menu — the driver and the phase subagents load

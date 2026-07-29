@@ -181,6 +181,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write schemas: %w", err)
 	}
 	schemaNames, _ := embedded.SchemaNames()
+	if err := writeSchemaDigest(schemasPath); err != nil {
+		return fmt.Errorf("failed to write schema digest: %w", err)
+	}
 
 	// Operation: copy-bundled-adapter (if selected)
 	adapterName := ""

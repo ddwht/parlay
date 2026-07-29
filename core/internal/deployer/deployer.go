@@ -88,7 +88,14 @@ the one they need. The full CLI is still there — run %sparlay --help%s.
 
 ## Schema Loading
 
-Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
+Read .parlay/schemas/DIGEST.md first. It is derived from the schemas and lists
+every error code the tool can emit and when each fires — 9 KB instead of the
+263 KB corpus. It tells you which schema to open and which mistakes are
+pre-checkable, so you are not discovering validator rules by triggering them.
+
+Then load the specific schema you need on demand, and do not keep schema
+content in memory across commands. DIGEST.md is a routing table, not a
+substitute: author an artifact against its own schema.
 
 ## Interactive Questions
 

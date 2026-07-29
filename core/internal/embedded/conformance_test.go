@@ -497,3 +497,58 @@ func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
 		}
 	}
 }
+
+// TestSchemaDigestCoversEveryDocumentedCode ties the digest to the schemas it
+// summarizes. The digest exists so an agent stops discovering validator rules
+// by triggering them; a code missing from it is a rule still learned the
+// expensive way.
+func TestSchemaDigestCoversEveryDocumentedCode(t *testing.T) {
+	d, err := BuildSchemaDigest()
+	if err != nil {
+		t.Fatalf("BuildSchemaDigest: %v", err)
+	}
+	inDigest := map[string]bool{}
+	for _, s := range d.Schemas {
+		for c := range s.Codes {
+			inDigest[c] = true
+		}
+	}
+	if len(inDigest) == 0 {
+		t.Fatal("digest extracted no codes at all")
+	}
+
+	for _, codes := range repoSchemaCodes(t) {
+		for _, c := range codes {
+			if !inDigest[c] {
+				t.Errorf("%s is documented in a schema but absent from the digest", c)
+			}
+		}
+	}
+
+	// Every entry must say when the code fires. A bare list of codes is a
+	// glossary with no definitions and sends the reader back to the schema,
+	// which is what the digest exists to avoid.
+	for _, s := range d.Schemas {
+		for c, when := range s.Codes {
+			if strings.TrimSpace(when) == "" {
+				t.Errorf("%s (%s) has no 'fires when' text", c, s.File)
+			}
+		}
+	}
+}
+
+// The rendered digest has to stay small enough to be worth reading first.
+func TestSchemaDigestStaysCompact(t *testing.T) {
+	d, err := BuildSchemaDigest()
+	if err != nil {
+		t.Fatalf("BuildSchemaDigest: %v", err)
+	}
+	rendered := len(RenderSchemaDigestMarkdown(d))
+	// A tenth of the corpus is the loosest bound that still means "read this
+	// first" rather than "read this too".
+	if limit := d.TotalBytes / 10; rendered > limit {
+		t.Errorf("digest is %d bytes against a %d-byte corpus (limit %d) — "+
+			"it has grown into another thing to load rather than a way to avoid loading",
+			rendered, d.TotalBytes, limit)
+	}
+}
