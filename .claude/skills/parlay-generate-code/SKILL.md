@@ -67,7 +67,7 @@ Codegen has **no TTY-conditional code paths and no interactive prompts** in any 
 Concretely:
 
 - **No TTY checks.** Codegen behaves identically with and without a controlling terminal. A no-TTY container produces output behaviorally equivalent to a local TTY run on the same source state.
-- **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt the parent skill describes (mount-strategy ambiguity, hand-edited stable file, etc.) lives in the AI-agent author surface that wraps codegen — the codegen execution itself is prompt-free. The `--non-interactive` flag is silently accepted for compatibility but has no observable effect; running with or without it produces identical exit codes, the same testcases pass, and the same component tree is emitted.
+- **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt described in this skill (mount-strategy ambiguity, hand-edited file, etc.) is a **decision request returned to the orchestrator**, not a call codegen makes itself — the codegen execution is prompt-free. Where a step says "STOP and surface the situation" or "let the user choose", codegen halts and returns the choice to its caller, which owns all user interaction. This matters because codegen commonly runs inside a sub-agent where no interactive tool exists at all; a skill that tried to prompt from there would silently skip the gate instead of honoring it. The `--non-interactive` flag is silently accepted for compatibility but has no observable effect; running with or without it produces identical exit codes, the same testcases pass, and the same component tree is emitted.
 - **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
 - **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent. This governs generate-code's own output only — `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception with pinned-stable wording that `studio-cli-hooks` pattern-matches on; see that skill's step 6.
 
@@ -123,22 +123,35 @@ Concretely:
    - Files with `parlay-artifact: test` are test files for their parent component.
    - Files without ANY parlay marker are user-owned; never modify or delete them.
 
-10. **Verify stable files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+10. **Verify generated files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
    - If `has_hashes` is `false`, this is the very first generation — treat everything as new and skip the modified-file check.
-   - Otherwise, for each component the diff says is `stable`, check that its file is in `verify.stable[]`. If the file is in `verify.modified[]`, the user has hand-edited it — STOP and surface the situation:
+   - Otherwise, check **every** component that has a generated file — dirty and stable alike — against `verify.modified[]`. If a file is listed there, the user has hand-edited it — STOP and surface the situation:
      ```
-     <file> is marked as a stable component but has been edited since the last generation.
+     <file> has been edited since the last generation.
      A: Overwrite (lose my edits)
      B: Skip this file (keep my edits, possibly diverging from the buildfile)
      C: Show me the diff first
      ```
-   - If a stable file is in `verify.missing[]`, the user deleted it — ask whether to regenerate or to drop the component.
+     **Do not scope this check to stable components.** A hand-edit is most likely to be lost
+     precisely when the upstream spec also changed — that is, when the component is *dirty* and
+     codegen is about to rewrite the file anyway. Checking only stable components inverts the
+     safety property: it fires when nothing was going to be overwritten, and stands down in the
+     one case where an overwrite is imminent. A dirty component whose file is `modified` is the
+     highest-risk case in this skill, not an exempt one.
+   - If a generated file is in `verify.missing[]`, the user deleted it — ask whether to regenerate or to drop the component.
 
 11. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
 
     Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
 
-11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set. Refuse any write to a path not in the plan — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set, **plus the two exempt classes below**. Refuse any write to a path that is neither in the plan nor exempt — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+
+   **Exempt classes (authorized by this skill, not by the buildfile).** `build-feature` emits `plan:` rows for component implementation files and cross-cutting targets only. It emits none for the two categories this skill separately *requires* you to write, so a literal reading of the allowlist forbids exactly the files steps 14 and 15 mandate. Both are therefore exempt:
+
+   1. **Section-derived project files** — the models/types, routes/entry-point, shell, guard, error-boundary and state-provider files generated in step 14 from `blueprint` + merged `sections`. Each is identified by its `parlay-section:` marker, not by a plan row.
+   2. **Test files** — the per-component spec files generated in step 15, identified by `parlay-artifact: test`.
+
+   Exempt does not mean unbounded: a write still has to be one of these two marker-bearing categories, at the path the adapter's `file-conventions` dictate. Anything else remains a violation. Record every exempt write in the run summary so the set stays auditable — if a file is being written repeatedly under an exemption, that is a signal `build-feature` should be emitting a plan row for it instead.
 
    **Cross-feature dependency graph (project-pass mode).** When multiple buildfiles are loaded, build the cross-feature dependency graph in this same step: every `plan.modifies` path that matches another feature's `plan.creates` path adds an edge from the modifying feature to the creating feature. Validate the graph is acyclic; on cycle, surface `plan-create-modify-cycle` and stop without writing any files. The construction is mechanical — same algorithm `parlay validate --project` uses — and it catches the same authoring mistakes the validator would catch upstream.
 
@@ -237,6 +250,10 @@ Concretely:
       - **Error boundaries**: Error boundary components per scope in `blueprint.errors.boundaries`. Mark with `parlay-section: errors`.
       - **State providers**: Context providers per global state slice in `blueprint.state.global`. Mark with `parlay-section: state`.
       - **Route wiring**: The entry point / router file must reflect `navigation.strategy`, `navigation.default-route`, `navigation.not-found`, and the shell→route→guard assignments. This file is also marked `parlay-section: routes`, so it is regenerated whenever routes OR blueprint changes.
+
+        **Emit the route table in match-precedence order, and verify `default-route` actually resolves.** Most routers match top-down and take the first hit, so a redirect for the empty path placed *after* the shells that also match the empty path is unreachable — the shell matches first, finds no child for the empty remainder, and renders an empty outlet. The symptom is a blank page at the app root with no console error, and `navigation.default-route` silently doing nothing.
+
+        Order the emitted table so that, for each path, the most specific match precedes the more general one — in particular the `default-route` redirect must precede any shell or layout route that also matches the empty path. After emitting, confirm the root path resolves to `default-route` rather than to an empty shell; if the target framework offers a full-match qualifier (Angular's `pathMatch: 'full'`, React Router's `index`), use it rather than relying on ordering alone.
     - If a section is `"stable"`: leave the corresponding file untouched (look it up via scan-generated by its `parlay-section:` marker).
     - If a section is `"removed"`: delete the corresponding file.
     - Cross-cutting files use a two-line marker:
@@ -392,7 +409,11 @@ The skill calls the three read helpers before regenerating, then `parlay save-bu
 
 **The very first generation** of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
 
-If a stable component's file is reported as `modified` by verify-generated, the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
+If **any** generated file is reported as `modified` by verify-generated — whether its component is stable or dirty — the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
+
+The dirty case is the one that matters most and it is easy to get wrong: a component whose upstream spec changed is exactly the component codegen is about to rewrite, so scoping the check to stable components alone guarantees the hand-edit is destroyed without warning. Stable components, by contrast, are not rewritten at all — the check is nearly free there.
+
+Because re-emission is only *functionally* deterministic (see "Determinism contract"), a content hash alone cannot distinguish "the user edited this" from "we regenerated it". `verify-generated` reports both as `modified`. Until emission provenance is recorded alongside the hash, treat `modified` as "needs a human decision" rather than as proof of a hand-edit, and prefer showing the diff (option C) when the component is dirty.
 
 ## Why save-build-state is at the end (and only at the end)
 

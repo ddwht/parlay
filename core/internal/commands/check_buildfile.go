@@ -79,8 +79,12 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, e := range agent.ValidateBuildfileDeepStructured(bfPath, adapterPath) {
+		severity := e.Severity
+		if severity == "" {
+			severity = severityForCode(e.Code)
+		}
 		output.Issues = append(output.Issues, checkBuildfileIssue{
-			Severity: severityForCode(e.Code),
+			Severity: severity,
 			Code:     e.Code,
 			Message:  e.Message,
 			Context:  e.Context,
@@ -118,6 +122,12 @@ func autoDiscoverAdapter(cfg *config.Context, buildfilePath string) string {
 // levels. Most cross-reference and plan-integrity errors are blocking;
 // adapter-vocab mismatches and plan-create-collision are warnings (the
 // agent might still want to proceed after asking the user).
+//
+// Deprecated: severity now lives in one place — agent.RuleSeverity, backed
+// by ruleSeverityTable — and is stamped onto each finding by
+// agent.ApplyBuildfileSeverity. Keeping a private second table here is what
+// made check-buildfile and validate --deep disagree about the same file.
+// Retained only as a fallback for findings that arrive without a severity.
 func severityForCode(code string) string {
 	switch code {
 	case "plan-create-collision",

@@ -31,11 +31,20 @@ var checkDriftCmd = &cobra.Command{
 //     (parlay diff). Used to determine which buildfile components
 //     are stable / dirty / removed without re-running the agent.
 type Baseline struct {
+	// SchemaVersion is the baseline format version. Absent (0) means a
+	// baseline written before the field existed — see the
+	// "missing means unknown" rule on HashedSources.Domain.
+	SchemaVersion     int                   `yaml:"schema-version,omitempty"`
 	GeneratedAt       string                `yaml:"generated-at"`
 	Intents           map[string]IntentHash `yaml:"intents"`
 	Sources           *HashedSources        `yaml:"sources,omitempty"`
 	BuildfileSections map[string]string     `yaml:"buildfile-sections,omitempty"`
 }
+
+// BaselineSchemaVersion is the current baseline format version.
+//
+//	1 — adds Domain and AdapterVersion to HashedSources.
+const BaselineSchemaVersion = 1
 
 // IntentHash stores hashes of individual intent fields for granular drift detection.
 type IntentHash struct {
@@ -71,6 +80,24 @@ type HashedSources struct {
 	Capabilities   string `yaml:"capabilities,omitempty"`
 	Infrastructure string `yaml:"infrastructure,omitempty"`
 	SurfaceYAML    string `yaml:"surface-yaml,omitempty"`
+
+	// Domain is a whole-file hash of the project's canonical
+	// domain-model.yaml, and AdapterVersion of the resolved adapter file.
+	//
+	// Both were previously untracked, which made domain-model edits
+	// structurally invisible to drift detection: a designer could change
+	// the shared model (the whole point of the Studio editor) and every
+	// dependent feature would still report has_drift:false, so nothing was
+	// ever marked for rebuild.
+	//
+	// "Missing means unknown, not drifted." A baseline written before
+	// SchemaVersion 1 has no domain hash, and comparing "" against a real
+	// hash would report every pre-existing project as drifted the moment
+	// the binary is upgraded. Readers MUST treat an empty stored value as
+	// "no opinion" and skip the comparison; the next save-build-state
+	// backfills it.
+	Domain         string `yaml:"domain,omitempty"`
+	AdapterVersion string `yaml:"adapter-version,omitempty"`
 }
 
 type driftItem struct {
@@ -84,6 +111,14 @@ type driftOutput struct {
 	Drifted    []driftItem `json:"drifted,omitempty"`
 	NewIntents []string    `json:"new_intents,omitempty"`
 	Removed    []string    `json:"removed_intents,omitempty"`
+
+	// SharedSourcesChanged names project-scoped artifacts that changed
+	// since the baseline — currently "domain-model" and "adapter".
+	// These are not per-feature files, so a change dirties every feature
+	// that reads them. Reported separately from intent drift so callers
+	// can tell "this feature's own spec changed" from "something the
+	// whole project shares changed underneath it".
+	SharedSourcesChanged []string `json:"shared_sources_changed,omitempty"`
 }
 
 func baselinePath(cfg *config.Context, slug string) string {
@@ -107,9 +142,10 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 	}
 
 	baseline := &Baseline{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Intents:     make(map[string]IntentHash),
-		Sources:     &HashedSources{Intents: make(map[string]string)},
+		SchemaVersion: BaselineSchemaVersion,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		Intents:       make(map[string]IntentHash),
+		Sources:       &HashedSources{Intents: make(map[string]string)},
 	}
 
 	for _, intent := range intents {
@@ -167,6 +203,21 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 	}
 	if hash, ok := hashWholeFile(filepath.Join(featurePath, "surface.yaml")); ok {
 		baseline.Sources.SurfaceYAML = hash
+	}
+
+	// Project-scoped advisory hashes. Unlike the three above, these are not
+	// per-feature files — every feature in the project shares them, so a
+	// change to either dirties every feature that reads it.
+	if hash, ok := hashWholeFile(cfg.DomainModelPath()); ok {
+		baseline.Sources.Domain = hash
+	}
+	// The adapter this feature builds against is named by its own
+	// buildfile, so reuse the same discovery check-buildfile uses rather
+	// than re-deriving it from prototype-framework.
+	if path := autoDiscoverAdapter(cfg, filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")); path != "" {
+		if hash, ok := hashWholeFile(path); ok {
+			baseline.Sources.AdapterVersion = hash
+		}
 	}
 
 	return baseline, nil
@@ -257,7 +308,35 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 		}
 	}
 
-	output.HasDrift = len(output.Drifted) > 0 || len(output.NewIntents) > 0 || len(output.Removed) > 0
+	// Project-scoped shared sources. Previously untracked entirely, which
+	// meant editing the canonical domain-model.yaml — the whole point of
+	// the Studio editor — left every dependent feature reporting
+	// has_drift:false, so nothing was ever marked for rebuild.
+	//
+	// Pre-v1 baselines carry no stored hash for these; "missing means
+	// unknown, not drifted" so that upgrading the binary does not report
+	// every existing project as drifted. The next save-build-state
+	// backfills them.
+	if baseline.Sources != nil {
+		for _, s := range []struct {
+			name       string
+			path       string
+			storedHash string
+		}{
+			{"domain-model", cfg.DomainModelPath(), baseline.Sources.Domain},
+			{"adapter", autoDiscoverAdapter(cfg, filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")), baseline.Sources.AdapterVersion},
+		} {
+			if s.path == "" || s.storedHash == "" {
+				continue
+			}
+			if current, ok := hashWholeFile(s.path); ok && current != s.storedHash {
+				output.SharedSourcesChanged = append(output.SharedSourcesChanged, s.name)
+			}
+		}
+	}
+
+	output.HasDrift = len(output.Drifted) > 0 || len(output.NewIntents) > 0 ||
+		len(output.Removed) > 0 || len(output.SharedSourcesChanged) > 0
 	return output, nil
 }
 

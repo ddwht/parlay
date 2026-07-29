@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
@@ -140,6 +141,19 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 		}
 		child, ok := idx.Lookup(rootFlag)
 		if !ok {
+			// A path-shaped argument is the common mistake — several
+			// skills and agent briefs recommend `--root <path>`, which
+			// cannot work: --root selects a *registered child-root name*
+			// from the roots index, and a standalone project's index is
+			// empty. Say so explicitly instead of reporting "unknown
+			// root; known: []", which reads as a lookup failure and
+			// leaves the caller retrying variations of the path.
+			if looksLikePath(rootFlag) {
+				return fmt.Errorf("--root %s: --root takes a registered child-root name, not a filesystem path. "+
+					"Known names: %v. To operate on a different project, run parlay from inside it (or set PARLAY_ROOT); "+
+					"to register a subfolder as a child root, use `parlay add-root`",
+					rootFlag, idx.Names())
+			}
 			return fmt.Errorf("--root %s: unknown root; known: %v", rootFlag, idx.Names())
 		}
 		// Re-resolve the active root to point at the chosen child.
@@ -295,4 +309,22 @@ func init() {
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
 	rootCmd.AddCommand(statusCmd)
+}
+
+// looksLikePath reports whether s is shaped like a filesystem path rather
+// than a root name. Used only to pick a clearer error message.
+func looksLikePath(s string) bool {
+	if s == "." || s == ".." {
+		return true
+	}
+	if strings.ContainsAny(s, "/\\") {
+		return true
+	}
+	if strings.HasPrefix(s, "~") {
+		return true
+	}
+	if info, err := os.Stat(s); err == nil && info.IsDir() {
+		return true
+	}
+	return false
 }

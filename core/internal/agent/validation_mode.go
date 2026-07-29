@@ -64,6 +64,37 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+
+	// Buildfile deep-validation rules. These previously lived in a second,
+	// private table inside the check-buildfile command, so the two
+	// consumers of the same finding set disagreed about the same file:
+	// check-buildfile graded these four as warnings while validate --deep
+	// returned every finding under "errors" with no severity field at all.
+	// A CI step using validate --deep therefore treated them as hard
+	// failures and could not even reconstruct the distinction. One table,
+	// both consumers.
+	//
+	// plan-create-collision is a warning in both modes deliberately: it
+	// fires whenever a planned path already exists on disk, which is the
+	// normal state of every buildfile after its own code has been
+	// generated. Grading it blocking makes a correct buildfile
+	// un-revalidatable the moment codegen runs.
+	"plan-create-collision": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"unknown-component-widget": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"unknown-component-action": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"unknown-flow": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 }
 
 // RuleSeverity returns the per-mode severity for a given rule code. Rules

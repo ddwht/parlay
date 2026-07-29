@@ -177,12 +177,44 @@ func probeStudioVersion(binaryPath string) (string, bool) {
 		return "", false
 	}
 	// Common shapes: "parlay-studio 1.4.0", "parlay-studio v1.4.0",
-	// "1.4.0". Strip a leading program name and a leading "v" so the
-	// stored version is just the number.
-	fields := strings.Fields(line)
-	v := fields[len(fields)-1]
-	v = strings.TrimPrefix(v, "v")
-	return v, true
+	// "1.4.0", and — the shape parlay-studio actually emits —
+	// "parlay-studio 0.1.2 (commit abc1234)".
+	//
+	// Take the first field that looks like a version, not the last. Taking
+	// the last field worked only for banners with no trailing metadata:
+	// against the real banner it selected "abc1234)" as the version, which
+	// then failed the range comparison and printed
+	//   warning: parlay-studio version abc1234) is older than expected …
+	// to stderr on every single parlay invocation — an unparseable token
+	// with an unbalanced paren, for the life of the process.
+	for _, f := range strings.Fields(line) {
+		candidate := strings.TrimPrefix(f, "v")
+		if looksLikeVersion(candidate) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// looksLikeVersion reports whether s starts with a digit and contains only
+// characters legal in a semver-ish token. Deliberately permissive about
+// pre-release suffixes (1.2.0-rc.1) and strict about the first character,
+// which is what separates "0.1.2" from "parlay-studio" and from "(commit".
+func looksLikeVersion(s string) bool {
+	if s == "" || s[0] < '0' || s[0] > '9' {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9',
+			r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r == '.', r == '-', r == '+':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // detectStudioFromOS is the live-filesystem variant used by

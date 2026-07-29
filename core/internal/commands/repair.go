@@ -188,6 +188,7 @@ func detectMismatches(intentsRoot string, roots []string) ([]mismatch, error) {
 				mismatches = append(mismatches, mismatch{
 					Category: "missing-directory",
 					NewPath:  fullPath,
+					Tree:     root,
 					Paths: []string{
 						fmt.Sprintf("%s/%s (exists)", intentsRoot, relPath),
 						fmt.Sprintf("%s (missing)", fullPath),
@@ -207,6 +208,7 @@ func detectMismatches(intentsRoot string, roots []string) ([]mismatch, error) {
 				mismatches = append(mismatches, mismatch{
 					Category: "extra-directory",
 					OldPath:  fullPath,
+					Tree:     root,
 					Paths: []string{
 						fmt.Sprintf("%s (%d files, no source in %s)", fullPath, countFiles(fullPath), intentsRoot),
 					},
@@ -215,6 +217,8 @@ func detectMismatches(intentsRoot string, roots []string) ([]mismatch, error) {
 			}
 		}
 	}
+
+	mismatches = foldRenamePairs(mismatches)
 
 	// threeTreeRoots always returns [intentsRoot, handoffRoot, buildRoot] —
 	// only the build tree carries per-feature buildfile.yaml/testcases.yaml,
@@ -732,4 +736,79 @@ func renderRepairResult(cmd *cobra.Command, out RepairOutcome) {
 	default:
 		fmt.Fprintln(w, "Project is in lockstep. No repairs needed.")
 	}
+}
+
+// foldRenamePairs rewrites an unambiguous (missing-directory,
+// extra-directory) pair within the same tree into a single feature-move.
+//
+// Renaming a feature directory under spec/intents/ produces exactly that
+// pair in every other tree: the new name is missing, the old name is now
+// unsourced. Detected independently, the two passes report them as
+// unrelated events and the offered remedy is "create an empty directory"
+// plus "delete the old one" — which discards the buildfile, testcases and
+// baseline the old directory holds. That is data loss presented as a
+// repair, and because destructive prompts decline by default on a
+// non-TTY (and --yes does not cover them), it also never converges: the
+// mismatch is reported unresolved on every subsequent run, forever.
+//
+// A move preserves the contents, is the operation the user actually
+// performed, and — being non-destructive — is safe to default to yes,
+// so repair converges in CI and hooks as well as interactively.
+//
+// Folding is deliberately conservative: it applies only when a tree has
+// exactly one missing and one extra directory, so the pairing is
+// unambiguous. Anything else keeps the previous per-event behaviour,
+// where the human decides.
+func foldRenamePairs(mismatches []mismatch) []mismatch {
+	missingByTree := map[string][]int{}
+	extraByTree := map[string][]int{}
+	for i, m := range mismatches {
+		switch m.Category {
+		case "missing-directory":
+			missingByTree[m.Tree] = append(missingByTree[m.Tree], i)
+		case "extra-directory":
+			extraByTree[m.Tree] = append(extraByTree[m.Tree], i)
+		}
+	}
+
+	folded := map[int]bool{}
+	var moves []mismatch
+	for tree, missIdx := range missingByTree {
+		extraIdx := extraByTree[tree]
+		if tree == "" || len(missIdx) != 1 || len(extraIdx) != 1 {
+			continue
+		}
+		miss := mismatches[missIdx[0]]
+		extra := mismatches[extraIdx[0]]
+		// Fold regardless of file count. An empty old directory makes
+		// move and create+delete equivalent in outcome, but only the move
+		// converges: the delete prompt declines by default on a non-TTY
+		// and --yes does not cover it, so skipping the fold here would
+		// leave the mismatch permanently unresolved.
+		folded[missIdx[0]] = true
+		folded[extraIdx[0]] = true
+		moves = append(moves, mismatch{
+			Category: "feature-move",
+			OldPath:  extra.OldPath,
+			NewPath:  miss.NewPath,
+			Tree:     tree,
+			Paths: []string{
+				fmt.Sprintf("%s (%d files, no source in spec/intents)", extra.OldPath, countFiles(extra.OldPath)),
+				fmt.Sprintf("%s (missing)", miss.NewPath),
+			},
+			Detail: fmt.Sprintf("Move %s to %s (renamed feature — preserves %d files)",
+				extra.OldPath, miss.NewPath, countFiles(extra.OldPath)),
+		})
+	}
+
+	if len(folded) == 0 {
+		return mismatches
+	}
+	out := make([]mismatch, 0, len(mismatches))
+	for i, m := range mismatches {
+		if !folded[i] {
+			out = append(out, m)
+		}
+	}
+	return append(out, moves...)
 }

@@ -51,12 +51,16 @@ func runParse(cmd *cobra.Command, args []string) error {
 	var result interface{}
 	var err error
 
+	// Singular aliases are accepted. The artifacts are intents.md and
+	// dialogs.md, so "--type intent" is a natural thing to type, and the
+	// plural/singular distinction carries no meaning here — rejecting it
+	// bought nothing but a round-trip through the error message.
 	switch parseType {
-	case "intents":
+	case "intents", "intent":
 		result, err = parser.ParseIntentsFile(path)
-	case "dialogs":
+	case "dialogs", "dialog":
 		result, err = parser.ParseDialogsFile(path)
-	case "surface":
+	case "surface", "surfaces":
 		result, err = parser.ParseSurfaceFile(path)
 	default:
 		return fmt.Errorf("unknown type %q — supported: intents, dialogs, surface", parseType)

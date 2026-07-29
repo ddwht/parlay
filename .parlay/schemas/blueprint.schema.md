@@ -293,7 +293,9 @@ The codegen boundary is preserved: the blueprint lives in `.parlay/`, so generat
 
 ### Owned scope
 
-Blueprint's owned scope is closed to: `data`, `auth`, `errors`, `state`, `navigation`, `platform`. Any other top-level key fails validation.
+Blueprint's owned scope is closed to: `app`, `shells`, `navigation`, `authorization`, `data`, `errors`, `state`, `platform`. Any other top-level key fails validation.
+
+This list previously read `data, auth, errors, state, navigation, platform` — omitting `app:`, `shells:` and `authorization:`, all three documented in the schema body above and all three present in every real blueprint. Read literally, it declared the standard blueprint invalid. It also wrote `auth` where the body writes `authorization`, and that discrepancy was not confined to prose: the scope validator decoded `auth.strategy`, so on a real blueprint the key was simply absent and the check passed vacuously. Key names in this section are read by code — they must match the body.
 
 Topology — i.e., which adapter occupies which slot, what source roots they emit into, what cross-kind edges are authorized — is **not** in blueprint's scope. Topology lives in `.parlay/adapter-set.yaml`. A blueprint that declares a `targets:` block fails validation with `blueprint-topology-not-allowed`.
 

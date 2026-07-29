@@ -272,6 +272,28 @@ func detectCycleEdges(deps map[string]map[string]bool) []cycleEdge {
 //
 // parlay-extends: parlay-tool/cross-cutting-target-paths/validator-classify-entry-kind-and-route
 func classifyCrossCuttingEntry(entry deepCrossCuttingEntry, rootDir string) string {
+	return classifyCrossCuttingEntryWithPlan(entry, rootDir, nil)
+}
+
+// classifyCrossCuttingEntryWithPlan is classifyCrossCuttingEntry with the
+// entry's own authored plan.creates paths supplied, which makes the
+// classification stable across the build→codegen boundary.
+//
+// The on-disk heuristic below asks "do these target files exist?" — a
+// question whose answer codegen itself changes. An entry authored as
+// purely-introducing (target absent → routed to plan.creates) was
+// reclassified modifies-only the moment codegen created that very file, and
+// then demanded a plan.modifies row that was never appropriate. The
+// buildfile did not change; the world did. That made a correct buildfile
+// fail re-validation immediately after its own code was generated, breaking
+// CI re-checks, pre-commit hooks, and any regeneration pass.
+//
+// plannedCreatesForEntry is the set of paths this entry's own plan.creates
+// rows claim. A path listed there was authored as "this entry introduces
+// it", so its later presence on disk is the expected result of following
+// the plan, not evidence of misclassification. The plan is the recorded
+// intent; disk is only the current state.
+func classifyCrossCuttingEntryWithPlan(entry deepCrossCuttingEntry, rootDir string, plannedCreatesForEntry map[string]bool) string {
 	// Explicit two-kinded shape wins over the heuristic.
 	if len(entry.TargetCreates) > 0 {
 		return "two-kinded"
@@ -285,6 +307,21 @@ func classifyCrossCuttingEntry(entry deepCrossCuttingEntry, rootDir string) stri
 	if len(entry.TargetFiles) == 0 {
 		// No explicit files; pattern resolution is handled separately.
 		return "modifies-only"
+	}
+	// Authored intent wins over current disk state: if every target file is
+	// one this entry's own plan.creates claims, it is purely-introducing
+	// regardless of whether codegen has since created those files.
+	if len(plannedCreatesForEntry) > 0 {
+		allPlannedCreates := true
+		for _, p := range entry.TargetFiles {
+			if !plannedCreatesForEntry[p] {
+				allPlannedCreates = false
+				break
+			}
+		}
+		if allPlannedCreates {
+			return "purely-introducing"
+		}
 	}
 	allMissing := true
 	allPresent := true
@@ -483,7 +520,16 @@ func validatePlanSection(bf deepBuildfile, buildfilePath string, plannedCreates 
 			}
 		}
 
-		kind := classifyCrossCuttingEntry(cc, rootDir)
+		// Paths this entry's own plan.creates rows claim. Supplying these
+		// keeps the classification stable once codegen has created them —
+		// see classifyCrossCuttingEntryWithPlan.
+		plannedByThisEntry := map[string]bool{}
+		for _, e := range entries {
+			if e.kind == "create" {
+				plannedByThisEntry[e.path] = true
+			}
+		}
+		kind := classifyCrossCuttingEntryWithPlan(cc, rootDir, plannedByThisEntry)
 
 		// Mixed heuristic outcomes are rejected — author must split or
 		// declare target-creates: explicitly. Two-kinded entries do not

@@ -114,7 +114,13 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 	}
 	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
-	output.AdvisorySources = computeAdvisorySourceDiff(featurePath, stored)
+	output.AdvisorySources = computeAdvisorySourceDiff(
+		featurePath,
+		stored,
+		storedBaseline.SchemaVersion,
+		testContext(t).DomainModelPath(),
+		autoDiscoverAdapter(testContext(t), filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")),
+	)
 
 	buildfilePath := filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")
 	if fileExists(buildfilePath) {

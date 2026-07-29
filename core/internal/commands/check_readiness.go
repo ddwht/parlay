@@ -27,7 +27,7 @@ var checkReadinessCmd = &cobra.Command{
 var readinessStage string
 
 func init() {
-	checkReadinessCmd.Flags().StringVar(&readinessStage, "stage", "", "Pipeline stage to check: create-surface, build-feature")
+	checkReadinessCmd.Flags().StringVar(&readinessStage, "stage", "", "Pipeline stage to check: dialogs, create-surface, build-feature")
 	checkReadinessCmd.MarkFlagRequired("stage")
 }
 
@@ -64,8 +64,21 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 		output.Issues = checkCreateSurfaceReadiness(featurePath)
 	case "build-feature":
 		output.Issues = checkBuildFeatureReadiness(cfg, featurePath, slug)
+	case "dialogs":
+		// Readiness to author dialogs is exactly readiness to author a
+		// surface minus the "you have no dialogs yet" warning, which is
+		// the very thing this stage precedes. Without this stage the
+		// intents->dialogs boundary had no gate at all, so nothing checked
+		// that intents parse and carry Goal/Persona before dialogs were
+		// generated from them.
+		for _, issue := range checkCreateSurfaceReadiness(featurePath) {
+			if issue.Code == "no-dialogs" {
+				continue
+			}
+			output.Issues = append(output.Issues, issue)
+		}
 	default:
-		return fmt.Errorf("unknown stage %q — supported: create-surface, build-feature", readinessStage)
+		return fmt.Errorf("unknown stage %q — supported: dialogs, create-surface, build-feature", readinessStage)
 	}
 
 	// Ready if no errors (warnings don't block)
@@ -224,10 +237,23 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	// capabilities.yaml over infrastructure.md; legacy forms still count.
 	surfacePath := parser.ResolveSurfacePath(featurePath)
 	infraPath := filepath.Join(featurePath, "infrastructure.md")
-	capabilitiesPath := filepath.Join(featurePath, "capabilities.yaml")
 	hasArtifacts := phaseAtLeast(phase, PhaseArtifacts)
 	hasSurface := surfacePath != ""
-	hasInfra := fileExistsAt(infraPath) || fileExistsAt(capabilitiesPath)
+
+	// Only infrastructure.md's own existence may gate the infrastructure
+	// format check. This previously read
+	//
+	//	hasInfra := fileExistsAt(infraPath) || fileExistsAt(capabilities.yaml)
+	//
+	// which conflated "has a backend artifact" with "has infrastructure.md":
+	// a feature with capabilities.yaml and no infrastructure.md — that is,
+	// "surface + capabilities", one of the documented valid artifact subsets
+	// — went on to format-check a file it does not have. isNewSchemaFormat
+	// returns false for an unreadable file, so the absent file read as
+	// "legacy format" and the feature was hard-blocked from the build phase
+	// by an error naming a nonexistent file, with a migration fix it could
+	// not perform. The at-least-one gate is handled by hasArtifacts above.
+	hasInfraFile := fileExistsAt(infraPath)
 
 	if !hasArtifacts {
 		issues = append(issues, readinessIssue{
@@ -239,7 +265,7 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 		return issues
 	}
 
-	if hasInfra && !isNewSchemaFormat(infraPath) {
+	if hasInfraFile && !isNewSchemaFormat(infraPath) {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
 			Code:     "old-infrastructure-schema",

@@ -63,7 +63,21 @@ type diffOutput struct {
 	Fragments    sourceLevelDiff   `json:"surface_fragments"`
 	DesignSpec   sourceLevelDiff   `json:"design_spec"`
 	Components   componentDiff     `json:"components"`
-	Sections     map[string]string `json:"sections,omitempty"`
+
+	// Sections compares THIS feature's buildfile sections against THIS
+	// feature's baseline. It is not the project-wide answer, and the two
+	// legitimately disagree: a project-scoped file (e.g. the shared
+	// fixtures module) can be "changed" across the merged set while this
+	// one feature's own section hash is unchanged.
+	//
+	// The disagreement is load-bearing, not cosmetic. A caller who reads
+	// only the per-feature view and sees `fixtures: stable` will skip a
+	// project-scoped file that genuinely needs regenerating — which is how
+	// a constraint ends up half-enforced (validator updated, seeded
+	// fixture left at the old value). SectionsScope names which question
+	// was answered so the two views cannot be silently conflated.
+	Sections      map[string]string `json:"sections,omitempty"`
+	SectionsScope string            `json:"sections_scope,omitempty"`
 
 	// AdvisorySources reports whole-file drift for capabilities.yaml,
 	// infrastructure.md, and surface.yaml, keyed by that name with a
@@ -109,6 +123,9 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	if stored == nil {
 		stored = &HashedSources{}
 	}
+	// Zero for baselines written before the field existed, which drives the
+	// missing-means-unknown rule in computeAdvisorySourceDiff.
+	baselineSchemaVersion := storedBaseline.SchemaVersion
 
 	// Parse current sources. Missing files are not errors — they yield
 	// empty maps and the relevant section reports "all stored entries
@@ -152,7 +169,13 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 	output.DesignSpec = diffDesignSpec(storedDSFragments, stored.DesignSpecShared, currentDSFragments, currentDSShared)
 
-	output.AdvisorySources = computeAdvisorySourceDiff(featurePath, stored)
+	output.AdvisorySources = computeAdvisorySourceDiff(
+		featurePath,
+		stored,
+		baselineSchemaVersion,
+		cfg.DomainModelPath(),
+		autoDiscoverAdapter(cfg, filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")),
+	)
 
 	// Component-level impact analysis is only meaningful when there's a
 	// committed baseline AND a buildfile to walk. On first_build (no
@@ -174,6 +197,10 @@ func runDiff(cmd *cobra.Command, args []string) error {
 			// routes → main.go, etc.). Compares current buildfile section
 			// hashes to stored ones in the baseline.
 			output.Sections = computeSectionDiff(buildfilePath, storedBaseline.BuildfileSections)
+			if len(output.Sections) > 0 {
+				// Name the question this answered — see SectionsScope.
+				output.SectionsScope = "feature"
+			}
 		}
 	}
 
@@ -181,34 +208,72 @@ func runDiff(cmd *cobra.Command, args []string) error {
 }
 
 // computeAdvisorySourceDiff hashes the current capabilities.yaml,
-// infrastructure.md, and surface.yaml (whichever exist) and compares
-// each against the stored HashedSources hash from the baseline. Returns
-// a map keyed by artifact name with the same "changed" | "stable" |
-// "new" | "removed" vocabulary as computeSectionDiff — a file present
-// in only one of stored/current is "new" or "removed"; present in both
-// with a differing hash is "changed"; identical hashes are "stable". A
-// file absent from both sides is omitted entirely (nothing to report).
-func computeAdvisorySourceDiff(featurePath string, stored *HashedSources) map[string]string {
+// infrastructure.md, and surface.yaml (whichever exist), plus the
+// project-scoped domain-model.yaml and adapter file, and compares each
+// against the stored HashedSources hash from the baseline. Returns a map
+// keyed by artifact name with the same "changed" | "stable" | "new" |
+// "removed" vocabulary as computeSectionDiff — a file present in only one
+// of stored/current is "new" or "removed"; present in both with a
+// differing hash is "changed"; identical hashes are "stable". A file
+// absent from both sides is omitted entirely (nothing to report).
+//
+// domainPath and adapterPath are project-scoped: unlike the three
+// per-feature artifacts, every feature shares them, so a change to either
+// dirties every feature that reads it. Pass "" to skip one.
+//
+// schemaVersion is the stored baseline's format version. Baselines
+// written before version 1 carry no domain/adapter-version hash, and
+// reporting those as "new" on every project the moment the binary is
+// upgraded would be noise, not signal — so for those two entries only, an
+// absent stored hash on a pre-v1 baseline is reported as "unknown" and the
+// comparison is skipped. The next save-build-state backfills it.
+func computeAdvisorySourceDiff(featurePath string, stored *HashedSources, schemaVersion int, domainPath, adapterPath string) map[string]string {
 	type entry struct {
 		name       string
 		path       string
 		storedHash string
+		// projectScoped entries participate in the missing-means-unknown
+		// rule for pre-v1 baselines.
+		projectScoped bool
 	}
 	entries := []entry{
-		{"capabilities", filepath.Join(featurePath, "capabilities.yaml"), ""},
-		{"infrastructure", filepath.Join(featurePath, "infrastructure.md"), ""},
-		{"surface-yaml", filepath.Join(featurePath, "surface.yaml"), ""},
+		{"capabilities", filepath.Join(featurePath, "capabilities.yaml"), "", false},
+		{"infrastructure", filepath.Join(featurePath, "infrastructure.md"), "", false},
+		{"surface-yaml", filepath.Join(featurePath, "surface.yaml"), "", false},
+	}
+	if domainPath != "" {
+		entries = append(entries, entry{"domain", domainPath, "", true})
+	}
+	if adapterPath != "" {
+		entries = append(entries, entry{"adapter-version", adapterPath, "", true})
 	}
 	if stored != nil {
 		entries[0].storedHash = stored.Capabilities
 		entries[1].storedHash = stored.Infrastructure
 		entries[2].storedHash = stored.SurfaceYAML
+		for i := range entries {
+			switch entries[i].name {
+			case "domain":
+				entries[i].storedHash = stored.Domain
+			case "adapter-version":
+				entries[i].storedHash = stored.AdapterVersion
+			}
+		}
 	}
 
 	result := make(map[string]string)
 	for _, e := range entries {
 		currentHash, currentExists := hashWholeFile(e.path)
 		storedExists := e.storedHash != ""
+
+		// Missing means unknown, not drifted — see the doc comment.
+		if e.projectScoped && !storedExists && schemaVersion < 1 {
+			if currentExists {
+				result[e.name] = "unknown"
+			}
+			continue
+		}
+
 		switch {
 		case currentExists && storedExists:
 			if currentHash != e.storedHash {

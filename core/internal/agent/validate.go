@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -45,12 +46,66 @@ func ValidateBuildfile(path string, content []byte) error {
 
 // ValidateSurface checks surface.md has fragment headings with Shows fields.
 func ValidateSurface(path string, content []byte) error {
+	// surface.yaml is the target format for the surface artifact and is
+	// what create-artifacts emits; surface.md is the legacy form kept
+	// during the migration window. Dispatching on the file extension
+	// matters because the two checks share no syntax: running the
+	// markdown heading probe over YAML reports "surface.md has no fragment
+	// headings (## )" for a perfectly valid surface.yaml, which made the
+	// format the pipeline actually produces impossible to validate.
+	if strings.HasSuffix(strings.ToLower(path), ".yaml") || strings.HasSuffix(strings.ToLower(path), ".yml") {
+		return validateSurfaceYAML(path, content)
+	}
+
 	text := string(content)
 	if !strings.Contains(text, "## ") {
 		return fmt.Errorf("surface.md has no fragment headings (## )")
 	}
 	if !strings.Contains(text, "**Shows**:") {
 		return fmt.Errorf("surface.md has no **Shows**: fields")
+	}
+	return nil
+}
+
+// validateSurfaceYAML checks the structural shape of a surface.yaml: valid
+// YAML, a fragments list, and the per-fragment fields the downstream
+// pipeline relies on.
+func validateSurfaceYAML(path string, content []byte) error {
+	if err := ValidateYAML(path, content); err != nil {
+		return err
+	}
+	var doc struct {
+		Feature   string `yaml:"feature"`
+		Fragments []struct {
+			Name   string `yaml:"name"`
+			Shows  string `yaml:"shows"`
+			Source string `yaml:"source"`
+			Page   string `yaml:"page"`
+		} `yaml:"fragments"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("surface.yaml is not valid YAML: %w", err)
+	}
+	if len(doc.Fragments) == 0 {
+		return fmt.Errorf("surface.yaml has no fragments: entries")
+	}
+	for i, f := range doc.Fragments {
+		where := fmt.Sprintf("fragments[%d]", i)
+		if f.Name != "" {
+			where = fmt.Sprintf("fragment %q", f.Name)
+		}
+		if f.Name == "" {
+			return fmt.Errorf("surface.yaml %s has no name:", where)
+		}
+		if f.Shows == "" {
+			return fmt.Errorf("surface.yaml %s has no shows:", where)
+		}
+		if f.Source == "" {
+			return fmt.Errorf("surface.yaml %s has no source: (traceability back to an intent)", where)
+		}
+		if f.Page == "" {
+			return fmt.Errorf("surface.yaml %s has no page: target", where)
+		}
 	}
 	return nil
 }
@@ -77,6 +132,20 @@ func ValidateBlueprint(path string, content []byte) error {
 			Strategy string                 `yaml:"strategy"`
 			Guards   map[string]interface{} `yaml:"guards"`
 		} `yaml:"authorization"`
+		Data *struct {
+			Fetching string `yaml:"fetching"`
+			Caching  *struct {
+				Strategy string `yaml:"strategy"`
+			} `yaml:"caching"`
+			Offline *struct {
+				Strategy string `yaml:"strategy"`
+			} `yaml:"offline"`
+		} `yaml:"data"`
+		Errors *struct {
+			Retry *struct {
+				Strategy string `yaml:"strategy"`
+			} `yaml:"retry"`
+		} `yaml:"errors"`
 	}
 	if err := yaml.Unmarshal(content, &bp); err != nil {
 		return fmt.Errorf("blueprint structure invalid: %w", err)
@@ -101,6 +170,55 @@ func ValidateBlueprint(path string, content []byte) error {
 		}
 		if !validAuthStrategies[bp.Authorization.Strategy] {
 			return fmt.Errorf("invalid authorization.strategy %q — must be one of: role-based, permission-based, attribute-based, none", bp.Authorization.Strategy)
+		}
+	}
+
+	// Closed-vocabulary gate for strategy settings. blueprint.schema.md
+	// documents these as closed sets and defines blueprint-strategy-unknown
+	// for out-of-vocabulary values, but nothing enforced it on the path the
+	// CLI uses: a typo'd or invented strategy validated clean and only
+	// surfaced (if at all) during codegen.
+	//
+	// The shapes matter. An earlier gate elsewhere in this package decoded
+	// data.caching as a string and read auth.strategy, while real
+	// blueprints carry data.caching.strategy (a map) and
+	// authorization.strategy — so its unmarshal failed and the whole check
+	// was skipped in silence. These read the shapes the schema body
+	// actually documents.
+	closedSets := []struct {
+		path  string
+		value string
+		vocab map[string]bool
+	}{}
+	if bp.Data != nil {
+		closedSets = append(closedSets, struct {
+			path  string
+			value string
+			vocab map[string]bool
+		}{"data.fetching", bp.Data.Fetching, ClosedSetDataFetching})
+		// data.caching.strategy is deliberately NOT gated here. The Go
+		// closed set (ClosedSetDataCaching) is {none, per-route, shared}
+		// — cache *scope* — while blueprint.schema.md:186 documents
+		// {none, in-memory, local-storage, service-worker} — cache
+		// *location*. Two different concepts share one key, and gating on
+		// either would reject blueprints written against the other. A
+		// blueprint authored straight from the schema table (caching.
+		// strategy: in-memory) fails the Go set, so enforcing it would
+		// break valid projects. Resolve the vocabulary conflict first,
+		// then gate.
+	}
+	for _, c := range closedSets {
+		if c.value == "" || len(c.vocab) == 0 {
+			continue
+		}
+		if !c.vocab[c.value] {
+			allowed := make([]string, 0, len(c.vocab))
+			for k := range c.vocab {
+				allowed = append(allowed, k)
+			}
+			sort.Strings(allowed)
+			return fmt.Errorf("blueprint-strategy-unknown: %s = %q is outside the closed vocabulary (%s)",
+				c.path, c.value, strings.Join(allowed, ", "))
 		}
 	}
 
@@ -237,7 +355,25 @@ func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
 // validateBuildfileDeepCore instead — see ValidateBuildfilesProjectStructured
 // in validate_project.go.
 func ValidateBuildfileDeepStructured(buildfilePath, adapterPath string) []ValidationError {
-	return validateBuildfileDeepCore(buildfilePath, adapterPath, nil)
+	return ApplyBuildfileSeverity(validateBuildfileDeepCore(buildfilePath, adapterPath, nil))
+}
+
+// ApplyBuildfileSeverity stamps each finding with its severity from the
+// shared ruleSeverityTable, so every consumer of the deep-validation finding
+// set agrees on what blocks. Without it the Severity field stays empty and
+// callers must invent their own classification — which is precisely how
+// check-buildfile and validate --deep came to report different verdicts for
+// the same buildfile at the same moment.
+//
+// Resolved in build mode: this is the readiness question ("can codegen run
+// against this?"), not the authoring question.
+func ApplyBuildfileSeverity(errs []ValidationError) []ValidationError {
+	for i := range errs {
+		if errs[i].Severity == "" {
+			errs[i].Severity = string(RuleSeverity(errs[i].Code, ModeBuild))
+		}
+	}
+	return errs
 }
 
 // validateBuildfileDeepCore is the shared per-feature check body for both
@@ -284,17 +420,53 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 		}
 	}
 
-	// 2. Model references in component data.inputs must exist in models
+	// 2. Model references in component data.inputs must resolve to a
+	// declared entity — either the deprecated top-level models: block or,
+	// preferably, the project's canonical domain-model.yaml. Resolving
+	// against both is what makes the documented shape (no models:) valid;
+	// previously only models: was consulted, so a buildfile written the
+	// way the schema and skill prescribe failed validation.
+	domainEntities := domainEntityNames(buildfilePath)
+
+	// The documented deprecation, now actually emitted. It is a WARNING,
+	// not an error: every buildfile in existence carries models: because
+	// the validator used to require it, so blocking on it would fail every
+	// project at once. Warning severity states the direction of travel
+	// while leaving existing buildfiles valid — and, unlike the previous
+	// state, the schema's claim that this code exists is now true.
+	if len(bf.Models) > 0 && len(domainEntities) > 0 {
+		errors = append(errors, ValidationError{
+			Code:     "buildfile-models-deprecated",
+			Message:  "top-level models: is deprecated — entity declarations belong in domain-model.yaml",
+			Context:  "models",
+			Fix:      "remove the models: block; component inputs and fixtures now resolve against the project's domain-model.yaml",
+			Severity: string(SeverityWarning),
+		})
+	}
+
+	knownModel := func(name string) bool {
+		if _, ok := bf.Models[name]; ok {
+			return true
+		}
+		return domainEntities[name]
+	}
+	modelFix := func(name string) string {
+		if len(domainEntities) == 0 {
+			return fmt.Sprintf("declare %q in the project's domain-model.yaml (preferred), or add it to the buildfile's models: section", name)
+		}
+		return fmt.Sprintf("declare %q in the project's domain-model.yaml, or change the input to reference an existing entity", name)
+	}
+
 	for compName, comp := range bf.Components {
 		if comp.Data != nil {
 			for _, input := range comp.Data.Inputs {
 				if input.Model != "" {
-					if _, ok := bf.Models[input.Model]; !ok {
+					if !knownModel(input.Model) {
 						errors = append(errors, ValidationError{
 							Code:    "missing-model-reference",
 							Message: fmt.Sprintf("component %q references model %q which is not defined", compName, input.Model),
 							Context: fmt.Sprintf("components.%s.data.inputs", compName),
-							Fix:     fmt.Sprintf("either add %q to the models: section or change the input to reference an existing model", input.Model),
+							Fix:     modelFix(input.Model),
 						})
 					}
 				}
@@ -314,15 +486,16 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 		}
 	}
 
-	// 4. Fixture data keys must match defined models
+	// 4. Fixture data keys must match a declared entity — same dual
+	// resolution as component inputs above.
 	for fixtureName, fixture := range bf.Fixtures {
 		for modelName := range fixture.Data {
-			if _, ok := bf.Models[modelName]; !ok {
+			if !knownModel(modelName) {
 				errors = append(errors, ValidationError{
 					Code:    "missing-fixture-model",
 					Message: fmt.Sprintf("fixture %q references model %q which is not defined", fixtureName, modelName),
 					Context: fmt.Sprintf("fixtures.%s.data", fixtureName),
-					Fix:     fmt.Sprintf("either add %q to the models: section or remove the fixture data block", modelName),
+					Fix:     modelFix(modelName),
 				})
 			}
 		}

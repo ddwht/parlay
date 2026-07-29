@@ -175,7 +175,19 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Deep validation for buildfiles
 	if validateDeep && validateType == "buildfile" {
-		errors := agent.ValidateBuildfileDeepStructured(path, validateAdapter)
+		adapterPath := validateAdapter
+		if adapterPath == "" {
+			// Auto-discover the adapter from the buildfile's own adapter:
+			// field, the same way check-buildfile does. Without this,
+			// omitting --adapter silently skipped every widget/action/flow
+			// vocabulary check and reported ok:true — a false clean. The
+			// skill's own step-10 command list omits --adapter, so the
+			// documented invocation was the one that skipped the checks.
+			if cfg, cfgErr := mustContext(cmd); cfgErr == nil {
+				adapterPath = autoDiscoverAdapter(cfg, path)
+			}
+		}
+		errors := agent.ValidateBuildfileDeepStructured(path, adapterPath)
 		if len(errors) > 0 {
 			return outputValidate(cmd, path, errors)
 		}
@@ -454,17 +466,39 @@ func loadValidateAdapter() *agent.Adapter {
 	return adapter
 }
 
+// blockingCount returns how many findings are error-severity. A finding
+// with no severity set is treated as blocking, preserving the behaviour of
+// every legacy validator path that never populated the field.
+//
+// Splitting this out is what makes `ok` mean the same thing here as
+// `ready` does in check-buildfile: previously every finding landed under
+// "errors" with no severity, so a warning-severity rule (e.g.
+// plan-create-collision, which fires on any buildfile whose code has been
+// generated) failed the command outright and no caller could tell the
+// difference.
+func blockingCount(findings []agent.ValidationError) int {
+	n := 0
+	for _, f := range findings {
+		if f.Severity != string(agent.SeverityWarning) {
+			n++
+		}
+	}
+	return n
+}
+
 func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationError) error {
+	blocking := blockingCount(errors)
+
 	if validateJSON {
 		result := validateJSONResult{
 			Path:   path,
 			Type:   validateType,
-			OK:     len(errors) == 0,
+			OK:     blocking == 0,
 			Errors: errors,
 		}
 		data, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintln(cmd.OutOrStdout(), string(data))
-		if len(errors) > 0 {
+		if blocking > 0 {
 			return NewExitCodeError(1)
 		}
 		return nil
@@ -473,6 +507,13 @@ func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationEr
 	// Text output (default)
 	if len(errors) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "OK")
+		return nil
+	}
+	if blocking == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "OK (%d warning(s))\n", len(errors))
+		for _, e := range errors {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  [warning] [%s] %s\n", e.Code, e.Message)
+		}
 		return nil
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s)\n", len(errors))

@@ -261,3 +261,67 @@ func TestReadiness_BuildFeature_NoAdapterConfigured(t *testing.T) {
 		t.Errorf("expected no-adapter-configured error, got: %+v", issues)
 	}
 }
+
+// TestBuildFeatureReadiness_CapabilitiesWithoutInfrastructure guards the
+// false positive where a feature whose artifact set is
+// "surface + capabilities" — one of the documented valid subsets — was
+// hard-blocked from the build phase by old-infrastructure-schema, an error
+// naming an infrastructure.md it does not have, with a migration fix it
+// could not perform.
+func TestBuildFeatureReadiness_CapabilitiesWithoutInfrastructure(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "surface-plus-capabilities"
+	featurePath := cfg.FeaturePath(slug)
+	if err := os.MkdirAll(featurePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(featurePath, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("intents.md", "# F\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n")
+	write("dialogs.md", "# F — Dialogs\n\n### An intent\n\n**Trigger**: t\n\nUser: u\nSystem: s\n")
+	write("surface.yaml", "feature: "+slug+"\n\nfragments:\n  - name: A fragment\n    shows: data-value\n    source: \"@"+slug+"/an-intent\"\n    page: p\n    region: main\n")
+	write("capabilities.yaml", "schema_version: 1\nfeature: "+slug+"\n\noperations: []\n")
+	// Deliberately NO infrastructure.md.
+
+	for _, issue := range checkBuildFeatureReadiness(cfg, featurePath, slug) {
+		if issue.Code == "old-infrastructure-schema" {
+			t.Fatalf("old-infrastructure-schema raised for a feature with no infrastructure.md; "+
+				"surface+capabilities is a valid artifact subset and must reach the build phase (issue: %+v)", issue)
+		}
+	}
+}
+
+// TestBuildFeatureReadiness_LegacyInfrastructureStillFlagged is the
+// companion: when infrastructure.md really does exist in the old format,
+// the error must still fire.
+func TestBuildFeatureReadiness_LegacyInfrastructureStillFlagged(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "legacy-infra"
+	featurePath := cfg.FeaturePath(slug)
+	if err := os.MkdirAll(featurePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(featurePath, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("intents.md", "# F\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n")
+	write("dialogs.md", "# F — Dialogs\n\n### An intent\n\n**Trigger**: t\n\nUser: u\nSystem: s\n")
+	write("infrastructure.md", "# F — Infrastructure\n\n## A fragment\n\n**Modifies**: something\n**Introduces**: a thing\n")
+
+	var found bool
+	for _, issue := range checkBuildFeatureReadiness(cfg, featurePath, slug) {
+		if issue.Code == "old-infrastructure-schema" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("old-infrastructure-schema not raised for a genuinely old-format infrastructure.md")
+	}
+}

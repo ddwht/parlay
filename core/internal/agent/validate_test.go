@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1102,5 +1103,95 @@ func TestProjectPass_EmptyProject(t *testing.T) {
 	}
 	if len(verdicts) != 0 {
 		t.Fatalf("expected zero verdicts on empty project, got %d", len(verdicts))
+	}
+}
+
+// TestValidateSurface_DispatchesOnFormat guards the defect where a
+// surface.yaml was routed into the legacy markdown heading probe and always
+// failed with "surface.md has no fragment headings (## )" — leaving the
+// format the pipeline actually produces with no passing validation path.
+func TestValidateSurface_DispatchesOnFormat(t *testing.T) {
+	validYAML := []byte(`feature: expense-list
+
+fragments:
+  - name: My reports grid
+    shows: data-table
+    source: "@expense-list/browse"
+    page: expenses
+`)
+	if err := ValidateSurface("spec/intents/expense-list/surface.yaml", validYAML); err != nil {
+		t.Errorf("valid surface.yaml rejected: %v", err)
+	}
+
+	validMD := []byte("# F — Surface\n\n## A fragment\n\n**Shows**: data-value\n")
+	if err := ValidateSurface("spec/intents/f/surface.md", validMD); err != nil {
+		t.Errorf("valid surface.md rejected: %v", err)
+	}
+
+	// The YAML path must still catch real problems.
+	for name, body := range map[string]string{
+		"no fragments":   "feature: f\nfragments: []\n",
+		"missing shows":  "feature: f\nfragments:\n  - name: A\n    source: \"@f/x\"\n    page: p\n",
+		"missing source": "feature: f\nfragments:\n  - name: A\n    shows: data-value\n    page: p\n",
+		"missing page":   "feature: f\nfragments:\n  - name: A\n    shows: data-value\n    source: \"@f/x\"\n",
+	} {
+		if err := ValidateSurface("s/surface.yaml", []byte(body)); err == nil {
+			t.Errorf("%s: expected an error, got nil", name)
+		}
+	}
+}
+
+// TestValidateBlueprint_ClosedVocabularyGate guards P1-1: blueprint.schema.md
+// documents data.fetching as a closed set and defines
+// blueprint-strategy-unknown for out-of-vocabulary values, but nothing
+// enforced it on the path the CLI uses — a typo'd or invented strategy
+// validated clean and surfaced, if at all, only during codegen.
+func TestValidateBlueprint_ClosedVocabularyGate(t *testing.T) {
+	valid := []byte(`app: x
+navigation:
+  strategy: browser
+data:
+  fetching: on-mount
+  caching:
+    strategy: in-memory
+`)
+	if err := ValidateBlueprint("bp.yaml", valid); err != nil {
+		t.Errorf("valid blueprint rejected: %v", err)
+	}
+
+	bad := []byte(`app: x
+navigation:
+  strategy: browser
+data:
+  fetching: in-memory-store
+`)
+	err := ValidateBlueprint("bp.yaml", bad)
+	if err == nil {
+		t.Fatal("out-of-vocabulary data.fetching accepted; blueprint-strategy-unknown never fires")
+	}
+	if !strings.Contains(err.Error(), "blueprint-strategy-unknown") {
+		t.Errorf("error does not carry the documented code: %v", err)
+	}
+	if !strings.Contains(err.Error(), "on-mount") {
+		t.Errorf("error should list the allowed values so the fix is obvious: %v", err)
+	}
+}
+
+// TestValidateBlueprint_CachingVocabularyNotGated documents a deliberate
+// omission. The Go closed set for data.caching.strategy is
+// {none, per-route, shared} (cache scope) while blueprint.schema.md:186
+// documents {none, in-memory, local-storage, service-worker} (cache
+// location). Gating on either rejects blueprints written against the
+// other, so the key stays ungated until the conflict is resolved. This
+// test fails if someone gates it without reconciling the vocabularies.
+func TestValidateBlueprint_CachingVocabularyNotGated(t *testing.T) {
+	schemaShaped := []byte(`app: x
+data:
+  fetching: on-mount
+  caching:
+    strategy: in-memory
+`)
+	if err := ValidateBlueprint("bp.yaml", schemaShaped); err != nil {
+		t.Errorf("a blueprint authored straight from the schema table was rejected: %v", err)
 	}
 }

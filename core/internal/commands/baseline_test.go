@@ -187,3 +187,129 @@ func TestDetectDrift_NoBaseline(t *testing.T) {
 		t.Error("expected no drift when no baseline exists")
 	}
 }
+
+// TestBaseline_TracksDomainModel is the regression guard for the defect
+// where a domain-model.yaml edit was structurally invisible to drift
+// detection: HashedSources had no Domain field, so a designer could change
+// the shared model — the entire purpose of the Studio editor — and every
+// dependent feature still reported has_drift:false, marking nothing for
+// rebuild.
+func TestBaseline_TracksDomainModel(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "drift-domain"
+	writeFeatureFiles(t, slug, "# Feature\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n", "", "")
+
+	domainPath := cfg.DomainModelPath()
+	if err := os.MkdirAll(filepath.Dir(domainPath), 0o755); err != nil {
+		t.Fatalf("mkdir domain dir: %v", err)
+	}
+	if err := os.WriteFile(domainPath, []byte("schema_version: 1\nentities:\n  - name: Widget\n"), 0o644); err != nil {
+		t.Fatalf("write domain model: %v", err)
+	}
+
+	baseline, err := buildBaseline(cfg, slug)
+	if err != nil {
+		t.Fatalf("buildBaseline: %v", err)
+	}
+	if baseline.SchemaVersion != BaselineSchemaVersion {
+		t.Errorf("SchemaVersion = %d, want %d", baseline.SchemaVersion, BaselineSchemaVersion)
+	}
+	if baseline.Sources.Domain == "" {
+		t.Fatal("Sources.Domain is empty — domain-model.yaml was not hashed, so drift detection is blind to it")
+	}
+	recorded := baseline.Sources.Domain
+
+	// Edit the shared domain model, exactly as the Studio editor would.
+	if err := os.WriteFile(domainPath, []byte("schema_version: 1\nentities:\n  - name: Widget\n  - name: Gadget\n"), 0o644); err != nil {
+		t.Fatalf("rewrite domain model: %v", err)
+	}
+
+	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), baseline.Sources, baseline.SchemaVersion, domainPath, "")
+	if got["domain"] != "changed" {
+		t.Errorf("advisory domain = %q, want \"changed\" (recorded %s)", got["domain"], recorded)
+	}
+}
+
+// TestBaseline_PreV1BaselineDoesNotReportFalseDrift covers the upgrade
+// hazard: baselines written before the Domain field existed carry no hash,
+// and naively comparing "" against a real hash would report every
+// pre-existing project as drifted the moment the binary is upgraded.
+func TestBaseline_PreV1BaselineDoesNotReportFalseDrift(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "drift-legacy"
+	writeFeatureFiles(t, slug, "# Feature\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n", "", "")
+
+	domainPath := cfg.DomainModelPath()
+	if err := os.MkdirAll(filepath.Dir(domainPath), 0o755); err != nil {
+		t.Fatalf("mkdir domain dir: %v", err)
+	}
+	if err := os.WriteFile(domainPath, []byte("schema_version: 1\nentities: []\n"), 0o644); err != nil {
+		t.Fatalf("write domain model: %v", err)
+	}
+
+	// A pre-v1 baseline: no SchemaVersion, no Domain hash.
+	legacy := &HashedSources{Intents: map[string]string{}}
+
+	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), legacy, 0, domainPath, "")
+	if got["domain"] == "changed" || got["domain"] == "new" {
+		t.Errorf("advisory domain = %q on a pre-v1 baseline; want \"unknown\" so upgrading the binary does not mass-report false drift", got["domain"])
+	}
+	if got["domain"] != "unknown" {
+		t.Errorf("advisory domain = %q, want \"unknown\"", got["domain"])
+	}
+}
+
+// TestCheckDrift_DomainModelEditIsDrift is the end-to-end guard for the
+// command agents actually gate on. detectDrift was intents-only, so a
+// Studio save to the shared domain model left has_drift:false and no
+// feature was ever marked for rebuild.
+func TestCheckDrift_DomainModelEditIsDrift(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "drift-e2e"
+	featurePath := writeFeatureFiles(t, slug, "# F\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n", "", "")
+
+	domainPath := cfg.DomainModelPath()
+	if err := os.MkdirAll(filepath.Dir(domainPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(domainPath, []byte("schema_version: 1\nentities:\n  - name: Widget\n"), 0o644); err != nil {
+		t.Fatalf("write domain: %v", err)
+	}
+
+	baseline, err := buildBaseline(cfg, slug)
+	if err != nil {
+		t.Fatalf("buildBaseline: %v", err)
+	}
+	writeBaseline(t, slug, *baseline)
+
+	// Baseline is fresh — nothing should be drifted yet.
+	out, err := detectDrift(cfg, slug, featurePath)
+	if err != nil {
+		t.Fatalf("detectDrift (pre-edit): %v", err)
+	}
+	if out.HasDrift {
+		t.Fatalf("has_drift = true immediately after baseline; want false (shared=%v)", out.SharedSourcesChanged)
+	}
+
+	// Edit the shared model, exactly as the Studio editor's PUT would.
+	if err := os.WriteFile(domainPath, []byte("schema_version: 1\nentities:\n  - name: Widget\n  - name: Gadget\n"), 0o644); err != nil {
+		t.Fatalf("rewrite domain: %v", err)
+	}
+
+	out, err = detectDrift(cfg, slug, featurePath)
+	if err != nil {
+		t.Fatalf("detectDrift (post-edit): %v", err)
+	}
+	if !out.HasDrift {
+		t.Error("has_drift = false after a domain-model edit; the drift checker is blind to the shared model")
+	}
+	if len(out.SharedSourcesChanged) != 1 || out.SharedSourcesChanged[0] != "domain-model" {
+		t.Errorf("shared_sources_changed = %v, want [domain-model]", out.SharedSourcesChanged)
+	}
+	if len(out.Drifted) != 0 {
+		t.Errorf("Drifted = %v, want empty — no intent changed, only the shared model", out.Drifted)
+	}
+}

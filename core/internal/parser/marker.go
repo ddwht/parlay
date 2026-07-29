@@ -36,10 +36,30 @@ type Marker struct {
 // parlay marker. Markers must appear at the top of the file.
 const markerScanLimit = 20
 
-// commentPrefixes are the comment leaders this parser recognizes when
-// looking for parlay-* fields. Extending to other styles (HTML <!-- -->,
-// CSS /* */) is straightforward — add a stripper here.
+// commentPrefixes are the line-comment leaders this parser recognizes when
+// looking for parlay-* fields.
 var commentPrefixes = []string{"//", "#"}
+
+// commentDelimiters are block-comment forms whose opener and closer may
+// wrap a marker on a single line, e.g.
+//
+//	<!-- parlay-component: expense-row -->
+//	/* parlay-component: expense-row */
+//
+// Template-based adapters (Angular, Vue, Svelte) and stylesheets can only
+// carry markers this way — a `.html` file has no `//` form. Omitting these
+// meant every generated template was invisible to ScanGenerated, so no
+// template was ever hashed into .code-hashes.yaml, so verify-generated
+// could not detect a hand-edit to one. A template edit was silently lost on
+// the next regeneration with nothing reporting it.
+//
+// The multi-line block form (opener alone on its own line, bare
+// `parlay-...:` lines beneath) already parsed, because those inner lines
+// carry no prefix to strip.
+var commentDelimiters = []struct{ open, close string }{
+	{"<!--", "-->"},
+	{"/*", "*/"},
+}
 
 // ParseMarker reads the first markerScanLimit lines of the file at path
 // and returns the parlay marker found there, or nil if no marker exists.
@@ -111,6 +131,18 @@ func stripCommentPrefix(line string) string {
 		if strings.HasPrefix(line, prefix) {
 			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
 		}
+	}
+	// Block-comment forms: strip the opener, and the closer when the
+	// comment both opens and closes on this line.
+	for _, d := range commentDelimiters {
+		if !strings.HasPrefix(line, d.open) {
+			continue
+		}
+		body := strings.TrimPrefix(line, d.open)
+		if idx := strings.LastIndex(body, d.close); idx >= 0 {
+			body = body[:idx]
+		}
+		return strings.TrimSpace(body)
 	}
 	return line
 }

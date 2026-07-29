@@ -419,3 +419,62 @@ func TestDetectStaleInitiativeBuildfiles_MissingBuildRootIsNotAnError(t *testing
 		t.Errorf("expected nil mismatches, got: %+v", mismatches)
 	}
 }
+
+// TestFoldRenamePairs_RenameBecomesMove guards the data-loss defect: a
+// renamed feature produced an unrelated (missing-directory, extra-directory)
+// pair in every other tree, and the offered remedy was "create an empty
+// directory" plus "delete the old one" — discarding the buildfile,
+// testcases and baseline the old directory held. It also never converged,
+// because destructive prompts decline by default on a non-TTY and --yes
+// does not cover them.
+func TestFoldRenamePairs_RenameBecomesMove(t *testing.T) {
+	tree := "/p/.parlay/build"
+	in := []mismatch{
+		{Category: "missing-directory", NewPath: tree + "/expenses-list", Tree: tree},
+		{Category: "extra-directory", OldPath: tree + "/expense-list", Tree: tree},
+	}
+	got := foldRenamePairs(in)
+	if len(got) != 1 {
+		t.Fatalf("got %d mismatches, want 1 folded move: %+v", len(got), got)
+	}
+	if got[0].Category != "feature-move" {
+		t.Errorf("Category = %q, want feature-move (a move preserves the directory's contents)", got[0].Category)
+	}
+	if got[0].OldPath != tree+"/expense-list" || got[0].NewPath != tree+"/expenses-list" {
+		t.Errorf("move %s -> %s, want expense-list -> expenses-list", got[0].OldPath, got[0].NewPath)
+	}
+}
+
+// TestFoldRenamePairs_AmbiguousLeftAlone keeps the conservative guard: with
+// more than one candidate on either side the pairing is not determinable,
+// so the per-event behaviour stands and a human decides.
+func TestFoldRenamePairs_AmbiguousLeftAlone(t *testing.T) {
+	tree := "/p/.parlay/build"
+	in := []mismatch{
+		{Category: "missing-directory", NewPath: tree + "/a-new", Tree: tree},
+		{Category: "missing-directory", NewPath: tree + "/b-new", Tree: tree},
+		{Category: "extra-directory", OldPath: tree + "/a-old", Tree: tree},
+	}
+	got := foldRenamePairs(in)
+	if len(got) != 3 {
+		t.Errorf("got %d mismatches, want all 3 left unfolded when the pairing is ambiguous", len(got))
+	}
+	for _, m := range got {
+		if m.Category == "feature-move" {
+			t.Errorf("folded an ambiguous pair into %+v", m)
+		}
+	}
+}
+
+// TestFoldRenamePairs_DifferentTreesNotPaired ensures a missing dir in one
+// tree is never paired with an extra dir in another.
+func TestFoldRenamePairs_DifferentTreesNotPaired(t *testing.T) {
+	in := []mismatch{
+		{Category: "missing-directory", NewPath: "/p/spec/handoff/x", Tree: "/p/spec/handoff"},
+		{Category: "extra-directory", OldPath: "/p/.parlay/build/y", Tree: "/p/.parlay/build"},
+	}
+	got := foldRenamePairs(in)
+	if len(got) != 2 {
+		t.Errorf("got %d, want 2 — cross-tree pairs must not fold", len(got))
+	}
+}

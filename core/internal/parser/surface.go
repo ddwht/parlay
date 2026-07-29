@@ -110,11 +110,31 @@ func ScanAllSurfaces(specDir string) ([]Fragment, error) {
 			continue
 		}
 		featureSlug := entry.Name()
-		surfacePath := filepath.Join(intentsDir, featureSlug, "surface.md")
+		featureDir := filepath.Join(intentsDir, featureSlug)
+
+		// A directory under spec/intents/ is either a feature or an
+		// initiative holding features. Recurse one level so
+		// initiative-nested features are scanned too — they were
+		// previously invisible to page assembly entirely.
+		if nested := scanNestedSurfaces(featureDir, featureSlug); len(nested) > 0 {
+			all = append(all, nested...)
+			continue
+		}
+
+		// Resolve surface.yaml ahead of surface.md rather than hardcoding
+		// the legacy name. surface.yaml is the target format and what
+		// create-artifacts emits, so hardcoding surface.md made page
+		// assembly find nothing on any spec-conformant project — and say
+		// so with "No fragments target page X", which reads as "you have
+		// not authored them yet" rather than "this format is unsupported".
+		surfacePath := ResolveSurfacePath(featureDir)
+		if surfacePath == "" {
+			continue // feature may not have a surface yet
+		}
 
 		fragments, err := ParseSurfaceFile(surfacePath)
 		if err != nil {
-			continue // feature may not have a surface yet
+			continue
 		}
 
 		for i := range fragments {
@@ -124,4 +144,36 @@ func ScanAllSurfaces(specDir string) ([]Fragment, error) {
 	}
 
 	return all, nil
+}
+
+// scanNestedSurfaces returns fragments for features nested one level under
+// an initiative directory, with Feature set to the qualified
+// "<initiative>/<feature>" form. Returns nil when dir holds no nested
+// feature surfaces — i.e. when dir is itself a feature.
+func scanNestedSurfaces(dir, initiativeSlug string) []Fragment {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []Fragment
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		childDir := filepath.Join(dir, e.Name())
+		surfacePath := ResolveSurfacePath(childDir)
+		if surfacePath == "" {
+			continue
+		}
+		fragments, err := ParseSurfaceFile(surfacePath)
+		if err != nil {
+			continue
+		}
+		qualified := initiativeSlug + "/" + e.Name()
+		for i := range fragments {
+			fragments[i].Feature = qualified
+		}
+		out = append(out, fragments...)
+	}
+	return out
 }

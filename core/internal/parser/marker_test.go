@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -276,5 +277,76 @@ func TestScanGenerated_EmptyDir(t *testing.T) {
 	}
 	if len(markers) != 0 {
 		t.Errorf("expected no markers, got %v", markers)
+	}
+}
+
+// TestParseMarker_BlockCommentForms covers markers carried in HTML and CSS
+// block comments. Template-based adapters (Angular, Vue, Svelte) have no
+// `//` line-comment form, so before this was supported every generated
+// template was invisible to ScanGenerated — never hashed, so a hand-edit to
+// one could not be detected and was silently lost on regeneration.
+func TestParseMarker_BlockCommentForms(t *testing.T) {
+	cases := []struct {
+		name      string
+		content   string
+		wantFeat  string
+		wantComp  string
+		wantScope string
+	}{
+		{
+			name:     "angular template, inline html comments",
+			content:  "<!-- parlay-feature: expense-list -->\n<!-- parlay-component: my-expense-reports-datagrid -->\n<div>x</div>\n",
+			wantFeat: "expense-list",
+			wantComp: "my-expense-reports-datagrid",
+		},
+		{
+			name:     "css block comment",
+			content:  "/* parlay-feature: expense-list */\n/* parlay-component: draft-row-actions */\n.a { color: red; }\n",
+			wantFeat: "expense-list",
+			wantComp: "draft-row-actions",
+		},
+		{
+			name:      "html block spanning lines, bare fields inside",
+			content:   "<!--\nparlay-scope: project\nparlay-section: routes\n-->\n\n<router-outlet/>\n",
+			wantScope: "project",
+		},
+		{
+			name:     "extra whitespace inside the delimiters",
+			content:  "<!--   parlay-feature: f   -->\n<!--\tparlay-component: c\t-->\n",
+			wantFeat: "f",
+			wantComp: "c",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := parseMarkerFromReader(strings.NewReader(tc.content), "x")
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if m == nil {
+				t.Fatal("no marker parsed — the file would be invisible to scan-generated and never hashed")
+			}
+			if m.Feature != tc.wantFeat {
+				t.Errorf("Feature = %q, want %q", m.Feature, tc.wantFeat)
+			}
+			if m.Component != tc.wantComp {
+				t.Errorf("Component = %q, want %q", m.Component, tc.wantComp)
+			}
+			if tc.wantScope != "" && m.Scope != tc.wantScope {
+				t.Errorf("Scope = %q, want %q", m.Scope, tc.wantScope)
+			}
+		})
+	}
+}
+
+// TestParseMarker_BlockCommentDoesNotOverreach guards against treating an
+// ordinary template comment as a marker.
+func TestParseMarker_BlockCommentDoesNotOverreach(t *testing.T) {
+	m, err := parseMarkerFromReader(strings.NewReader("<!-- just an ordinary comment -->\n<div/>\n"), "x")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if m != nil {
+		t.Errorf("parsed a marker from a non-marker comment: %+v", m)
 	}
 }
