@@ -9,6 +9,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ var validateJSON bool
 var validateProject bool
 
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review, page, layout")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, page, layout")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
@@ -154,6 +155,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// parlay-component: cli-and-deployer-registration
 	case "adapter-set":
 		validator = wrapOutcomeValidator(agent.ValidateAdapterSet)
+	case "adapter":
+		// Adapter files had no validate type at all before Section 10's
+		// toolchain block. A validator nobody can call is the pattern this
+		// consolidation found five separate instances of, so the type and
+		// the rules land together.
+		validator = validateAdapterFile
 	case "capabilities":
 		validator = wrapOutcomeValidator(agent.ValidateCapabilities)
 	case "coverage-review":
@@ -161,7 +168,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// surface a minimal YAML-shape check here.
 		validator = agent.ValidateYAML
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review", validateType)
+		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review", validateType)
 	}
 
 	if err := validator(path, content); err != nil {
@@ -524,4 +531,29 @@ func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationEr
 		}
 	}
 	return NewExitCodeError(1)
+}
+
+// validateAdapterFile checks an adapter file's toolchain block against
+// adapter.schema.md Section 10. The rest of the adapter is validated at
+// registration; this is the part that publishes a contract to third parties
+// and therefore has to be enforced rather than described.
+func validateAdapterFile(path string, content []byte) error {
+	var doc struct {
+		FileConventions struct {
+			SourceRoot string `yaml:"source-root"`
+		} `yaml:"file-conventions"`
+		Toolchain *agent.Toolchain `yaml:"toolchain"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("adapter YAML parse error: %w", err)
+	}
+	errs := agent.ValidateToolchain(doc.Toolchain, doc.FileConventions.SourceRoot)
+	if len(errs) == 0 {
+		return nil
+	}
+	var msgs []string
+	for _, e := range errs {
+		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Code, e.Message))
+	}
+	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
 }

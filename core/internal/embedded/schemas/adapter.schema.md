@@ -520,13 +520,92 @@ Typography tokens are named text styles keyed by use-site. Each token declares:
 
 The set of tokens within a vocabulary version is **closed**. Adding or removing a token requires a vocabulary version bump. This is the same lock as the component list — it lets layouts pin themselves to a token set with the same fail-fast guarantees they get for components.
 
-### MCP fetches are an authoring aid only
+### Design-system fetches are an authoring aid only
 
-The adapter file is the **runtime source of truth** at codegen time. Studio MAY use a live MCP fetch from the upstream design system as an authoring aid (to suggest tokens to add, to flag drift between the upstream system and the local adapter), but codegen NEVER fetches at generation time. This keeps codegen offline and reproducible. Adapters cannot invent tokens absent from the upstream design system; the authoring tool's job is to keep the adapter in sync.
+The adapter file is the **runtime source of truth for design-system data** at codegen time. Studio MAY use a live MCP fetch from the upstream design system as an authoring aid (to suggest tokens to add, to flag drift between the upstream system and the local adapter), but codegen never fetches *token or component data* at generation time. Token resolution stays offline and reproducible: the same adapter file yields the same tokens on a machine with no network. Adapters cannot invent tokens absent from the upstream design system; the authoring tool's job is to keep the adapter in sync.
+
+This is a rule about **where design-system facts come from**, not a ban on tooling. It says a token's value must be in the adapter rather than fetched mid-build; it does not say codegen may never invoke a formatter, a linter, or a framework CLI. Section 10's `toolchain:` block governs those, and nothing in it may reintroduce a network dependency for token or component data.
 
 ### Optional section
 
 The `tokens:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout uses a token-reference against an adapter without `tokens:`, token validation is skipped with a warning rather than failing the build.
+
+## Section 10: Toolchain — external skills and MCP servers
+
+Frameworks ship their own tooling: an Angular CLI MCP server, a community `/angular-review` skill, a project's own formatter. Before this section an adapter had **no** extension point for any of it, so a project either forked parlay or did without. `toolchain:` is that extension point.
+
+```yaml
+toolchain:
+  skills:
+    - id: angular-best-practices
+      invoke: "/angular-review"
+      source: community            # community | first-party | project
+      phase: [code]
+      stage: post-emit             # pre-emit | post-emit
+      authority: advisory          # advisory | mutating
+      required: false
+      read-set:  ["src/**"]
+      write-set: []
+  mcp:
+    - server: angular-cli-mcp
+      tools: [ng_generate, ng_lint]
+      phase: [code]
+      stage: pre-emit
+      authority: mutating
+      required: false
+      read-set:  ["src/**", "angular.json"]
+      write-set: ["src/app/**"]
+      owns-markers: parlay         # parlay | tool
+      preserves: [testcases, declared-elements, markers]
+      fallback: "emit from adapter templates"
+```
+
+### The five constraints
+
+Each was earned by something that broke, not chosen for symmetry.
+
+**1. The codegen boundary must survive.** Codegen must never read `spec/intents/**`. That boundary currently holds — the regression run proved it by comparing file access times across a run — and it is the load-bearing test of whether the buildfile is doing its job. An external tool with unrestricted filesystem access breaks it silently: nothing in the output would look different. So `read-set:` is **enforced, not documented**. A tool declaring a read-set that intersects `spec/intents/**` is rejected at registration, not at first run.
+
+**2. Behavioral contracts, not byte-stability.** `preserves:` is the admission gate: after the tool runs, the feature's testcases still pass, every declared element and action is still present, and every parlay marker is intact. A formatter that reflows every line in the file is fine. One that drops a declared `data-testid` is not — and the difference is not visible in a diff size. This replaces any `deterministic: true/false` flag: parlay's contract is functional determinism measured at the testcase boundary, so a byte-stability axis would be asking the wrong question of the tool.
+
+**3. Marker ownership is explicit.** `owns-markers:` says whether parlay's markers survive the tool's rewrite (`parlay`) or the tool takes over the file (`tool`). A file outside the marker chain is outside the hash chain, and therefore outside the hand-edit guard — 17 marked HTML templates were invisible to `scan-generated` for exactly that reason, and nothing reported it.
+
+**4. Absence is graceful.** `required: false` plus `fallback:` — the build must succeed when the tool is not installed. This is not hypothetical: in the regression run the Figma MCP server was connected and the browser tool was not, and every step that assumed both was unreachable.
+
+**5. Layering.** Framework tools belong in the *adapter*, where they are shareable. Project-specific tools belong in `adapter-set.yaml` or the blueprint. Conflating them makes adapters unshareable — nobody can adopt an Angular adapter that hard-codes another team's internal linter.
+
+### Field reference
+
+| Field | Required | Meaning |
+|---|---|---|
+| `id` / `server` | Yes | Skill id, or MCP server name as the agent knows it |
+| `invoke` | Skills | How the agent calls it — e.g. a slash command |
+| `tools` | MCP | The closed list of tools parlay may call on that server. Absent means none; there is no implicit "all" |
+| `source` | Yes | `community`, `first-party`, or `project` — provenance, so a reviewer can weigh it |
+| `phase` | Yes | Which pipeline phases may invoke it |
+| `stage` | Yes | `pre-emit` (before codegen writes) or `post-emit` (after) |
+| `authority` | Yes | `advisory` (its output is a suggestion) or `mutating` (it may write) |
+| `required` | Yes | `false` means the build proceeds without it, via `fallback` |
+| `read-set` | Yes | Globs it may read. Enforced against the codegen boundary |
+| `write-set` | Yes | Globs it may write. Empty for advisory tools |
+| `owns-markers` | Mutating | `parlay` or `tool` |
+| `preserves` | Mutating | What must still hold afterward — `testcases`, `declared-elements`, `markers` |
+| `fallback` | When `required: false` | What to do instead |
+
+### Validation
+
+| Code | When it fires |
+|---|---|
+| `toolchain-read-set-crosses-spec-boundary` | A `read-set` glob matches anything under `spec/intents/` |
+| `toolchain-write-set-outside-source-root` | A `write-set` glob escapes `file-conventions.source-root` |
+| `toolchain-mutating-without-preserves` | `authority: mutating` with no `preserves:` list |
+| `toolchain-optional-without-fallback` | `required: false` with no `fallback:` |
+| `toolchain-advisory-with-write-set` | `authority: advisory` declaring a non-empty `write-set` |
+| `toolchain-unknown-phase` | `phase:` names something outside the five pipeline phases |
+
+### Optional section
+
+`toolchain:` is optional, and an adapter without one behaves exactly as before. An adapter *with* one on an agent that has none of the named tools installed also behaves as before, provided every entry is `required: false`.
 
 ## Versioning
 
