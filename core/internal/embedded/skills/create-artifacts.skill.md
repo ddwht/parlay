@@ -14,6 +14,8 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
+<!-- parlay:expand-decision-protocol -->
+
 ## Steps
 
 1. **Read feature files**:
@@ -65,19 +67,16 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
    - Mix of operations + architectural prose → **capabilities + infrastructure**
    - New entities or vocabulary → **add domain-model**
    - Surface intents with blueprint-derived backend implications → **surface + the implied backend artifact** (explain why)
-   - Any ambiguous intents → **ask the designer** (step 4)
+   - Any ambiguous intents → **raise the decision** (step 4) rather than picking the reading that is easiest to build
 
-4. **Present the decision** — Show the designer:
-   - The decision (which subset of the four artifacts)
-   - Per-intent breakdown: which intent maps to which artifact(s) and what signals drove the classification
-   - Override options:
-     ```
-     A: Proceed with this recommendation
-     B: Also add [the missing artifact]
-     C: Drop [an artifact from the recommendation]
-     D: Let me explain what this feature does (for ambiguous cases)
-     ```
-   - Wait for the designer's confirmation or override via AskUserQuestion
+4. **Raise the decision** — Return an `override` decision request (see **Asking the user**) carrying:
+   - `context:` — the recommended artifact subset, and a per-intent breakdown naming which intent maps to which artifact(s) and what signal drove each classification. The reasoning is the point; a bare verdict gives the designer nothing to override *with*.
+   - `options:` — at minimum:
+     - `proceed` — author the recommended set
+     - `add-<artifact>` — one per artifact not in the recommendation
+     - `drop-<artifact>` — one per artifact in the recommendation
+     - `explain` — "Let me describe what this feature does" (for intents you classified as ambiguous)
+   - **Write nothing before this is answered.** The override menu exists so the designer can change the artifact set; authoring first makes it a notification.
 
 5. **Create the artifacts**:
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.md or surface.yaml, validate)

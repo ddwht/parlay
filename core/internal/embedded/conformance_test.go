@@ -303,3 +303,108 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 var knownUnreachableValidators = map[string]string{
 	"ValidateBuildfileCanonical": "duplicate of the models:-deprecation logic now implemented in the deep validator (which the CLI actually uses). Kept for the multi-target canonical shape; delete it once v2 validation lands, rather than maintaining two implementations of the same rule.",
 }
+
+// phaseModules are the skills that run inside a parlay-loop subagent
+// (parlay-designer / parlay-build / parlay-code). On the Claude Code
+// adapter a subagent has no AskUserQuestion, so a prompt authored in one of
+// these files is not merely unreliable — it is silently skipped, and the
+// phase then answers its own question. That is how a regression run crossed
+// three phase boundaries with zero confirmations and never once saw the
+// artifact-set override menu.
+//
+// The contract: phase modules return a `parlay-decision` block; the driver
+// prompts. This test holds the line, because the failure mode leaves no
+// trace at runtime — a skipped confirmation looks exactly like a granted
+// one.
+var phaseModules = []string{
+	"add-feature",
+	"scaffold-dialogs",
+	"create-artifacts",
+	"build-feature",
+	"generate-code",
+}
+
+// driverSkills own user interaction and may prompt freely: the loop driver
+// itself, plus the two entry points a user invokes directly.
+var driverSkills = []string{"loop", "doctor", "onboard"}
+
+// askUserMention finds an instruction to call the interactive tool. The
+// negation in generate-code ("never calls AskUserQuestion") is the one
+// legitimate use inside a phase module, so mentions are only a failure when
+// they read as a directive.
+var askUserDirective = regexp.MustCompile(`(?i)(via|using|use|call|through)\s+AskUserQuestion|AskUserQuestion\s+to\s+(collect|ask|present|confirm)`)
+
+func TestConformance_PhaseModulesDoNotPrompt(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+
+	byName := map[string][]byte{}
+	for _, s := range skills {
+		byName[s.Name] = s.Content
+	}
+
+	for _, name := range phaseModules {
+		body, ok := byName[name]
+		if !ok {
+			t.Errorf("phase module %q is not in the embedded skill set — "+
+				"if it was renamed or retired, update phaseModules", name)
+			continue
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			if askUserDirective.MatchString(line) {
+				t.Errorf("%s.skill.md:%d instructs a phase module to prompt:\n  %s\n"+
+					"Phase modules run in subagents where AskUserQuestion does not exist; "+
+					"the prompt is silently skipped and the phase answers itself. "+
+					"Return a `parlay-decision` block instead.",
+					name, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// TestConformance_DriverDocumentsTheDecisionProtocol pins the other half of
+// the contract. Phase modules emitting decision requests is only safe if
+// something is on the other end reading them.
+func TestConformance_DriverDocumentsTheDecisionProtocol(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+
+	var driver []byte
+	for _, s := range skills {
+		if s.Name == "loop" {
+			driver = s.Content
+		}
+	}
+	if driver == nil {
+		t.Fatal("the loop driver skill is missing from the embedded set")
+	}
+
+	for _, required := range []string{
+		"parlay-decision", // the block phases emit
+		"AskUserQuestion", // what the driver does with it
+	} {
+		if !strings.Contains(string(driver), required) {
+			t.Errorf("loop.skill.md does not mention %q — phase modules emit "+
+				"decision requests with nothing on the receiving end", required)
+		}
+	}
+
+	// Every phase module that says it returns a decision request must show
+	// the shape, or the driver gets prose it cannot parse.
+	for _, name := range phaseModules {
+		for _, s := range skills {
+			if s.Name != name {
+				continue
+			}
+			body := string(s.Content)
+			if strings.Contains(body, "decision request") && !strings.Contains(body, "parlay-decision") {
+				t.Errorf("%s.skill.md refers to decision requests but never shows the "+
+					"`parlay-decision` block — the driver has no format to match on", name)
+			}
+		}
+	}
+}

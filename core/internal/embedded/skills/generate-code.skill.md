@@ -64,6 +64,8 @@ Concretely:
 - **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
 - **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent. This governs generate-code's own output only — `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception with pinned-stable wording that `studio-cli-hooks` pattern-matches on; see that skill's step 6.
 
+<!-- parlay:expand-decision-protocol -->
+
 ## Steps
 
 1. **Load schemas** — Read these before generating:
@@ -85,7 +87,7 @@ Concretely:
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
    - **External type resolution** (brownfield): for each entity in the merged model set, grep the source tree (under `file-conventions.source-root`) for existing type/interface/struct definitions matching the entity name (e.g., `interface User`, `type User struct`, `export type User`).
      - If exactly **one match** is found: record it as an external type (entity name → import path). In step 14, generate an import statement for this entity instead of a type declaration.
-     - If **multiple matches** are found: present disambiguation to the user via AskUserQuestion:
+     - If **multiple matches** are found: raise an `ambiguity` decision request naming each candidate:
        ```
        Found multiple existing definitions for "User":
        A: src/types/user.ts (line 14) — interface User { id: string; name: string; }
@@ -268,7 +270,7 @@ Concretely:
 
    3. **Tier 1 — Templated mount**: scan each strategy in the adapter's `mount-strategies:` (if any) for a `detection` pattern that appears in the file content.
       - **1 match**: proceed with this strategy → step 5.
-      - **Multiple matches**: ask the user to choose:
+      - **Multiple matches**: raise an `ambiguity` decision request:
         ```
         <file> has multiple integration points:
         A: New <strategy-1-name> (found <detection-1> on line N)
@@ -276,7 +278,7 @@ Concretely:
         C: Skip — I'll integrate manually
         ```
         → step 5.
-      - **0 matches**: proceed to Tier 2 (step 4) before falling back to AskUserQuestion.
+      - **0 matches**: proceed to Tier 2 (step 4) before falling back to a decision request.
 
    4. **Tier 2 — Intelligent merge** (only if Tier 1 found 0 matches): determine whether the existing file is **the same surface** as the route's component before giving up.
 
@@ -297,7 +299,7 @@ Concretely:
          - **Updates the file's marker block**: replace the original two-line marker (or add one if the file had only legacy comments) with the multi-component form documented in step 12: primary's `parlay-feature:` + `parlay-component:` lines, plus a `parlay-extends: {feature}/{component}` line for the new owner.
       e. Continue to step 6.
 
-      If the file is NOT the same surface (naming or purpose mismatch), fall back to AskUserQuestion:
+      If the file is NOT the same surface (naming or purpose mismatch), fall back to an `ambiguity` decision request:
       ```
       <file> exists in the source tree but doesn't match any mount strategy in the adapter, and its purpose differs from <Component>'s route.
       How should <Component> be added?
@@ -335,7 +337,7 @@ Concretely:
 
    2. **For each resolved target file** — strict-target rule:
       - **If the entry has non-empty `Affects:` or `target-files:` naming files**: those exact paths MUST be the targets. The file MUST already exist on disk **OR appear in another feature's `plan.creates` set that has already run earlier in the same project pass** (per the topological order from step 11.5.5). If the file is neither on disk nor a satisfied sibling-create, error — the buildfile names a file that isn't there. Apply Tier 2 intelligent merge: read the file, read the entry's `Behavior:`/`transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
-      - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): surface the proposed diff via AskUserQuestion (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
+      - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): return the proposed diff as an `ambiguity` decision request (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
       - **If the entry declares `target-creates:`** (two-kinded shape): paths in `target-creates:` are introducing — generate new files at those exact paths with a `parlay-section: cross-cutting` marker, never invent alternate paths. Paths in `target-files:` are still strict-modifies — they must exist on disk (or be satisfied by a sibling-create earlier in the topological order).
       - **Only when the entry has NO `Affects:`/`target-files:`/`target-creates:`** (purely-introducing entries that genuinely add a new package via grep-pattern fan-out): create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review. The file path is computed from the adapter's conventions; the agent must NOT pick an arbitrary path.
 

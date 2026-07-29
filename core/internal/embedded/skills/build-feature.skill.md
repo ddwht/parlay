@@ -24,6 +24,8 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
+<!-- parlay:expand-decision-protocol -->
+
 ## Steps
 
 1. **Load schemas** — Read these files before generating:
@@ -76,7 +78,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    For each `cross-cutting:` entry whose intent is to modify existing code:
    - Identify the canonical integration site by reading existing source. Use `parlay scan-generated <source-root>` to enumerate parlay-managed files, plus regular file reads to inspect surrounding code. The site is the file where similar entities are already wired (for example, the file that already registers existing entry-points, the file that owns the resolver, the file that owns the deployer registry).
    - Record the exact path in the entry's `target-files:`. Avoid `target-pattern:` for known-singleton sites.
-   - When uncertain, ask the user via AskUserQuestion: "This feature introduces a new <thing>. Where should it integrate? Found these candidate sites: <list from scan>. Pick one or specify."
+   - When uncertain, raise an `ambiguity` decision request (see **Asking the user**): "This feature introduces a new <thing>. Where should it integrate?" with one option per candidate site from the scan, plus an option to specify a path.
    - Do NOT default to creating a new package when an existing file is the right home. The strict-target rule in `/parlay-generate-code` step 14.7 will refuse to invent paths under source-root anyway — it is cheaper to identify the site here than to discover the mismatch at code-generation time.
 
    For purely-introducing cross-cuttings (a new package is genuinely warranted), pick a path consistent with the adapter's `file-conventions.source-root` and naming rules, and list it in `plan.creates`. The agent is responsible for the choice; record it explicitly in `plan` rather than letting generate-code guess.
@@ -210,7 +212,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - **When infrastructure.md exists** — translate each infrastructure fragment into a `cross-cutting:` entry via the **adapter bridge**. Infrastructure fragments are framework-agnostic (Affects / Behavior / Invariants); the buildfile entry is framework-specific. The translation is a resolution step, not a 1:1 field rename:
      - Read `Affects:` to determine the abstract scope of the codebase the capability touches (e.g., "feature resolution", "validation pipeline").
      - Consult the adapter's `file-conventions` and `coding-conventions` to know how that scope is organized in the current framework.
-     - Scan the existing source tree to find concrete files matching the abstract scope. Emit them as `target-files:` (explicit paths) or, for fan-out changes, as `target-pattern:` (a grep pattern that resolves to a file list at generate-code time). If `Affects:` resolves to zero files, pause and ask the designer which files are affected — never guess.
+     - Scan the existing source tree to find concrete files matching the abstract scope. Emit them as `target-files:` (explicit paths) or, for fan-out changes, as `target-pattern:` (a grep pattern that resolves to a file list at generate-code time). If `Affects:` resolves to zero files, raise an `ambiguity` decision request asking which files are affected — never guess.
      - Read `Behavior:` to understand the capability, and emit a framework-specific `transform:` describing what the code must do (the basis for Tier 2 intelligent merge).
      - Infer `introduces:` (new functions/types/constants) from `Behavior:` plus the adapter's naming and structure conventions.
      - Carry `Source:` through verbatim as `source:`.
@@ -249,7 +251,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
      - `cross-cutting-target-not-in-plan` — a cross-cutting target-files: path is not represented in plan.modifies. Add the missing plan.modifies row.
      - `plan-modify-target-missing` — plan.modifies names a file that doesn't exist in the source root. Either (a) the file path is wrong (correct it), (b) the entry should be plan.creates instead (this is genuinely a new file), or (c) the integration site was misidentified — re-do step 7.5 to find the real site.
      - `plan-create-collision` — plan.creates names a file that already exists. Surface to the user; either pick a different path or move the entry to plan.modifies.
-   - If `check-buildfile` reports errors, surface them via AskUserQuestion (Revise / Accept and document / Cancel) — do NOT silently commit a buildfile that fails validation.
+   - If `check-buildfile` reports errors, raise a `failure` decision request (Revise / Accept and document / Cancel) — do NOT silently commit a buildfile that fails validation.
 
 11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.
 

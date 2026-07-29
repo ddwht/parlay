@@ -15,6 +15,8 @@ Create a new feature folder with intents.md and dialogs.md. Optionally place it 
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
+<!-- parlay:expand-decision-protocol -->
+
 ## Steps
 
 1. If the user specified an initiative: run `parlay add-feature {name} --initiative {initiative}`
