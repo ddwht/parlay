@@ -142,6 +142,22 @@ suites:
     persistence_assertions: [...]
 ```
 
+### Suite scope: what a suite composes
+
+`kind: presentation` suites carry a `scope:`, over the closed set `{component, route, flow}`. Absent, it reads as `component` — the legacy shape.
+
+| Scope | Unit under test | `component:` field |
+|---|---|---|
+| `component` | one component in isolation, against one fixture | required |
+| `route` | everything a route renders, against one fixture | omitted; `route:` names the path |
+| `flow` | a sequence of routes a persona walks | omitted; `flow:` lists the route path sequence |
+
+Why this exists: `build-feature`'s unit of work is the component, and until now so was the testcase suite's. Nothing owned the composition. A regression run produced a wizard host that was unwired and untested (no spec fragment referenced it), four features owning four contradicting fixtures for the same report, and a login persona no fixture defined — and every one of those passed every gate and all 483 component-level assertions, because a component tested in isolation cannot observe what it composes with.
+
+**Coverage rule.** Every route in the merged route table needs at least one `scope: route` suite; the walker fires `testcases-route-uncovered` naming the route. Every multi-route flow named in a dialog needs a `scope: flow` suite, or the walker fires `testcases-flow-uncovered`. Both are warnings on a project that has never had them and errors once a project declares any scoped suite — a project mid-adoption should not be blocked, and one that has adopted the concept should not silently regress out of it.
+
+**Fixture coherence is checked separately.** `parlay internal check-composition` compares every feature's fixture data and reports `composition-fixture-contradiction` when two features disagree about the same entity id, and `composition-dangling-reference` when a fixture references an id no feature defines. It deliberately ignores disagreements *within* one feature: alternative scenario fixtures are supposed to disagree, and reporting them buries the cross-feature findings that matter.
+
 ### Coverage walker
 
 For every canonical operation declared in the feature's `capabilities.yaml`, at least one `kind: operation` suite must reference it. The walker fires `testcases-operation-uncovered` for each missing operation. Coverage is computed against the `@<feature>/operation:<id>` normalized form.
