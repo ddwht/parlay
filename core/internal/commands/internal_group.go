@@ -57,6 +57,7 @@ func registerInternalCommands() {
 		// driven because only the code phase knows the tests passed.
 		saveBuildStateCmd,
 		scaffoldSignaturesCmd,
+		scaffoldPlanCmd,
 	)
 	rootCmd.AddCommand(internalCmd)
 }

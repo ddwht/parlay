@@ -340,6 +340,17 @@ file-conventions:
   component-pattern: feature-modules
   naming: kebab-case
   entry-point: "src/app/app.component.ts"
+  paths:
+    component: "features/{feature}/{name}/{name}.component.ts"
+    component-extras:
+      - "features/{feature}/{name}/{name}.component.html"
+      - "features/{feature}/{name}/{name}.component.scss"
+    test: "features/{feature}/{name}/{name}.component.spec.ts"
+    model: "core/domain/{entity}.ts"
+    service: "features/{feature}/services/{feature}.service.ts"
+    types: "features/{feature}/types/{feature}.types.ts"
+    feature-routes: "features/{feature}/{feature}.routes.ts"
+    routes: "app.routes.ts"
   packages:
     features: "src/app/features/"
     core: "src/app/core/"
