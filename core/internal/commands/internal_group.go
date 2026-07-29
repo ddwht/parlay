@@ -60,6 +60,7 @@ func registerInternalCommands() {
 		scaffoldPlanCmd,
 		checkCompositionCmd,
 		schemaDigestCmd,
+		emissionGroupsCmd,
 	)
 	rootCmd.AddCommand(internalCmd)
 }
