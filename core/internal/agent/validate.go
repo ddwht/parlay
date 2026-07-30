@@ -336,18 +336,6 @@ type ValidationError struct {
 	Severity string `json:"severity,omitempty"`
 }
 
-// ValidateBuildfileDeep performs cross-reference validation on a buildfile.
-// Returns string-formatted errors for backwards compatibility.
-// For structured output suitable for agent consumption, use ValidateBuildfileDeepStructured.
-func ValidateBuildfileDeep(buildfilePath, adapterPath string) []string {
-	structured := ValidateBuildfileDeepStructured(buildfilePath, adapterPath)
-	var errors []string
-	for _, e := range structured {
-		errors = append(errors, e.Message)
-	}
-	return errors
-}
-
 // ValidateBuildfileDeepStructured performs cross-reference validation and returns
 // structured errors. Each error has a code (for programmatic handling), context
 // (location), and fix (recovery hint). Single-feature mode: plannedCreates is

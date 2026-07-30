@@ -378,13 +378,9 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 var knownUnreachableValidators = map[string]string{
 	"ValidateBuildfileCanonical": "duplicate of the models:-deprecation logic now implemented in the deep validator (which the CLI actually uses). Kept for the multi-target canonical shape; delete it once v2 validation lands, rather than maintaining two implementations of the same rule.",
 
-	"ValidateBuildfileDeep": "v1 leftover returning []string; every command reaches ValidateBuildfileDeepStructured instead. Sharpest case on this list: seven tests in validate_test.go call it, so they report confidence about a path the tool never executes. Deleting it means repointing those tests at the structured entry point — which is the actual win, not the deletion.",
-
 	"ValidateAdapterSetLinks": "not merely uncalled — it has no possible caller. It consumes []CrossKindEdge, and nothing in the tree produces a CrossKindEdge: the type is declared in this same file and never constructed outside tests. So the missing piece is the edge extractor that projects buildfile edges crossing adapter kinds, not a call site. Feature work, not wiring.",
 
 	"CheckCrossAdapterParity": "same shape as ValidateAdapterSetLinks: no command validates a layout against more than one adapter, so there is no multi-adapter context to call it from. Needs the multi-target validation path to exist first; wiring it to a single-adapter caller would make it assert nothing.",
-
-	"ValidateTestcasesV2": "there is no `validate --type testcases`, so nothing checks a testcases.yaml against its schema; the build phase writes it and only the coverage walker reads it. Adding the type is small and would make the v2 suite-shape rules enforceable.",
 }
 
 // phaseModules are the skills that run inside a parlay-loop subagent

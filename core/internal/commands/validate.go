@@ -34,7 +34,7 @@ var validateJSON bool
 var validateProject bool
 
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, page, layout")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, testcases, page, layout")
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile, infrastructure)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
@@ -164,6 +164,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// parlay-component: cli-and-deployer-registration
 	case "adapter-set":
 		validator = wrapOutcomeValidator(agent.ValidateAdapterSet)
+	case "testcases":
+		// There was no `--type testcases` at all, so nothing checked a
+		// testcases.yaml against its schema: the build phase writes it and only
+		// the coverage walker ever read it. Every v2 suite-shape rule —
+		// discriminated kinds, source_refs presence, the legacy-ingestion
+		// warning — was therefore unenforceable.
+		validator = validateTestcasesAdapter
 	case "adapter":
 		// Adapter files had no validate type at all before Section 10's
 		// toolchain block. A validator nobody can call is the pattern this
@@ -177,7 +184,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// surface a minimal YAML-shape check here.
 		validator = agent.ValidateYAML
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review", validateType)
+		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, testcases", validateType)
 	}
 
 	if err := validator(path, content); err != nil {
@@ -610,6 +617,29 @@ func validateInfrastructureDeepAdapter(path string, content []byte) error {
 	}
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "[WARN] portability: %s / %s — %s\n", w.Fragment, w.Field, w.Suggestion)
+	}
+	if len(msgs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+}
+
+// validateTestcasesAdapter runs the v2 testcases validator.
+//
+// canonicalOperations is nil, which disables only the operation-coverage walker
+// — that check needs the feature's capabilities.yaml, and this command is handed
+// one file with no feature context. Passing nil is not a silent partial: with no
+// declared operations there is nothing for the walker to find uncovered, so it
+// reports nothing rather than reporting everything as covered. The suite-shape
+// rules, which are what a standalone file check can honestly assess, all run.
+func validateTestcasesAdapter(path string, content []byte) error {
+	var msgs []string
+	for _, o := range agent.ValidateTestcasesV2(agent.ModeAuthoring, path, content, nil) {
+		if o.Severity == agent.SeverityError {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
+		} else {
+			fmt.Fprintf(os.Stderr, "[WARN] %s: %s\n", o.Code, o.Message)
+		}
 	}
 	if len(msgs) == 0 {
 		return nil

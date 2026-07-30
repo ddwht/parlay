@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+// deepBuildfileMessages flattens the structured findings to their messages,
+// which is what these tests assert on.
+//
+// This mapping used to be a production function, ValidateBuildfileDeep, with
+// seven callers — all of them in this file and none in the tool. So the tests
+// reported confidence about a wrapper the CLI never executed, while the path it
+// does execute (ValidateBuildfileDeepStructured) was covered only indirectly.
+// The mapping belongs here: the tests want strings, the tool wants findings.
+func deepBuildfileMessages(buildfilePath, adapterPath string) []string {
+	var msgs []string
+	for _, e := range ValidateBuildfileDeepStructured(buildfilePath, adapterPath) {
+		msgs = append(msgs, e.Message)
+	}
+	return msgs
+}
+
 func TestValidateBuildfileDeep_ValidBuildfile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -42,7 +58,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	if len(errors) != 0 {
 		t.Errorf("expected no errors, got: %v", errors)
 	}
@@ -73,7 +89,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -104,7 +120,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -132,7 +148,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -157,7 +173,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -197,7 +213,7 @@ flows:
 	os.WriteFile(bfPath, []byte(buildfile), 0644)
 	os.WriteFile(adPath, []byte(adapter), 0644)
 
-	errors := ValidateBuildfileDeep(bfPath, adPath)
+	errors := deepBuildfileMessages(bfPath, adPath)
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error for unknown-widget, got %d: %v", len(errors), errors)
 	}
@@ -343,7 +359,7 @@ plan:
 	path := filepath.Join(dir, "buildfile.yaml")
 	os.WriteFile(path, []byte(buildfile), 0644)
 
-	errors := ValidateBuildfileDeep(path, "")
+	errors := deepBuildfileMessages(path, "")
 	// Should catch: missing route component, invalid model ref, invalid child, invalid fixture model
 	if len(errors) != 4 {
 		t.Errorf("expected 4 errors, got %d: %v", len(errors), errors)
