@@ -428,7 +428,7 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 			Message:  "top-level models: is deprecated — entity declarations belong in domain-model.yaml",
 			Context:  "models",
 			Fix:      "remove the models: block; component inputs and fixtures now resolve against the project's domain-model.yaml",
-			Severity: string(SeverityWarning),
+			Severity: string(RuleSeverity("buildfile-models-deprecated", ModeBuild)),
 		})
 	}
 
