@@ -443,19 +443,50 @@ func runScaffoldPlan(cmd *cobra.Command, args []string) error {
 // domain-model.yaml. A missing or unparseable file yields no entities rather
 // than an error: a project can legitimately have none, and plan derivation
 // for components does not depend on the model layer.
+// domainEntityNamesAt reads the entity names out of domain-model.yaml.
+//
+// `entities:` is a LIST of objects with a `name:` field, which is what
+// domain-model.schema.md documents and what every real project on disk
+// carries. This decoded it as a map keyed by entity name — a shape nothing
+// writes — so yaml.v3 failed the unmarshal, the function returned nil, and
+// derivation silently produced no section/models rows for any project that
+// has ever existed. Silently, because a nil entity list is indistinguishable
+// here from a project that genuinely has no entities, and the `if
+// len(entities) > 0` guard downstream then skips the block without reporting
+// anything undecidable.
+//
+// The map form is still accepted on the second attempt. It costs one extra
+// decode and covers a hand-written shorthand a person might reasonably try.
 func domainEntityNamesAt(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	var dm struct {
+
+	var asList struct {
+		Entities []struct {
+			Name string `yaml:"name"`
+		} `yaml:"entities"`
+	}
+	if err := yaml.Unmarshal(data, &asList); err == nil && len(asList.Entities) > 0 {
+		var names []string
+		for _, e := range asList.Entities {
+			if e.Name != "" {
+				names = append(names, e.Name)
+			}
+		}
+		sort.Strings(names)
+		return names
+	}
+
+	var asMap struct {
 		Entities map[string]interface{} `yaml:"entities"`
 	}
-	if err := yaml.Unmarshal(data, &dm); err != nil {
+	if err := yaml.Unmarshal(data, &asMap); err != nil {
 		return nil
 	}
 	var names []string
-	for k := range dm.Entities {
+	for k := range asMap.Entities {
 		names = append(names, k)
 	}
 	sort.Strings(names)

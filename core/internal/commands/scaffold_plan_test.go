@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -265,5 +267,56 @@ func TestNoStoreTemplateDerivesNoStoreRowAndNoComplaint(t *testing.T) {
 		if strings.Contains(u, "store") {
 			t.Errorf("absence of paths.store must not be reported as undecidable: %q", u)
 		}
+	}
+}
+
+// domain-model.yaml's `entities:` is a LIST of objects with a `name:` field —
+// what the schema documents and what every real project carries. This decoded
+// it as a map keyed by entity name, a shape nothing writes, so the unmarshal
+// failed, the function returned nil, and NO project has ever derived a
+// section/models row.
+//
+// It failed silently, which is why it survived: a nil entity list is
+// indistinguishable downstream from a project that genuinely has no entities,
+// and the `len(entities) > 0` guard then skips the block without reporting
+// anything undecidable. Nothing was wrong-looking to find.
+func TestDomainEntityNamesReadsTheDocumentedListShape(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "domain-model.yaml")
+	const model = `schema_version: 1
+enums:
+  - name: Role
+    values:
+      - value: employee
+entities:
+  - name: Employee
+    fields:
+      - name: id
+        type: uuid
+  - name: ExpenseReport
+    fields:
+      - name: id
+        type: uuid
+`
+	if err := os.WriteFile(path, []byte(model), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := domainEntityNamesAt(path)
+	want := []string{"Employee", "ExpenseReport"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entities = %v, want %v", got, want)
+	}
+}
+
+// The map shorthand a person might reasonably hand-write still works.
+func TestDomainEntityNamesAlsoAcceptsTheMapShorthand(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "domain-model.yaml")
+	if err := os.WriteFile(path, []byte("entities:\n  Employee: {}\n  ExpenseReport: {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := domainEntityNamesAt(path), []string{"Employee", "ExpenseReport"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("entities = %v, want %v", got, want)
 	}
 }
