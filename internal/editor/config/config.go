@@ -4,7 +4,7 @@
 //
 // Package config is the single supported home for reading Parlay Studio
 // configuration. Every other Studio package reads the merged *Config returned
-// by Load — no other package may call os.Getenv("STUDIO_*") or YAML-load the
+// by Load — no other package may call os.Getenv("PARLAY_EDITOR_*") or YAML-load the
 // project- or user-scoped config files directly. An import-boundary test in
 // loader_test.go walks studio/ and asserts the invariant.
 //
@@ -13,7 +13,7 @@
 //   - web_server.go populates Config.ServerPort, IdleTimeout, OpenBrowser.
 //   - project_root.go resolves the project root BEFORE the loader runs.
 //   - loader.go    performs the five-source precedence merge and emits the
-//                  redacted INFO log line via LogMerged.
+//     redacted INFO log line via LogMerged.
 //
 // See studio/spec/intents/studio-foundation/studio-config.
 package config
@@ -56,7 +56,7 @@ const (
 	// SourceProjectFile — the project-scoped config file
 	// (<resolved-project-root>/.parlay-studio/config.yaml).
 	SourceProjectFile Source = "project-file"
-	// SourceEnv — a STUDIO_* environment variable.
+	// SourceEnv — a PARLAY_EDITOR_* environment variable.
 	SourceEnv Source = "env"
 	// SourceFlag — a CLI flag.
 	SourceFlag Source = "flag"

@@ -42,7 +42,7 @@ func TestDefaultsPortTimeoutBrowser(t *testing.T) {
 
 func TestStudioServerPortParsesAsInt(t *testing.T) {
 	files := fakeFS{}
-	env := map[string]string{"STUDIO_SERVER_PORT": "18080"}
+	env := map[string]string{"PARLAY_EDITOR_SERVER_PORT": "18080"}
 	cfg, _, _, err := runLoad(t, "/proj", nil, env, files)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -54,7 +54,7 @@ func TestStudioServerPortParsesAsInt(t *testing.T) {
 
 func TestServerPortOutOfRangeRejected(t *testing.T) {
 	files := fakeFS{}
-	env := map[string]string{"STUDIO_SERVER_PORT": "70000"}
+	env := map[string]string{"PARLAY_EDITOR_SERVER_PORT": "70000"}
 	_, _, _, err := runLoad(t, "/proj", nil, env, files)
 	if !errors.Is(err, ErrServerPortInvalid) {
 		t.Fatalf("expected %v, got %v", ErrServerPortInvalid, err)
@@ -63,7 +63,7 @@ func TestServerPortOutOfRangeRejected(t *testing.T) {
 
 func TestNegativeIdleTimeoutRejected(t *testing.T) {
 	files := fakeFS{}
-	env := map[string]string{"STUDIO_IDLE_TIMEOUT": "-1s"}
+	env := map[string]string{"PARLAY_EDITOR_IDLE_TIMEOUT": "-1s"}
 	_, _, _, err := runLoad(t, "/proj", nil, env, files)
 	if !errors.Is(err, ErrIdleTimeoutInvalid) {
 		t.Fatalf("expected %v, got %v", ErrIdleTimeoutInvalid, err)
@@ -72,7 +72,7 @@ func TestNegativeIdleTimeoutRejected(t *testing.T) {
 
 func TestZeroIdleTimeoutDisables(t *testing.T) {
 	files := fakeFS{}
-	env := map[string]string{"STUDIO_IDLE_TIMEOUT": "0"}
+	env := map[string]string{"PARLAY_EDITOR_IDLE_TIMEOUT": "0"}
 	cfg, _, _, err := runLoad(t, "/proj", nil, env, files)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -84,7 +84,7 @@ func TestZeroIdleTimeoutDisables(t *testing.T) {
 
 func TestStudioOpenBrowserFalseDisables(t *testing.T) {
 	files := fakeFS{}
-	env := map[string]string{"STUDIO_OPEN_BROWSER": "false"}
+	env := map[string]string{"PARLAY_EDITOR_OPEN_BROWSER": "false"}
 	cfg, _, _, err := runLoad(t, "/proj", nil, env, files)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -96,7 +96,7 @@ func TestStudioOpenBrowserFalseDisables(t *testing.T) {
 
 func TestUserFileOnlyWebServerKeyEmitsWarn(t *testing.T) {
 	files := fakeFS{
-		"/home/dev/.config/parlay-studio/config.yaml": []byte("server_port: 18080\n"),
+		"/home/dev/.config/parlay/config.yaml": []byte("server_port: 18080\n"),
 	}
 	env := map[string]string{}
 	cfg, _, stderr, err := runLoad(t, "/proj", nil, env, files)

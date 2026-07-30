@@ -4,14 +4,14 @@
 
 // Covers every dialog branch of project-root resolution:
 //   - --project flag wins over env and cwd
-//   - STUDIO_PROJECT_ROOT wins over cwd
+//   - PARLAY_ROOT wins over cwd
 //   - cwd walk-up finds the nearest ancestor with .parlay/
 //   - walk-up failure returns studio-config-project-root-not-found
 //   - $HOME terminates the walk-up when cwd was inside $HOME at entry
 //   - cwd outside $HOME walks all the way to /
 //   - explicit --project at a subdirectory is rejected (no walk-up)
 //   - explicit --project at a non-existent path is rejected
-//   - STUDIO_PROJECT_ROOT at a subdirectory is rejected (strict-root)
+//   - PARLAY_ROOT at a subdirectory is rejected (strict-root)
 //   - relative --project resolves against cwd
 //   - successful resolution emits the INFO log line
 
@@ -91,7 +91,7 @@ func TestProjectFlagHasHighestPrecedence(t *testing.T) {
 	io := mkIO("/tmp/has-parlay/.parlay")
 	root, src, err := resolveProjectRoot(
 		[]string{"--project", "/tmp/has-parlay"},
-		map[string]string{"STUDIO_PROJECT_ROOT": "/tmp/other-parlay"},
+		map[string]string{"PARLAY_ROOT": "/tmp/other-parlay"},
 		"/tmp/yet-another-parlay",
 		"/home/dev",
 		io,
@@ -114,7 +114,7 @@ func TestStudioProjectRootUsedWhenNoFlag(t *testing.T) {
 	io := mkIO("/tmp/has-parlay/.parlay")
 	root, src, err := resolveProjectRoot(
 		nil,
-		map[string]string{"STUDIO_PROJECT_ROOT": "/tmp/has-parlay"},
+		map[string]string{"PARLAY_ROOT": "/tmp/has-parlay"},
 		"/tmp/some-other-dir",
 		"/home/dev",
 		io,
@@ -249,7 +249,7 @@ func TestStudioProjectRootAtSubdirRejected(t *testing.T) {
 	io := mkIO("/home/dev/myapp/.parlay", "/home/dev/myapp/some/subdir")
 	_, _, err := resolveProjectRoot(
 		nil,
-		map[string]string{"STUDIO_PROJECT_ROOT": "/home/dev/myapp/some/subdir"},
+		map[string]string{"PARLAY_ROOT": "/home/dev/myapp/some/subdir"},
 		"/tmp",
 		"/home/dev",
 		io,

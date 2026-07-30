@@ -78,10 +78,10 @@ func resolveServerPort(args []string, env map[string]string, projFile, userFile 
 		}
 		return port, SourceFlag, true, nil
 	}
-	if v, ok := env["STUDIO_SERVER_PORT"]; ok && v != "" {
+	if v, ok := env["PARLAY_EDITOR_SERVER_PORT"]; ok && v != "" {
 		port, err := strconv.Atoi(v)
 		if err != nil {
-			return 0, "", false, fmt.Errorf("%w: STUDIO_SERVER_PORT=%q is not an integer", ErrServerPortInvalid, v)
+			return 0, "", false, fmt.Errorf("%w: PARLAY_EDITOR_SERVER_PORT=%q is not an integer", ErrServerPortInvalid, v)
 		}
 		return port, SourceEnv, true, nil
 	}
@@ -99,10 +99,10 @@ func resolveIdleTimeout(args []string, env map[string]string, projFile, userFile
 		}
 		return d, SourceFlag, true, nil
 	}
-	if v, ok := env["STUDIO_IDLE_TIMEOUT"]; ok && v != "" {
+	if v, ok := env["PARLAY_EDITOR_IDLE_TIMEOUT"]; ok && v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return 0, "", false, fmt.Errorf("%w: STUDIO_IDLE_TIMEOUT=%q is not a valid Go duration", ErrIdleTimeoutInvalid, v)
+			return 0, "", false, fmt.Errorf("%w: PARLAY_EDITOR_IDLE_TIMEOUT=%q is not a valid Go duration", ErrIdleTimeoutInvalid, v)
 		}
 		return d, SourceEnv, true, nil
 	}
@@ -120,7 +120,7 @@ func resolveOpenBrowser(args []string, env map[string]string, projFile, userFile
 	if flagPresent(args, "browser") {
 		return true, SourceFlag, true
 	}
-	if v, ok := env["STUDIO_OPEN_BROWSER"]; ok && v != "" {
+	if v, ok := env["PARLAY_EDITOR_OPEN_BROWSER"]; ok && v != "" {
 		b, parsed := parseBool(v)
 		if parsed {
 			return b, SourceEnv, true

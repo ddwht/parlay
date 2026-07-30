@@ -20,7 +20,7 @@ import (
 var ErrProjectRootNotFound = errors.New("studio-config-project-root-not-found")
 
 // ErrProjectRootInvalid (studio-config-project-root-invalid) — an explicit
-// override (--project or STUDIO_PROJECT_ROOT) pointed at a path that does
+// override (--project or PARLAY_ROOT) pointed at a path that does
 // not exist or that does not directly contain a .parlay/ subdirectory.
 // The explicit-override branch never walks up the filesystem.
 var ErrProjectRootInvalid = errors.New("studio-config-project-root-invalid")
@@ -29,16 +29,19 @@ var ErrProjectRootInvalid = errors.New("studio-config-project-root-invalid")
 // for the --project flag. It is not part of the Source enum because it is a
 // project-root-specific provenance label, not a config-key source layer.
 const (
-	srcLabelFlag    = "--project flag"
-	srcLabelEnv     = "STUDIO_PROJECT_ROOT"
-	srcLabelWalkup  = "cwd-walkup"
+	srcLabelFlag = "--project flag"
+	// PARLAY_ROOT, not a second editor-specific variable. parlay has always had
+	// this for exactly this purpose, and with one binary a
+	// PARLAY_EDITOR_PROJECT_ROOT beside it would be two names for one thing.
+	srcLabelEnv    = "PARLAY_ROOT"
+	srcLabelWalkup = "cwd-walkup"
 )
 
 // ResolveProjectRoot resolves the active project root from the three
 // supported sources, in precedence order:
 //
 //  1. --project <path> CLI flag (relative paths resolved against cwd)
-//  2. STUDIO_PROJECT_ROOT environment variable (same relative-path rule)
+//  2. PARLAY_ROOT environment variable (same relative-path rule)
 //  3. cwd walk-up: ancestor whose direct .parlay/ subdirectory exists
 //
 // Strict-root: branches 1 and 2 MUST point at a directory that DIRECTLY
@@ -80,8 +83,8 @@ func resolveProjectRoot(args []string, env map[string]string, cwd, home string, 
 		return path, SourceFlag, nil
 	}
 
-	// --- branch 2: STUDIO_PROJECT_ROOT env var (strict, no walk-up) ---
-	if v, ok := env["STUDIO_PROJECT_ROOT"]; ok && v != "" {
+	// --- branch 2: PARLAY_ROOT env var (strict, no walk-up) ---
+	if v, ok := env["PARLAY_ROOT"]; ok && v != "" {
 		path := resolveRelative(v, cwd)
 		if err := validateExplicitRoot(path, srcLabelEnv, io); err != nil {
 			return "", "", err

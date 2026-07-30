@@ -31,8 +31,11 @@ var ErrSecretInProjectFile = errors.New("studio-config-secret-in-project-file")
 
 // envPrefix is the namespace for Studio-owned environment variables. The
 // loader rejects nothing outside this prefix and warns (without failing) on
-// recognised but unmapped STUDIO_* names.
-const envPrefix = "STUDIO_"
+// recognised but unmapped PARLAY_EDITOR_* names.
+// Renamed from STUDIO_ with the module merge. With one binary there is no
+// separate product to namespace against, and a STUDIO_-prefixed variable
+// configuring a `parlay` command is a puzzle rather than a convention.
+const envPrefix = "PARLAY_EDITOR_"
 
 // knownEnvVars is the closed set of STUDIO_* names this loader maps to a
 // Config field. STUDIO_PROJECT_ROOT is consumed by ResolveProjectRoot, not by
@@ -42,11 +45,11 @@ const envPrefix = "STUDIO_"
 // STUDIO_CONFIG_PATH is intentionally NOT on this list — the loader rejects
 // the escape-hatch idea and surfaces a WARN instead.
 var knownEnvVars = map[string]bool{
-	"STUDIO_SERVER_PORT":  true,
-	"STUDIO_IDLE_TIMEOUT": true,
-	"STUDIO_OPEN_BROWSER": true,
-	"STUDIO_PROJECT_ROOT": true, // consumed by ResolveProjectRoot
-	"XDG_CONFIG_HOME":     true, // consulted for user-file path
+	"PARLAY_EDITOR_SERVER_PORT":  true,
+	"PARLAY_EDITOR_IDLE_TIMEOUT": true,
+	"PARLAY_EDITOR_OPEN_BROWSER": true,
+	"PARLAY_ROOT":                true, // consumed by ResolveProjectRoot
+	"XDG_CONFIG_HOME":            true, // consulted for user-file path
 }
 
 // fileSnapshot is the in-memory representation of one config file. Path is
@@ -374,7 +377,10 @@ func projectConfigPath(projectRoot string) string {
 	if projectRoot == "" {
 		return ""
 	}
-	return filepath.Join(projectRoot, ".parlay-studio", "config.yaml")
+	// Folded into parlay's own config file. A second dot-directory beside
+	// .parlay/ at the same root was easy to mistake for the same thing, and
+	// with one binary there is no second product to own one.
+	return filepath.Join(projectRoot, ".parlay", "config.yaml")
 }
 
 // userConfigPath derives the user-scoped config file path, honoring
@@ -382,12 +388,12 @@ func projectConfigPath(projectRoot string) string {
 // test only has to look in one place.
 func userConfigPath(env map[string]string, home string) string {
 	if xdg := env["XDG_CONFIG_HOME"]; xdg != "" {
-		return filepath.Join(xdg, "parlay-studio", "config.yaml")
+		return filepath.Join(xdg, "parlay", "config.yaml")
 	}
 	if home == "" {
 		return ""
 	}
-	return filepath.Join(home, ".config", "parlay-studio", "config.yaml")
+	return filepath.Join(home, ".config", "parlay", "config.yaml")
 }
 
 func loadProjectFile(projectRoot string, opts LoadOptions) (*fileSnapshot, error) {
@@ -424,6 +430,17 @@ func loadYAMLFile(path string, opts LoadOptions) (*fileSnapshot, error) {
 	}
 	if snap.Raw == nil {
 		snap.Raw = map[string]any{}
+	}
+	// The editor's keys live under an `editor:` block now that this file is
+	// parlay's own config rather than a private one — server_port at the top
+	// level of .parlay/config.yaml would sit beside ai-agent and read as a
+	// parlay-wide setting.
+	//
+	// A flat file still loads. That is not a compatibility shim so much as the
+	// honest reading: if there is no editor: block, the keys that are present
+	// are the ones meant.
+	if nested, ok := snap.Raw["editor"].(map[string]any); ok {
+		snap.Raw = nested
 	}
 	snap.Present = true
 	return snap, nil
