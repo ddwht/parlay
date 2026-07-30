@@ -217,15 +217,27 @@ func TestFeatureStructureSchemaMentionsFourArtifacts(t *testing.T) {
 	}
 }
 
-// TestBuildfileSchemaIsMultiTargetPrimaryWithFileOperations guards the
-// Phase 5 buildfile v2 rewrite: multi-target must be the primary
-// documented shape (not a bolted-on "Section: Multi-target" appendix),
-// the per-component file-I/O list must be named file-operations: (not
-// operations:, which now collides with the top-level multi-target
-// operations: block), the buildfile must declare schema_version, and
-// the old single-target shape must still exist somewhere as a frozen
-// historical reference.
-func TestBuildfileSchemaIsMultiTargetPrimaryWithFileOperations(t *testing.T) {
+// TestBuildfileSchemaDocumentsBothShapesAndWhichOneValidates guards the
+// buildfile v2 rewrite: the per-component file-I/O list must be named
+// file-operations: (not operations:, which collides with the top-level
+// multi-target operations: block), the buildfile must declare
+// schema_version, and the old single-target shape must still exist as a
+// frozen reference.
+//
+// This test used to be named ...IsMultiTargetPrimary... and its last
+// assertion said "multi-target must be primary, not an afterthought". The
+// schema no longer claims that, and retracting the claim was the fix: the
+// doc had said v2 was primary and "every project is described in this shape
+// from here on" while the validator accepted only v1, so following the doc
+// produced a buildfile the CLI refused. An agent paid to reverse-engineer
+// the validator to find out. The prose was corrected; this test kept
+// enforcing the superseded claim in its name and rationale while its
+// assertion — v2 content precedes the frozen appendix — happened to still
+// hold for an unrelated reason.
+//
+// What is actually worth guarding is the honesty of the status note. That is
+// the sentence whose absence costs a build cycle.
+func TestBuildfileSchemaDocumentsBothShapesAndWhichOneValidates(t *testing.T) {
 	content, err := schemasFS.ReadFile("schemas/buildfile.schema.md")
 	if err != nil {
 		t.Fatalf("failed to read buildfile.schema.md: %v", err)
@@ -244,14 +256,26 @@ func TestBuildfileSchemaIsMultiTargetPrimaryWithFileOperations(t *testing.T) {
 		}
 	}
 
-	// The primary Structure block (before the Appendix) must lead with
-	// the multi-target shape, not bury it in a bolted-on section deep in
-	// the file. Assert the multi-target `targets:` block appears before
-	// the frozen appendix begins.
+	// v2 content is documented in the body, ahead of the frozen appendix —
+	// that is where new multi-target material lands. This is a claim about
+	// where content lives, not about which shape an author should use.
 	appendixIdx := strings.Index(body, "## Appendix: Legacy v1 buildfile shape (frozen)")
 	targetsIdx := strings.Index(body, "targets:")
 	if appendixIdx == -1 || targetsIdx == -1 || targetsIdx > appendixIdx {
-		t.Error("buildfile.schema.md's primary Structure block must declare targets: before the frozen legacy appendix — multi-target must be primary, not an afterthought")
+		t.Error("buildfile.schema.md must document the multi-target targets: block in the body, ahead of the frozen legacy appendix")
+	}
+
+	// And the reader must be told, before that block, which shape actually
+	// validates. Without this the doc reads as an instruction to author v2,
+	// which the validator rejects.
+	if targetsIdx >= 0 {
+		preamble := body[:targetsIdx]
+		if !strings.Contains(preamble, "not yet the accepted shape") {
+			t.Error("buildfile.schema.md must say, before the v2 structure block, that v2 is not the accepted shape — the doc previously claimed the opposite and every build paid for it")
+		}
+		if !strings.Contains(preamble, "appendix-legacy-v1-buildfile-shape-frozen") {
+			t.Error("buildfile.schema.md must point an author at the shape that does validate, not merely warn them off the one that does not")
+		}
 	}
 }
 

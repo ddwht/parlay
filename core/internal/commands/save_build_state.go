@@ -309,14 +309,21 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 // loadEmittedManifest reads the newline-delimited list of files codegen
 // declared it wrote.
 //
-// Returns (nil, "", nil) when no manifest is supplied and none exists at the
-// default location — that is "the run did not say", which is different from
-// "the run wrote nothing" and is classified differently. An explicitly passed
-// --emitted path that does not exist IS an error: the caller asserted a
-// manifest, and silently continuing without it would produce a snapshot that
-// claims less than the caller believes.
+// Returns (nil, "", nil) only when no --emitted was passed AND no manifest
+// exists at the default location. That is "the run did not say", which is a
+// different state from "the run wrote nothing" and is classified differently:
+// the former makes every file unknown, the latter makes every changed file
+// adopted.
+//
+// Passing --emitted IS the declaration. So an explicitly passed path that
+// does not exist reads as an EMPTY declaration — this run is
+// provenance-tracked and emitted nothing — rather than as an error or as
+// silence. Erroring would fail the save of a legitimate no-op regeneration;
+// treating it as silence would quietly downgrade a tracked run, which looks
+// identical to the feature working.
 func loadEmittedManifest(cfg *config.Context, flagPath string) (*emissionDeclaration, string, error) {
 	path := flagPath
+	explicit := flagPath != ""
 	if path == "" {
 		candidate := filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest)
 		if _, err := os.Stat(candidate); err != nil {
@@ -326,6 +333,9 @@ func loadEmittedManifest(cfg *config.Context, flagPath string) (*emissionDeclara
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if explicit && os.IsNotExist(err) {
+			return &emissionDeclaration{Paths: map[string]bool{}}, "", nil
+		}
 		return nil, "", fmt.Errorf("read emitted manifest %s: %w", path, err)
 	}
 	decl := &emissionDeclaration{Paths: map[string]bool{}}
