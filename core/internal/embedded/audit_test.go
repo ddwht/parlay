@@ -322,8 +322,14 @@ func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read layout.schema.md: %v", err)
 	}
-	if !strings.Contains(string(layout), "Relationship to design-spec.schema.md") {
-		t.Error("layout.schema.md missing the reciprocal cross-reference to design-spec.schema.md")
+	// Anchored on a heading that names the other schema, not on the heading's
+	// exact wording. What matters is that layout.schema.md carries a section
+	// about its relationship to design-spec.schema.md; whether that heading says
+	// "Relationship to", "How this relates to", or something else is an editorial
+	// choice, and failing the build over it teaches people to stop editing
+	// headings rather than to keep the cross-reference.
+	if !hasHeadingMentioning(string(layout), "design-spec.schema.md") {
+		t.Error("layout.schema.md has no heading cross-referencing design-spec.schema.md")
 	}
 }
 
@@ -382,16 +388,20 @@ func TestBlueprintAndCapabilitiesPoliciesDistinguished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read blueprint.schema.md: %v", err)
 	}
-	if !strings.Contains(string(blueprint), "Not the same vocabulary as capabilities' `policies:`") {
-		t.Error("blueprint.schema.md missing the distinguishing note against capabilities' policies: enum")
+	// This one is prose rather than a heading, so the structural anchor is
+	// co-occurrence: some paragraph has to discuss capabilities' policies field
+	// alongside this schema's own. The exact sentence is not the contract — the
+	// fact that the distinction is drawn somewhere is.
+	if !hasParagraphMentioning(string(blueprint), "capabilities", "`policies:`") {
+		t.Error("blueprint.schema.md has no paragraph distinguishing its authorization.policies from capabilities' policies: enum")
 	}
 
 	capabilities, err := schemasFS.ReadFile("schemas/capabilities.schema.md")
 	if err != nil {
 		t.Fatalf("failed to read capabilities.schema.md: %v", err)
 	}
-	if !strings.Contains(string(capabilities), "Relationship to blueprint's") {
-		t.Error("capabilities.schema.md missing the distinguishing note against blueprint's authorization.policies")
+	if !hasHeadingMentioning(string(capabilities), "blueprint") {
+		t.Error("capabilities.schema.md has no heading cross-referencing blueprint's authorization.policies")
 	}
 }
 
@@ -449,4 +459,44 @@ func TestBuildfileSourceSignaturesEnforcementLayerDocumented(t *testing.T) {
 			t.Errorf("buildfile.schema.md missing %q", kw)
 		}
 	}
+}
+
+// hasHeadingMentioning reports whether any markdown heading in doc mentions
+// needle.
+//
+// The schema audit tests used to assert exact heading sentences, which made
+// rewording a heading a build failure with no behavioural change — the kind of
+// test that trains people to leave documentation alone. Anchoring on a stable
+// identifier inside the heading (a schema filename, a field name) keeps the
+// structural claim while leaving the prose editable.
+func hasHeadingMentioning(doc, needle string) bool {
+	for _, line := range strings.Split(doc, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasParagraphMentioning reports whether any single paragraph of doc mentions
+// every needle. Used where the documented fact is prose rather than a section:
+// co-occurrence within one paragraph is the weakest claim that still means "these
+// two things are discussed together", which is what such a note is for.
+func hasParagraphMentioning(doc string, needles ...string) bool {
+	for _, para := range strings.Split(doc, "\n\n") {
+		all := true
+		for _, n := range needles {
+			if !strings.Contains(para, n) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
 }
