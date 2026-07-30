@@ -177,7 +177,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Operation: copy-embedded schemas → ".parlay/schemas/"
-	if err := embedded.WriteSchemas(schemasPath); err != nil {
+	if _, err := embedded.WriteSchemas(schemasPath); err != nil {
 		return fmt.Errorf("failed to write schemas: %w", err)
 	}
 	schemaNames, _ := embedded.SchemaNames()

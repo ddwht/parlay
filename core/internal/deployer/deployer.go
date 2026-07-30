@@ -1,6 +1,8 @@
 package deployer
 
 import (
+	"github.com/ddwht/parlay/core/internal/atomicfile"
+
 	"fmt"
 	"strings"
 
@@ -182,4 +184,12 @@ func AllAgentSurfacePaths() []string {
 		}
 	}
 	return out
+}
+
+// atomicWrite writes content to path through the shared primitive, discarding
+// the wrote/skipped signal. Used by the call sites that regenerate a whole file
+// and have no count to report — the skip still happens, it just isn't tallied.
+func atomicWrite(path string, content []byte) error {
+	_, err := atomicfile.WriteIfChanged(path, content)
+	return err
 }

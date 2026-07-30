@@ -9,8 +9,12 @@ import (
 func TestWriteSchemas_WritesAllSchemas(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := WriteSchemas(dir); err != nil {
+	n, err := WriteSchemas(dir)
+	if err != nil {
 		t.Fatalf("WriteSchemas failed: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("WriteSchemas reported zero writes into an empty directory")
 	}
 
 	expected := []string{
@@ -83,4 +87,63 @@ func TestSchemaNames_ReturnsAll(t *testing.T) {
 func endsWithSchemaSuffix(name string) bool {
 	const suffix = ".schema.md"
 	return len(name) >= len(suffix) && name[len(name)-len(suffix):] == suffix
+}
+
+// TestWriteSchemas_SecondRunWritesNothing pins the content-hash skip at the
+// schema writer. Salvaged behaviour from the editor's deployer: an upgrade over
+// unchanged sources must rewrite nothing, so a changed mtime on a deployed
+// schema means changed content rather than merely a command having been run.
+func TestWriteSchemas_SecondRunWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := WriteSchemas(dir)
+	if err != nil {
+		t.Fatalf("first WriteSchemas: %v", err)
+	}
+	if first == 0 {
+		t.Fatal("first run wrote nothing")
+	}
+
+	second, err := WriteSchemas(dir)
+	if err != nil {
+		t.Fatalf("second WriteSchemas: %v", err)
+	}
+	if second != 0 {
+		t.Fatalf("second run rewrote %d schema(s); the content-hash skip did not fire", second)
+	}
+
+	// One perturbed file must come back, and only that one.
+	victim := filepath.Join(dir, "intent.schema.md")
+	if err := os.WriteFile(victim, []byte("clobbered"), 0o644); err != nil {
+		t.Fatalf("perturb: %v", err)
+	}
+	third, err := WriteSchemas(dir)
+	if err != nil {
+		t.Fatalf("third WriteSchemas: %v", err)
+	}
+	if third != 1 {
+		t.Fatalf("after perturbing one schema, wrote %d; want exactly 1", third)
+	}
+}
+
+// TestWriteModules_SecondRunWritesNothing is the same property at the module
+// writer, which deploys the phase instructions the loop's subagents read.
+func TestWriteModules_SecondRunWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := WriteModules(dir)
+	if err != nil {
+		t.Fatalf("first WriteModules: %v", err)
+	}
+	if first == 0 {
+		t.Fatal("first run wrote no modules")
+	}
+
+	second, err := WriteModules(dir)
+	if err != nil {
+		t.Fatalf("second WriteModules: %v", err)
+	}
+	if second != 0 {
+		t.Fatalf("second run rewrote %d module(s); the content-hash skip did not fire", second)
+	}
 }

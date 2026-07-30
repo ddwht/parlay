@@ -1,6 +1,8 @@
 package deployer
 
 import (
+	"github.com/ddwht/parlay/core/internal/atomicfile"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,7 +47,7 @@ description: "Parlay: %s"
 %s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+		if _, err := atomicfile.WriteIfChanged(skillPath, []byte(content)); err != nil {
 			return fmt.Errorf("failed to write skill %s: %w", skillPath, err)
 		}
 	}
@@ -116,7 +118,7 @@ func writeCursorAgents(projectRoot string) error {
 	}
 	for _, a := range agents {
 		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
-		if err := os.WriteFile(path, a.Content, 0644); err != nil {
+		if _, err := atomicfile.WriteIfChanged(path, a.Content); err != nil {
 			return fmt.Errorf("failed to write agent %s: %w", path, err)
 		}
 	}
@@ -135,7 +137,7 @@ func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) er
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {
 		return fmt.Errorf("failed to create .cursor/rules/: %w", err)
 	}
-	return os.WriteFile(filepath.Join(rulesDir, "parlay.mdc"), []byte(content), 0644)
+	return atomicWrite(filepath.Join(rulesDir, "parlay.mdc"), []byte(content))
 }
 
 func init() {

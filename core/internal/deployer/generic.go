@@ -4,7 +4,6 @@ package deployer
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/ddwht/parlay/core/internal/embedded"
@@ -61,5 +60,5 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 		content += section
 	}
 
-	return os.WriteFile(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content), 0644)
+	return atomicWrite(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content))
 }

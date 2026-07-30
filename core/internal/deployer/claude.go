@@ -7,6 +7,8 @@
 package deployer
 
 import (
+	"github.com/ddwht/parlay/core/internal/atomicfile"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +55,7 @@ description: "Parlay: %s"
 %s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+		if _, err := atomicfile.WriteIfChanged(skillPath, []byte(content)); err != nil {
 			return fmt.Errorf("failed to write skill %s: %w", skillPath, err)
 		}
 	}
@@ -131,7 +133,7 @@ func writeClaudeAgents(projectRoot string) error {
 	}
 	for _, a := range agents {
 		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
-		if err := os.WriteFile(path, a.Content, 0644); err != nil {
+		if _, err := atomicfile.WriteIfChanged(path, a.Content); err != nil {
 			return fmt.Errorf("failed to write agent %s: %w", path, err)
 		}
 	}
@@ -146,7 +148,7 @@ func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
 	existing, err := os.ReadFile(claudePath)
 	if err != nil {
 		// No existing file — write the parlay section with markers + trailing newline.
-		return os.WriteFile(claudePath, []byte(parlaySection+"\n"), 0644)
+		return atomicWrite(claudePath, []byte(parlaySection+"\n"))
 	}
 
 	content := string(existing)
@@ -157,12 +159,12 @@ func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
 		// Markers found — replace between them, preserve outside.
 		above := content[:beginIdx]
 		below := content[endIdx+len(parlayMarkerEnd):]
-		return os.WriteFile(claudePath, []byte(above+parlaySection+below), 0644)
+		return atomicWrite(claudePath, []byte(above+parlaySection+below))
 	}
 
 	// No markers found — existing content is user-owned.
 	// Prepend parlay section with markers, append existing content below.
 	fmt.Fprintf(os.Stderr, "[WARN] CLAUDE.md has no parlay markers — preserving existing content below parlay section.\n")
 	merged := parlaySection + "\n\n" + content
-	return os.WriteFile(claudePath, []byte(merged), 0644)
+	return atomicWrite(claudePath, []byte(merged))
 }

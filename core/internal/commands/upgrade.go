@@ -98,10 +98,10 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 
 	// Re-deploy schemas.
 	schemasPath := filepath.Join(rootPath, config.ParlayDir, config.SchemasDir)
-	if err := embedded.WriteSchemas(schemasPath); err != nil {
+	schemaCount, err := embedded.WriteSchemas(schemasPath)
+	if err != nil {
 		return upgradeResult{}, fmt.Errorf("write schemas: %w", err)
 	}
-	schemaNames, _ := embedded.SchemaNames()
 	if err := writeSchemaDigest(schemasPath); err != nil {
 		return upgradeResult{}, fmt.Errorf("write schema digest: %w", err)
 	}
@@ -128,13 +128,13 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 		dep, _ = deployer.Get("generic")
 	}
 	if dep == nil {
-		return upgradeResult{SchemaCount: len(schemaNames), ModuleCount: moduleCount}, nil
+		return upgradeResult{SchemaCount: schemaCount, ModuleCount: moduleCount}, nil
 	}
 	if err := dep.Deploy(rootPath, skills); err != nil {
 		return upgradeResult{}, fmt.Errorf("deploy skills: %w", err)
 	}
 	return upgradeResult{
-		SchemaCount:  len(schemaNames),
+		SchemaCount:  schemaCount,
 		ModuleCount:  moduleCount,
 		SkillCount:   len(skills),
 		DeployerName: dep.Name(),
@@ -155,12 +155,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded to parlay %s:\n", appVersion)
-	fmt.Fprintf(cmd.OutOrStdout(), "  schemas — %d updated\n", result.SchemaCount)
+	// The schema and module counts are files actually rewritten, not files
+	// considered: a re-run over unchanged sources reports zero because the
+	// content-hash skip suppressed every write. Reporting the considered count
+	// would describe work that did not happen.
+	if result.SchemaCount > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  schemas — %d updated\n", result.SchemaCount)
+	}
 	if result.ModuleCount > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "  modules — %d written\n", result.ModuleCount)
 	}
 	if result.SkillCount > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
+	}
+	if result.SchemaCount == 0 && result.ModuleCount == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "  schemas and modules already up to date — nothing rewritten")
 	}
 
 	// parlay-feature: parlay-tool/multi-adapter

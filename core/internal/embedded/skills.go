@@ -1,6 +1,8 @@
 package embedded
 
 import (
+	"github.com/ddwht/parlay/core/internal/atomicfile"
+
 	"bytes"
 	"embed"
 	"fmt"
@@ -214,7 +216,9 @@ func filterSurface(all []SkillEntry, want Surface) []SkillEntry {
 }
 
 // WriteModules materializes the module-surface skills into targetDir (by
-// convention .parlay/modules/). Returns the number written.
+// convention .parlay/modules/). Returns the number it actually wrote — a module
+// whose on-disk copy already matches is skipped, so a re-deploy over unchanged
+// sources returns 0.
 //
 // Modules land at the repo-level root next to the schemas, not in an
 // agent-specific directory: the content is adapter-independent, and a phase
@@ -233,14 +237,19 @@ func WriteModules(targetDir string) (int, error) {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return 0, err
 	}
+	written := 0
 	for _, m := range modules {
 		content := fmt.Sprintf("# %s\n\n_%s_\n\n%s", m.Name, m.Description, string(m.Content))
 		dst := filepath.Join(targetDir, m.Name+".md")
-		if err := os.WriteFile(dst, []byte(content), 0644); err != nil {
-			return 0, err
+		wrote, err := atomicfile.WriteIfChanged(dst, []byte(content))
+		if err != nil {
+			return written, err
+		}
+		if wrote {
+			written++
 		}
 	}
-	return len(modules), nil
+	return written, nil
 }
 
 // PruneStaleModules removes .parlay/modules/<name>.md files that no longer
