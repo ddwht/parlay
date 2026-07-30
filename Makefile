@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # Includes a common fallback for environments where Go is installed under $HOME/go/bin.
 GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 
-.PHONY: build build-noui ui test vet sync-skills verify-skills
+.PHONY: build build-noui ui test test-go test-ui vet sync-skills verify-skills
 
 # Version stamping. Without this `make build` produced a binary reporting
 # "dev (commit none)" — goreleaser injected these at release time and nothing
@@ -71,8 +71,25 @@ build-noui:
 # reaches everything; the second `go test` from studio/'s own directory that
 # used to be here would now re-run a subset of the same packages. CGO stays
 # off to match `build`.
-test:
+test: test-go test-ui
+
+# Go tests. One module since Stage 1 absorbed studio/, so `./...` reaches
+# everything; the second `go test` from studio/'s own directory that used to be
+# here would now re-run a subset of the same packages.
+test-go:
 	CGO_ENABLED=0 $(GO) test ./...
+
+# UI tests. These existed and passed and NOTHING RAN THEM — not `make test`,
+# not CI — so three UI defects shipped that a green vitest run would have
+# caught, including a Done control that never ended the session and a null
+# collection that rendered a blank page. A test suite nobody runs is
+# documentation.
+#
+# Skipped, with a warning rather than silently, when node_modules is absent:
+# a contributor working only on the Go side should not be forced through an
+# npm ci, but they should know what did not run.
+test-ui:
+	@if [ -d "$(UI_DIR)/node_modules" ]; then 		cd $(UI_DIR) && npm test -- --run; 	else 		echo "[WARN] skipping UI tests: $(UI_DIR)/node_modules is absent (run 'make ui' or 'cd $(UI_DIR) && npm ci')"; 	fi
 
 # Vet the module. Same one-module reasoning as `test`.
 vet:
