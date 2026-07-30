@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -42,6 +43,17 @@ type entityRecord struct {
 	Fixture string
 }
 
+// recordSite is where a value came from, keeping feature and fixture as
+// separate fields rather than one "feature/fixture" string. The string form
+// is for display only; nothing derives the feature back out of it. See
+// spansMultipleFeatures for why that distinction is load-bearing.
+type recordSite struct {
+	Feature string
+	Fixture string
+}
+
+func (s recordSite) String() string { return s.Feature + "/" + s.Fixture }
+
 type compositionFinding struct {
 	Code    string   `json:"code"`
 	Message string   `json:"message"`
@@ -52,9 +64,26 @@ type compositionFinding struct {
 }
 
 type compositionOutput struct {
-	Features []string             `json:"features"`
+	// Features are the features that actually contributed fixture records.
+	Features []string `json:"features"`
+	// Examined is how many features the walk considered — every feature the
+	// canonical enumeration returns, built or not. Reported separately from
+	// Features so a caller can see when the two disagree: a coherent verdict
+	// over a subset is not a coherent verdict over the project, and the
+	// previous single-level walk returned exactly that with nothing to
+	// indicate it. Compare against `parlay status`.
+	Examined int                  `json:"features_examined"`
 	Records  int                  `json:"fixture_records"`
 	Findings []compositionFinding `json:"findings"`
+	// Notes carry facts about coverage rather than incoherence — chiefly a
+	// feature that has intents but no buildfile. They are reported because
+	// the previous walk's silence about them is what let a half-built project
+	// look identical to a complete one, but they deliberately do NOT flip
+	// Coherent: an unbuilt feature contributes nothing to the composed
+	// runtime, so it cannot make the features that DID contribute disagree.
+	// Folding it into the verdict would make this command fail on every
+	// project mid-build, which is the normal state during a pipeline run.
+	Notes    []compositionFinding `json:"notes,omitempty"`
 	Coherent bool                 `json:"coherent"`
 }
 
@@ -67,31 +96,52 @@ type fixtureBuildfile struct {
 
 // collectFixtureRecords reads every feature's buildfile and flattens its
 // fixture data into one list of records.
-func collectFixtureRecords(buildDir string) ([]entityRecord, []string, error) {
-	entries, err := os.ReadDir(buildDir)
-	if err != nil {
-		return nil, nil, err
-	}
+//
+// The feature list is passed in rather than discovered here. It used to be
+// discovered, by a single-level os.ReadDir over the build root, and that
+// silently dropped every initiative-scoped feature: `approvals/review-queue`
+// has no buildfile at depth 1, so the walk `continue`d past the initiative
+// directory and never descended. The command then reported `coherent: true`
+// having examined half the project — the exact failure mode a coherence gate
+// exists to prevent. Enumeration now happens at the call site, against the
+// same canonical helper `status` and `diff` use, so the two cannot drift
+// apart again without the guard test noticing.
+func collectFixtureRecords(cfg *config.Context, features []string) ([]entityRecord, []string, []compositionFinding) {
 	var records []entityRecord
-	var features []string
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
-			continue
-		}
-		path := filepath.Join(buildDir, e.Name(), "buildfile.yaml")
+	var contributing []string
+	var findings []compositionFinding
+
+	for _, slug := range features {
+		path := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 		data, err := os.ReadFile(path)
 		if err != nil {
+			// A feature with intents but no buildfile has not been built. It
+			// contributes nothing to the composed runtime, which is a fact
+			// about coverage worth reporting rather than an absence to pass
+			// over in silence — the previous walk simply skipped it, so a
+			// half-built project and a fully-built one looked identical.
+			findings = append(findings, compositionFinding{
+				Code: "composition-feature-unbuilt",
+				Message: fmt.Sprintf("%s has no buildfile, so it contributes nothing to the composed runtime. "+
+					"Coherence was checked over the remaining features only.", slug),
+				Sites: []string{slug},
+			})
 			continue
 		}
 		var bf fixtureBuildfile
 		if err := yaml.Unmarshal(data, &bf); err != nil {
+			findings = append(findings, compositionFinding{
+				Code:    "composition-buildfile-unreadable",
+				Message: fmt.Sprintf("%s: cannot parse buildfile.yaml: %v", slug, err),
+				Sites:   []string{slug},
+			})
 			continue
 		}
-		feature := bf.Feature
-		if feature == "" {
-			feature = e.Name()
-		}
-		features = append(features, feature)
+		// The slug is authoritative. The buildfile's own `feature:` field is
+		// advisory — it may carry the bare directory name on a nested feature
+		// (see buildfile.schema.md's `feature:` rule), and using it would
+		// reintroduce the ambiguity this fix removes.
+		contributing = append(contributing, slug)
 
 		for fxName, fx := range bf.Fixtures {
 			for entity, rows := range fx.Data {
@@ -102,14 +152,15 @@ func collectFixtureRecords(buildDir string) ([]entityRecord, []string, error) {
 					}
 					records = append(records, entityRecord{
 						Entity: entity, ID: id, Fields: row,
-						Feature: feature, Fixture: fxName,
+						Feature: slug, Fixture: fxName,
 					})
 				}
 			}
 		}
 	}
-	sort.Strings(features)
-	return records, features, nil
+	sort.Strings(contributing)
+	sort.Slice(findings, func(i, j int) bool { return findings[i].Message < findings[j].Message })
+	return records, contributing, findings
 }
 
 // findContradictions reports the same entity id carrying different values
@@ -121,7 +172,7 @@ func collectFixtureRecords(buildDir string) ([]entityRecord, []string, error) {
 // moment a user clicked from one page to another.
 func findContradictions(records []entityRecord) []compositionFinding {
 	type key struct{ entity, id, field string }
-	seen := map[key]map[string][]string{} // value -> sites
+	seen := map[key]map[string][]recordSite{} // value -> sites
 
 	for _, r := range records {
 		for field, v := range r.Fields {
@@ -136,11 +187,10 @@ func findContradictions(records []entityRecord) []compositionFinding {
 			}
 			k := key{r.Entity, r.ID, field}
 			if seen[k] == nil {
-				seen[k] = map[string][]string{}
+				seen[k] = map[string][]recordSite{}
 			}
 			val := fmt.Sprint(v)
-			site := fmt.Sprintf("%s/%s", r.Feature, r.Fixture)
-			seen[k][val] = append(seen[k][val], site)
+			seen[k][val] = append(seen[k][val], recordSite{Feature: r.Feature, Fixture: r.Fixture})
 		}
 	}
 
@@ -161,9 +211,13 @@ func findContradictions(records []entityRecord) []compositionFinding {
 		var parts []string
 		var sites []string
 		for val, s := range values {
-			sort.Strings(s)
-			parts = append(parts, fmt.Sprintf("%q in %s", val, strings.Join(s, ", ")))
-			sites = append(sites, s...)
+			labels := make([]string, 0, len(s))
+			for _, site := range s {
+				labels = append(labels, site.String())
+			}
+			sort.Strings(labels)
+			parts = append(parts, fmt.Sprintf("%q in %s", val, strings.Join(labels, ", ")))
+			sites = append(sites, labels...)
 		}
 		sort.Strings(parts)
 		sort.Strings(sites)
@@ -263,18 +317,25 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	buildDir := filepath.Dir(cfg.BuildPath("_probe"))
 
-	records, features, err := collectFixtureRecords(buildDir)
+	// The canonical enumeration — the same one `status` and `diff` use. Doing
+	// it here rather than inside the collector keeps the traversal in one
+	// place across the whole codebase; a second hand-rolled walk is what
+	// produced the bug this replaces.
+	all, err := cfg.AllFeatures()
 	if err != nil {
-		return fmt.Errorf("read build state under %s: %w", buildDir, err)
+		return fmt.Errorf("enumerate features: %w", err)
 	}
+
+	records, contributing, notes := collectFixtureRecords(cfg, all)
 
 	findings := append(findContradictions(records), findDanglingReferences(records)...)
 	out := compositionOutput{
-		Features: features,
+		Features: contributing,
+		Examined: len(all),
 		Records:  len(records),
 		Findings: findings,
+		Notes:    notes,
 		Coherent: len(findings) == 0,
 	}
 	buf, _ := json.MarshalIndent(out, "", "  ")
@@ -286,13 +347,22 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 }
 
 // spansMultipleFeatures reports whether two different values for the same
-// field come from two different features. Sites are "feature/fixture", so
-// the feature is the part before the slash.
-func spansMultipleFeatures(values map[string][]string) bool {
-	featuresFor := func(sites []string) map[string]bool {
+// field come from two different features.
+//
+// The feature is carried on the site rather than recovered from a formatted
+// string. It used to be recovered with strings.SplitN(site, "/", 2)[0] over a
+// "feature/fixture" label, which is correct only while feature slugs contain
+// no slash. Qualified identifiers do: "approvals/review-queue/three-reports"
+// split that way yields "approvals", so both features under one initiative
+// collapsed into a single name and a genuine disagreement between
+// review-queue and approval-history compared equal and was suppressed. That
+// bug was latent until the walk above started reading nested features at all,
+// which is why the two fixes belong in one change.
+func spansMultipleFeatures(values map[string][]recordSite) bool {
+	featuresFor := func(sites []recordSite) map[string]bool {
 		out := map[string]bool{}
 		for _, s := range sites {
-			out[strings.SplitN(s, "/", 2)[0]] = true
+			out[s.Feature] = true
 		}
 		return out
 	}
