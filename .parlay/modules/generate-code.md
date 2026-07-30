@@ -419,11 +419,14 @@ Two things not to do: never narrow the options to spare the user a question, and
 16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
     - **If any test fails, STOP.** Do not proceed to step 17. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-17. **Commit the build state** — Only if all tests passed in step 16: run `parlay internal save-build-state --source-root {source-root}`. This atomically writes:
+17. **Commit the build state** — Only if all tests passed in step 16: run `parlay internal save-build-state --source-root {source-root} --emitted .parlay/build/_project/.emitted`. This atomically writes:
     - Per-feature baselines for ALL features (source hashes for per-feature diff)
     - Project-level baseline at `.parlay/build/_project/.baseline.yaml` (merged section hashes)
     - Project-level code-hashes at `.parlay/build/_project/.code-hashes.yaml` (all generated files)
     - This is the **only** sanctioned write path for these files. No @feature argument — the command operates at project level.
+    - **`--emitted` is how you declare what you wrote.** `save-build-state` cannot tell a regeneration from a hand-edit by looking at bytes — the determinism contract is functional, not byte-identity, so the same file legitimately differs between two runs. Without the manifest every file is recorded with unknown provenance and `verify-generated` can no longer say whether anyone hand-edited anything.
+    - **Append to `.parlay/build/_project/.emitted` as you go**, one path per line, immediately after writing each file in steps 12–15. Do not reconstruct the list here from memory: "now list everything you wrote", asked at the end of a long run, is exactly the recall that goes wrong, and a file you forget is recorded as a hand-edit. `save-build-state` deletes the manifest on success, so nothing needs cleaning up.
+    - If the command reports files as **adopted**, they were changed outside codegen since the last emission. It records them and warns rather than refusing — the save still succeeds. Report them to the user by name; do not silently overwrite them on the next run.
 
 18. **Report** —
     - On success: list the generated files (one per component + cross-cutting files), confirm tests passed, confirm that `save-build-state` succeeded, and tell the user how to run the prototype.
@@ -447,8 +450,12 @@ Three read helpers and one write helper cooperate to make incremental rebuilds s
 
 - **`parlay internal diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
 - **`parlay internal scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
-- **`parlay internal verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
-- **`parlay internal save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
+- **`parlay internal verify-generated @{feature}`** — compares each recorded generated file against its stored content hash and its recorded provenance. Classifies as `stable`, `modified`, `missing`, `adopted`, or `unknown`. Source-of-truth for "did the user hand-edit a generated file."
+  - `modified` is honestly ambiguous — the bytes differ from the snapshot, and because re-emission is not byte-stable that could be either a hand-edit or a regeneration.
+  - `adopted` is not ambiguous: a previous save found the file in a state no emission declared, so something other than codegen wrote it. Treat it as user-owned and surface it before overwriting.
+  - `unknown` means provenance was never declared — most often a snapshot written before `--emitted` was used. It is reported separately from `stable` so an uncertified snapshot cannot read as a clean bill of health.
+  - Exit code stays 0 whatever it finds; parse the JSON and decide. `--strict` exits non-zero on any `adopted` or `unknown`, for CI.
+- **`parlay internal save-build-state --source-root {source-root} --emitted .parlay/build/_project/.emitted`** — atomically commits the source baselines, the code hashes and their emission provenance after a successful end-to-end generation. This is the **only** sanctioned write path for those files. It takes no `@feature` argument: the command operates at project level.
 
 The skill calls the three read helpers before regenerating, then `parlay internal save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
 

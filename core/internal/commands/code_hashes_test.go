@@ -146,8 +146,15 @@ func Modified() { /* HAND-EDITED */ }
 	if !output.HasHashes {
 		t.Fatal("expected has_hashes=true")
 	}
-	if len(output.Stable) != 1 || output.Stable[0].Component != "stable-comp" {
-		t.Errorf("Stable = %+v, want [stable-comp]", output.Stable)
+	// The snapshot was written without an emission declaration, so nothing
+	// in it can be certified as generated. The untouched file is therefore
+	// `unknown`, not `stable` — a snapshot that never learned who wrote its
+	// files must not read as a clean bill of health.
+	if len(output.Stable) != 0 {
+		t.Errorf("Stable = %+v, want [] for an undeclared snapshot", output.Stable)
+	}
+	if len(output.Unknown) != 1 || output.Unknown[0].Component != "stable-comp" {
+		t.Errorf("Unknown = %+v, want [stable-comp]", output.Unknown)
 	}
 	if len(output.Modified) != 1 || output.Modified[0].Component != "modified-comp" {
 		t.Errorf("Modified = %+v, want [modified-comp]", output.Modified)

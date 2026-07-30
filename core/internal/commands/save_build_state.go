@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -30,12 +32,36 @@ write-then-rename pattern for atomicity.`,
 	RunE: runSaveBuildState,
 }
 
-var saveBuildStateSourceRoot string
+var (
+	saveBuildStateSourceRoot string
+	saveBuildStateEmitted    string
+	saveBuildStateStrict     bool
+)
+
+// DefaultEmittedManifest is where codegen declares what it wrote.
+//
+// A manifest rather than a per-file stamp or a stdin list, and both
+// alternatives were rejected for reasons worth keeping:
+//
+//   - A per-file stamp is self-defeating: the stamp changes the hash it is
+//     stamping, and it survives a human edit, so it certifies the wrong thing.
+//   - A stdin list means a 124-line heredoc with quoting risk and leaves no
+//     artifact to inspect afterwards.
+//
+// The decisive property is that a manifest can be appended one line per
+// emission, as the work happens. "Now list everything you wrote", asked at
+// the end of a long generation run, is exactly the recall an agent gets
+// wrong.
+const DefaultEmittedManifest = ".emitted"
 
 func init() {
 	saveBuildStateCmd.Flags().StringVar(&saveBuildStateSourceRoot, "source-root", "",
 		"Path to the source root containing generated files (matches the adapter's file-conventions.source-root)")
 	saveBuildStateCmd.MarkFlagRequired("source-root")
+	saveBuildStateCmd.Flags().StringVar(&saveBuildStateEmitted, "emitted", "",
+		"Path to the newline-delimited manifest of files this run wrote (default .parlay/build/_project/.emitted when present)")
+	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateStrict, "strict", false,
+		"Fail instead of recording when a generated file was changed outside codegen")
 }
 
 func runSaveBuildState(cmd *cobra.Command, args []string) error {
@@ -63,6 +89,9 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 type projectSaveResult struct {
 	Features  []featureSaveResult
 	FileCount int
+	// Adopted names files that changed outside codegen this run. Recorded so
+	// the caller can report them; the save itself still succeeds.
+	Adopted []string
 }
 
 type featureSaveResult struct {
@@ -189,10 +218,55 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	// Scan the source root for ALL marker-tagged files, regardless of
 	// feature. This includes feature-scoped files (parlay-component:) and
 	// project-scoped files (parlay-scope: project + parlay-section:).
-	hashes, _, err := buildCodeHashes(cfg, "", sourceRoot) // empty slug = accept all features
+	// What codegen declared it wrote this run, and what the last run left
+	// behind. Both are needed before classification: provenance is a fact
+	// about who wrote a file, and neither the file nor its hash carries it.
+	emitted, emittedPath, err := loadEmittedManifest(cfg, saveBuildStateEmitted)
+	if err != nil {
+		return nil, err
+	}
+	previous, _ := loadProjectCodeHashes(cfg)
+
+	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, emitted, previous)
 	if err != nil {
 		return nil, fmt.Errorf("compute project code hashes: %w", err)
 	}
+
+	if emitted == nil {
+		// Loud, once, on stderr. Without a declaration every entry is
+		// unknown, verify-generated can say nothing about hand-edits, and a
+		// silent degradation here would look exactly like the feature
+		// working.
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[WARN] no --emitted manifest: provenance is unknown for all %d tracked file(s), so verify-generated cannot distinguish a regeneration from a hand-edit. Have generate-code append each file it writes to %s.\n",
+			len(hashes.Files), filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest))
+	}
+
+	// Adoption is recorded and surfaced, not prevented. save-build-state runs
+	// after tests pass at the end of a successful generation; refusing turns
+	// a successful run into a failed one over a file the user may well have
+	// edited deliberately — and a refused save leaves BOTH the baseline and
+	// the code-hashes unwritten, breaking the consistency invariant in the
+	// worse direction. The requirement is "detected and surfaced before any
+	// overwrite", not "prevented". --strict exists for CI.
+	var adopted []string
+	for path, entry := range hashes.Files {
+		if entry.Provenance == ProvenanceAdopted {
+			adopted = append(adopted, path)
+		}
+	}
+	sort.Strings(adopted)
+	if len(adopted) > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[WARN] %d generated file(s) changed outside codegen and are recorded as adopted:\n", len(adopted))
+		for _, p := range adopted {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", p)
+		}
+		if saveBuildStateStrict {
+			return nil, fmt.Errorf("--strict: %d generated file(s) were changed outside codegen", len(adopted))
+		}
+	}
+	result.Adopted = adopted
 
 	// Guard against a narrower --source-root silently shrinking what
 	// verify-generated can ever check: in a multi-adapter project, a
@@ -222,7 +296,50 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	}
 	result.FileCount = len(hashes.Files)
 
+	// Consume the manifest. A stale .emitted left on disk would bless a later
+	// run's files as generated on the strength of what a previous run wrote —
+	// the exact silent blessing this whole mechanism exists to remove.
+	if emittedPath != "" {
+		_ = os.Remove(emittedPath)
+	}
+
 	return result, nil
+}
+
+// loadEmittedManifest reads the newline-delimited list of files codegen
+// declared it wrote.
+//
+// Returns (nil, "", nil) when no manifest is supplied and none exists at the
+// default location — that is "the run did not say", which is different from
+// "the run wrote nothing" and is classified differently. An explicitly passed
+// --emitted path that does not exist IS an error: the caller asserted a
+// manifest, and silently continuing without it would produce a snapshot that
+// claims less than the caller believes.
+func loadEmittedManifest(cfg *config.Context, flagPath string) (*emissionDeclaration, string, error) {
+	path := flagPath
+	if path == "" {
+		candidate := filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest)
+		if _, err := os.Stat(candidate); err != nil {
+			return nil, "", nil
+		}
+		path = candidate
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read emitted manifest %s: %w", path, err)
+	}
+	decl := &emissionDeclaration{Paths: map[string]bool{}}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Normalized the same way check-write-set normalizes its paths, so a
+		// manifest written with ./ prefixes or redundant separators matches
+		// the scanner's view of the same file.
+		decl.Paths[normalizeWriteSetPath(line)] = true
+	}
+	return decl, path, nil
 }
 
 // writeFileAtomic writes data to path using the write-then-rename pattern:

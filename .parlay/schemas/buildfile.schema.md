@@ -526,6 +526,37 @@ distinction (hand-edit protection, `verify-generated`) must record **emission pr
 run wrote the file — alongside the hash. Comparing bytes alone produces false positives on every
 regeneration.
 
+**How provenance is recorded.** The emitter declares what it wrote. `generate-code` appends one line
+per file to `.parlay/build/_project/.emitted` as it works, and `parlay internal save-build-state`
+reads that manifest, stamps each entry in `.code-hashes.yaml`, and deletes the manifest so a stale
+one cannot bless a later run.
+
+| Condition | What is compared | Provenance |
+|---|---|---|
+| Path is in the manifest | nothing — it is a *declaration* | `generated`, with `emitted-at` |
+| Not in the manifest, previous entry exists, hash unchanged | disk now vs disk then, no emission in between | the previous verdict, carried forward |
+| Not in the manifest, hash differs (or no previous entry) | disk now vs the last declared emission, no emission in between | `adopted` — changed outside codegen |
+| No manifest supplied at all | — | `unknown`, plus one loud warning |
+
+The governing invariant, and the reason the first row compares nothing:
+
+> **No comparison anywhere in this design is ever between two codegen emissions of the same file.**
+
+Any design that inferred provenance from hash stability — *"we ran codegen and the hash changed, so
+it was us"* — assumes byte-stable re-emission and misclassifies every legitimate regeneration.
+
+An empty `provenance` reads as **unknown, never as generated**: treating it as generated would carry
+today's silent blessing straight through the upgrade. `schema-version` on the snapshot is what makes
+`unknown` interpretable — it separates "this snapshot predates provenance" from "this file has no
+provenance in a provenance-aware snapshot".
+
+`save-build-state` **records and warns; it does not refuse.** It runs after tests pass at the end of
+a successful generation, so refusing turns a successful run into a failed one over a file the user
+may have edited deliberately — and a refused save leaves *both* the baseline and the code-hashes
+unwritten, breaking the consistency invariant in the worse direction. Adoption is visible instead:
+the entry says `adopted`, `verify-generated` reports it under `adopted[]`, and the run summary names
+the files. `--strict` exists for CI.
+
 ## Parsing
 
 - YAML structure

@@ -25,17 +25,59 @@ and classify it as stable, modified, or missing. Two modes:
 	RunE: runVerifyGenerated,
 }
 
+var verifyGeneratedStrict bool
+
+func init() {
+	verifyGeneratedCmd.Flags().BoolVar(&verifyGeneratedStrict, "strict", false,
+		"Exit non-zero when any file was changed outside codegen (adopted) or has undeclared provenance")
+}
+
 type verifyFileEntry struct {
 	Path      string `json:"path"`
 	Component string `json:"component"`
 }
 
 type verifyOutput struct {
-	Feature   string            `json:"feature"`
-	HasHashes bool              `json:"has_hashes"`
-	Stable    []verifyFileEntry `json:"stable,omitempty"`
-	Modified  []verifyFileEntry `json:"modified,omitempty"`
-	Missing   []verifyFileEntry `json:"missing,omitempty"`
+	Feature   string `json:"feature"`
+	HasHashes bool   `json:"has_hashes"`
+	// SchemaVersion of the snapshot being read. 0 means it predates
+	// provenance, which is what makes an empty provenance interpretable
+	// rather than alarming.
+	SchemaVersion int               `json:"schema_version"`
+	Stable        []verifyFileEntry `json:"stable,omitempty"`
+	Modified      []verifyFileEntry `json:"modified,omitempty"`
+	Missing       []verifyFileEntry `json:"missing,omitempty"`
+	// Adopted holds files a save recorded as changed outside codegen. Unlike
+	// Modified, this is not an inference from a hash: the file was on disk in
+	// a state no emission declared, so something other than codegen wrote it.
+	Adopted []verifyFileEntry `json:"adopted,omitempty"`
+	// Unknown holds files whose provenance was never declared — chiefly a
+	// snapshot written before provenance existed. Reported separately from
+	// Stable so a pre-provenance snapshot cannot read as a clean bill of
+	// health it never established.
+	Unknown []verifyFileEntry `json:"unknown,omitempty"`
+}
+
+// classify places a file into the right bucket.
+//
+// Modified stays honestly ambiguous. Re-emission is only functionally
+// deterministic, so a changed hash genuinely could be either a hand-edit or
+// an ordinary regeneration, and saying so is more useful than guessing.
+// Adopted is different in kind: it is a CONFIRMED hand-edit, established at
+// save time by a declaration, not inferred here from bytes.
+func (o *verifyOutput) classify(entry CodeHashEntry, fileEntry verifyFileEntry, currentHash string) {
+	if currentHash != entry.Hash {
+		o.Modified = append(o.Modified, fileEntry)
+		return
+	}
+	switch entry.Provenance {
+	case ProvenanceAdopted:
+		o.Adopted = append(o.Adopted, fileEntry)
+	case ProvenanceGenerated:
+		o.Stable = append(o.Stable, fileEntry)
+	default:
+		o.Unknown = append(o.Unknown, fileEntry)
+	}
 }
 
 func runVerifyGenerated(cmd *cobra.Command, args []string) error {
@@ -75,7 +117,7 @@ func computeProjectVerifyOutput(cfg *config.Context) (*verifyOutput, error) {
 		return nil, fmt.Errorf("invalid project code-hashes: %w", err)
 	}
 
-	output := &verifyOutput{Feature: "_project", HasHashes: true}
+	output := &verifyOutput{Feature: "_project", HasHashes: true, SchemaVersion: stored.SchemaVersion}
 
 	paths := make([]string, 0, len(stored.Files))
 	for p := range stored.Files {
@@ -96,11 +138,7 @@ func computeProjectVerifyOutput(cfg *config.Context) (*verifyOutput, error) {
 			output.Missing = append(output.Missing, fileEntry)
 			continue
 		}
-		if currentHash == entry.Hash {
-			output.Stable = append(output.Stable, fileEntry)
-		} else {
-			output.Modified = append(output.Modified, fileEntry)
-		}
+		output.classify(entry, fileEntry, currentHash)
 	}
 	return output, nil
 }
@@ -119,6 +157,7 @@ func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error
 		return output, nil
 	}
 	output.HasHashes = true
+	output.SchemaVersion = stored.SchemaVersion
 
 	// Walk in sorted path order for deterministic output.
 	paths := make([]string, 0, len(stored.Files))
@@ -142,21 +181,28 @@ func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error
 			continue
 		}
 
-		if currentHash == entry.Hash {
-			output.Stable = append(output.Stable, fileEntry)
-		} else {
-			output.Modified = append(output.Modified, fileEntry)
-		}
+		output.classify(entry, fileEntry, currentHash)
 	}
 
 	return output, nil
 }
 
+// emitVerifyJSON prints the report and, under --strict, exits non-zero.
+//
+// The default exit stays 0 deliberately. This is a JSON reporter whose
+// consumer — generate-code.skill.md step 10 — parses the JSON and decides;
+// making the reporter decide instead would break that step and put the policy
+// in the wrong place. --strict exists for CI, which has no such consumer.
 func emitVerifyJSON(cmd *cobra.Command, output *verifyOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	if verifyGeneratedStrict && (len(output.Adopted) > 0 || len(output.Unknown) > 0) {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"--strict: %d adopted, %d of unknown provenance\n", len(output.Adopted), len(output.Unknown))
+		return NewExitCodeError(1)
+	}
 	return nil
 }

@@ -828,3 +828,65 @@ func TestConformance_FreshnessGateStaysSkillEnforced(t *testing.T) {
 		t.Error("buildfile.schema.md no longer documents source-signatures:")
 	}
 }
+
+// Provenance is DECLARED, not discovered, and the declaration is the skill's
+// job — nothing in Go can make an agent say what it wrote.
+//
+// So this is the whole enforcement. Without --emitted, save-build-state still
+// succeeds: it records every file as unknown provenance and warns. That is
+// deliberate (a save that refuses leaves baseline and code-hashes
+// inconsistent, which is worse), but it means the failure mode of dropping
+// the flag from the skill is silent degradation that looks exactly like the
+// feature working — hand-edits stop being detected and nothing says so.
+//
+// Anchored on the subcommand and flag names, both closed identifiers, rather
+// than on step numbers or prose, so the skill can be rewritten or renumbered
+// freely. Same reasoning as TestConformance_FreshnessGateStaysSkillEnforced.
+func TestConformance_EmissionIsDeclaredNotDiscovered(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var codegen string
+	for _, s := range skills {
+		if s.Name == "generate-code" {
+			codegen = string(s.Content)
+		}
+	}
+	if codegen == "" {
+		t.Fatal("generate-code is missing from the embedded skill set")
+	}
+
+	// Every save-build-state invocation must carry --emitted. Scanning each
+	// occurrence rather than the document as a whole: one invocation with the
+	// flag elsewhere in the file would otherwise excuse one without it.
+	const verb = "save-build-state"
+	found := 0
+	for i := 0; ; {
+		j := strings.Index(codegen[i:], verb)
+		if j < 0 {
+			break
+		}
+		start := i + j
+		// The invocation runs to the end of its line.
+		end := strings.IndexByte(codegen[start:], '\n')
+		if end < 0 {
+			end = len(codegen) - start
+		}
+		line := codegen[start : start+end]
+		i = start + len(verb)
+
+		// Only command invocations carry flags; prose references to the
+		// command by name are not invocations and need no manifest.
+		if !strings.Contains(line, "--source-root") {
+			continue
+		}
+		found++
+		if !strings.Contains(line, "--emitted") {
+			t.Errorf("save-build-state is invoked without --emitted, so provenance would be unknown for every file:\n  %s", line)
+		}
+	}
+	if found == 0 {
+		t.Error("generate-code no longer invokes save-build-state with --source-root; the emission declaration is unenforced")
+	}
+}
