@@ -107,6 +107,109 @@ func TestProjectFileBeatsUserFile(t *testing.T) {
 	}
 }
 
+// TestNestedEditorBlockIsRead covers the shape `9cbc33d` introduced: the three
+// editor keys live under an `editor:` block in .parlay/config.yaml, beside
+// parlay's own top-level keys. Every other fixture in this file is flat, so
+// without this test the nesting is implemented and unexercised.
+func TestNestedEditorBlockIsRead(t *testing.T) {
+	files := fakeFS{
+		"/proj/.parlay/config.yaml": []byte(
+			"ai-agent: claude\n" +
+				"editor:\n" +
+				"  server_port: 18099\n" +
+				"  idle_timeout: 45m\n" +
+				"  open_browser: false\n"),
+	}
+	cfg, traces, stderr, err := runLoad(t, "/proj", nil, map[string]string{}, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ServerPort != 18099 {
+		t.Fatalf("ServerPort = %d, want 18099", cfg.ServerPort)
+	}
+	if got := traceFor(traces, "server_port"); got != SourceProjectFile {
+		t.Fatalf("server_port source = %q, want %q", got, SourceProjectFile)
+	}
+	if cfg.IdleTimeout.String() != "45m0s" {
+		t.Fatalf("IdleTimeout = %s, want 45m0s", cfg.IdleTimeout)
+	}
+	if got := traceFor(traces, "idle_timeout"); got != SourceProjectFile {
+		t.Fatalf("idle_timeout source = %q, want %q", got, SourceProjectFile)
+	}
+	if cfg.OpenBrowser {
+		t.Fatalf("OpenBrowser = true, want false")
+	}
+	if got := traceFor(traces, "open_browser"); got != SourceProjectFile {
+		t.Fatalf("open_browser source = %q, want %q", got, SourceProjectFile)
+	}
+	// parlay's own top-level keys sit outside the editor block and must not be
+	// reported as unknown editor keys — the nesting is what earns them silence.
+	if strings.Contains(stderr, "ai-agent") {
+		t.Fatalf("sibling parlay key warned as unknown: %q", stderr)
+	}
+}
+
+// TestFlatEditorKeysStillRead pins the other half of loadYAMLFile's contract:
+// a file with no `editor:` block is read at the top level. Not a compatibility
+// shim — with no block, the keys present are the ones meant.
+func TestFlatEditorKeysStillRead(t *testing.T) {
+	files := fakeFS{
+		"/proj/.parlay/config.yaml": []byte("server_port: 18099\nidle_timeout: 45m\n"),
+	}
+	cfg, traces, _, err := runLoad(t, "/proj", nil, map[string]string{}, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ServerPort != 18099 {
+		t.Fatalf("ServerPort = %d, want 18099", cfg.ServerPort)
+	}
+	if got := traceFor(traces, "server_port"); got != SourceProjectFile {
+		t.Fatalf("server_port source = %q, want %q", got, SourceProjectFile)
+	}
+	if cfg.IdleTimeout.String() != "45m0s" {
+		t.Fatalf("IdleTimeout = %s, want 45m0s", cfg.IdleTimeout)
+	}
+}
+
+// TestNestedEditorBlockInUserFile covers the same nesting on the user-scoped
+// side. The two files go through the same loadYAMLFile, but the precedence
+// chain reads them through different Sources, and only the project file has a
+// fixture with a block.
+func TestNestedEditorBlockInUserFile(t *testing.T) {
+	files := fakeFS{
+		"/home/dev/.config/parlay/config.yaml": []byte("editor:\n  server_port: 18500\n"),
+	}
+	cfg, traces, _, err := runLoad(t, "/proj", nil, map[string]string{}, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ServerPort != 18500 {
+		t.Fatalf("ServerPort = %d, want 18500", cfg.ServerPort)
+	}
+	if got := traceFor(traces, "server_port"); got != SourceUserFile {
+		t.Fatalf("server_port source = %q, want %q", got, SourceUserFile)
+	}
+}
+
+// TestNestedEditorBlockLosesToEnv keeps the precedence chain honest across the
+// nesting: a nested project-file value is still outranked by the env var.
+func TestNestedEditorBlockLosesToEnv(t *testing.T) {
+	files := fakeFS{
+		"/proj/.parlay/config.yaml": []byte("editor:\n  server_port: 18099\n"),
+	}
+	env := map[string]string{"PARLAY_EDITOR_SERVER_PORT": "18200"}
+	cfg, traces, _, err := runLoad(t, "/proj", nil, env, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ServerPort != 18200 {
+		t.Fatalf("ServerPort = %d, want 18200", cfg.ServerPort)
+	}
+	if got := traceFor(traces, "server_port"); got != SourceEnv {
+		t.Fatalf("server_port source = %q, want %q", got, SourceEnv)
+	}
+}
+
 // TestSecretInProjectFileInvariantPreserved verifies the ErrSecretInProjectFile
 // sentinel still exists and the invariant infrastructure is intact, even though
 // the post-retraction Config struct currently has no secret-tagged fields.
@@ -270,20 +373,31 @@ func traceFor(traces []Trace, key string) Source {
 	return ""
 }
 
-// studioRoot walks up from this test's location to the studio module root.
-// The test file lives at internal/editor/config/loader_test.go so three .. land
-// at studio/.
+// studioRoot returns the module root — the directory the boundary scan must
+// cover.
+//
+// It walks up looking for go.mod rather than counting ".." hops. The hop count
+// was two, which addressed studio/ before the module merge; post-merge two hops
+// reach only internal/, so the invariant would have quietly stopped covering
+// core/ while still passing. A guard that narrows without failing is worse than
+// one that breaks, so the root is anchored on a landmark that moves with the
+// module instead of on this file's depth within it.
 func studioRoot(t *testing.T) string {
 	t.Helper()
-	cwd, err := filepath.Abs(".")
+	dir, err := filepath.Abs(".")
 	if err != nil {
 		t.Fatalf("studioRoot: %v", err)
 	}
-	// Three levels up: internal/editor/config -> repo root. Was two, which
-	// pointed at studio/ before the module merge; post-merge two levels reaches
-	// only internal/, so the invariant would have stopped covering core/ —
-	// silently narrowing rather than failing.
-	return filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("studioRoot: no go.mod found walking up from %s", dir)
+		}
+		dir = parent
+	}
 }
 
 // packageRoot returns the absolute path of internal/editor/config/.
