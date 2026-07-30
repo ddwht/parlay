@@ -4,7 +4,49 @@ SHELL := /bin/bash
 # Includes a common fallback for environments where Go is installed under $HOME/go/bin.
 GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 
-.PHONY: build test vet sync-skills verify-skills
+.PHONY: build build-noui ui test vet sync-skills verify-skills
+
+# Version stamping. Without this `make build` produced a binary reporting
+# "dev (commit none)" — goreleaser injected these at release time and nothing
+# injected them locally, so the version a developer tested was never the shape
+# of the version a user runs.
+#
+# --match 'v*' is load-bearing, not decoration. A bare `git describe --tags`
+# picks the newest reachable tag of any shape, and the retired studio-v*
+# namespace still has the most recent ones — so it reported
+# "studio-v0.1.2-29-g<sha>" for a parlay build. Matching the release namespace
+# explicitly means the version cannot be borrowed from a namespace that no
+# longer names a product.
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+
+# The UI bundle. internal/editor/ui embeds dist/ via //go:embed, and only
+# dist/.gitkeep is tracked — the built assets are generated and minified. So a
+# fresh checkout has an empty dist/, and a `parlay` built from it answers every
+# UI route with the documented 503.
+#
+# That is not hypothetical: it is what shipped. Neither .goreleaser.yaml nor the
+# Homebrew formula had a UI step, so every released binary embedded an empty
+# directory. `build` depends on the bundle now, which is what stops the omission
+# from being possible rather than merely documented.
+UI_DIR    := internal/editor/ui
+UI_BUNDLE := $(UI_DIR)/dist/index.html
+UI_SRC    := $(shell find $(UI_DIR)/src -type f 2>/dev/null) \
+             $(UI_DIR)/index.html $(UI_DIR)/vite.config.ts $(UI_DIR)/package-lock.json
+
+# Build the UI bundle. Run this after editing anything under $(UI_DIR)/src.
+# `build` picks it up automatically when sources are newer than the bundle, so
+# calling this directly is only needed to force a rebuild.
+ui:
+	cd $(UI_DIR) && npm ci && npm run build
+
+# The bundle is a real file target, so make rebuilds it when UI sources change
+# and skips it when they have not. An .md-style phony dependency would either
+# re-run npm on every `make build` or never re-run it after a source edit; the
+# second is worse, because the binary would embed a stale bundle silently.
+$(UI_BUNDLE): $(UI_SRC)
+	cd $(UI_DIR) && npm ci && npm run build
 
 # Build the parlay binary from current source.
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
@@ -15,9 +57,15 @@ GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 # already-installed copy gets replaced by something that says where the
 # commands went, rather than continuing to boot a server from an old build.
 # Drop this line and that file together after that release.
-build:
-	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
-	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
+build: $(UI_BUNDLE)
+	CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o parlay ./core/cmd/parlay
+	CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o parlay-studio ./studio/cmd/parlay-studio
+
+# The lean build: no UI, and therefore no Node toolchain required. Everything
+# except `parlay domain-edit`'s browser surface is identical; that route answers
+# the documented studio-ui-bundle-not-built 503.
+build-noui:
+	CGO_ENABLED=0 $(GO) build -tags noui -ldflags "$(LDFLAGS)" -o parlay ./core/cmd/parlay
 
 # Run the test suite. One module since Stage 1 absorbed studio/, so `./...`
 # reaches everything; the second `go test` from studio/'s own directory that

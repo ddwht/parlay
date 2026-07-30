@@ -2,9 +2,22 @@ version: 2
 
 project_name: parlay
 
+# The UI build runs before the Go build, because the Go build embeds its output.
+#
+# This is the fix for P9-2, whose cause was this file. internal/editor/ui pulls
+# dist/ in with //go:embed, and only dist/.gitkeep is tracked — the bundle is
+# generated. With no npm step here, every release built a binary that embedded an
+# empty directory and answered every UI route with the studio-ui-bundle-not-built
+# 503. The symptom was fixed at the time; this is the cause.
+#
+# `npm ci` rather than `npm install`: it installs exactly package-lock.json and
+# fails when the lock and manifest disagree, so a release cannot quietly resolve a
+# different dependency tree than the one that was tested.
 before:
   hooks:
     - go mod tidy
+    - npm ci --prefix internal/editor/ui
+    - npm run build --prefix internal/editor/ui
 
 builds:
   - main: ./core/cmd/parlay
@@ -31,6 +44,35 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+
+# The Homebrew formula is generated from the built archives instead of being
+# assembled by a shell heredoc in the release workflow.
+#
+# That fixes three things. The hand-written formula built from a git-archive
+# tarball with `depends_on "go" => :build`, so brew compiled from source — and the
+# source tarball has no dist/, so a brew-installed parlay served the 503 no matter
+# what the rest of this file did. Installing the released archive ships the binary
+# that already embeds the bundle, and drops the Go toolchain requirement for users
+# entirely. Second, the formula block was line-for-line identical across two
+# workflows; it is described once now, here. Third, the old block set
+# `-X main.commit=#{tap.user}` — the tap owner's username, not a commit — so
+# `parlay version` reported "0.1.2 (ddwht)". goreleaser injects the real values at
+# build time, so that mistake has nowhere left to live.
+brews:
+  - name: parlay
+    repository:
+      owner: ddwht
+      name: homebrew-parlay
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/ddwht/parlay"
+    description: "Intent-driven specification framework"
+    license: "MIT"
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/parlay version")
 
 checksum:
   name_template: "checksums.txt"

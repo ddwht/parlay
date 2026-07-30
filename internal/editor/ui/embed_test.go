@@ -2,6 +2,8 @@
 // parlay-component: cross-cutting/embedded-ui-bundle-and-stack-pin
 // parlay-artifact: test
 
+//go:build !noui
+
 package ui_test
 
 import (

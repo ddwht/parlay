@@ -1,5 +1,9 @@
 name: release
 
+# One release, one tag namespace. The studio-v* workflow is gone with the binary
+# it released: parlay-studio is a retirement notice now, and there is no second
+# product to version independently. A studio-v* tag pushed today does nothing,
+# which is the intended end state.
 on:
   push:
     tags:
@@ -22,6 +26,17 @@ jobs:
         with:
           go-version: "1.24.2"
 
+      # The binary embeds the Vite bundle, so the release needs a Node toolchain.
+      # Its absence here is why every released binary shipped an empty dist/ and
+      # answered the UI routes with a 503 — goreleaser's before-hooks now run the
+      # npm build, and those hooks cannot run without this step.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/editor/ui/package-lock.json
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -30,48 +45,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update Homebrew formula
-        env:
+          # goreleaser publishes the Homebrew formula itself (see `brews:` in
+          # .goreleaser.yaml). The hand-rolled heredoc that used to live in this
+          # workflow — and identically in release-studio.yml — is gone: it built
+          # from a source tarball with no UI bundle, and it stamped the tap
+          # owner's username into main.commit.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
-          SHA=$(curl -sL "https://github.com/ddwht/parlay/archive/refs/tags/${TAG}.tar.gz" | sha256sum | cut -d' ' -f1)
-
-          FORMULA=$(cat <<RUBY
-          class Parlay < Formula
-            desc "Intent-driven specification framework"
-            homepage "https://github.com/ddwht/parlay"
-            url "https://github.com/ddwht/parlay/archive/refs/tags/${TAG}.tar.gz"
-            sha256 "${SHA}"
-            license "MIT"
-
-            depends_on "go" => :build
-
-            def install
-              ldflags = %W[
-                -s -w
-                -X main.version=#{version}
-                -X main.commit=#{tap.user}
-              ]
-              system "go", "build", *std_go_args(ldflags:), "./core/cmd/parlay"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/parlay version")
-            end
-          end
-          RUBY
-          )
-
-          # Clone tap, update formula, push
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ddwht/homebrew-parlay.git" tap
-          mkdir -p tap/Formula
-          echo "$FORMULA" > tap/Formula/parlay.rb
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/parlay.rb
-          git commit -m "Update parlay to ${TAG}" || echo "No changes"
-          git push
