@@ -174,7 +174,7 @@ The closed set of stable error codes the precheck registers for this feature:
 - `missing-schema-version` — `schema_version` key absent.
 - `vocabulary-version-mismatch` — page declares a vocabulary version that does not match the registered adapter version.
 - `unknown-component-type` — node references a `type` outside the declared vocabulary.
-- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer). **Same underlying violation** as the Design Loop vocabulary validator's `spacing-token-check` rule (`vocabulary.schema.md`) — see that schema's "Same violation, two reporting frameworks" note for why the two aren't literally one code today.
+- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer). This used to be one of two codes for the same violation, the other being the Design Loop vocabulary validator's `spacing-token-check` rule; that validator and its `Rule` enum are gone, so this is now the only code for it. The duplication the old note explained away no longer exists.
 - `wiring-in-layout` — node carries a wiring field (`dataSource`, `binding`, expression-string fields) that does not belong in a layout block.
 - `universal-field-value-invalid` — a universal container field whose values are a fixed enum (`direction`, `alignment`) carries a value outside it. Distinct from `unknown-token`: these two sets are owned by this schema rather than by the active adapter, so a project cannot widen them by declaring a token. Absent is always legal — every universal field is optional, and omitting one means "the framework default".
 

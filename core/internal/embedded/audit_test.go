@@ -405,30 +405,12 @@ func TestBlueprintAndCapabilitiesPoliciesDistinguished(t *testing.T) {
 	}
 }
 
-// TestVocabularyBlockDerivationTargetDocumented guards the 5c
-// redefinition: componentVocabulary:/tokens: are authoritative, the
-// vocabulary: block is a derivation target, and the field-name
-// equivalence table exists so a reader can see exactly which facts
-// overlap and which don't (the layout_containers mismatch is the real
-// blocker on full derivation).
-func TestVocabularyBlockDerivationTargetDocumented(t *testing.T) {
-	content, err := schemasFS.ReadFile("schemas/vocabulary.schema.md")
-	if err != nil {
-		t.Fatalf("failed to read vocabulary.schema.md: %v", err)
-	}
-	body := string(content)
-
-	required := []string{
-		"redefined as a derivation target",
-		"Field-name equivalence",
-		"layout_containers",
-	}
-	for _, kw := range required {
-		if !strings.Contains(body, kw) {
-			t.Errorf("vocabulary.schema.md missing %q", kw)
-		}
-	}
-}
+// TestVocabularyBlockDerivationTargetDocumented is gone with the schema it
+// audited. It guarded the field-name equivalence table between the adapter's
+// `vocabulary:` block and componentVocabulary:/tokens: — a table that existed
+// because an adapter author maintained both structured vocabularies by hand and
+// they could drift. There is one structured vocabulary now, so there is no
+// equivalence to document and nothing to drift.
 
 // TestBuildfileSourceSignaturesEnforcementLayerDocumented guards the
 // mutual-acknowledgment clarification in buildfile.schema.md's

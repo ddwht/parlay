@@ -56,11 +56,11 @@ var knownUnimplementedCodes = map[string]string{
 	"buildfile-routes-ambiguous":  "multi-target route disambiguation is not implemented; single-target projects cannot reach the ambiguous case.",
 	"error-no-mapping":            "canonical operation-error mapping across adapter layers is not implemented.",
 
-	// vocabulary.schema.md documents the adapter-vocabulary resolution
-	// diagnostics; the resolver reports vocabulary problems through the
-	// layout/validate-vocabulary path without these two specific codes.
-	"vocabulary-missing-from-adapter": "adapter-vocabulary resolution does not emit this distinct code; the condition surfaces through validate-vocabulary's generic path.",
-	"vocabulary-unknown-adapter":      "same resolver gap as vocabulary-missing-from-adapter.",
+	// vocabulary-missing-from-adapter and vocabulary-unknown-adapter were here.
+	// Both left the allowlist by leaving the vocabulary, not by being
+	// implemented: the schema that documented them is deleted, so
+	// TestConformance_AllowlistIsHonest correctly reported them as stale. That
+	// takes this list from eight entries to six.
 
 	// These two are additions to this list, which the comment above says not to
 	// make. They are not new gaps: both have been documented and unimplemented

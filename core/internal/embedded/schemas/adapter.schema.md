@@ -470,9 +470,9 @@ The `componentVocabulary:` section is optional. Adapters that omit it continue t
 
 ### Companion top-level `vocabulary:` block
 
-Adapters that drive Design Loop vocabulary validation declare an additional optional top-level block `vocabulary:` alongside `componentVocabulary:`. The `vocabulary:` block carries the closed admissible sets the validator pins — `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — and is read by `parlay internal validate-vocabulary` and by in-process Studio callers. The full shape, the per-subfield record schemas, and the two stable resolution-failure error codes (`vocabulary-missing-from-adapter`, `vocabulary-unknown-adapter`) are documented in `vocabulary.schema.md`. Adapters MAY omit the block; in that case Design Loop vocabulary validation surfaces `vocabulary-missing-from-adapter` and other adapter uses (codegen, registration) continue to work.
+**The `vocabulary:` block is retired.** Adapters used to be able to declare a second structured vocabulary alongside `componentVocabulary:` — a snake_case block with `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — read by the Design Loop's read-back classifier via `parlay internal validate-vocabulary`. The Design Loop skill was retired in 0.2.0, which left that block with no consumer: no skill invoked the command, and an adapter declaring the block got nothing for it. The block, its schema, its loader, and the command are all gone. `componentVocabulary:` and `tokens:` above are the structured vocabulary; there is no second one to keep in sync with them.
 
-**This block is independently authored, not derived from `componentVocabulary:`/`tokens:` above** — an adapter author maintains both by hand today, and the two can drift. See `vocabulary.schema.md`'s "Relationship to componentVocabulary: and tokens:" section for why unifying them into one authored source is deferred rather than done as part of this pass: the two models' container-parameter shapes don't currently map onto each other cleanly.
+The dual-maintenance hazard that came with two independently-authored vocabularies is gone with the second one. An adapter author declares `componentVocabulary:` and `tokens:` and nothing else; there is no equivalence table to honour and no parity check to satisfy.
 
 ## Section 9: Design tokens
 

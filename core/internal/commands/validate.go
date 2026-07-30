@@ -578,21 +578,11 @@ func validateAdapterFile(path string, content []byte) error {
 		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Code, e.Message))
 	}
 
-	// Cross-block parity: componentVocabulary:/tokens: are the authoritative
-	// declaration, vocabulary: is the Design Loop's derivation target, and an
-	// author who edits one and forgets the other gets a silently stale
-	// vocabulary. The check has existed since schema-consolidation and was
-	// reachable from nowhere — `validate --type adapter` did not exist until
-	// the toolchain rules needed it, so there was no command to attach it to.
-	outcomes, perr := agent.CheckVocabularyBlockParity(agent.ModeAuthoring, path)
-	if perr != nil {
-		msgs = append(msgs, fmt.Sprintf("vocabulary-parity-unreadable: %v", perr))
-	}
-	for _, o := range outcomes {
-		if o.Severity == agent.SeverityError {
-			msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
-		}
-	}
+	// The cross-block parity check used to run here. It compared
+	// componentVocabulary:/tokens: against the adapter's vocabulary: block, and
+	// it went with that block: with only one structured vocabulary left there is
+	// no second side to drift from, so the check could only ever return "either
+	// block absent, nothing to compare".
 
 	if len(msgs) == 0 {
 		return nil

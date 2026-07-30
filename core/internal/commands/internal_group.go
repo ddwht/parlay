@@ -52,7 +52,6 @@ func registerInternalCommands() {
 		scanGeneratedCmd,
 		verifyGeneratedCmd,
 		collectQuestionsCmd,
-		validateVocabularyCmd,
 
 		// State helper — writes the baseline and code-hashes pair. Agent-
 		// driven because only the code phase knows the tests passed.
