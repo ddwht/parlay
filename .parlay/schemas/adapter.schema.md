@@ -102,6 +102,7 @@ file-conventions:
     feature-routes: <path template for a feature's own route table — e.g., "features/{feature}/{feature}.routes.ts">
     routes: <path to the project route table — e.g., "app.routes.ts">
     seed: <path to the composed runtime seed — e.g., "core/fixtures/seed.data.ts">
+    store: <path to the shared runtime store — e.g., "core/state/domain.store.ts"; omit when the framework has no shared runtime>
 
 # --- Section 5: Design system inventory ---
 
@@ -345,6 +346,18 @@ All templates are relative to `source-root`. A template is a plain string substi
 `seed:` names the single file the running prototype boots its data from. Parlay computes *what is in it* — `parlay internal scaffold-seed` unions every feature's composing fixture and emits canonical JSON — and knows nothing about how it is written. The template says where the file goes; the framework decides its shape, which is why a TypeScript adapter points at a `.ts` module exporting a const and a Go adapter could point at an embedded `.json`.
 
 Unlike the other templates, `seed:` takes no placeholders: there is one seed for the whole project, not one per feature or per entity. It is derived from the same entity set as `model:` and regenerates on the same trigger.
+
+### `paths.store` — where shared runtime state lands
+
+A prototype whose features each hold their own copy of the data is not one application. Approve a report on one screen and the other screen never hears about it; the journey a designer wants to demo silently does not work, and the only artifact saying so ends up being a comment in generated code.
+
+`store:` names where the shared runtime lives. Parlay declares only **that** a project has one and **where its code goes** — never its shape. The abstract statement it is making is: *a shared runtime is whatever holds domain state between two user actions.* For a stateful client that is a root-provided object; for a CLI, a file or a database; for a server, persistence; for a static generator, none at all.
+
+Like `seed:`, it takes no placeholders — there is one store per project. It is derived from the domain-model entity set (the store's shape *is* the entity set), so it regenerates on the same `sections.models` trigger.
+
+**The migration invariant, when a project adopts a store:** *the feature-level accessor surface is preserved; only its backing source changes.* Per-suite test code addresses the feature's own API in every framework, so keeping that API and swapping what backs it keeps existing suites green whatever the adapter. In an Angular tree that reads as: the entity signals move to the store, genuine view state stays feature-local, and the feature's hydrate entry point keeps its signature and becomes a delegating write-through. That is one instance of the invariant, not the rule.
+
+**Omitting `store:` is a real answer, not a gap.** `parlay internal check-composition` reports a cross-feature flow assertion it cannot satisfy either way, but it distinguishes the two: with no store declared it is a **note** naming the framework fact, because no amount of better code would satisfy the assertion; with a store declared and a feature that does not wire it, it is an **error**, because the mechanism exists and that feature is not using it.
 
 ### Why templates rather than logic in the tool
 

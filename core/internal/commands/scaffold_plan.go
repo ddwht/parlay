@@ -33,6 +33,13 @@ type adapterPaths struct {
 	// error — an adapter that declares no seed path gets no seed row, exactly
 	// as with paths.model.
 	Seed string `yaml:"seed"`
+	// Store is where the shared runtime state lands — whatever holds domain
+	// state between two user actions. Parlay declares only THAT a project has
+	// one and where its code goes, never its shape: for a stateful client
+	// that is a root-provided object, for a CLI a file or a database, for a
+	// static generator nothing at all. Absence is the default and is correct
+	// for most frameworks.
+	Store string `yaml:"store"`
 }
 
 type adapterFileConventions struct {
@@ -267,6 +274,23 @@ func derivePlanCreates(feature string, components []string, entities []string, a
 			undecidable(err.Error())
 		} else {
 			add(p, "section/seed")
+		}
+	}
+
+	// The shared store. Derived from the same entity set as the models and the
+	// seed — the store's shape IS the entity set — so it regenerates on the
+	// same `sections.models` trigger and is gated the same way.
+	//
+	// Every feature that participates in the runtime claims this row, which is
+	// what makes composition-flow-unsatisfiable decidable: a feature whose plan
+	// omits the store is a feature whose writes stay local, and that is exactly
+	// the condition a cross-feature flow assertion cannot survive.
+	if len(entities) > 0 && fc.Paths.Store != "" {
+		p, err := expandTemplate(fc.Paths.Store, feature, "", "", naming)
+		if err != nil {
+			undecidable(err.Error())
+		} else {
+			add(p, "section/store")
 		}
 	}
 

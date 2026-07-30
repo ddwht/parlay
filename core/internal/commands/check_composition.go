@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -330,6 +331,24 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 	records, contributing, notes := collectFixtureRecords(cfg, all)
 
 	findings := append(findContradictions(records), findDanglingReferences(records)...)
+
+	// Cross-feature flow assertions. Whether an unsatisfiable one is an error
+	// or a note depends on whether the framework has a shared runtime at all,
+	// which only the adapter can say — so the store path is read here and
+	// passed down rather than assumed.
+	storePath, warnOnly := sharedStorePath(cfg)
+	flowFindings := findUnsatisfiableFlows(cfg, all, storePath)
+	if warnOnly {
+		// The adapter declares no store. A CLI has no shared runtime between
+		// invocations and a static generator has none at all, so this is a
+		// fact about the framework rather than a defect in the spec — it is
+		// reported, loudly, without failing a build that could not have
+		// succeeded differently.
+		notes = append(notes, flowFindings...)
+	} else {
+		findings = append(findings, flowFindings...)
+	}
+
 	out := compositionOutput{
 		Features: contributing,
 		Examined: len(all),
@@ -385,4 +404,32 @@ func spansMultipleFeatures(values map[string][]recordSite) bool {
 		}
 	}
 	return false
+}
+
+// sharedStorePath returns the adapter's declared shared-store path, source-
+// root-relative, and whether its absence should downgrade flow findings to
+// notes.
+//
+// Absence is not an error — adapter.schema.md says so outright, and five of
+// the seven bundled adapters declare no paths block at all. What absence
+// means here is narrower and worth stating: the project has no mechanism to
+// carry domain state across a feature boundary, so a cross-feature assertion
+// is unsatisfiable for a reason nobody can fix by writing better code.
+func sharedStorePath(cfg *config.Context) (string, bool) {
+	adapterPath := firstAdapterFile(cfg.AdaptersPath())
+	if adapterPath == "" {
+		return "", true
+	}
+	data, err := os.ReadFile(adapterPath)
+	if err != nil {
+		return "", true
+	}
+	var ad adapterForPlan
+	if yaml.Unmarshal(data, &ad) != nil {
+		return "", true
+	}
+	if ad.FileConventions.Paths.Store == "" {
+		return "", true
+	}
+	return path.Join(ad.FileConventions.SourceRoot, ad.FileConventions.Paths.Store), false
 }

@@ -220,3 +220,50 @@ func TestNoSeedTemplateDerivesNoSeedRowAndNoComplaint(t *testing.T) {
 		}
 	}
 }
+
+// The shared store follows the seed exactly: one row per project, sourced
+// section/store, gated on the entity set because the store's shape IS that
+// set. Every participating feature claims the row, which is what makes
+// composition-flow-unsatisfiable decidable — a feature whose plan omits the
+// store is a feature whose writes stay local.
+func TestStoreRowIsDerivedFromTheDeclaredTemplate(t *testing.T) {
+	ad := angularAdapter(t)
+	ad.FileConventions.Paths.Store = "core/state/domain.store.ts"
+
+	got := derivePlanCreates("f", nil, []string{"ExpenseReport"}, ad)
+
+	var rows []planEntry
+	for _, c := range got.Creates {
+		for _, s := range c.Sources {
+			if s == "section/store" {
+				rows = append(rows, c)
+			}
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want exactly 1 section/store row, got %#v", rows)
+	}
+	if rows[0].Path != "src/app/core/state/domain.store.ts" {
+		t.Errorf("store path = %q", rows[0].Path)
+	}
+}
+
+// Five of the seven bundled adapters declare no paths block at all, and most
+// frameworks have no shared runtime to hold state between two user actions.
+// Deriving a store for them would be parlay asserting framework knowledge
+// that adapters exist to hold — so absence produces no row and no complaint.
+func TestNoStoreTemplateDerivesNoStoreRowAndNoComplaint(t *testing.T) {
+	got := derivePlanCreates("f", nil, []string{"ExpenseReport"}, angularAdapter(t))
+	for _, c := range got.Creates {
+		for _, s := range c.Sources {
+			if s == "section/store" {
+				t.Fatalf("derived a store row from an adapter that declares none: %#v", c)
+			}
+		}
+	}
+	for _, u := range got.Undecidable {
+		if strings.Contains(u, "store") {
+			t.Errorf("absence of paths.store must not be reported as undecidable: %q", u)
+		}
+	}
+}

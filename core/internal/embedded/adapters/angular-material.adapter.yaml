@@ -351,6 +351,7 @@ file-conventions:
     feature-routes: "features/{feature}/{feature}.routes.ts"
     routes: "app.routes.ts"
     seed: "core/fixtures/seed.data.ts"
+    store: "core/state/domain.store.ts"
   packages:
     features: "src/app/features/"
     core: "src/app/core/"

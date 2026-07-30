@@ -181,6 +181,14 @@ fixtures:
 
 When no fixture is marked, the one named by the feature's `scope: route` suite is used — a route suite is by definition "everything this route renders", which is the same question the seed asks. Zero or several disagreeing route suites is a real design question and is reported rather than guessed.
 
+### Cross-feature flow assertions
+
+A `scope: flow` suite that walks from one feature's route into another's and *then asserts on domain state* — approve on `/review`, then read "approved" on `/expenses` — is asking a question about a shared runtime. When each feature hydrates its own fixture, nothing carries the write across the boundary and the assertion cannot hold however the code is written.
+
+Pure-navigation flows are unaffected. Clicking from the expense list into the submit wizard and verifying you landed there needs no shared state, and is not reported.
+
+The discriminator is a `verify: state` step *after* the crossing. That is checkable before any code exists, which is the point: the first time this failed, the generating agent weakened the assertion it could not satisfy and left a ten-line comment explaining why. The suite went green and nothing upstream ever learned the journey did not work.
+
 **The composed seed is the union of every feature's composing fixture**, computed by `parlay internal scaffold-seed`. Per `(entity, id)` it unions fields across contributors; a scalar two features disagree on is a contradiction and the derivation refuses — no last-writer-wins, because silently reconciling hides exactly the defect the seed exists to expose. Per-feature fixtures are unchanged and still back `scope: component` and `scope: route` suites. The composed seed is *additional*: it boots the app, and it is what `scope: flow` suites run against.
 
 ### Composition error codes
@@ -192,6 +200,7 @@ When no fixture is marked, the one named by the feature's `scope: route` suite i
 | `composition-feature-unbuilt` | A feature has a spec but no `buildfile.yaml`, so its fixtures cannot be compared — reported rather than skipped, because an unexamined feature and a coherent one are not the same answer |
 | `composition-seed-ambiguous` | No fixture is marked `composes: true` and the `scope: route` suites do not settle which one boots the prototype. Build mode fails; authoring mode warns. |
 | `composition-buildfile-unreadable` | A `buildfile.yaml` exists but cannot be parsed, so the feature's contribution is unknown |
+| `composition-flow-unsatisfiable` | A `scope: flow` suite asserts on domain state after crossing from one feature's route into another's, and the project has no shared runtime that could carry the write across. An **error** when the adapter declares `file-conventions.paths.store` and a participating feature's plan does not wire it; a **note** when the adapter declares no store at all, since the framework may simply have no shared runtime and no better code would satisfy the assertion. |
 
 ### Coverage walker
 
