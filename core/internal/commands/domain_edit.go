@@ -95,7 +95,7 @@ func runEditor(cmd *cobra.Command, browserPath string) error {
 
 	err = server.Boot(cmd.Context(), server.BootDeps{
 		Args:        bootArgs,
-		Tools:       []server.ToolRegistration{domain.New(root)},
+		Tools:       []server.ToolRegistration{domain.New(root, domainValidator)},
 		UIBundle:    ui.Bundle{},
 		BrowserPath: browserPath,
 	})
@@ -115,7 +115,7 @@ func runEditor(cmd *cobra.Command, browserPath string) error {
 func OpenDomainEditor(ctx context.Context, root string) error {
 	return server.Boot(ctx, server.BootDeps{
 		Args:        []string{"--project", root},
-		Tools:       []server.ToolRegistration{domain.New(root)},
+		Tools:       []server.ToolRegistration{domain.New(root, domainValidator)},
 		UIBundle:    ui.Bundle{},
 		BrowserPath: "/domain-model",
 	})

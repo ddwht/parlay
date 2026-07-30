@@ -1,17 +1,32 @@
 // parlay-feature: domain-model-editor/domain-model-editor-validation
 // parlay-component: cross-cutting/out-of-process-validate-endpoint
+//
+// The component name still says out-of-process; the mechanism no longer is.
+// The endpoint used to shell out to `parlay validate --type domain-model
+// --json` because the editor was a separate Go module and could not reach
+// Core's rules any other way. With one module it can, so validation is a
+// function call.
+//
+// What that removes is not just a subprocess. It removes locating a binary on
+// PATH, confirming its executable bit, an env-var override for when the lookup
+// was wrong, a JSON encode on one side and a decode on the other, and a class
+// of failure — "parlay not found" — that could take validation down in a
+// running editor for reasons having nothing to do with the model. What it
+// preserves is the property that mattered: Core owns every rule, and the editor
+// invents, renames, and reclassifies nothing.
+//
+// The validator arrives as a ValidatorFunc rather than an import. Go's internal
+// rule is the immediate reason — core/internal/agent is importable only from
+// under core/, and this package is not — but the shape is the right one anyway:
+// the editor's requirement is "something that turns draft YAML into findings",
+// and Core, which owns both ends, is the layer that knows agent satisfies it.
 
 package domain
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,49 +55,65 @@ type Finding struct {
 // Only findings Core classifies as error block a save; warnings never do.
 func (f Finding) IsError() bool { return f.Severity == "error" }
 
-// coreFinding mirrors the JSON shape Core emits from
-// `parlay validate --type domain-model --json`: a bare array of
-// {code, message, context, fix, severity}. Context carries the element path
-// (or the whole-model token); severity is the authoring-mode severity.
-type coreFinding struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Context  string `json:"context"`
-	Fix      string `json:"fix"`
-	Severity string `json:"severity"`
+// CoreFinding is one finding as Core reports it: the closed code, the element
+// path in Context (or the whole-model token), the human message, the actionable
+// fix, and the authoring-mode severity.
+//
+// It mirrors the field set of Core's own finding type deliberately, and is a
+// separate declaration only because this package cannot import the package that
+// owns it. Nothing here reinterprets a field — see Validate.
+type CoreFinding struct {
+	Code     string
+	Message  string
+	Context  string
+	Fix      string
+	Severity string
 }
 
-// execValidateJSON is the seam through which Validate reaches the out-of-
-// process validator. It defaults to the real subprocess call; unit tests swap
-// it for a fake so the default `go test ./...` needs no `parlay` on PATH.
-var execValidateJSON = realExecValidateJSON
-
-// Validate obtains findings for a draft ONLY by shelling out to Core's
-// `parlay validate --type domain-model --json` — Studio imports no Core
-// package and reimplements no rule. It is a pure function over the submitted
-// draft: it reads nothing from disk, mutates nothing, and returns findings
-// computed from the draft bytes alone, independent of any on-disk model.
+// ValidatorFunc turns draft YAML into Core's findings. Core supplies the real
+// one (its domain-model validator in authoring mode); tests supply a chosen
+// finding set.
 //
-// The draft is serialized to YAML (including a populated deprecated
-// operations block, so the validator sees exactly what was submitted) and
-// piped on the subprocess's stdin. Each Core finding is mapped to a Finding
-// with the closed code, element path, severity, and message left UNCHANGED as
-// Core emits them.
-func Validate(ctx context.Context, parlayBin string, model Model) ([]Finding, error) {
+// It takes a ctx the real implementation does not use. Validation is pure CPU
+// over bytes already in memory, with nothing to cancel — but a seam that cannot
+// carry cancellation is one that cannot learn to, and every caller here already
+// has a request context to hand.
+type ValidatorFunc func(ctx context.Context, draftYAML []byte) []CoreFinding
+
+// StdinLabel is the path label findings should be anchored to. The CLI's --json
+// mode uses "<stdin>" when a model arrives that way, and drafts here are always
+// in-memory, so reusing the label keeps messages byte-identical across the two
+// entry points — which is what the parity suite compares. Exported so the
+// caller wiring the validator anchors findings the same way.
+const StdinLabel = "<stdin>"
+
+// Validate obtains findings for a draft by calling the supplied validator —
+// Core's domain-model rules, in authoring mode, the same ones `parlay validate
+// --type domain-model --json` runs, so the editor and the CLI cannot disagree
+// about a model. The editor reimplements no rule.
+//
+// It is a pure function over the submitted draft: it reads nothing from disk,
+// mutates nothing, and returns findings computed from the draft bytes alone,
+// independent of any on-disk model.
+//
+// The draft is serialized to YAML (including a populated deprecated operations
+// block, so the validator sees exactly what was submitted). Each Core finding is
+// mapped to a Finding with the closed code, element path, severity, and message
+// left UNCHANGED.
+//
+// The error return survives though the in-process path can only populate it from
+// serialization: the handlers already branch on it, and a validator that cannot
+// fail today is no reason to build one that could not report failing tomorrow.
+func Validate(ctx context.Context, validate ValidatorFunc, model Model) ([]Finding, error) {
+	if validate == nil {
+		return nil, fmt.Errorf("domain: no validator wired; cannot validate")
+	}
 	yamlBytes, err := marshalForValidation(model)
 	if err != nil {
 		return nil, fmt.Errorf("domain: serialize draft for validation: %w", err)
 	}
 
-	out, err := execValidateJSON(ctx, parlayBin, yamlBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	var raw []coreFinding
-	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, fmt.Errorf("domain: parse validator output: %w", err)
-	}
+	raw := validate(ctx, yamlBytes)
 
 	findings := make([]Finding, 0, len(raw))
 	for _, c := range raw {
@@ -146,67 +177,13 @@ func marshalForValidation(model Model) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// realExecValidateJSON runs `<parlayBin> validate --type domain-model --json -`
-// with the draft YAML on stdin and returns the emitted JSON finding array.
-// The CLI exits 0 for --json even when the finding list is non-empty (a
-// finding list is a query result), so a non-empty list is not an exec error.
-func realExecValidateJSON(ctx context.Context, parlayBin string, stdin []byte) ([]byte, error) {
-	if parlayBin == "" {
-		return nil, errors.New("domain: parlay binary not located; cannot validate")
-	}
-	cmd := exec.CommandContext(ctx, parlayBin, "validate", "--type", "domain-model", "--json", "-")
-	cmd.Stdin = bytes.NewReader(stdin)
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("domain: run parlay validate: %w (stderr: %s)", err, errBuf.String())
-	}
-	return out.Bytes(), nil
-}
-
-// locateParlayBinary resolves the `parlay` executable ONCE, mirroring Core's
-// parlay-studio detection (core/internal/config/studio.go): an explicit
-// PARLAY_BIN env gate, else a PATH lookup, in both cases confirmed by an
-// executable-bit stat check. It returns a non-empty path only when a runnable
-// binary is found; callers store the result at construction and reuse it for
-// every request. A resolution failure is non-fatal at construction — the
-// stored path is empty and the real validate path surfaces a server-error if
-// invoked, while unit tests bypass the subprocess via execValidateJSON.
-func locateParlayBinary() (string, error) {
-	// Gate 1: explicit PARLAY_BIN. An empty value is an explicit suppression.
-	if raw, ok := os.LookupEnv("PARLAY_BIN"); ok {
-		if raw == "" {
-			return "", errors.New("domain: PARLAY_BIN set empty; parlay validation suppressed")
-		}
-		return classifyParlayCandidate(raw)
-	}
-	// Gate 2: PATH lookup.
-	resolved, err := exec.LookPath("parlay")
-	if err != nil || resolved == "" {
-		return "", fmt.Errorf("domain: parlay not found on PATH: %w", err)
-	}
-	return classifyParlayCandidate(resolved)
-}
-
-// classifyParlayCandidate stats a candidate path and confirms it is a runnable
-// file (executable bit set), returning its absolute path.
-func classifyParlayCandidate(path string) (string, error) {
-	abs := path
-	if !filepath.IsAbs(path) {
-		if a, err := filepath.Abs(path); err == nil {
-			abs = a
-		}
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("domain: stat parlay candidate %q: %w", abs, err)
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("domain: parlay candidate %q is a directory", abs)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		return "", fmt.Errorf("domain: parlay candidate %q is not executable", abs)
-	}
-	return abs, nil
-}
+// The subprocess plumbing that used to close this file is gone:
+// realExecValidateJSON, which ran `parlay validate --type domain-model --json -`
+// with the draft on stdin; locateParlayBinary, which resolved the executable
+// once through a PARLAY_BIN gate and then a PATH lookup; and
+// classifyParlayCandidate, which stat'd the result to confirm an executable bit.
+//
+// Roughly sixty lines whose entire job was to find and talk to a program that
+// ships in the same binary as this code. PARLAY_BIN went with them — it existed
+// to override a lookup that no longer happens, and keeping an env var that
+// silently does nothing is worse than not having one.

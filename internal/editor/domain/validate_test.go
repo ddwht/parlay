@@ -15,13 +15,22 @@ import (
 	"testing"
 )
 
-// withFakeExec swaps the subprocess seam for a fake so the wrapper's parsing
-// and mapping can be exercised without a live `parlay` on PATH.
-func withFakeExec(t *testing.T, fn func(ctx context.Context, bin string, stdin []byte) ([]byte, error)) {
-	t.Helper()
-	prev := execValidateJSON
-	execValidateJSON = fn
-	t.Cleanup(func() { execValidateJSON = prev })
+// fakeValidator returns a ValidatorFunc that yields a fixed finding set,
+// ignoring the draft. The mapping layer is what these tests exercise: given
+// this finding from Core, the browser must receive exactly this Finding.
+// Driving Core's real rules instead would mean hand-picking a model that
+// provokes each code, and would fail for reasons belonging to Core.
+func fakeValidator(findings ...CoreFinding) ValidatorFunc {
+	return func(context.Context, []byte) []CoreFinding { return findings }
+}
+
+// capturingValidator returns a ValidatorFunc that records the draft YAML it was
+// handed and reports nothing, for the tests that assert on what gets serialized.
+func capturingValidator(into *[]byte) ValidatorFunc {
+	return func(_ context.Context, draft []byte) []CoreFinding {
+		*into = draft
+		return nil
+	}
 }
 
 // mountValidateRouter mounts the subsystem with an injected validator and
@@ -49,7 +58,7 @@ func postValidate(t *testing.T, router http.Handler, body string) *httptest.Resp
 // With one module there is no boundary left to guard — the guard would now fail
 // on every legitimate shared import.
 func TestValidationSourceFilesExist(t *testing.T) {
-	for _, f := range []string{"validate.go", "parity_test.go"} {
+	for _, f := range []string{"validate.go", "validate_test.go"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Fatalf("expected source file %s to exist: %v", f, err)
 		}
@@ -62,10 +71,8 @@ func TestValidationSourceFilesExist(t *testing.T) {
 // is mapped verbatim into a Finding — closed code, anchored element path, and
 // error severity unchanged.
 func TestValidateMapsFieldTypeViolation(t *testing.T) {
-	withFakeExec(t, func(context.Context, string, []byte) ([]byte, error) {
-		return []byte(`[{"code":"field-type-outside-closed-set","message":"unknown type","context":"entities.Order.fields.qty","fix":"use a closed-set type","severity":"error"}]`), nil
-	})
-	findings, err := Validate(context.Background(), "parlay", Model{})
+	v := fakeValidator(CoreFinding{Code: "field-type-outside-closed-set", Message: "unknown type", Context: "entities.Order.fields.qty", Fix: "use a closed-set type", Severity: "error"})
+	findings, err := Validate(context.Background(), v, Model{})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
@@ -84,10 +91,7 @@ func TestValidateMapsFieldTypeViolation(t *testing.T) {
 // TestValidateCleanIsEmptyList asserts a clean draft (Core prints []) maps to
 // an empty finding list.
 func TestValidateCleanIsEmptyList(t *testing.T) {
-	withFakeExec(t, func(context.Context, string, []byte) ([]byte, error) {
-		return []byte(`[]`), nil
-	})
-	findings, err := Validate(context.Background(), "parlay", Model{SchemaVersion: 1})
+	findings, err := Validate(context.Background(), fakeValidator(), Model{SchemaVersion: 1})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
@@ -100,10 +104,8 @@ func TestValidateCleanIsEmptyList(t *testing.T) {
 // arrives at warning severity (verbatim from Core's authoring-mode table) and
 // is NOT reclassified — it is not an error finding.
 func TestValidateWarningSeverityPassedThrough(t *testing.T) {
-	withFakeExec(t, func(context.Context, string, []byte) ([]byte, error) {
-		return []byte(`[{"code":"domain-operations-deprecated","message":"deprecated","context":"operations","fix":"migrate","severity":"warning"}]`), nil
-	})
-	findings, err := Validate(context.Background(), "parlay", Model{})
+	v := fakeValidator(CoreFinding{Code: "domain-operations-deprecated", Message: "deprecated", Context: "operations", Fix: "migrate", Severity: "warning"})
+	findings, err := Validate(context.Background(), v, Model{})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
@@ -121,10 +123,8 @@ func TestValidateWarningSeverityPassedThrough(t *testing.T) {
 // TestValidateWholeModelPathPreserved asserts a whole-model finding carries the
 // distinguished top-level token, not a blank or fabricated element path.
 func TestValidateWholeModelPathPreserved(t *testing.T) {
-	withFakeExec(t, func(context.Context, string, []byte) ([]byte, error) {
-		return []byte(`[{"code":"missing-schema-version","message":"no schema_version","context":"<domain-model>","fix":"add schema_version","severity":"error"}]`), nil
-	})
-	findings, err := Validate(context.Background(), "parlay", Model{})
+	v := fakeValidator(CoreFinding{Code: "missing-schema-version", Message: "no schema_version", Context: "<domain-model>", Fix: "add schema_version", Severity: "error"})
+	findings, err := Validate(context.Background(), v, Model{})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
@@ -139,15 +139,12 @@ func TestValidateWholeModelPathPreserved(t *testing.T) {
 // persistence serializer's byte-passthrough would).
 func TestValidateSerializesDeprecatedOperations(t *testing.T) {
 	var captured []byte
-	withFakeExec(t, func(_ context.Context, _ string, stdin []byte) ([]byte, error) {
-		captured = stdin
-		return []byte(`[]`), nil
-	})
+	v := capturingValidator(&captured)
 	model := Model{
 		SchemaVersion: 1,
 		Operations:    []map[string]any{{"name": "cancel-order", "kind": "command"}},
 	}
-	if _, err := Validate(context.Background(), "parlay", model); err != nil {
+	if _, err := Validate(context.Background(), v, model); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
 	if !strings.Contains(string(captured), "operations:") || !strings.Contains(string(captured), "cancel-order") {
@@ -160,11 +157,8 @@ func TestValidateSerializesDeprecatedOperations(t *testing.T) {
 // YAML omits schema_version rather than emitting a fabricated `0`.
 func TestValidateOmitsAbsentSchemaVersion(t *testing.T) {
 	var captured []byte
-	withFakeExec(t, func(_ context.Context, _ string, stdin []byte) ([]byte, error) {
-		captured = stdin
-		return []byte(`[]`), nil
-	})
-	if _, err := Validate(context.Background(), "parlay", Model{ /* SchemaVersion: 0 */ }); err != nil {
+	v := capturingValidator(&captured)
+	if _, err := Validate(context.Background(), v, Model{ /* SchemaVersion: 0 */ }); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
 	if strings.Contains(string(captured), "schema_version") {
@@ -286,34 +280,14 @@ func TestValidateEndpointSideEffectFree(t *testing.T) {
 	}
 }
 
-// TestBinaryLocatedOnceAtConstruction asserts New resolves the parlay binary
-// once and stores it on the subsystem; the validate path reuses the stored
-// value rather than re-resolving per request.
-func TestBinaryLocatedOnceAtConstruction(t *testing.T) {
-	// Point PARLAY_BIN at a runnable temp file so resolution is deterministic
-	// and needs no real `parlay` on PATH.
-	bin := filepath.Join(t.TempDir(), "parlay")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
-	t.Setenv("PARLAY_BIN", bin)
-
-	s := New("/project")
-	if s.parlayBin != bin {
-		t.Fatalf("parlayBin = %q, want the resolved path %q (located once at construction)", s.parlayBin, bin)
-	}
-	// The stored path is a field; a second validate call cannot re-resolve it.
-	// Confirm it stays stable after use.
-	withFakeExec(t, func(_ context.Context, gotBin string, _ []byte) ([]byte, error) {
-		if gotBin != bin {
-			t.Fatalf("validate used bin %q, want the once-resolved %q", gotBin, bin)
-		}
-		return []byte(`[]`), nil
-	})
-	if _, err := s.validate(context.Background(), Model{SchemaVersion: 1}); err != nil {
-		t.Fatalf("validate: %v", err)
-	}
-	if s.parlayBin != bin {
-		t.Fatalf("parlayBin changed after a request: %q", s.parlayBin)
-	}
-}
+// TestBinaryLocatedOnceAtConstruction is gone with the thing it described. It
+// asserted New resolved a `parlay` executable exactly once and reused the stored
+// path on every request — a real property while validation was a subprocess, and
+// the reason PARLAY_BIN existed at all. There is no binary to locate now, so
+// there is no "once" to assert.
+//
+// Its replacement cannot live here. Proving the editor validates with no binary
+// available requires running Core's real rules, and this package cannot import
+// them (Go's internal rule). It is TestEditorValidatesWithNoBinary in
+// core/internal/commands, beside the validator Core wires in — which is also
+// where the parity suite moved, for the same reason.

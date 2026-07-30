@@ -27,31 +27,37 @@ const toolName = "domain-model"
 // and writes (see resolveModelPath). In a multi-root project, v1 targets the
 // resolved root's file with no root selector.
 //
-// parlayBin is the `parlay` executable path resolved ONCE at construction and
-// reused by both the validate endpoint and the save gate. validate is the
-// out-of-process validation function those two paths call; it defaults to the
-// real subprocess wrapper over parlayBin, and is a field so tests can inject a
-// fake validator without a live `parlay` on PATH.
+// validate is the validation function the validate endpoint and the save gate
+// both call. New builds it from the ValidatorFunc the caller supplies; tests
+// override the field directly to inject a chosen finding set.
+//
+// The parlayBin field is gone. It held a `parlay` executable located once at
+// construction, back when validating meant running one — there is no binary to
+// locate now, and nothing about the editor's behaviour depends on what happens
+// to be installed on the machine running it.
 type Subsystem struct {
-	Root      string
-	parlayBin string
-	validate  func(ctx context.Context, model Model) ([]Finding, error)
+	Root     string
+	validate func(ctx context.Context, model Model) ([]Finding, error)
 }
 
 // compile-time assertion that Subsystem satisfies the harness plug-in surface.
 var _ server.ToolRegistration = (*Subsystem)(nil)
 
-// New constructs the domain-model subsystem bound to a resolved project root.
-// It resolves the `parlay` executable once (locateParlayBinary); a resolution
-// failure is non-fatal — parlayBin stays empty and the real validate path
-// surfaces a server-error if invoked. The signature is unchanged.
-func New(root string) *Subsystem {
-	bin, _ := locateParlayBinary()
-	s := &Subsystem{Root: root, parlayBin: bin}
-	// Default validator: the real out-of-process wrapper over the resolved
-	// binary. Tests override s.validate to run the suite without a `parlay`.
+// New constructs the domain-model subsystem bound to a resolved project root,
+// validating through the supplied ValidatorFunc.
+//
+// The validator is a parameter rather than a package-level default because this
+// package cannot import the one that owns Core's rules (Go's internal rule —
+// core/internal/agent is visible only under core/). Core wires it at the two
+// call sites that open the editor.
+//
+// Construction cannot fail. It used to resolve an executable and swallow the
+// error, which left a subsystem that looked constructed and failed on its first
+// validate instead — a bad state to be able to hold.
+func New(root string, validate ValidatorFunc) *Subsystem {
+	s := &Subsystem{Root: root}
 	s.validate = func(ctx context.Context, model Model) ([]Finding, error) {
-		return Validate(ctx, s.parlayBin, model)
+		return Validate(ctx, validate, model)
 	}
 	return s
 }

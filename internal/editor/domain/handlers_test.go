@@ -30,7 +30,8 @@ func cleanValidator(context.Context, Model) ([]Finding, error) { return nil, nil
 // own errors via server.WriteError, so no harness middleware is required.
 func mountTestRouterWithValidator(root string, validate func(context.Context, Model) ([]Finding, error)) http.Handler {
 	r := chi.NewRouter()
-	s := New(root)
+	// nil validator: every caller of this helper replaces s.validate below.
+	s := New(root, nil)
 	s.validate = validate
 	s.Mount(r)
 	return r

@@ -20,7 +20,7 @@ import (
 // TestSubsystemName asserts the registered tool name is the stable
 // "domain-model" the harness collision path keys on.
 func TestSubsystemName(t *testing.T) {
-	if got := New("/project").Name(); got != "domain-model" {
+	if got := New("/project", nil).Name(); got != "domain-model" {
 		t.Fatalf("Name() = %q, want %q", got, "domain-model")
 	}
 }
@@ -28,7 +28,7 @@ func TestSubsystemName(t *testing.T) {
 // TestSubsystemSatisfiesToolRegistration is a compile-time-plus-runtime check
 // that Subsystem plugs into the harness registration surface.
 func TestSubsystemSatisfiesToolRegistration(t *testing.T) {
-	var _ server.ToolRegistration = New("/project")
+	var _ server.ToolRegistration = New("/project", nil)
 }
 
 // TestMountRegistersPersistencePlusQueryUnderPrefix asserts Mount registers
@@ -38,7 +38,7 @@ func TestSubsystemSatisfiesToolRegistration(t *testing.T) {
 // surface stays at exactly two.
 func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 	r := chi.NewRouter()
-	New("/project").Mount(r)
+	New("/project", nil).Mount(r)
 
 	type route struct{ method, path string }
 	var routes []route
@@ -87,7 +87,7 @@ func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 // existing tool-name-collision path.
 func TestDuplicateRegistrationRejected(t *testing.T) {
 	_, err := server.New(server.Deps{
-		Tools: []server.ToolRegistration{New("/a"), New("/b")},
+		Tools: []server.ToolRegistration{New("/a", nil), New("/b", nil)},
 	})
 	if !errors.Is(err, server.ErrToolNameCollision) {
 		t.Fatalf("expected ErrToolNameCollision for a duplicate tool name, got %v", err)
