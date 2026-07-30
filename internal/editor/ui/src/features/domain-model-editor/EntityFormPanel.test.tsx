@@ -17,9 +17,30 @@ beforeEach(() => {
 });
 
 describe('EntityFormPanel', () => {
-  it('offers exactly the closed field-type vocabulary (8 scalars + 1 enum)', () => {
-    // Customer + Order + one enum (OrderStatus) → 8 base types + OrderStatus.
-    expect(fieldTypeOptions(populatedModel)).toHaveLength(9);
+  // Asserts the MEMBERS, not the count.
+  //
+  // This used to assert only a length of 9, and that is exactly how the list
+  // drifted from the schema in both directions at once without anything
+  // noticing: it offered `timestamp` and `bytes`, which are not in the closed
+  // set and fail deep validation with field-type-outside-closed-set, and it
+  // omitted `datetime`, which IS in the set and is what real models use for
+  // timestamps — so there was no way to author a datetime field through the
+  // UI at all, while two of the options on offer were dead ends. A count
+  // assertion was satisfied by any eight wrong names.
+  //
+  // The expected list mirrors domain-model.schema.md's "Closed field-type
+  // set" table. If that table changes, this must change with it.
+  it('offers exactly the closed field-type vocabulary from the schema', () => {
+    expect(fieldTypeOptions(populatedModel)).toEqual([
+      'uuid',
+      'string',
+      'int',
+      'float',
+      'bool',
+      'datetime',
+      'ref',
+      'OrderStatus', // the one declared enum in the fixture
+    ]);
     useEditorStore.getState().selectEntity('Customer');
     render(<EntityFormPanel />);
     expect(screen.getByTestId('choose-field-type')).toBeInTheDocument();

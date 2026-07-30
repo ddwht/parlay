@@ -28,7 +28,13 @@ type Fragment struct {
 //
 // parlay-extends: parlay-tool/multi-adapter/surface-yaml-and-migrator
 func ParseSurfaceFile(path string) ([]Fragment, error) {
-	if strings.HasSuffix(path, ".yaml") {
+	// Matched case-insensitively and including .yml, so this agrees with
+	// ValidateSurface's dispatch. The two used to differ: the validator
+	// matched .yaml/.yml case-insensitively while this matched only lowercase
+	// .yaml, so a surface.yml got the YAML validator and the MARKDOWN parser.
+	// The line scanner below finds no "## " headings in YAML, so such a file
+	// was reported as having no fragments rather than as being misrouted.
+	if lower := strings.ToLower(path); strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
 		return LoadSurfaceYAML(path)
 	}
 	f, err := os.Open(path)

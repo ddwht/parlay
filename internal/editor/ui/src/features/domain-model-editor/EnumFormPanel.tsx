@@ -22,6 +22,7 @@ import {
   selectedEnum,
   renameEnumInModel,
   normalizeEnumValue,
+  isBuiltinType,
 } from '../../store/editorStore';
 import { TONES } from '../../types/domain';
 import type { DomainEnum, DomainEnumValue, Tone } from '../../types/domain';
@@ -173,8 +174,22 @@ export function EnumFormPanel() {
     .map((e) => e.name);
   const duplicateName =
     nameDraft.trim() !== '' && otherNames.includes(nameDraft.trim());
+  // An enum may not take the name of a built-in field type. The closed
+  // field-type set is the union of the primitives and the declared enum
+  // names, and a union is only well defined when the halves are disjoint —
+  // an enum named `string` makes every `type: string` ambiguous, and since
+  // the resolver checks primitives first, that enum is permanently shadowed.
+  //
+  // EnumList's CREATE path has always checked this; the rename path did not,
+  // so the guard was one text field away from being bypassed. Core accepted
+  // the result too, which is why the editor and the CLI agreed perfectly
+  // about a model that cannot mean one thing.
+  const builtinName = isBuiltinType(nameDraft.trim());
   const canRename =
-    nameDraft.trim() !== '' && nameDraft.trim() !== enumDef.name && !duplicateName;
+    nameDraft.trim() !== '' &&
+    nameDraft.trim() !== enumDef.name &&
+    !duplicateName &&
+    !builtinName;
 
   // Fields whose enum companion key names this enum block a delete.
   const enumReferents: string[] = [];
@@ -299,6 +314,11 @@ export function EnumFormPanel() {
         {duplicateName && (
           <p role="alert" className="text-sm text-red-600">
             An enum named "{nameDraft.trim()}" already exists.
+          </p>
+        )}
+        {builtinName && (
+          <p role="alert" className="text-sm text-red-600">
+            "{nameDraft.trim()}" is a built-in field type name
           </p>
         )}
         {referenced && (

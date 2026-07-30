@@ -219,6 +219,8 @@ like the closed type / tone / cardinality sets above.
 | Entity field enum key   | `entities.<name>.fields.<name>.enum`               |
 | Relationship end        | `relationships.<name>.<end>` — `<end>` ∈ {`from`, `to`, `cardinality`} |
 | Enum value tone         | `enums.<name>.values.<value>.tone`                 |
+| Enum (whole)            | `enums.<name>`                                     |
+| Entity (whole)          | `entities.<name>`                                  |
 | Operation input         | `operations.<name>.input[<index>]`                 |
 | Whole model (ownerless) | `<domain-model>`                                   |
 
@@ -231,6 +233,33 @@ failure (`invalid-yaml`), a missing or non-integer `schema_version`
 (`schema-version-newer-than-binary`, `schema-version-unreachable`), and
 the deprecated-operations-block finding (`domain-operations-deprecated`),
 whose block spans the whole model.
+
+## Error codes
+
+<!-- parlay-feature: studio-support/structured-domain-model-validation -->
+<!-- parlay-component: cross-cutting/element-path-on-every-finding -->
+
+This schema had no code table. That is why none of its diagnostics reached
+`DIGEST.md` — the digest generator extracts `| Code | When it fires |` rows and
+there were none to extract — and why none of them were covered by the
+conformance suite that holds documented codes and emitted codes together.
+
+| Code | When it fires |
+|---|---|
+| `invalid-yaml` | The file is not parseable YAML. |
+| `missing-schema-version` | `schema_version:` is absent or not an integer. |
+| `schema-version-newer-than-binary` | The on-disk `schema_version` is newer than this Core release supports. |
+| `schema-version-unreachable` | The on-disk `schema_version` cannot be migrated to the current one. |
+| `field-type-outside-closed-set` | A `type:` is neither a closed scalar nor a declared enum name; also fires for an inline object literal. |
+| `ref-missing-target` | A `type: ref` field declares no `target:`. |
+| `undeclared-entity-reference` | A `ref` target, or a relationship end, names an entity the model does not declare. |
+| `enum-key-mismatch` | A field whose `type:` names an enum carries a missing or mismatched `enum:` companion key. |
+| `enum-tone-outside-closed-set` | A `tone:` is outside `{neutral, info, warning, danger, success}`. |
+| `relationship-cardinality-unknown` | A relationship `cardinality:` is outside the closed set. |
+| `operation-input-field-not-found` | A deprecated-block operation's `input` names a field the subject entity does not declare. |
+| `enum-name-collides-with-scalar-type` | An enum is named after a built-in field type (`uuid`, `string`, `int`, `float`, `bool`, `datetime`, `ref`), so `type: <name>` cannot be resolved unambiguously. The closed field-type set is the union of the scalars and the declared enum names, and a union is only well defined when the halves are disjoint. |
+| `domain-duplicate-name` | Two enums, two entities, or an entity and an enum share a name. The lookup tables are keyed by name, so the later declaration silently replaces the earlier one. |
+| `domain-operations-deprecated` | A populated top-level `operations:` block is present; migrate it with `parlay migrate-domain-operations`. Build mode fails; authoring mode warns. |
 
 ## Read-path precedence
 

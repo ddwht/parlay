@@ -187,6 +187,25 @@ func ValidateBuildfilesProjectStructured(rootDir string) ([]FeatureVerdict, erro
 				})
 			}
 		}
+		// Stamp severity from the shared table, exactly as
+		// ValidateBuildfileDeepStructured does for the single-feature path.
+		//
+		// This call was missing, and its absence is what made `validate
+		// --project` fail permanently on any project whose code has been
+		// generated. Every finding came back with Severity == "", the command
+		// counted all of them as errors, and plan-create-collision — which
+		// the shared table grades a warning in both modes, for the reason
+		// recorded there ("grading it blocking makes a correct buildfile
+		// un-revalidatable the moment codegen runs") — failed the whole
+		// project pass. It grew too: one finding per planned file per
+		// generated feature, and the fix it suggested ("move the entry to
+		// plan.modifies") would have misdescribed the plan.
+		//
+		// check-buildfile already read the same findings correctly, so the
+		// two commands returned opposite verdicts on the same buildfile at
+		// the same moment. Applied after the cycle errors so those are graded
+		// too.
+		errs = ApplyBuildfileSeverity(errs)
 		verdicts = append(verdicts, FeatureVerdict{
 			Feature:       lf.slug,
 			BuildfilePath: lf.path,

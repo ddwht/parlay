@@ -287,6 +287,73 @@ func ValidateDomainModelStructuredMode(path string, content []byte, mode Validat
 		entityFieldSet[ent.Name] = fs
 	}
 
+	// Pass 2.5: names must be unique, and must not collide with a scalar
+	// field type.
+	//
+	// The closed field-type set is the union of the primitives and the
+	// declared enum names, and a union is only well defined when the two
+	// halves are disjoint. Nothing enforced that. An enum named `string` made
+	// every `type: string` ambiguous by construction — scalar or enum? — with
+	// the `enum:` companion key the only disambiguator; and since the type
+	// resolver below tests the primitive set BEFORE the enum lookup, such an
+	// enum is permanently shadowed and silently unreachable. For `ref` it is
+	// worse: the field resolves as a reference and then demands a `target:`.
+	//
+	// This was reachable through the editor, whose enum-rename path had no
+	// guard, and Core agreed the result was valid — so the two surfaces were
+	// in perfect parity about a model that cannot mean one thing. That is
+	// precisely why a parity check could not catch it: both shared the gap.
+	//
+	// Duplicate names are the same problem one level up. The lookup tables
+	// above are plain map writes, so a second declaration silently replaced
+	// the first and whichever lost was invisible.
+	seenEnum := map[string]bool{}
+	for _, e := range dm.Enums {
+		if e.Name == "" {
+			continue
+		}
+		if closedFieldTypePrimitives[e.Name] {
+			errors = append(errors, ValidationError{
+				Code:    "enum-name-collides-with-scalar-type",
+				Message: fmt.Sprintf("enum %q has the same name as a built-in field type, so `type: %s` cannot be resolved unambiguously", e.Name, e.Name),
+				Context: fmt.Sprintf("enums.%s", e.Name),
+				Fix:     fmt.Sprintf("rename the enum; the built-in field types are %s", closedFieldTypeList),
+			})
+		}
+		if seenEnum[e.Name] {
+			errors = append(errors, ValidationError{
+				Code:    "domain-duplicate-name",
+				Message: fmt.Sprintf("enum %q is declared more than once; the later declaration silently replaces the earlier one", e.Name),
+				Context: fmt.Sprintf("enums.%s", e.Name),
+				Fix:     "give each enum a unique name, or merge the duplicate declarations",
+			})
+		}
+		seenEnum[e.Name] = true
+	}
+	seenEntity := map[string]bool{}
+	for _, ent := range dm.Entities {
+		if ent.Name == "" {
+			continue
+		}
+		if seenEntity[ent.Name] {
+			errors = append(errors, ValidationError{
+				Code:    "domain-duplicate-name",
+				Message: fmt.Sprintf("entity %q is declared more than once; the later declaration silently replaces the earlier one", ent.Name),
+				Context: fmt.Sprintf("entities.%s", ent.Name),
+				Fix:     "give each entity a unique name, or merge the duplicate declarations",
+			})
+		}
+		seenEntity[ent.Name] = true
+		if _, clash := enumByName[ent.Name]; clash {
+			errors = append(errors, ValidationError{
+				Code:    "domain-duplicate-name",
+				Message: fmt.Sprintf("%q is declared as both an entity and an enum, so a field naming it as its type is ambiguous", ent.Name),
+				Context: fmt.Sprintf("entities.%s", ent.Name),
+				Fix:     "rename one of the two declarations",
+			})
+		}
+	}
+
 	// Pass 3: enum tones (closed-set resolution).
 	for _, e := range dm.Enums {
 		for _, v := range e.Values {

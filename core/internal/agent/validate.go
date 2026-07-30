@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/parser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -74,6 +75,29 @@ func validateSurfaceYAML(path string, content []byte) error {
 	if err := ValidateYAML(path, content); err != nil {
 		return err
 	}
+
+	// Decode through the REAL parser before anything else.
+	//
+	// This used to decode only into the private struct below, which carries
+	// feature, name, shows, source and page. yaml.v3 ignores keys a struct
+	// does not declare, so every field the validator omitted was invisible to
+	// it — including notes:, which is free prose and therefore the most
+	// colon-prone field in the artifact set. An ordinary note containing ": "
+	// makes YAML resolve that list item to a map rather than a string; the
+	// validator saw nothing and returned OK, both plain and --deep, while
+	// parser.ParseSurfaceFile — the reader the build stage actually uses —
+	// failed with "cannot unmarshal !!map into string". The author found out
+	// one phase later, as surface-not-readable.
+	//
+	// A validator that accepts input the parser rejects is worse than no
+	// validator: it converts an authoring error into a phase-boundary error
+	// and spends all the work in between. Routing through the same function
+	// means the two cannot disagree again by construction, rather than by
+	// keeping two field lists in step by hand.
+	if _, err := parser.LoadSurfaceYAMLBytes(path, content); err != nil {
+		return err
+	}
+
 	var doc struct {
 		Feature   string `yaml:"feature"`
 		Fragments []struct {

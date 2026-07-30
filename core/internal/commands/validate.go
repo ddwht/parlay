@@ -344,11 +344,20 @@ func runValidateProject(cmd *cobra.Command) error {
 		}
 	}
 
-	totalErrors := 0
+	// Count only findings that block, so `ok` here means what `ready` means in
+	// check-buildfile. This used to be len(v.Errors) with no severity filter,
+	// which made a warning fail the command outright — see blockingCount's own
+	// note, which names plan-create-collision as the case it was split out
+	// for, and ApplyBuildfileSeverity's call site in the project pass for how
+	// these findings come to be graded at all.
+	totalBlocking := 0
+	totalWarnings := 0
 	for _, v := range verdicts {
-		totalErrors += len(v.Errors)
+		b := blockingCount(v.Errors)
+		totalBlocking += b
+		totalWarnings += len(v.Errors) - b
 	}
-	ok := totalErrors == 0
+	ok := totalBlocking == 0
 
 	if validateJSON {
 		out := projectValidateJSONResult{
@@ -373,10 +382,17 @@ func runValidateProject(cmd *cobra.Command) error {
 		return nil
 	}
 	if ok {
-		fmt.Fprintf(cmd.OutOrStdout(), "OK (%d feature(s) validated)\n", len(verdicts))
+		// Warnings are reported but do not fail. Staying silent about them
+		// would swap one wrong answer for another: a project with 43
+		// collisions and one with none would print the same line.
+		if totalWarnings > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "OK (%d feature(s) validated, %d warning(s))\n", len(verdicts), totalWarnings)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "OK (%d feature(s) validated)\n", len(verdicts))
+		}
 		return nil
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s) across %d feature(s)\n", totalErrors, len(verdicts))
+	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s) across %d feature(s)\n", totalBlocking, len(verdicts))
 	for _, v := range verdicts {
 		if len(v.Errors) == 0 {
 			continue
