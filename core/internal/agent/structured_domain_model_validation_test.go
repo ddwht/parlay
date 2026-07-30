@@ -292,20 +292,44 @@ func TestStructuredDMV_ReadOnlyDetection(t *testing.T) {
 }
 
 // ============================================================================
-// Backward-compatibility: the legacy 2-arg entry point does NOT emit the
-// deprecation finding (preserves its finding set for existing callers) but
-// still carries the whole-model token + severity.
+// The legacy 2-arg entry point is gone, along with the boolean that made it
+// different. It suppressed domain-operations-deprecated so that
+// ValidateDomainModel — which failed on any finding regardless of severity —
+// would not reject every project carrying a legacy operations: block. The
+// severity filter moved to the command layer, so the suppression has nothing left
+// to protect and the two CLI paths no longer disagree about what the model holds.
 // ============================================================================
 
-func TestStructuredDMV_LegacyEntryPointNoDeprecation(t *testing.T) {
-	errs := ValidateDomainModelStructured("m.yaml", []byte(dmvWithOperations))
-	if countCode(errs, "domain-operations-deprecated") != 0 {
-		t.Errorf("legacy 2-arg entry point must not emit domain-operations-deprecated: %s", errSummary(errs))
+// TestStructuredDMV_DeprecationEmittedOnEveryPath replaces
+// TestStructuredDMV_LegacyEntryPointNoDeprecation, which asserted the
+// suppression this change removes. The property worth holding is its inverse:
+// there is no path that reads a populated operations: block and says nothing.
+func TestStructuredDMV_DeprecationEmittedOnEveryPath(t *testing.T) {
+	for _, mode := range []ValidationMode{ModeAuthoring, ModeBuild} {
+		errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), mode)
+		if countCode(errs, "domain-operations-deprecated") != 1 {
+			t.Errorf("mode %q: want exactly one domain-operations-deprecated, got: %s", mode, errSummary(errs))
+		}
+	}
+
+	// And the severity still differs by mode, which is what makes it safe to emit
+	// on both: a warning while authoring, a failure at build time.
+	authoring, _ := findingWithCode(
+		ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeAuthoring),
+		"domain-operations-deprecated")
+	if authoring.Severity != string(SeverityWarning) {
+		t.Errorf("authoring severity = %q, want warning", authoring.Severity)
+	}
+	build, _ := findingWithCode(
+		ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeBuild),
+		"domain-operations-deprecated")
+	if build.Severity != string(SeverityError) {
+		t.Errorf("build severity = %q, want error", build.Severity)
 	}
 }
 
-func TestStructuredDMV_LegacyEntryPointStillCarriesToken(t *testing.T) {
-	errs := ValidateDomainModelStructured("m.yaml", []byte(dmvMissingSchemaVersion))
+func TestStructuredDMV_WholeModelTokenCarried(t *testing.T) {
+	errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvMissingSchemaVersion), ModeAuthoring)
 	f, ok := findingWithCode(errs, "missing-schema-version")
 	if !ok {
 		t.Fatalf("expected missing-schema-version, got: %s", errSummary(errs))

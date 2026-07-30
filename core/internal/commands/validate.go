@@ -160,7 +160,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	case "domain-model":
 		// parlay-feature: studio-support/domain-model-yaml-migration
 		// parlay-component: validate (extends domain-model-validate-cli-type)
-		validator = agent.ValidateDomainModel
+		validator = validateDomainModelAdapter
 	// parlay-feature: parlay-tool/multi-adapter
 	// parlay-component: cli-and-deployer-registration
 	case "adapter-set":
@@ -685,4 +685,37 @@ func declaredCapabilityEntities(cmd *cobra.Command) []string {
 		}
 	}
 	return names
+}
+
+// validateDomainModelAdapter runs the domain-model validator and splits its
+// findings by severity: warnings go to stderr, errors fail the command.
+//
+// This is where the severity filter belongs, and its absence is what shaped the
+// validator above. agent.ValidateDomainModel used to aggregate every finding into
+// one error with no reference to severity, so a warning failed the build like an
+// error — and the only way to keep a legacy operations: block from failing every
+// project was to stop emitting the diagnostic on this path entirely, via a boolean
+// threaded into the validator. The result was that `--type domain-model` said
+// nothing about a deprecated block while `--type domain-model --json` reported it.
+//
+// Rendering is the command layer's job. With the filter here, the validator has
+// one entry point and no mode flags, and both CLI paths agree about what the model
+// contains — this one prints the deprecation as a warning rather than hiding it.
+//
+// Same shape as validateTestcasesAdapter, deliberately: two commands rendering
+// structured findings should not invent two conventions for it.
+func validateDomainModelAdapter(path string, content []byte) error {
+	var msgs []string
+	for _, e := range agent.ValidateDomainModelStructuredMode(path, content, agent.ModeAuthoring) {
+		if e.Severity == string(agent.SeverityWarning) {
+			fmt.Fprintf(os.Stderr, "[WARN] %s: %s\n", e.Code, e.Message)
+			continue
+		}
+		msgs = append(msgs, fmt.Sprintf("[%s] %s", e.Code, e.Message))
+	}
+	if len(msgs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("domain-model.yaml validation failed: %d issue(s)\n  %s",
+		len(msgs), strings.Join(msgs, "\n  "))
 }

@@ -171,85 +171,34 @@ type deepDomainOperation struct {
 	Effects []string `yaml:"effects,omitempty"`
 }
 
-// ValidateDomainModel is the deep validator for domain-model.yaml.
-// Returns nil on success; a single aggregated error on failure, with
-// every unresolved reference reported (not just the first).
+// ValidateDomainModelStructuredMode is the domain-model validator: one entry
+// point, mode-aware, returning structured findings whose Context is always an
+// element path (a dotted path or wholeModelPathToken) and whose Severity is
+// resolved from the per-mode RuleSeverity table.
 //
-// The validator runs the following passes:
+// It replaces three entry points and a boolean. There were ValidateDomainModel
+// (Validator-shaped, aggregating every finding into one error),
+// ValidateDomainModelStructured (authoring mode, emitDeprecation=false), and this
+// one — all three funnelling into a shared implementation whose last parameter
+// decided whether to emit a single diagnostic.
 //
-//  1. parse YAML and confirm schema_version is present and integer
-//  2. compare schema_version to the binary's expected version
-//  3. for each entity field, validate type is in the closed set or
-//     names a declared enum (flat-only — inline object literals fail)
-//  4. for each enum value, validate tone is in the closed set
-//     (closed-set — unknown tones fail)
-//  5. for each relationship, validate from/to resolve to a declared
-//     entity and cardinality is in the closed set
-//  6. for each operation, validate every input field name resolves
-//     to a real field on a declared entity
+// The boolean was load-bearing for a bad reason. ValidateDomainModel treated any
+// finding as a failure with no reference to severity, so routing it through the
+// mode-aware path would have turned a warning-severity
+// domain-operations-deprecated into a hard failure for every project carrying a
+// legacy operations block. Suppressing the diagnostic was the cheaper fix at the
+// time, and it left `parlay validate --type domain-model` silent about a
+// deprecated block that `--type domain-model --json` reported — the same file,
+// the same tool, two answers.
 //
-// The model is not partially accepted — every reference must resolve
-// or the call exits non-nil. The function signature mirrors the other
-// validators in this file (path string, content []byte) error so it
-// can be wired into the validate.go --type switch.
-func ValidateDomainModel(path string, content []byte) error {
-	errs := ValidateDomainModelStructured(path, content)
-	if len(errs) == 0 {
-		return nil
-	}
-	// Aggregate: callers that want structured output can use the
-	// _Structured variant directly. The plain Validator interface
-	// returns a single error built from the concatenated messages.
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("domain-model.yaml validation failed: %d issue(s)", len(errs)))
-	for _, e := range errs {
-		b.WriteString("\n  [")
-		b.WriteString(e.Code)
-		b.WriteString("] ")
-		b.WriteString(e.Message)
-	}
-	return fmt.Errorf("%s", b.String())
-}
-
-// ValidateDomainModelStructured returns the structured ValidationError
-// list for a domain-model.yaml. This is the backward-compatible entry
-// point, preserved for existing in-repo callers: it runs in authoring
-// mode and does NOT emit the domain-operations-deprecated finding, so its
-// finding set for a given model is unchanged from before the structured-
-// validation feature. It still benefits from the guaranteed element-path
-// contract (every finding's Context is a dotted path or the whole-model
-// token) and carries per-finding severity.
-//
-// New callers that need the mode-aware behavior — per-mode severity AND
-// the domain-operations-deprecated finding (warning in authoring, error
-// in build) — use ValidateDomainModelStructuredMode. The --type
-// domain-model --json CLI branch and the build path route through that.
-func ValidateDomainModelStructured(path string, content []byte) []ValidationError {
-	return validateDomainModelStructured(path, content, ModeAuthoring, false)
-}
-
-// ValidateDomainModelStructuredMode is the mode-aware structured validator.
-// It resolves each finding's Severity from the per-mode RuleSeverity table
-// and, when the model carries a populated (non-empty) deprecated
-// operations: block, emits exactly one domain-operations-deprecated
-// finding — warning in authoring mode (the --json / editor path), error in
-// build mode (the build path fails, exactly as the RuleSeverity table
-// promises). The operations-block check is read-only: it never mutates,
-// reorders, or drops the block.
+// The severity filter belongs at the boundary that renders findings, not inside
+// the validator, so it now lives in the command layer (see
+// validateDomainModelAdapter): warnings print, errors fail. With that in place
+// there is nothing left for the boolean to protect.
 //
 // parlay-feature: studio-support/structured-domain-model-validation
 // parlay-component: cross-cutting/emit-domain-operations-deprecated
 func ValidateDomainModelStructuredMode(path string, content []byte, mode ValidationMode) []ValidationError {
-	return validateDomainModelStructured(path, content, mode, true)
-}
-
-// validateDomainModelStructured is the shared implementation behind both
-// the backward-compatible ValidateDomainModelStructured (mode=authoring,
-// emitDeprecation=false) and the mode-aware ValidateDomainModelStructuredMode
-// (emitDeprecation=true). Every returned finding carries a non-blank
-// element path in Context (a dotted path or wholeModelPathToken) and a
-// severity resolved for the given mode.
-func validateDomainModelStructured(path string, content []byte, mode ValidationMode, emitDeprecation bool) []ValidationError {
 	var errors []ValidationError
 	_ = path // ownerless findings now use wholeModelPathToken, not the file path
 
@@ -513,15 +462,17 @@ func validateDomainModelStructured(path string, content []byte, mode ValidationM
 	}
 
 	// domain-operations-deprecated: read-only presence check for a
-	// populated deprecated operations: block. Emitted only by the
-	// mode-aware entry point (emitDeprecation). The block spans the whole
-	// model, so the finding carries the whole-model element-path token.
+	// populated deprecated operations: block. Emitted unconditionally now —
+	// it used to be gated on an emitDeprecation boolean, which meant the
+	// plain `--type domain-model` path never mentioned the block. The block
+	// spans the whole model, so the finding carries the whole-model
+	// element-path token.
 	// This check never mutates, reorders, or drops the block — validation
 	// operates on []byte and never writes.
 	//
 	// parlay-feature: studio-support/structured-domain-model-validation
 	// parlay-component: cross-cutting/emit-domain-operations-deprecated
-	if emitDeprecation && len(dm.Operations) > 0 {
+	if len(dm.Operations) > 0 {
 		errors = append(errors, ValidationError{
 			Code:    "domain-operations-deprecated",
 			Message: "domain-model.yaml carries a populated deprecated 'operations:' block; the top-level operations: field is deprecated in favor of per-feature capabilities.yaml",

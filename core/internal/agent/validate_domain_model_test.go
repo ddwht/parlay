@@ -83,13 +83,23 @@ operations:
     effects:
       - "set Order.status to cancelled"
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
-	if len(errs) != 0 {
-		t.Fatalf("expected no validation errors, got: %s", errSummary(errs))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
+
+	// This fixture carries a legacy operations: block, so authoring mode reports
+	// domain-operations-deprecated at warning severity. It used to report nothing:
+	// the entry point this test called suppressed the diagnostic, which is the
+	// suppression removed with the emitDeprecation boolean. Nothing about the
+	// model changed — the tool stopped being quiet about it.
+	if n := countCode(errs, "domain-operations-deprecated"); n != 1 {
+		t.Errorf("want one domain-operations-deprecated for a model with operations:, got %d: %s", n, errSummary(errs))
 	}
-	// Non-structured Validator interface returns nil for happy path.
-	if err := ValidateDomainModel("domain-model.yaml", []byte(yaml)); err != nil {
-		t.Errorf("ValidateDomainModel happy path returned error: %v", err)
+
+	// What "valid" means here is no error-severity finding. A warning must not
+	// make an otherwise well-formed model fail.
+	for _, e := range errs {
+		if e.Severity != string(SeverityWarning) {
+			t.Errorf("unexpected %s-severity finding on a well-formed model: [%s] %s", e.Severity, e.Code, e.Message)
+		}
 	}
 }
 
@@ -101,15 +111,23 @@ func TestValidateDomainModel_MissingSchemaVersion(t *testing.T) {
         type: uuid
         required: true
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "missing-schema-version") {
 		t.Errorf("expected missing-schema-version error, got: %s", errSummary(errs))
 	}
-	// Validator interface surfaces the same condition as a non-nil error.
-	if err := ValidateDomainModel("domain-model.yaml", []byte(yaml)); err == nil {
-		t.Errorf("expected error for missing schema_version")
-	} else if !strings.Contains(err.Error(), "schema_version") {
-		t.Errorf("error should mention schema_version, got: %v", err)
+	// The condition is error-severity, which is what makes the command layer fail
+	// on it. ValidateDomainModel used to be asserted here as the Validator-shaped
+	// wrapper; it is gone, and the rendering it did lives in
+	// commands.validateDomainModelAdapter, where the severity split belongs.
+	f, ok := findingWithCode(errs, "missing-schema-version")
+	if !ok {
+		t.Fatalf("expected missing-schema-version, got: %s", errSummary(errs))
+	}
+	if f.Severity == string(SeverityWarning) {
+		t.Error("missing schema_version must be error-severity — it is not something a build can proceed past")
+	}
+	if !strings.Contains(f.Message, "schema_version") {
+		t.Errorf("message should mention schema_version, got: %v", f.Message)
 	}
 }
 
@@ -117,7 +135,7 @@ func TestValidateDomainModel_SchemaVersionTooNew(t *testing.T) {
 	yaml := `schema_version: 99
 entities: []
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "schema-version-newer-than-binary") {
 		t.Errorf("expected schema-version-newer-than-binary, got: %s", errSummary(errs))
 	}
@@ -143,7 +161,7 @@ relationships:
     to: Order
     cardinality: one-to-many
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "undeclared-entity-reference") {
 		t.Errorf("expected undeclared-entity-reference, got: %s", errSummary(errs))
 	}
@@ -171,7 +189,7 @@ operations:
   - name: cancel-order
     input: [Order.placed_at]
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "operation-input-field-not-found") {
 		t.Errorf("expected operation-input-field-not-found, got: %s", errSummary(errs))
 	}
@@ -186,7 +204,7 @@ entities:
         type: decimal
         required: true
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "field-type-outside-closed-set") {
 		t.Errorf("expected field-type-outside-closed-set, got: %s", errSummary(errs))
 	}
@@ -212,7 +230,7 @@ entities:
           city: string
         required: true
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "field-type-outside-closed-set") {
 		t.Errorf("expected field-type-outside-closed-set for nested literal, got: %s", errSummary(errs))
 	}
@@ -245,7 +263,7 @@ relationships:
     to: Order
     cardinality: many-to-self
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "relationship-cardinality-unknown") {
 		t.Errorf("expected relationship-cardinality-unknown, got: %s", errSummary(errs))
 	}
@@ -260,7 +278,7 @@ enums:
       - value: pending
         tone: ominous
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "enum-tone-outside-closed-set") {
 		t.Errorf("expected enum-tone-outside-closed-set for unknown tone, got: %s", errSummary(errs))
 	}
@@ -295,7 +313,7 @@ enums:
       - value: backordered
         tone: info
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	for _, e := range errs {
 		if e.Code == "enum-tone-outside-closed-set" {
 			t.Errorf("known tones must pass; got error: %s", errSummary(errs))
@@ -312,7 +330,7 @@ entities:
         type: ref
         required: true
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	if !containsCode(errs, "ref-missing-target") {
 		t.Errorf("expected ref-missing-target, got: %s", errSummary(errs))
 	}
@@ -337,7 +355,7 @@ relationships:
     to: Customer
     cardinality: one-to-one
 `
-	errs := ValidateDomainModelStructured("domain-model.yaml", []byte(yaml))
+	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 	// Expect at least: undeclared 'Order', unknown cardinality 'many-to-self',
 	// undeclared 'Ghost'. Three distinct problems → three errors.
 	if len(errs) < 3 {
