@@ -2,30 +2,36 @@
 # Parlay Project
 
 This project uses the Parlay intent-driven design toolkit.
-All operations are available as /parlay-* slash commands.
+Start with `/parlay-loop` — it walks a feature through the whole pipeline and
+runs the individual phases for you. The other two commands are for entering
+from somewhere other than the start.
 
 ## Available Commands
 
-- `/parlay-add-feature` — Create a new feature
-- `/parlay-build-feature` — Generate buildfile and testcases
-- `/parlay-create-artifacts` — Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs
-- `/parlay-create-domain-model` — Create domain model from features
 - `/parlay-doctor` — Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations
-- `/parlay-generate-code` — Generate prototype code from buildfile
-- `/parlay-generate-enggspec` — Generate engineering specification
-- `/parlay-load-domain-model` — Load and integrate external domain model
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
-- `/parlay-reference-design-spec` — Extract design spec from Figma
-- `/parlay-scaffold-dialogs` — Scaffold dialog templates from intents
+
+The pipeline phases (intents, dialogs, artifacts, build, code) are not commands.
+Their instructions live in .parlay/modules/, and the loop's phase subagents read
+the one they need. The full CLI is still there — run `parlay --help`.
 
 ## Schema Loading
 
-Skills load schemas on-demand from .parlay/schemas/. Do not keep schema content in memory across commands.
+Read .parlay/schemas/DIGEST.md first. It is derived from the schemas and lists
+every error code the tool can emit and when each fires — 9 KB instead of the
+263 KB corpus. It tells you which schema to open and which mistakes are
+pre-checkable, so you are not discovering validator rules by triggering them.
+
+Then load the specific schema you need on demand, and do not keep schema
+content in memory across commands. DIGEST.md is a routing table, not a
+substitute: author an artifact against its own schema.
 
 ## Interactive Questions
 
-When a skill step says to "ask the user", "present options", or "wait for the user's response", you MUST use the AskUserQuestion tool to pause execution and collect the user's input before proceeding to the next step. Do not output the question as plain text and continue — the skill requires the user's answer to decide what to do next.
+When a skill step says to "ask the user", "present options", or "wait for the user's response", use the AskUserQuestion tool to pause and collect the answer before continuing. Do not output the question as plain text and keep going — the step needs the answer to decide what happens next.
+
+**Unless you are a subagent.** A parlay phase subagent (parlay-designer, parlay-build, parlay-code) has no AskUserQuestion, so a question asked there reaches nobody and the phase ends up answering itself — a skipped confirmation is indistinguishable from a granted one. In a subagent, stop and return a `parlay-decision` block instead; the loop driver prompts and resumes you with the answer.
 
 ## File Ownership
 

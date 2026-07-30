@@ -5,12 +5,31 @@ description: "Parlay: Walk a feature end-to-end through the parlay design pipeli
 
 # Loop
 
-Walk a feature end-to-end through the parlay design pipeline — intents → dialogs → artifacts → build → code — as one continuous guided process. The loop orchestrates the existing `/parlay-*` skills rather than re-implementing their logic. Confirmations are mandatory at every phase boundary; context is managed via three pre-defined subagents (parlay-designer / parlay-build / parlay-code) that `parlay init` / `parlay upgrade` deploys to your agent.
+Walk a feature end-to-end through the parlay design pipeline — intents → dialogs → artifacts → build → code — as one continuous guided process. The loop is the **driver**: it owns every interaction with the user, and delegates each phase-group to a subagent that does the work and reports back. Confirmations are mandatory at every phase boundary.
 
 ## Arguments
 
 - `feature`: The feature reference in standard parlay form — `{feature}` for a top-level feature, `@{initiative}/{feature}` for a feature nested inside an initiative.
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
+
+## Subcommands
+
+The pipeline is the default. Four operations sit alongside it rather than inside it — they are short, they need the user, and none of them belongs at a phase boundary. The driver runs them in its own context:
+
+| Invocation | What it does | Module |
+|---|---|---|
+| `handoff @{feature}` | Generate the engineering specification into `spec/handoff/{feature}/` | `.parlay/modules/generate-enggspec.md` |
+| `design-spec` | Extract a design spec from Figma into the project | `.parlay/modules/reference-design-spec.md` |
+| `domain-model` | Create the project domain model from existing features | `.parlay/modules/create-domain-model.md` |
+| `domain-model --from {path}` | Load and integrate an externally-authored domain model | `.parlay/modules/load-domain-model.md` |
+
+Read the named module and follow it. Because you are the driver, `AskUserQuestion` works here — prompt directly; there is no decision request to round-trip.
+
+`domain-model` picks its module from whether `--from` is present. Both write the same artifact under the same conflict-resolution rules; the only difference is where the entities come from.
+
+## Phase modules
+
+The five phases are not menu entries. Their instructions live at `.parlay/modules/{add-feature,scaffold-dialogs,create-artifacts,build-feature,generate-code}.md`, and the subagent that owns a phase reads the module it needs. Nobody has to know which of five skills comes next — the driver knows the sequence, and each phase-group agent loads its own instructions.
 
 ## Prerequisites
 
@@ -30,7 +49,7 @@ The five phases are organized into three phase-groups, each mapping to one of th
 - **build** (build) → `parlay-build` subagent
 - **code** (code) → `parlay-code` subagent
 
-Within a phase-group, skills are invoked inline (direct dispatch) so that, e.g., the dialogs skill sees the intents authored moments earlier in the same context. Between phase-groups, the loop ends the current subagent and invokes the next one — context clears as a side effect of the subagent boundary; no separate "clear context" primitive is required.
+Within a phase-group, phases run inline in one context so that, e.g., the dialogs phase sees the intents authored moments earlier. Between phase-groups, the loop ends the current subagent and invokes the next one — context clears as a side effect of the subagent boundary; no separate "clear context" primitive is required.
 
 <!-- parlay:active-root-aware -->
 ## Active root
@@ -40,97 +59,164 @@ Every relative path below is interpreted against the **active root** — the par
 - **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
 - **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
 
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), the root cannot be guessed — the candidates are real projects, and picking one writes into the wrong tree.
+
+Who resolves it depends on where you are running. If you own the user interaction — the loop driver, or a skill the user invoked directly — prompt with the listed candidate roots and re-invoke with `--root <chosen>`. If you are a **phase module** running inside a subagent, you have no interactive tool: return an `ambiguity` decision request listing the candidates as options and let the driver ask.
+
+## The driver owns every user interaction
+
+**A subagent cannot ask the user anything.** On the Claude Code adapter `AskUserQuestion` does not exist inside a subagent; a subagent that "asks" is writing into a transcript nobody reads, and then picking an answer for itself. Prompts authored inside a phase are not merely unreliable there — they are silently skipped, which is how three phase boundaries can be crossed with zero confirmations and an override menu can never appear.
+
+So: **phases do not prompt. Phases stop and ask the driver to prompt.**
+
+When a phase reaches a point that needs a human decision — a phase boundary, an artifact-set override, a file about to be overwritten, a failed test suite, an ambiguity it cannot resolve from the spec — it stops work and returns a **decision request** as its final output:
+
+````
+```yaml parlay-decision
+kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity
+phase: artifacts            # the phase that raised it
+question: "Artifacts phase complete. Advance to build?"
+context: |
+  Created surface.yaml and capabilities.yaml.
+  Gap analysis: 1 critical (intent "Reject with reason" has no dialog).
+options:
+  - id: proceed
+    label: "Proceed to build"
+    detail: "Starts a fresh subagent; this context clears."
+  - id: stay
+    label: "Stay and revise"
+    detail: "Return to the artifacts phase."
+  - id: exit
+    label: "Exit"
+    detail: "Everything on disk is preserved."
+resume: "Re-enter with decision: <id>. Work completed so far is on disk."
+```
+````
+
+The driver then:
+
+1. Presents the decision with **AskUserQuestion**, using `options` verbatim and `context` as the framing. The driver may add options the phase could not know about (e.g. "Back up to dialogs"), but must not drop any.
+2. Resumes the same subagent with the chosen `id`, using the adapter's continue-an-agent primitive (on Claude Code, `SendMessage` to the running agent — its context survives, so the phase picks up exactly where it stopped). If the adapter has no such primitive, re-invoke the phase-group subagent with `decision: <id>` in the prompt; the phase re-reads state from disk, which is why `resume:` must say what is already written.
+3. If the decision ends the loop (`exit`, or a hard block), does **not** resume the subagent — it ends the loop per step 12.
+
+A phase that emits a decision request must have left the filesystem in a coherent state first: the decision is a pause, not a half-write. A phase that cannot pause safely must instead complete the safe option and report what it did.
+
+**Inline degradation.** If no subagent surface exists at all, the driver runs the phases inline in its own context. There, `AskUserQuestion` works, so the driver prompts directly at each decision point instead of round-tripping a decision request. This mode is slower to blow context but has no confirmation gap.
 
 ## Steps
 
 1. **Resolve the feature target** — Search `spec/intents/{name}/` and `spec/intents/*/{name}/` for a matching feature folder.
    - **Exactly one match** → proceed.
    - **Multiple matches** → ask the user to disambiguate via AskUserQuestion.
-   - **Zero matches** → ask via AskUserQuestion whether to create a new feature and where (top-level or inside a named initiative). On confirmation, invoke `/parlay-add-feature` with the chosen location. On decline, exit cleanly — no filesystem changes.
+   - **Zero matches** → ask via AskUserQuestion whether to create a new feature and where (top-level or inside a named initiative). On confirmation, run `parlay add-feature {name} [--initiative {initiative}]`. On decline, exit cleanly — no filesystem changes.
 
 2. **Validate `--from`** — If specified:
    - Reject any value other than `intents`, `dialogs`, `artifacts`, `build`, `code` with a message listing valid phases.
-   - Reject `--to` and `--resume` — the loop has no such flags. Point the user at `--from` or the individual `/parlay-*` skills.
-   - If the starting phase has missing prerequisites on disk (e.g., `--from build` but no surface.md), offer to back up to the earliest missing phase.
+   - Reject `--to` and `--resume` — the loop has no such flags. Point the user at `--from`.
+   - If the starting phase has missing prerequisites on disk (e.g., `--from build` but no surface artifact), offer to back up to the earliest missing phase.
 
-3. **Plan the phase sequence** — Starting at the resolved phase, the loop will run forward through every remaining phase to `code` (unless the user exits at a confirmation boundary). Never backward — to revise an upstream artifact, the user exits and re-invokes with `--from`.
+3. **Plan the phase sequence, and warn about what is being skipped** — Starting at the resolved phase, the loop runs forward through every remaining phase to `code` (unless the user exits at a confirmation boundary). Never backward — to revise an upstream artifact, the user exits and re-invokes with `--from`.
 
-4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available on the current agent (e.g., on Claude Code, attempt invocation via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, use **Fresh-session handoff** (step 8).
+   When `--from` skips phases, the artifacts those phases own are **not** re-derived; they are read as-is, and any change made upstream since they were written is carried no further. Before starting, run `parlay internal check-drift @{feature-ref}` and name the concrete consequence rather than the abstraction:
+
+   > `--from artifacts` skips dialogs. `intents.md` changed after `dialogs.md` was last written (constraint "reject requires a reason" is new). The artifacts phase reads dialogs, so that constraint will not reach `surface.yaml`.
+
+   Offer to back up to the earliest phase whose output is stale. This is the only gate that catches an intents↔dialogs contradiction — `parlay internal check-coverage` matches on structure and titles, not meaning, so a dialog that contradicts its intent passes it cleanly.
+
+4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.
 
 5. **Enter the designer phase-group** (if starting phase is intents, dialogs, or artifacts):
-   - Invoke the `parlay-designer` subagent with the feature reference and the starting phase. The subagent's prompt handles the phase flow internally — see `.claude/agents/parlay-designer.md` for its scope.
-   - The subagent runs each phase in sequence, invoking the underlying `/parlay-*` skill inline:
-     - `intents`: guide the user to author/revise intents.md. Invoke `/parlay-add-feature` only if the feature does not exist (and only after user confirmation from step 1).
-     - `dialogs`: invoke `/parlay-scaffold-dialogs @{feature-ref}`.
-     - `artifacts`: invoke `/parlay-create-artifacts @{feature-ref}`.
+   - Invoke the `parlay-designer` subagent with the feature reference and the starting phase.
+   - It runs the three phases in sequence in one context: author/revise `intents.md`; generate or update `dialogs.md`; determine and create the artifact set.
    - Pre-load on-disk upstream artifacts if `--from` skipped phases in this group (dialogs needs intents; artifacts needs intents + dialogs).
-   - Run **Gap analysis** at the end of the intents phase and at the end of the dialogs phase (step 9).
-   - At every phase boundary, prompt the user for confirmation — see **Phase confirmation** (step 10).
-   - The subagent returns a summary when the designer group is complete or the user exits.
+   - It runs **Gap analysis** at the end of the intents phase and the dialogs phase (step 9) and folds the result into the `context:` of the boundary decision.
+   - Every boundary and every override comes back as a decision request; the driver prompts and resumes (see above).
+   - The artifacts phase's boundary decision carries an `artifacts:` list naming what it wrote. If that list contains `domain-model`, offer the editor (step 11) before the designer→build boundary is answered.
 
 6. **Enter the build phase-group** (at the designer→build boundary):
-   - End the designer subagent; announce the subagent boundary to the user — make the context-clear effect explicit, not surprising.
-   - At the boundary, run `parlay check-readiness --stage build-feature @{feature-ref}`. Treat errors as HARD BLOCKS — the user cannot advance by acknowledgement; they must fix the underlying artifact (route them back to the artifacts phase). Warnings are informational and acknowledgeable.
+   - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
+   - Run `parlay internal check-readiness --stage build-feature @{feature-ref}`. **Errors are hard blocks** — not acknowledgeable; route the user back to the artifacts phase. Warnings are informational.
    - Invoke the `parlay-build` subagent with the feature reference.
-   - The subagent invokes `/parlay-build-feature @{feature-ref}` inline.
-   - At the end, prompt for confirmation — see **Phase confirmation** (step 10).
+   - At the end it returns a `phase-boundary` decision; the driver prompts.
 
 7. **Enter the code phase-group** (at the build→code boundary):
    - End the build subagent; announce the new subagent boundary.
-   - Invoke the `parlay-code` subagent.
-   - The subagent invokes `/parlay-generate-code` inline (project-level; no @feature arg).
-   - After the code phase completes successfully, end the loop with the natural completion summary — see **End the loop cleanly** (step 11). No trailing confirmation — there is no next phase.
+   - Invoke the `parlay-code` subagent (project-level; no `@feature` argument).
+   - The code phase raises an `overwrite` decision for every generated file that changed since it was last generated, and a `failure` decision if the test suite does not pass. Both come to the driver.
+   - After the code phase completes successfully, end the loop with the natural completion summary (step 12). No trailing confirmation — there is no next phase.
 
 8. **Fresh-session handoff** (adapter without subagent support):
-   - At the phase-group boundary, print the exact resume command, e.g. `/parlay-loop @{initiative}/{feature} --from build`.
+   - At the phase-group boundary, print the exact resume command, e.g. `/parlay @{initiative}/{feature} --from build`.
    - Print "Exiting this session. All artifacts are on disk."
    - Exit the current session. The loop persists NO resume state — no on-disk phase cursor, no acknowledged-gap log. Continuity is the user's memory plus the printed hint.
 
 9. **Gap analysis** (at the end of intents and dialogs phases):
-   - **intents phase**: surface intents with unresolved `Questions:` sections, intents missing required fields, contradictory constraints, and any open-questions report from `parlay-collect-questions`.
-   - **dialogs phase**: surface intents without dialogs (coverage gaps), dialogs without matching intents (orphans), and dialogs missing branches implied by the intent's Constraints or Verify items. Reuse `parlay sync` / `parlay check-coverage` where applicable.
-   - Classify each gap as **critical** or **minor** using fixed agent judgment (no user configuration). Rule of thumb: gaps that cascade into ambiguous downstream artifacts (unresolved Questions, missing required fields, contradictory constraints, intents without dialogs, orphan dialogs) are critical; stylistic or partial-coverage gaps are minor.
-   - If critical gaps exist, recommend staying in the phase. The user can advance anyway via the confirmation prompt — no acknowledgement state is persisted; the same gaps are re-analyzed if the user later resumes with `--from` at the same phase.
+   - **intents phase**: intents with unresolved `Questions:` sections, intents missing required fields, contradictory constraints. `parlay internal collect-questions @{feature}` finds the first class.
+   - **dialogs phase**: intents without dialogs (coverage gaps), dialogs without matching intents (orphans), dialogs missing branches implied by the intent's Constraints or Verify items. `parlay internal check-coverage` finds structural gaps; read the pairs it reports as matched and confirm they actually correspond — it matches on title overlap, so it both misses renames and blesses contradictions.
+   - Classify each gap as **critical** or **minor**. Rule of thumb: gaps that cascade into ambiguous downstream artifacts (unresolved Questions, missing required fields, contradictory constraints, intents without dialogs, orphan dialogs) are critical; stylistic or partial-coverage gaps are minor.
+   - Critical gaps go in the boundary decision's `context:` with a recommendation to stay. The user may still advance — no acknowledgement state is persisted, so the same gaps are re-analyzed on a later `--from`.
 
-10. **Phase confirmation** (at every boundary except after code):
-    - Use AskUserQuestion to present three options: **Proceed**, **Stay and revise**, **Exit**.
+10. **Phase confirmation** (at every boundary except after code) — the driver's job, per **The driver owns every user interaction**:
+    - AskUserQuestion with at least **Proceed**, **Stay and revise**, **Exit**.
     - Name the just-completed phase and the phase about to begin.
-    - At phase-group boundaries, include the fresh-subagent warning as part of the message.
-    - On "Stay" — remain in the current phase; let the user iterate. Re-run gap analysis on explicit request.
-    - On "Exit" — end the loop with the user-exit summary (step 11).
+    - At phase-group boundaries, say that the next phase starts in a fresh context.
+    - On "Stay" — resume the subagent with `stay`; let the user iterate. Re-run gap analysis on request.
+    - On "Exit" — end the loop with the user-exit summary (step 12).
 
-11. **End the loop cleanly**:
+11. **Offer the domain-model editor** (at the artifacts boundary, when the artifacts phase wrote `domain-model`):
+
+    The loop is the normal path to a domain model — the artifacts phase authors `domain-model.yaml` whenever a feature introduces entities or vocabulary. The offer used to be dispatched only from `parlay create-domain-model`, the standalone command, so a designer who reached the model through the loop never saw it. This is where it belongs.
+
+    Add one more option to the phase-boundary question of step 10, alongside Proceed / Stay / Exit:
+
+    > **Review and edit the domain model before building?** — Opens the editor in a browser. The build phase reads this model, so edits made now are picked up; edits made after are not.
+
+    On accept:
+    - Run `parlay domain-edit`. **Block until the session ends** — the editor exits on its own idle timeout or when the user stops it. Do not background it and advance; the whole point is that the build phase reads the model afterwards.
+    - Then run `parlay internal check-drift @{feature-ref}` and report what it says. The domain model is a **shared** source: an edit dirties every feature that reads it, not only this one. Name that consequence — features other than this one may now be stale, and this loop will not fix them.
+    - Then re-present the boundary question. Opening the editor is not itself an answer to "advance to build?", and treating it as one would advance without a confirmation.
+
+    On decline, proceed as normal — the option is an offer, never a gate.
+
+    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-studio` was passed or `parlay.no_studio` is true in project config, and when the session is not interactive.
+
+12. **End the loop cleanly**:
     - **Natural completion** (after code): print a summary with the feature reference, phases run, and key artifacts on disk. No resume hint. Loop complete.
-    - **User-chosen exit**: print a summary naming what completed, plus a resume command (`/parlay-loop {feature-ref} --from {next-phase}`).
+    - **User-chosen exit**: print a summary naming what completed, plus a resume command (`/parlay {feature-ref} --from {next-phase}`).
     - **Mid-phase session interruption**: no special handling — artifacts on disk are preserved; the user re-invokes with `--from`.
     - **No cleanup ever**: the loop does not delete or roll back any files on any exit path.
 
 ## Interactive Questions
 
-Use AskUserQuestion (or adapter equivalent) for:
+The driver — never a phase — uses AskUserQuestion for:
 - Feature creation confirmation (zero matches)
 - Multiple matches disambiguation
 - Phase boundary confirmation (proceed / stay / exit)
 - Gap-analysis response (stay / advance anyway / exit)
 - Readiness warnings response (proceed / stay / exit)
-- Sub-skill failure recovery (retry / stay / exit)
-- Backing up to an earlier phase when `--from` prerequisites are missing
+- Phase failure recovery (retry / stay / exit)
+- Backing up to an earlier phase when `--from` prerequisites are missing or upstream output is stale
+- The domain-model editor offer at the artifacts boundary (step 11)
+- Every `parlay-decision` block a phase-group returns
 
 ## Hard rules
 
 - NEVER auto-advance between phases — confirmation is mandatory.
+- NEVER let a phase prompt the user directly when it is running as a subagent — it must emit a decision request and stop. A prompt inside a subagent is silently skipped, and the phase then answers it for itself.
+- NEVER drop an option a phase offered in its decision request. The driver may add options; it may not narrow the choice.
 - NEVER persist resume state to disk — no `.parlay/loop-state.yaml`, no phase cursor, no acknowledged-gap log.
 - NEVER run phases backward — forward only.
 - NEVER silently overwrite designer-authored files (intents.md, dialogs.md) — per CLAUDE.md file-ownership rules.
 - NEVER create a new feature without explicit user confirmation — zero matches must prompt, never auto-create.
-- NEVER advance past a `parlay check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
+- NEVER advance past a `parlay internal check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
+- NEVER treat opening the domain-model editor as an answer to the boundary question — re-ask after the editor session ends, or the loop advances on a confirmation nobody gave.
 
 ## Error Handling
 
-- `subagent-not-found` — the required subagent (`parlay-designer`, `parlay-build`, or `parlay-code`) is not available on this agent. Check whether `parlay upgrade` has been run. If the adapter has no native subagent support at all, switch to fresh-session handoff.
+- `subagent-not-found` — the required subagent is not available. Check whether `parlay upgrade` has been run. If the adapter has no native subagent support at all, switch to inline degradation or fresh-session handoff.
 - `invalid-phase-name` — `--from` value is not one of the five canonical phases. List valid phases and exit.
 - `unsupported-flag` — user passed `--to` or `--resume`. Explain these are not supported and point at `--from`.
 - `missing-prerequisite-artifact` — starting phase requires an upstream artifact that does not exist. Offer to back up to the earliest missing phase.
-- `sub-skill-failure` — an invoked `/parlay-*` skill returned an error. Surface the error and offer retry / stay-in-phase / exit. "Proceed" is not an option for a failed skill.
+- `phase-failure` — a phase-group returned an error rather than a decision request. Surface it and offer retry / stay-in-phase / exit. "Proceed" is not an option for a failed phase.
+- `malformed-decision` — a phase returned a `parlay-decision` block missing `question` or `options`. Do not guess an answer. Show the raw block to the user and offer retry / exit.
 - `ambiguous-feature` — feature search returned multiple matches. Disambiguate via AskUserQuestion.

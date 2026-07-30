@@ -269,7 +269,7 @@ When a blueprint file is loaded, the tool verifies:
 | Blueprint content | Tech lead / architect |
 | Blueprint file location | Parlay (always `.parlay/blueprint.yaml`) |
 | When it changes | App structure changes (new shell, new role, data strategy shift) |
-| Effect of change | `parlay diff` reports `sections.blueprint: "changed"`, triggering regeneration of cross-cutting files (shells, guards, providers, error boundaries) |
+| Effect of change | `parlay internal diff` reports `sections.blueprint: "changed"`, triggering regeneration of cross-cutting files (shells, guards, providers, error boundaries) |
 
 ## Pipeline consumption
 

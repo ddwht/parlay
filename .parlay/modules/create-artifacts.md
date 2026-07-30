@@ -1,7 +1,6 @@
----
-name: parlay-create-artifacts
-description: "Parlay: Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs"
----
+# create-artifacts
+
+_Determine and create any subset of surface, capabilities, infrastructure, and domain-model artifacts a feature needs_
 
 # Create Artifacts
 
@@ -19,7 +18,32 @@ Every relative path below is interpreted against the **active root** — the par
 - **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
 - **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
 
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), the root cannot be guessed — the candidates are real projects, and picking one writes into the wrong tree.
+
+Who resolves it depends on where you are running. If you own the user interaction — the loop driver, or a skill the user invoked directly — prompt with the listed candidate roots and re-invoke with `--root <chosen>`. If you are a **phase module** running inside a subagent, you have no interactive tool: return an `ambiguity` decision request listing the candidates as options and let the driver ask.
+
+## Asking the user
+
+This skill runs as a **phase module** — normally inside a parlay-loop subagent, where no interactive tool exists. A question asked there is written into a transcript nobody reads, and you then answer it yourself; that is not a confirmation, it is a decision made on the user's behalf. So do not prompt. **Stop and return a decision request** as your final output. The driver prompts and resumes you with the chosen `id`, with your context intact, so you continue exactly where you stopped.
+
+````
+```yaml parlay-decision
+kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity
+phase: <the phase you are in>
+question: "<the one question, in the user's terms>"
+context: |
+  <what you found, and what is already on disk>
+options:
+  - id: <slug>
+    label: "<what the user picks>"
+    detail: "<the consequence, when it isn't obvious>"
+resume: "Re-enter with decision: <id>. <what is written so far>"
+```
+````
+
+Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
+
+Two things not to do: never narrow the options to spare the user a question, and never resolve an ambiguity by taking the reading that is cheapest to implement. Both turn a decision the user should own into one you made quietly.
 
 ## Steps
 
@@ -72,19 +96,16 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - Mix of operations + architectural prose → **capabilities + infrastructure**
    - New entities or vocabulary → **add domain-model**
    - Surface intents with blueprint-derived backend implications → **surface + the implied backend artifact** (explain why)
-   - Any ambiguous intents → **ask the designer** (step 4)
+   - Any ambiguous intents → **raise the decision** (step 4) rather than picking the reading that is easiest to build
 
-4. **Present the decision** — Show the designer:
-   - The decision (which subset of the four artifacts)
-   - Per-intent breakdown: which intent maps to which artifact(s) and what signals drove the classification
-   - Override options:
-     ```
-     A: Proceed with this recommendation
-     B: Also add [the missing artifact]
-     C: Drop [an artifact from the recommendation]
-     D: Let me explain what this feature does (for ambiguous cases)
-     ```
-   - Wait for the designer's confirmation or override via AskUserQuestion
+4. **Raise the decision** — Return an `override` decision request (see **Asking the user**) carrying:
+   - `context:` — the recommended artifact subset, and a per-intent breakdown naming which intent maps to which artifact(s) and what signal drove each classification. The reasoning is the point; a bare verdict gives the designer nothing to override *with*.
+   - `options:` — at minimum:
+     - `proceed` — author the recommended set
+     - `add-<artifact>` — one per artifact not in the recommendation
+     - `drop-<artifact>` — one per artifact in the recommendation
+     - `explain` — "Let me describe what this feature does" (for intents you classified as ambiguous)
+   - **Write nothing before this is answered.** The override menu exists so the designer can change the artifact set; authoring first makes it a notification.
 
 5. **Create the artifacts**:
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.md or surface.yaml, validate)
@@ -94,6 +115,20 @@ When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face 
    - When multiple artifacts are required, author them in order: domain-model first (so other artifacts can reference its entities), then surface and capabilities and infrastructure in any order
 
 6. **Report** — Confirm which artifacts were created and what the next pipeline step is (`/parlay-build-feature @{feature}`).
+
+   When you are running as a phase module, the report is the `phase-boundary` decision request you return. Carry an `artifacts:` list on it naming exactly what you wrote:
+
+   ````
+   ```yaml parlay-decision
+   kind: phase-boundary
+   phase: artifacts
+   artifacts: [domain-model, surface]
+   question: "Artifacts phase complete. Advance to build?"
+   ...
+   ```
+   ````
+
+   The list is not decoration and it is not the same as the recommended set from step 4 — the designer may have overridden it, and what matters downstream is what is on disk. The driver reads it to decide which follow-on options to offer at the boundary; `domain-model` in particular earns an offer to open the editor before the build phase reads the model. Report the names, not the filenames: `domain-model`, `surface`, `capabilities`, `infrastructure`.
 
 ## Error Handling
 

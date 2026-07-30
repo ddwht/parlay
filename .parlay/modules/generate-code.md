@@ -1,7 +1,6 @@
----
-name: parlay-generate-code
-description: "Parlay: Generate prototype code from buildfile"
----
+# generate-code
+
+_Generate prototype code from buildfile_
 
 <!--
 parlay-section: cross-cutting
@@ -47,7 +46,9 @@ Every relative path below is interpreted against the **active root** — the par
 - **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
 - **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
 
-When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), re-prompt the user via AskUserQuestion with the listed candidate roots, then re-invoke with `--root <chosen>`.
+When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), the root cannot be guessed — the candidates are real projects, and picking one writes into the wrong tree.
+
+Who resolves it depends on where you are running. If you own the user interaction — the loop driver, or a skill the user invoked directly — prompt with the listed candidate roots and re-invoke with `--root <chosen>`. If you are a **phase module** running inside a subagent, you have no interactive tool: return an `ambiguity` decision request listing the candidates as options and let the driver ask.
 
 ## Project-pass mode
 
@@ -71,6 +72,29 @@ Concretely:
 - **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
 - **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent. This governs generate-code's own output only — `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception with pinned-stable wording that `studio-cli-hooks` pattern-matches on; see that skill's step 6.
 
+## Asking the user
+
+This skill runs as a **phase module** — normally inside a parlay-loop subagent, where no interactive tool exists. A question asked there is written into a transcript nobody reads, and you then answer it yourself; that is not a confirmation, it is a decision made on the user's behalf. So do not prompt. **Stop and return a decision request** as your final output. The driver prompts and resumes you with the chosen `id`, with your context intact, so you continue exactly where you stopped.
+
+````
+```yaml parlay-decision
+kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity
+phase: <the phase you are in>
+question: "<the one question, in the user's terms>"
+context: |
+  <what you found, and what is already on disk>
+options:
+  - id: <slug>
+    label: "<what the user picks>"
+    detail: "<the consequence, when it isn't obvious>"
+resume: "Re-enter with decision: <id>. <what is written so far>"
+```
+````
+
+Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
+
+Two things not to do: never narrow the options to spare the user a question, and never resolve an ambiguity by taking the reading that is cheapest to implement. Both turn a decision the user should own into one you made quietly.
+
 ## Steps
 
 1. **Load schemas** — Read these before generating:
@@ -92,7 +116,7 @@ Concretely:
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
    - **External type resolution** (brownfield): for each entity in the merged model set, grep the source tree (under `file-conventions.source-root`) for existing type/interface/struct definitions matching the entity name (e.g., `interface User`, `type User struct`, `export type User`).
      - If exactly **one match** is found: record it as an external type (entity name → import path). In step 14, generate an import statement for this entity instead of a type declaration.
-     - If **multiple matches** are found: present disambiguation to the user via AskUserQuestion:
+     - If **multiple matches** are found: raise an `ambiguity` decision request naming each candidate:
        ```
        Found multiple existing definitions for "User":
        A: src/types/user.ts (line 14) — interface User { id: string; name: string; }
@@ -113,17 +137,17 @@ Concretely:
 
 7. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
 
-8. **Compute the project-level diff** — Run: `parlay diff` (no @feature) to get the unified change report. The JSON output has:
+8. **Compute the project-level diff** — Run: `parlay internal diff` (no @feature) to get the unified change report. The JSON output has:
    - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
    - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration.
 
-9. **Scan generated files** — Run: `parlay scan-generated {source-root}` to map each file to its owner.
+9. **Scan generated files** — Run: `parlay internal scan-generated {source-root}` to map each file to its owner.
    - Files with `parlay-feature: X + parlay-component: Y` belong to feature X's component Y.
    - Files with `parlay-scope: project + parlay-section: Z` are project-scoped cross-cutting files.
    - Files with `parlay-artifact: test` are test files for their parent component.
    - Files without ANY parlay marker are user-owned; never modify or delete them.
 
-10. **Verify generated files haven't been hand-edited** — Run: `parlay verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
+10. **Verify generated files haven't been hand-edited** — Run: `parlay internal verify-generated` (no @feature, project-level) to compare each recorded generated file against its stored content hash. Returns JSON `{has_hashes, stable, modified, missing}`.
    - If `has_hashes` is `false`, this is the very first generation — treat everything as new and skip the modified-file check.
    - Otherwise, check **every** component that has a generated file — dirty and stable alike — against `verify.modified[]`. If a file is listed there, the user has hand-edited it — STOP and surface the situation:
      ```
@@ -275,7 +299,7 @@ Concretely:
 
    3. **Tier 1 — Templated mount**: scan each strategy in the adapter's `mount-strategies:` (if any) for a `detection` pattern that appears in the file content.
       - **1 match**: proceed with this strategy → step 5.
-      - **Multiple matches**: ask the user to choose:
+      - **Multiple matches**: raise an `ambiguity` decision request:
         ```
         <file> has multiple integration points:
         A: New <strategy-1-name> (found <detection-1> on line N)
@@ -283,7 +307,7 @@ Concretely:
         C: Skip — I'll integrate manually
         ```
         → step 5.
-      - **0 matches**: proceed to Tier 2 (step 4) before falling back to AskUserQuestion.
+      - **0 matches**: proceed to Tier 2 (step 4) before falling back to a decision request.
 
    4. **Tier 2 — Intelligent merge** (only if Tier 1 found 0 matches): determine whether the existing file is **the same surface** as the route's component before giving up.
 
@@ -304,7 +328,7 @@ Concretely:
          - **Updates the file's marker block**: replace the original two-line marker (or add one if the file had only legacy comments) with the multi-component form documented in step 12: primary's `parlay-feature:` + `parlay-component:` lines, plus a `parlay-extends: {feature}/{component}` line for the new owner.
       e. Continue to step 6.
 
-      If the file is NOT the same surface (naming or purpose mismatch), fall back to AskUserQuestion:
+      If the file is NOT the same surface (naming or purpose mismatch), fall back to an `ambiguity` decision request:
       ```
       <file> exists in the source tree but doesn't match any mount strategy in the adapter, and its purpose differs from <Component>'s route.
       How should <Component> be added?
@@ -342,7 +366,7 @@ Concretely:
 
    2. **For each resolved target file** — strict-target rule:
       - **If the entry has non-empty `Affects:` or `target-files:` naming files**: those exact paths MUST be the targets. The file MUST already exist on disk **OR appear in another feature's `plan.creates` set that has already run earlier in the same project pass** (per the topological order from step 11.5.5). If the file is neither on disk nor a satisfied sibling-create, error — the buildfile names a file that isn't there. Apply Tier 2 intelligent merge: read the file, read the entry's `Behavior:`/`transform:` description and `introduces:` list, produce a diff that adds new behavior while preserving existing code. If the file already has a `parlay-component:` marker, add a `parlay-extends:` line for the cross-cutting entry. If the file has no marker, add a `parlay-section: cross-cutting` marker.
-      - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): surface the proposed diff via AskUserQuestion (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
+      - **If a Tier 2 merge is too risky** (e.g. the file is large, the integration spans many sites, the agent isn't confident the diff preserves existing behavior): return the proposed diff as an `ambiguity` decision request (Apply / Skip / Edit) — **do NOT silently invent a new file path under the source root**. Writing a file at any path not named in the entry's `Affects:`/`target-files:` is a bug — STOP and surface it.
       - **If the entry declares `target-creates:`** (two-kinded shape): paths in `target-creates:` are introducing — generate new files at those exact paths with a `parlay-section: cross-cutting` marker, never invent alternate paths. Paths in `target-files:` are still strict-modifies — they must exist on disk (or be satisfied by a sibling-create earlier in the topological order).
       - **Only when the entry has NO `Affects:`/`target-files:`/`target-creates:`** (purely-introducing entries that genuinely add a new package via grep-pattern fan-out): create a new file with a `parlay-section: cross-cutting` marker and generate the introduced functions/types. Present the new file for review. The file path is computed from the adapter's conventions; the agent must NOT pick an arbitrary path.
 
@@ -360,14 +384,14 @@ Concretely:
 
    4. **Apply or skip**: on approval, write the modified file. On skip, continue.
 
-   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
+   Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay internal diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
 
 16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
     - **If any test fails, STOP.** Do not proceed to step 17. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
 
-17. **Commit the build state** — Only if all tests passed in step 16: run `parlay save-build-state --source-root {source-root}`. This atomically writes:
+17. **Commit the build state** — Only if all tests passed in step 16: run `parlay internal save-build-state --source-root {source-root}`. This atomically writes:
     - Per-feature baselines for ALL features (source hashes for per-feature diff)
     - Project-level baseline at `.parlay/build/_project/.baseline.yaml` (merged section hashes)
     - Project-level code-hashes at `.parlay/build/_project/.code-hashes.yaml` (all generated files)
@@ -393,21 +417,21 @@ It is never a "minor difference" to be ignored.
 
 Three read helpers and one write helper cooperate to make incremental rebuilds safe:
 
-- **`parlay diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
-- **`parlay scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
-- **`parlay verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
-- **`parlay save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
+- **`parlay internal diff @{feature}`** — compares current sources to the saved baseline and classifies each buildfile component as `stable`, `dirty`, or `removed`. Source-of-truth for "what changed in design land."
+- **`parlay internal scan-generated {source-root}`** — walks the source tree, finds every file with a `parlay-component:` marker, returns `path → component` map. Source-of-truth for "which file belongs to which component." Files without a marker are user-owned and excluded.
+- **`parlay internal verify-generated @{feature}`** — compares each recorded generated file against its stored content hash from `.parlay/build/{feature}/.code-hashes.yaml`. Classifies as `stable`, `modified`, or `missing`. Source-of-truth for "did the user hand-edit a generated file."
+- **`parlay internal save-build-state @{feature} --source-root {source-root}`** — atomically commits both the source baseline and the code hashes after a successful end-to-end generation. This is the **only** sanctioned write path for either file.
 
-The skill calls the three read helpers before regenerating, then `parlay save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
+The skill calls the three read helpers before regenerating, then `parlay internal save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.
 
 **Multi-component (extended) files** — files produced by intelligent merge (step 14.5 Tier 2) carry a primary `parlay-component:` marker plus one or more `parlay-extends:` lines. These files belong to multiple components at once, with consequences for the read helpers:
 
-- `parlay scan-generated` reports the file's primary component AND its extending components. A single file path appears once but maps to multiple `(feature, component)` owners.
-- `parlay verify-generated` hashes the file as a unit; the file is `stable` only if every component named in its marker block (primary + all `parlay-extends:`) is currently `stable` per `parlay diff`. If ANY claimed component is dirty in the diff, the file requires regeneration via re-merge.
+- `parlay internal scan-generated` reports the file's primary component AND its extending components. A single file path appears once but maps to multiple `(feature, component)` owners.
+- `parlay internal verify-generated` hashes the file as a unit; the file is `stable` only if every component named in its marker block (primary + all `parlay-extends:`) is currently `stable` per `parlay internal diff`. If ANY claimed component is dirty in the diff, the file requires regeneration via re-merge.
 - Re-merge re-runs step 14.5 for the dirty component(s) against the current state of the file (which includes the other components' contributions). The agent must preserve all currently-claimed components in the resulting file; dropping any without explicit removal would silently un-extend the file.
 - A component being `removed` in the diff means its claim on the file should be revoked: drop its `parlay-extends:` line and remove the spans it owned (identified by per-function markers if present). If the removed component was the primary owner, ownership transfers to the first remaining `parlay-extends:` line, which is promoted to the primary marker.
 
-**The very first generation** of a feature is detected by `parlay verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
+**The very first generation** of a feature is detected by `parlay internal verify-generated` returning `has_hashes: false`. In that case there are no stable components to preserve and nothing to verify — treat every component as new and regenerate everything. `parlay internal diff` may report components as `stable` on a first run (if `parlay build-feature` left a baseline behind, which it shouldn't anymore but might from older runs) — `verify-generated`'s `has_hashes` field is the authoritative signal for "is there committed code state?"
 
 If **any** generated file is reported as `modified` by verify-generated — whether its component is stable or dirty — the user has hand-edited it. **Do not** silently overwrite it. Surface the situation and let the user choose: overwrite, skip, or diff. The `parlay-component:` marker is the source of truth for "this file is generated"; absence of the marker means the file is user-owned and must never be touched.
 
@@ -417,11 +441,11 @@ Because re-emission is only *functionally* deterministic (see "Determinism contr
 
 ## Why save-build-state is at the end (and only at the end)
 
-The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) have a **consistency invariant**: they must always represent the same point in time — the end of a successful end-to-end generation. If either file is updated independently of the other, subsequent `parlay diff` and `parlay verify-generated` calls describe inconsistent states and the agent gets stuck (e.g., diff says "stable" but no code exists).
+The baseline (`.baseline.yaml`) and the code-hashes sidecar (`.code-hashes.yaml`) have a **consistency invariant**: they must always represent the same point in time — the end of a successful end-to-end generation. If either file is updated independently of the other, subsequent `parlay internal diff` and `parlay internal verify-generated` calls describe inconsistent states and the agent gets stuck (e.g., diff says "stable" but no code exists).
 
 Earlier versions of the skill saved the baseline at the end of `build-feature`, before code generation. That broke the invariant: after build-feature ran but before generate-code ran, the baseline said "this source state is committed" but no code state existed for that source state. The next run would see all components as stable and skip everything.
 
-The fix is structural: the baseline and code-hashes are written together by a single command (`parlay save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
+The fix is structural: the baseline and code-hashes are written together by a single command (`parlay internal save-build-state`) at the end of `generate-code`, only after tests pass. The two underlying writes use the write-then-rename pattern for atomicity, so a partial failure leaves the previous state intact. If tests fail, neither file is written — the next run starts from the same state as before, so retrying is safe and deterministic.
 
 ## Error Handling
 
@@ -440,7 +464,7 @@ The fix is structural: the baseline and code-hashes are written together by a si
 <!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
 <!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
 
-When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
+When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay internal check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
 
 | Code | When it fires |
 |---|---|

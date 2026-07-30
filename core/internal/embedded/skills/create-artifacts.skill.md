@@ -88,6 +88,20 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 
 6. **Report** — Confirm which artifacts were created and what the next pipeline step is (`/parlay-build-feature @{feature}`).
 
+   When you are running as a phase module, the report is the `phase-boundary` decision request you return. Carry an `artifacts:` list on it naming exactly what you wrote:
+
+   ````
+   ```yaml parlay-decision
+   kind: phase-boundary
+   phase: artifacts
+   artifacts: [domain-model, surface]
+   question: "Artifacts phase complete. Advance to build?"
+   ...
+   ```
+   ````
+
+   The list is not decoration and it is not the same as the recommended set from step 4 — the designer may have overridden it, and what matters downstream is what is on disk. The driver reads it to decide which follow-on options to offer at the boundary; `domain-model` in particular earns an offer to open the editor before the build phase reads the model. Report the names, not the filenames: `domain-model`, `surface`, `capabilities`, `infrastructure`.
+
 ## Error Handling
 
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
