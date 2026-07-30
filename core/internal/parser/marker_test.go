@@ -350,3 +350,66 @@ func TestParseMarker_BlockCommentDoesNotOverreach(t *testing.T) {
 		t.Errorf("parsed a marker from a non-marker comment: %+v", m)
 	}
 }
+
+// A Tier-2 merged file carries a primary feature plus one or more
+// parlay-extends: lines. Nothing parsed those and the validity gate did not
+// count them, so such a file read as user-owned: never hashed, never
+// verifiable, silently clobberable on the next generation.
+func TestExtendsAloneIdentifiesAGeneratedFile(t *testing.T) {
+	const src = `// parlay-feature: studio-support
+// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
+// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+
+package commands
+`
+	m, err := parseMarkerFromReader(strings.NewReader(src), "x.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m == nil {
+		t.Fatal("a file claimed by parlay-extends: is generated, not user-owned")
+	}
+	if len(m.Extends) != 2 {
+		t.Fatalf("Extends = %v, want both lines — matchField returns one value per line, so these must append", m.Extends)
+	}
+	// Stored verbatim: the live shapes differ in arity, and a parser that
+	// split them into feature+component would drop what it could not fit.
+	if m.Extends[0] != "studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts" {
+		t.Errorf("Extends[0] = %q, want the value as written", m.Extends[0])
+	}
+}
+
+func TestCrossCuttingAloneIdentifiesAGeneratedFile(t *testing.T) {
+	const src = `// parlay-cross-cutting: approvals/review-queue/audit-trail-on-status-changes
+
+package audit
+`
+	m, err := parseMarkerFromReader(strings.NewReader(src), "x.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m == nil {
+		t.Fatal("a file claimed by parlay-cross-cutting: is generated")
+	}
+	if len(m.CrossCutting) != 1 {
+		t.Fatalf("CrossCutting = %v", m.CrossCutting)
+	}
+}
+
+// parlay-feature: on its own must NOT claim a file. It names which feature a
+// file relates to, not that parlay wrote it — counting it would sweep in
+// hand-written files that merely mention their feature, and parlay would
+// then consider itself free to overwrite them.
+func TestFeatureAloneDoesNotClaimAFile(t *testing.T) {
+	const src = `// parlay-feature: expenses-list
+
+package handwritten
+`
+	m, err := parseMarkerFromReader(strings.NewReader(src), "x.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m != nil {
+		t.Errorf("parlay-feature: alone must not mark a file as generated, got %+v", m)
+	}
+}
