@@ -84,10 +84,15 @@ type diffOutput struct {
 	// "changed" | "stable" | "new" | "removed" value (same shape and
 	// semantics as Sections). Advisory only — computeComponentImpact
 	// does not consult this to mark any component/cross-cutting entry
-	// dirty; a hard codegen gate over these artifacts is being specced
-	// separately. This is the real freshness signal for these three
-	// artifacts — the buildfile schema's documented source-signatures:
-	// mechanism was found to be aspirational and was never implemented.
+	// dirty, and nothing here blocks a run.
+	//
+	// It used to claim the buildfile schema's source-signatures: mechanism "was
+	// found to be aspirational and was never implemented", and that a hard gate
+	// "is being specced separately". Neither is true: source-signatures: is the
+	// hard gate, enforced by generate-code.skill.md step 11.6, which refuses to
+	// emit for a feature whose recomputed hashes do not match. It is skill-side
+	// because codegen is skill-side. What is advisory is this — the signal that
+	// informs diff's regenerate/preserve recommendation.
 	AdvisorySources map[string]string `json:"advisory_sources,omitempty"`
 }
 

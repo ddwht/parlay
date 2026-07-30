@@ -777,3 +777,54 @@ func hasYAMLFieldLine(body, field string) bool {
 	}
 	return false
 }
+
+// TestConformance_FreshnessGateStaysSkillEnforced holds the one claim that makes
+// source-signatures: honest.
+//
+// buildfile.schema.md documents it as a hard per-feature gate and says plainly
+// that no CLI subcommand implements it — "the gate itself stays skill-mechanical,
+// not CLI". That is true only while generate-code.skill.md actually carries the
+// gate. If the step were dropped, nothing in Go would notice, because there is no
+// Go implementation to break: `parlay generate-code` is a pointer at the skill.
+// The mechanism would become genuinely aspirational and the schema would become
+// the overclaim two Go comments already mistakenly accused it of being.
+//
+// So this asserts the skill still describes the comparison and still names the
+// refusal. Anchored on the artifact name and the error code — both closed
+// identifiers — rather than on the step number or its prose, so the gate can be
+// rewritten or renumbered freely.
+func TestConformance_FreshnessGateStaysSkillEnforced(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var codegen string
+	for _, s := range skills {
+		if s.Name == "generate-code" {
+			codegen = string(s.Content)
+		}
+	}
+	if codegen == "" {
+		t.Fatal("generate-code is missing from the embedded skill set")
+	}
+
+	// The input it compares against.
+	if !strings.Contains(codegen, "source-signatures") {
+		t.Error("generate-code no longer mentions source-signatures: — buildfile.schema.md " +
+			"documents it as a hard gate enforced here, and nothing else enforces it")
+	}
+	// The refusal, which is what makes it a gate rather than a report.
+	if !strings.Contains(codegen, "stale-buildfile") {
+		t.Error("generate-code no longer names stale-buildfile — a freshness check that " +
+			"cannot refuse is not a gate")
+	}
+	// And the schema has to keep saying where enforcement lives, or a reader looks
+	// for a CLI subcommand that has never existed.
+	buildfile, err := ReadSchema("buildfile.schema.md")
+	if err != nil {
+		t.Fatalf("read buildfile.schema.md: %v", err)
+	}
+	if !strings.Contains(string(buildfile), "source-signatures") {
+		t.Error("buildfile.schema.md no longer documents source-signatures:")
+	}
+}

@@ -71,12 +71,25 @@ type HashedSources struct {
 	// content hashes for capabilities.yaml, infrastructure.md, and
 	// surface.yaml — advisory only. There is no per-operation or
 	// per-fragment granularity here the way SurfaceFragments has for
-	// surface.md; the buildfile schema's own source-signatures:
-	// mechanism was found to be aspirational (never implemented), and
-	// these three fields are the real advisory freshness signal for
-	// those artifacts until a hard codegen gate is specced separately.
-	// Empty string means the file didn't exist when the baseline was
-	// captured.
+	// surface.md. Empty string means the file didn't exist when the
+	// baseline was captured.
+	//
+	// This comment used to say the buildfile schema's source-signatures:
+	// mechanism "was found to be aspirational (never implemented)", and that
+	// these fields were the real freshness signal "until a hard codegen gate is
+	// specced separately". Both halves were wrong, and wrong in a way that
+	// invited someone to delete a live mechanism. source-signatures: IS the hard
+	// gate: generate-code.skill.md step 11.6 reads it, recomputes each artifact's
+	// hash, and refuses to emit for the feature on mismatch with a non-zero exit.
+	// It is enforced by the skill rather than by Go because codegen is a skill —
+	// `parlay generate-code` is a twenty-line pointer at it — so "no Go code does
+	// this" was mistaken for "nothing does this".
+	//
+	// The two mechanisms are deliberately distinct and buildfile.schema.md says
+	// so at length: source-signatures: is a hard per-feature gate that blocks
+	// emission, HashedSources is an advisory component-level signal that informs
+	// `parlay internal diff` and blocks nothing. Do not unify one away against
+	// the other.
 	Capabilities   string `yaml:"capabilities,omitempty"`
 	Infrastructure string `yaml:"infrastructure,omitempty"`
 	SurfaceYAML    string `yaml:"surface-yaml,omitempty"`
