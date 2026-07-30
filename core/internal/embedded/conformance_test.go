@@ -380,15 +380,9 @@ var knownUnreachableValidators = map[string]string{
 
 	"ValidateBuildfileDeep": "v1 leftover returning []string; every command reaches ValidateBuildfileDeepStructured instead. Sharpest case on this list: seven tests in validate_test.go call it, so they report confidence about a path the tool never executes. Deleting it means repointing those tests at the structured entry point — which is the actual win, not the deletion.",
 
-	"ValidateInfrastructureDeep": "the non-Deep sibling ValidateInfrastructure is what `validate --type infrastructure` reaches. Determine whether the Deep variant adds a rule the shallow one lacks; if it does, wire it behind --deep like the buildfile pair, and if it does not, delete it.",
+	"ValidateAdapterSetLinks": "not merely uncalled — it has no possible caller. It consumes []CrossKindEdge, and nothing in the tree produces a CrossKindEdge: the type is declared in this same file and never constructed outside tests. So the missing piece is the edge extractor that projects buildfile edges crossing adapter kinds, not a call site. Feature work, not wiring.",
 
-	"ValidateAdapterSetLinks": "multi-target machinery. `validate --type adapter-set` reaches ValidateAdapterSet but not the link check, so cross-slot references in an adapter-set are unvalidated. Wire into that same command; it is the natural home and needs no new surface.",
-
-	"ValidateBlueprintStrategy": "closes a documented gap directly — blueprint-strategy-unknown is in knownUnimplementedCodes precisely because this validator is never called. Wiring it into blueprint validation removes an entry from both lists at once, which makes it the highest-value item here.",
-
-	"CheckVocabularyBlockParity": "adapter-hygiene check comparing componentVocabulary:/tokens: against the vocabulary: block. `validate --type adapter` now exists (it was added for the toolchain rules) and is the obvious home; this predates it.",
-
-	"CheckCrossAdapterParity": "layout parity across adapters in a multi-target project. No command validates a layout against more than one adapter today, so unlike the others this one has no existing surface to attach to — it needs the multi-target validation path first.",
+	"CheckCrossAdapterParity": "same shape as ValidateAdapterSetLinks: no command validates a layout against more than one adapter, so there is no multi-adapter context to call it from. Needs the multi-target validation path to exist first; wiring it to a single-adapter caller would make it assert nothing.",
 
 	"ValidateTestcasesV2": "there is no `validate --type testcases`, so nothing checks a testcases.yaml against its schema; the build phase writes it and only the coverage walker reads it. Adding the type is small and would make the v2 suite-shape rules enforceable.",
 }

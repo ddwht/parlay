@@ -35,7 +35,7 @@ var validateProject bool
 
 func init() {
 	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, page, layout")
-	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile only)")
+	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile, infrastructure)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
 	// parlay-feature: parlay-tool/cross-cutting-target-paths
@@ -146,7 +146,16 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	case "yaml":
 		validator = agent.ValidateYAML
 	case "infrastructure":
-		validator = agent.ValidateInfrastructure
+		// --deep parses fragments and reports structured errors plus
+		// portability warnings; the shallow form only checks that headings and
+		// **Behavior**: fields exist. The deep variant had no caller at all, so
+		// every rule it implements was unenforceable — the same shape as the
+		// buildfile pair, which has had a --deep switch all along.
+		if validateDeep {
+			validator = validateInfrastructureDeepAdapter
+		} else {
+			validator = agent.ValidateInfrastructure
+		}
 	case "domain-model":
 		// parlay-feature: studio-support/domain-model-yaml-migration
 		// parlay-component: validate (extends domain-model-validate-cli-type)
@@ -547,13 +556,63 @@ func validateAdapterFile(path string, content []byte) error {
 	if err := yaml.Unmarshal(content, &doc); err != nil {
 		return fmt.Errorf("adapter YAML parse error: %w", err)
 	}
-	errs := agent.ValidateToolchain(doc.Toolchain, doc.FileConventions.SourceRoot)
-	if len(errs) == 0 {
+	var msgs []string
+	for _, e := range agent.ValidateToolchain(doc.Toolchain, doc.FileConventions.SourceRoot) {
+		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Code, e.Message))
+	}
+
+	// Cross-block parity: componentVocabulary:/tokens: are the authoritative
+	// declaration, vocabulary: is the Design Loop's derivation target, and an
+	// author who edits one and forgets the other gets a silently stale
+	// vocabulary. The check has existed since schema-consolidation and was
+	// reachable from nowhere — `validate --type adapter` did not exist until
+	// the toolchain rules needed it, so there was no command to attach it to.
+	outcomes, perr := agent.CheckVocabularyBlockParity(agent.ModeAuthoring, path)
+	if perr != nil {
+		msgs = append(msgs, fmt.Sprintf("vocabulary-parity-unreadable: %v", perr))
+	}
+	for _, o := range outcomes {
+		if o.Severity == agent.SeverityError {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
+		}
+	}
+
+	if len(msgs) == 0 {
 		return nil
 	}
+	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+}
+
+// validateInfrastructureDeepAdapter bridges ValidateInfrastructureDeep's
+// (errors, portabilityWarnings) return into the agent.Validator shape the
+// command's dispatch table expects. Portability warnings are advisory and do
+// not fail the command.
+func validateInfrastructureDeepAdapter(path string, content []byte) error {
+	errs, warnings := agent.ValidateInfrastructureDeep(path)
 	var msgs []string
 	for _, e := range errs {
+		// capabilities-prose-only is advisory, not a failure. An
+		// infrastructure.md containing only architectural prose — boundaries,
+		// probes, allowlists, dependency pins — is one of the documented valid
+		// artifact shapes; capabilities.yaml and infrastructure.md are
+		// co-equal, not alternatives with a preferred one. The code exists to
+		// say migrate-capabilities has nothing to extract here, which is
+		// information, and grading it blocking would reject a correct file.
+		//
+		// It carries no entry in ruleSeverityTable, so it never got a severity
+		// at all; that is why wiring the deep validator surfaced it as an error
+		// on the first real file it saw.
+		if e.Code == "capabilities-prose-only" {
+			fmt.Fprintf(os.Stderr, "[INFO] %s: %s\n", e.Code, e.Message)
+			continue
+		}
 		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Code, e.Message))
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "[WARN] portability: %s / %s — %s\n", w.Fragment, w.Field, w.Suggestion)
+	}
+	if len(msgs) == 0 {
+		return nil
 	}
 	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
 }

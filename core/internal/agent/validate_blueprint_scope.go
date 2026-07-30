@@ -122,14 +122,25 @@ func ValidateBlueprintScope(mode ValidationMode, path string, content []byte) []
 			"auth.strategy": typed.Auth.Strategy,
 			"errors.retry":  typed.Errors.Retry,
 		}
+		// Delegate rather than re-implement. This loop used to inline the
+		// closed-vocab comparison, which meant blueprint-strategy-unknown had
+		// two implementations and ValidateBlueprintStrategy — the documented
+		// one — was called from nowhere. Its supports half was therefore dead
+		// code, and blueprint-strategy-unsupported could never fire even
+		// though blueprint.schema.md documents it.
+		//
+		// adapterSupport is nil because the scope check has no adapter in
+		// scope; the supports half stays inert until a caller that knows the
+		// adapter passes one. That is a narrower gap than a whole unreachable
+		// validator, and an honest one.
 		for _, s := range blueprintStrategySettings {
 			value := strategyValues[s.path]
 			if value == "" {
 				continue
 			}
-			if !s.vocab[value] {
-				outcomes = append(outcomes, NewOutcome(mode, "blueprint-strategy-unknown",
-					fmt.Sprintf("%s: %s = %q is outside the closed vocabulary", path, s.path, value)))
+			for _, o := range ValidateBlueprintStrategy(mode, s.path, value, s.vocab, nil) {
+				o.Message = fmt.Sprintf("%s: %s", path, o.Message)
+				outcomes = append(outcomes, o)
 			}
 		}
 	}
@@ -154,6 +165,14 @@ func ValidateBlueprintStrategy(mode ValidationMode, setting, value string, strat
 	if !strategyVocab[value] {
 		outcomes = append(outcomes, NewOutcome(mode, "blueprint-strategy-unknown",
 			fmt.Sprintf("%s = %q is outside the closed vocabulary", setting, value)))
+		return outcomes
+	}
+	// A nil adapterSupport means "no adapter in scope", not "the adapter
+	// supports nothing". Without this, calling the vocab half from a context
+	// that has no adapter — which is every context today — would report every
+	// legal strategy as unsupported. Same missing-means-unknown rule the
+	// baseline drift check uses for absent hashed sources.
+	if adapterSupport == nil {
 		return outcomes
 	}
 	if !adapterSupport[value] {
