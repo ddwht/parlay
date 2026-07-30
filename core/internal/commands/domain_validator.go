@@ -1,5 +1,14 @@
 // parlay-feature: domain-model-editor/domain-model-editor-validation
 // parlay-component: cross-cutting/out-of-process-validate-endpoint
+//
+// The component name says out-of-process and the mechanism is not, which is
+// deliberate rather than overlooked. The identifier is a spec anchor: it is named
+// by studio/.parlay/build/domain-model-editor/domain-model-editor-validation/
+// buildfile.yaml and its testcases, and the marker-to-buildfile correspondence is
+// what the coverage and drift checks read. Renaming it here alone would break
+// that correspondence; renaming it properly is a spec migration across those
+// artifacts, which is not this change. Recorded so the next reader knows the
+// staleness was priced rather than missed.
 
 package commands
 

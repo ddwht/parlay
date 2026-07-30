@@ -47,23 +47,17 @@ func postValidate(t *testing.T, router http.Handler, body string) *httptest.Resp
 	return w
 }
 
-// --- file-exists cases ------------------------------------------------------
-
-// TestValidationSourceFilesExist mirrors the file-exists testcases: the
-// subprocess wrapper and the parity suite live in this package.
+// The file-exists suite is gone. TestValidationSourceFilesExist asserted that
+// validate.go and parity_test.go were present in this directory — a testcases-
+// derived check from when the file layout was itself the deliverable. Once
+// parity_test.go moved to core/internal/commands, repointing it at this file left
+// a test asserting its own existence, which cannot fail for any reason worth
+// knowing about. Deleted rather than repaired.
 //
-// no_core_import_test.go is deliberately gone. It walked the studio module and
-// failed on any import of Core, enforcing a boundary that existed because
-// Studio shipped as its own Go module and reached Core only out of process.
-// With one module there is no boundary left to guard — the guard would now fail
-// on every legitimate shared import.
-func TestValidationSourceFilesExist(t *testing.T) {
-	for _, f := range []string{"validate.go", "validate_test.go"} {
-		if _, err := os.Stat(f); err != nil {
-			t.Fatalf("expected source file %s to exist: %v", f, err)
-		}
-	}
-}
+// no_core_import_test.go went earlier and for a related reason: it walked the
+// studio module and failed on any import of Core, enforcing a boundary that
+// existed only because Studio was a separate Go module. With one module that
+// guard would fail on every legitimate shared import.
 
 // --- wrapper-level mapping (Validate over a faked subprocess) ---------------
 

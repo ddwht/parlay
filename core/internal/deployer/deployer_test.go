@@ -26,7 +26,7 @@ func TestCursorDeployer_Layout(t *testing.T) {
 	skills := testSkills()
 
 	d := &CursorDeployer{}
-	if err := d.Deploy(root, skills); err != nil {
+	if _, err := d.Deploy(root, skills); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestClaudeDeployer_Layout(t *testing.T) {
 	skills := testSkills()
 
 	d := &ClaudeDeployer{}
-	if err := d.Deploy(root, skills); err != nil {
+	if _, err := d.Deploy(root, skills); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestGenericDeployer_Layout(t *testing.T) {
 	skills := testSkills()
 
 	d := &GenericDeployer{}
-	if err := d.Deploy(root, skills); err != nil {
+	if _, err := d.Deploy(root, skills); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestSkillDescription_OnboardSkill(t *testing.T) {
 func TestClaudeDeployer_DeploysSubagents(t *testing.T) {
 	root := t.TempDir()
 	d := &ClaudeDeployer{}
-	if err := d.Deploy(root, testSkills()); err != nil {
+	if _, err := d.Deploy(root, testSkills()); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -200,7 +200,7 @@ func TestClaudeDeployer_DeploysSubagents(t *testing.T) {
 func TestCursorDeployer_DeploysSubagents(t *testing.T) {
 	root := t.TempDir()
 	d := &CursorDeployer{}
-	if err := d.Deploy(root, testSkills()); err != nil {
+	if _, err := d.Deploy(root, testSkills()); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -227,7 +227,7 @@ func TestCursorDeployer_DeploysSubagents(t *testing.T) {
 func TestGenericDeployer_EmbedsPhaseGroups(t *testing.T) {
 	root := t.TempDir()
 	d := &GenericDeployer{}
-	if err := d.Deploy(root, testSkills()); err != nil {
+	if _, err := d.Deploy(root, testSkills()); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestGenericDeployer_SkillsCarryExpandedActiveRootProse(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := (&GenericDeployer{}).Deploy(root, skills); err != nil {
+	if _, err := (&GenericDeployer{}).Deploy(root, skills); err != nil {
 		t.Fatalf("Deploy failed: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "AGENT_INSTRUCTIONS.md"))
@@ -327,7 +327,7 @@ func TestClaudeAndCursorProjectConfigBodyIdentical(t *testing.T) {
 	skills := testSkills()
 
 	claudeRoot := t.TempDir()
-	if err := (&ClaudeDeployer{}).Deploy(claudeRoot, skills); err != nil {
+	if _, err := (&ClaudeDeployer{}).Deploy(claudeRoot, skills); err != nil {
 		t.Fatalf("Claude Deploy failed: %v", err)
 	}
 	claudeMd, err := os.ReadFile(filepath.Join(claudeRoot, "CLAUDE.md"))
@@ -343,7 +343,7 @@ func TestClaudeAndCursorProjectConfigBodyIdentical(t *testing.T) {
 	claudeBody := strings.TrimSuffix(strings.TrimPrefix(string(claudeMd), parlayMarkerBegin+"\n"), parlayMarkerEnd+"\n")
 
 	cursorRoot := t.TempDir()
-	if err := (&CursorDeployer{}).Deploy(cursorRoot, skills); err != nil {
+	if _, err := (&CursorDeployer{}).Deploy(cursorRoot, skills); err != nil {
 		t.Fatalf("Cursor Deploy failed: %v", err)
 	}
 	cursorRule, err := os.ReadFile(filepath.Join(cursorRoot, ".cursor", "rules", "parlay.mdc"))

@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -45,18 +44,10 @@ func runSchemaDigest(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// writeSchemaDigest materializes DIGEST.md alongside the deployed schemas.
-// Called from init and upgrade so the digest can never be staler than the
-// schemas it summarizes — a stale cheat sheet is worse than none, because it
-// is trusted.
-func writeSchemaDigest(schemasPath string) error {
-	d, err := embedded.BuildSchemaDigest()
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(schemasPath, "DIGEST.md"),
-		[]byte(embedded.RenderSchemaDigestMarkdown(d)), 0644)
-}
+// writeSchemaDigest moved to embedded.WriteSchemaDigest, beside the builder and
+// renderer it calls. It was the only deployment write outside the packages
+// TestNoDirectWritePrimitives scans, and stayed unconditional after the rest were
+// converted — so a no-op upgrade rewrote DIGEST.md while reporting no changes.
 
 // schemasPathFor returns the deployed schema directory for a root.
 func schemasPathFor(root string) string {

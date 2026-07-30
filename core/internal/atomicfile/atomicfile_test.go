@@ -12,10 +12,15 @@ package atomicfile
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ddwht/parlay/internal/testsupport"
 )
 
 func TestWriteAtomicCreatesFileAndParentDirs(t *testing.T) {
@@ -138,23 +143,44 @@ func TestWriteIfChangedUnreadableFileIsAnError(t *testing.T) {
 }
 
 // TestNoDirectWritePrimitives is the guardrail. No non-test Go file in any
-// deployment package may call os.WriteFile, ioutil.WriteFile, or os.Create — the
+// deployment package may call os.WriteFile, os.Create, or ioutil.WriteFile — the
 // canonical path is this package.
 //
-// It scans by walking the module from this package's location, so a new
-// deployment package is covered the day it is added rather than the day someone
-// remembers to list it here. Anchored on go.mod rather than a ".." hop count: a
+// It walks each file's AST rather than grepping its text. The inherited version
+// did a substring scan, which reports any file that so much as names the
+// primitive: the first comment written here explaining why the digest write moved
+// mentioned "os.WriteFile" and failed the guard that comment was describing. A
+// guard that cannot distinguish a call from prose about a call will eventually be
+// silenced by rewording, which is the wrong repair.
+//
+// The package list is explicit, and that is the real weak point — worth stating
+// plainly, because it has already cost something. core/internal/commands writes
+// plenty of files legitimately (intents.md, buildfiles), so it cannot be scanned
+// wholesale; DIGEST.md was deployed from there and stayed an unconditional write
+// after the other nine were converted, with this guard green throughout. The fix
+// was to move that write into a package the list already covers, not to widen the
+// list. A deployment write outside these packages is still invisible here, so put
+// deployment writes in a deployment package.
+//
+// The root is anchored on go.mod rather than a ".." hop count from this file: a
 // guard whose root is computed from its own depth silently narrows when the file
-// moves, which is a worse failure than breaking.
+// moves, which is worse than breaking.
 func TestNoDirectWritePrimitives(t *testing.T) {
-	root := moduleRoot(t)
+	root, err := testsupport.ModuleRoot(".")
+	if err != nil {
+		t.Fatalf("module root: %v", err)
+	}
 	// The packages whose job is deploying files. atomicfile itself is exempt —
 	// it is the primitive being mandated.
 	guarded := []string{
 		filepath.Join("core", "internal", "deployer"),
 		filepath.Join("core", "internal", "embedded"),
 	}
-	forbidden := []string{"os.WriteFile", "ioutil.WriteFile", "os.Create("}
+	// receiver -> forbidden selectors on it.
+	forbidden := map[string]map[string]bool{
+		"os":     {"WriteFile": true, "Create": true},
+		"ioutil": {"WriteFile": true},
+	}
 
 	var checked int
 	for _, pkg := range guarded {
@@ -174,38 +200,35 @@ func TestNoDirectWritePrimitives(t *testing.T) {
 			if name == "dumpskills.go" {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(dir, name))
+			full := filepath.Join(dir, name)
+			file, err := parser.ParseFile(token.NewFileSet(), full, nil, parser.SkipObjectResolution)
 			if err != nil {
-				t.Fatalf("ReadFile %s: %v", name, err)
+				t.Fatalf("parse %s: %v", full, err)
 			}
 			checked++
-			for _, f := range forbidden {
-				if strings.Contains(string(data), f) {
-					t.Errorf("forbidden write primitive %q in %s/%s; use atomicfile.WriteIfChanged", f, pkg, name)
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
 				}
-			}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				recv, ok := sel.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				if forbidden[recv.Name][sel.Sel.Name] {
+					t.Errorf("forbidden write primitive %s.%s called in %s/%s; use atomicfile.WriteIfChanged",
+						recv.Name, sel.Sel.Name, pkg, name)
+				}
+				return true
+			})
 		}
 	}
 	// A scan that silently matched nothing would pass forever.
 	if checked == 0 {
 		t.Fatal("scanned no files; the guarded package list is wrong")
-	}
-}
-
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := filepath.Abs(".")
-	if err != nil {
-		t.Fatalf("abs: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no go.mod found walking up from %s", dir)
-		}
-		dir = parent
 	}
 }

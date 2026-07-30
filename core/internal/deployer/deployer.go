@@ -16,7 +16,11 @@ type Deployer interface {
 	Name() string
 
 	// Deploy writes skill files and agent config to the project.
-	Deploy(projectRoot string, skills []embedded.SkillEntry) error
+	// Deploy writes the agent surface and returns the number of files it
+	// actually wrote. The count is writes, not files considered: the
+	// content-hash skip means a re-deploy over unchanged sources returns 0, and
+	// reporting the considered count would describe work that did not happen.
+	Deploy(projectRoot string, skills []embedded.SkillEntry) (int, error)
 
 	// AgentSurfacePaths returns the deployer-owned paths (relative to a
 	// parlay root) that must NOT exist inside a child root — they live
@@ -186,10 +190,8 @@ func AllAgentSurfacePaths() []string {
 	return out
 }
 
-// atomicWrite writes content to path through the shared primitive, discarding
-// the wrote/skipped signal. Used by the call sites that regenerate a whole file
-// and have no count to report — the skip still happens, it just isn't tallied.
-func atomicWrite(path string, content []byte) error {
-	_, err := atomicfile.WriteIfChanged(path, content)
-	return err
+// atomicWrite writes content to path through the shared primitive and reports
+// whether it wrote, for the call sites that regenerate a whole file.
+func atomicWrite(path string, content []byte) (bool, error) {
+	return atomicfile.WriteIfChanged(path, content)
 }

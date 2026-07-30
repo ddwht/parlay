@@ -181,7 +181,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write schemas: %w", err)
 	}
 	schemaNames, _ := embedded.SchemaNames()
-	if err := writeSchemaDigest(schemasPath); err != nil {
+	if _, err := embedded.WriteSchemaDigest(schemasPath); err != nil {
 		return fmt.Errorf("failed to write schema digest: %w", err)
 	}
 
@@ -222,7 +222,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		dep, _ = deployer.Get("generic")
 	}
 	if dep != nil {
-		if err := dep.Deploy(".", skills); err != nil {
+		if _, err := dep.Deploy(".", skills); err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "  Warning: could not deploy skills: %s\n", err)
 		}
 	}

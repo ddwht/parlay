@@ -42,6 +42,19 @@ var retiredCoreSkills = map[string]bool{
 	"migrate-capabilities":      true,
 	"migrate-domain-model":      true,
 	"migrate-domain-operations": true,
+
+	// Retired in 0.2.0 with the editor's own deployer. design-loop was the only
+	// skill that deployer ever embedded, and the round-trip it drove — push a
+	// canonical layout to Figma via the host agent's MCP connection, read it
+	// back, classify the designer's edits — has no replacement on the parlay
+	// surface. Retiring it is what leaves that deployer with no work.
+	//
+	// Note the comment above about why this list exists at all: the case it
+	// describes is this skill. parlay-studio installed parlay-design-loop into
+	// the same .claude/skills/ a blanket prune would have swept. Core now owns
+	// the slug's retirement, which is the only way the prune can remove it
+	// deliberately rather than as collateral.
+	"design-loop": true,
 }
 
 // shouldPruneSkill reports whether a deployed parlay-<slug> skill directory

@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ddwht/parlay/internal/testsupport"
 )
 
 // fakeFS captures every (path -> content) the test wants the loader to read.
@@ -374,30 +376,16 @@ func traceFor(traces []Trace, key string) Source {
 }
 
 // studioRoot returns the module root — the directory the boundary scan must
-// cover.
-//
-// It walks up looking for go.mod rather than counting ".." hops. The hop count
-// was two, which addressed studio/ before the module merge; post-merge two hops
-// reach only internal/, so the invariant would have quietly stopped covering
-// core/ while still passing. A guard that narrows without failing is worse than
-// one that breaks, so the root is anchored on a landmark that moves with the
-// module instead of on this file's depth within it.
+// cover. Shared with the deployment guard in core/internal/atomicfile, which
+// needs the same anchored walk; see testsupport.ModuleRoot for why it is a
+// landmark search rather than a ".." hop count.
 func studioRoot(t *testing.T) string {
 	t.Helper()
-	dir, err := filepath.Abs(".")
+	root, err := testsupport.ModuleRoot(".")
 	if err != nil {
 		t.Fatalf("studioRoot: %v", err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("studioRoot: no go.mod found walking up from %s", dir)
-		}
-		dir = parent
-	}
+	return root
 }
 
 // packageRoot returns the absolute path of internal/editor/config/.

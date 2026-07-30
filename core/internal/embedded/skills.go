@@ -272,10 +272,34 @@ func PruneStaleModules(targetDir string) error {
 		return nil
 	}
 	for _, e := range entries {
-		if e.IsDir() || wanted[e.Name()] || !strings.HasSuffix(e.Name(), ".md") {
+		if e.IsDir() {
 			continue
 		}
-		if err := os.Remove(filepath.Join(targetDir, e.Name())); err != nil {
+		name := e.Name()
+		// Orphan .tmp debris. atomicfile writes through a `<target>.tmp`
+		// sibling, and a crash between its creation and the rename leaves one
+		// behind. For a target still in the set that self-heals — the next write
+		// opens the same .tmp with O_TRUNC and renames it — but a target that
+		// leaves the set is never written again, so its .tmp would sit in the
+		// user's .parlay/ indefinitely. This is where that gets collected.
+		//
+		// The editor's deployer swept these from a manifest path set at run
+		// start. There is no manifest here, and none is needed: the wanted-set
+		// check below already decides ownership, and a `<name>.md.tmp` whose
+		// `<name>.md` we would not deploy is ours to remove.
+		if strings.HasSuffix(name, ".md.tmp") {
+			if wanted[strings.TrimSuffix(name, ".tmp")] {
+				continue
+			}
+			if err := os.Remove(filepath.Join(targetDir, name)); err != nil {
+				return err
+			}
+			continue
+		}
+		if wanted[name] || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(targetDir, name)); err != nil {
 			return err
 		}
 	}

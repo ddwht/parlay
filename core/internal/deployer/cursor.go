@@ -31,12 +31,13 @@ func (d *CursorDeployer) AgentSurfacePaths() []string {
 	}
 }
 
-func (d *CursorDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
+func (d *CursorDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) (int, error) {
+	written := 0
 	// Deploy each skill as .cursor/skills/parlay-<name>/SKILL.md
 	for _, skill := range skills {
 		skillDir := filepath.Join(projectRoot, ".cursor", "skills", "parlay-"+skill.Name)
 		if err := os.MkdirAll(skillDir, 0755); err != nil {
-			return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
+			return written, fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 		}
 
 		content := fmt.Sprintf(`---
@@ -47,8 +48,12 @@ description: "Parlay: %s"
 %s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if _, err := atomicfile.WriteIfChanged(skillPath, []byte(content)); err != nil {
-			return fmt.Errorf("failed to write skill %s: %w", skillPath, err)
+		wrote, err := atomicfile.WriteIfChanged(skillPath, []byte(content))
+		if err != nil {
+			return written, fmt.Errorf("failed to write skill %s: %w", skillPath, err)
+		}
+		if wrote {
+			written++
 		}
 	}
 
@@ -63,16 +68,25 @@ description: "Parlay: %s"
 		wanted[s.Name] = true
 	}
 	if err := pruneStaleCursorSkills(projectRoot, wanted); err != nil {
-		return err
+		return written, err
 	}
 
 	// Deploy subagents to .cursor/agents/parlay-<name>.md
-	if err := writeCursorAgents(projectRoot); err != nil {
-		return err
+	agentWrites, err := writeCursorAgents(projectRoot)
+	if err != nil {
+		return written, err
 	}
+	written += agentWrites
 
 	// Write a single always-apply rule for project context
-	return writeCursorProjectRule(projectRoot, skills)
+	ruleWrote, err := writeCursorProjectRule(projectRoot, skills)
+	if err != nil {
+		return written, err
+	}
+	if ruleWrote {
+		written++
+	}
+	return written, nil
 }
 
 // pruneStaleCursorSkills removes any .cursor/skills/parlay-<slug>/
@@ -107,25 +121,30 @@ func pruneStaleCursorSkills(projectRoot string, wanted map[string]bool) error {
 	return nil
 }
 
-func writeCursorAgents(projectRoot string) error {
+func writeCursorAgents(projectRoot string) (int, error) {
 	agents, err := embedded.ReadAllAgents()
 	if err != nil {
-		return fmt.Errorf("failed to read embedded agents: %w", err)
+		return 0, fmt.Errorf("failed to read embedded agents: %w", err)
 	}
 	agentsDir := filepath.Join(projectRoot, ".cursor", "agents")
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .cursor/agents/: %w", err)
+		return 0, fmt.Errorf("failed to create .cursor/agents/: %w", err)
 	}
+	written := 0
 	for _, a := range agents {
 		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
-		if _, err := atomicfile.WriteIfChanged(path, a.Content); err != nil {
-			return fmt.Errorf("failed to write agent %s: %w", path, err)
+		wrote, err := atomicfile.WriteIfChanged(path, a.Content)
+		if err != nil {
+			return written, fmt.Errorf("failed to write agent %s: %w", path, err)
+		}
+		if wrote {
+			written++
 		}
 	}
-	return nil
+	return written, nil
 }
 
-func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) error {
+func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) (bool, error) {
 	header := "---\n" +
 		`description: "Parlay project context and available skills"` + "\n" +
 		"alwaysApply: true\n" +
@@ -135,7 +154,7 @@ func writeCursorProjectRule(projectRoot string, skills []embedded.SkillEntry) er
 
 	rulesDir := filepath.Join(projectRoot, ".cursor", "rules")
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .cursor/rules/: %w", err)
+		return false, fmt.Errorf("failed to create .cursor/rules/: %w", err)
 	}
 	return atomicWrite(filepath.Join(rulesDir, "parlay.mdc"), []byte(content))
 }

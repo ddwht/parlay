@@ -84,11 +84,6 @@ func TestSchemaNames_ReturnsAll(t *testing.T) {
 	}
 }
 
-func endsWithSchemaSuffix(name string) bool {
-	const suffix = ".schema.md"
-	return len(name) >= len(suffix) && name[len(name)-len(suffix):] == suffix
-}
-
 // TestWriteSchemas_SecondRunWritesNothing pins the content-hash skip at the
 // schema writer. Salvaged behaviour from the editor's deployer: an upgrade over
 // unchanged sources must rewrite nothing, so a changed mtime on a deployed

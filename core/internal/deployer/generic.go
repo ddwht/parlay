@@ -20,7 +20,7 @@ func (d *GenericDeployer) AgentSurfacePaths() []string {
 	return []string{"AGENT_INSTRUCTIONS.md"}
 }
 
-func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
+func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) (int, error) {
 	var content string
 	content += "# Parlay Agent Instructions\n\n"
 	content += "This project uses the Parlay intent-driven design toolkit.\n"
@@ -35,7 +35,7 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 	// parlay-loop detects this adapter and uses fresh-session handoff between groups.
 	agents, err := embedded.ReadAllAgents()
 	if err != nil {
-		return fmt.Errorf("failed to read embedded agents: %w", err)
+		return 0, fmt.Errorf("failed to read embedded agents: %w", err)
 	}
 	if len(agents) > 0 {
 		content += "---\n\n## Phase-Groups (parlay-loop)\n\n"
@@ -60,5 +60,12 @@ func (d *GenericDeployer) Deploy(projectRoot string, skills []embedded.SkillEntr
 		content += section
 	}
 
-	return atomicWrite(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content))
+	wrote, err := atomicWrite(filepath.Join(projectRoot, "AGENT_INSTRUCTIONS.md"), []byte(content))
+	if err != nil {
+		return 0, err
+	}
+	if wrote {
+		return 1, nil
+	}
+	return 0, nil
 }

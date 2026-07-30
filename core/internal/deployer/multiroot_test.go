@@ -61,7 +61,7 @@ func TestClaudeDeployer_MultiRootInCLAUDEmd(t *testing.T) {
 	})
 
 	d := &ClaudeDeployer{}
-	if err := d.Deploy(root, []embedded.SkillEntry{
+	if _, err := d.Deploy(root, []embedded.SkillEntry{
 		{Name: "sync", Content: []byte("# sync")},
 	}); err != nil {
 		t.Fatalf("Deploy: %v", err)
@@ -93,7 +93,7 @@ func TestClaudeDeployer_MultiRootSectionDisappearsAfterChildRemoval(t *testing.T
 		{Name: "web", RelativePath: "apps/web"},
 	})
 	d := &ClaudeDeployer{}
-	if err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
+	if _, err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
@@ -105,7 +105,7 @@ func TestClaudeDeployer_MultiRootSectionDisappearsAfterChildRemoval(t *testing.T
 	if err := os.Remove(filepath.Join(root, config.ParlayDir, config.RootsIndexFile)); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
+	if _, err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
 		t.Fatal(err)
 	}
 	second, _ := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
@@ -120,7 +120,7 @@ func TestGenericDeployer_MultiRootInAgentInstructions(t *testing.T) {
 		{Name: "web", RelativePath: "apps/web"},
 	})
 	d := &GenericDeployer{}
-	if err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
+	if _, err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "AGENT_INSTRUCTIONS.md"))
@@ -138,7 +138,7 @@ func TestCursorDeployer_MultiRootInRule(t *testing.T) {
 		{Name: "web", RelativePath: "apps/web"},
 	})
 	d := &CursorDeployer{}
-	if err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
+	if _, err := d.Deploy(root, []embedded.SkillEntry{}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, ".cursor", "rules", "parlay.mdc"))

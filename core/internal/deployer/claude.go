@@ -37,11 +37,12 @@ func (d *ClaudeDeployer) AgentSurfacePaths() []string {
 	}
 }
 
-func (d *ClaudeDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) error {
+func (d *ClaudeDeployer) Deploy(projectRoot string, skills []embedded.SkillEntry) (int, error) {
+	written := 0
 	for _, skill := range skills {
 		skillDir := filepath.Join(projectRoot, ".claude", "skills", "parlay-"+skill.Name)
 		if err := os.MkdirAll(skillDir, 0755); err != nil {
-			return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
+			return written, fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 		}
 
 		// Claude Code skills use YAML frontmatter + markdown body. The
@@ -55,8 +56,12 @@ description: "Parlay: %s"
 %s`, skill.Name, skill.Description, string(skill.Content))
 
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if _, err := atomicfile.WriteIfChanged(skillPath, []byte(content)); err != nil {
-			return fmt.Errorf("failed to write skill %s: %w", skillPath, err)
+		wrote, err := atomicfile.WriteIfChanged(skillPath, []byte(content))
+		if err != nil {
+			return written, fmt.Errorf("failed to write skill %s: %w", skillPath, err)
+		}
+		if wrote {
+			written++
 		}
 	}
 
@@ -73,16 +78,25 @@ description: "Parlay: %s"
 		wanted[s.Name] = true
 	}
 	if err := pruneStaleClaudeSkills(projectRoot, wanted); err != nil {
-		return err
+		return written, err
 	}
 
 	// Deploy subagents to .claude/agents/parlay-<name>.md
-	if err := writeClaudeAgents(projectRoot); err != nil {
-		return err
+	agentWrites, err := writeClaudeAgents(projectRoot)
+	if err != nil {
+		return written, err
 	}
+	written += agentWrites
 
 	// Write CLAUDE.md
-	return writeCLAUDEmd(projectRoot, skills)
+	claudeWrote, err := writeCLAUDEmd(projectRoot, skills)
+	if err != nil {
+		return written, err
+	}
+	if claudeWrote {
+		written++
+	}
+	return written, nil
 }
 
 // pruneStaleClaudeSkills removes any .claude/skills/parlay-<slug>/
@@ -122,25 +136,30 @@ func pruneStaleClaudeSkills(projectRoot string, wanted map[string]bool) error {
 	return nil
 }
 
-func writeClaudeAgents(projectRoot string) error {
+func writeClaudeAgents(projectRoot string) (int, error) {
 	agents, err := embedded.ReadAllAgents()
 	if err != nil {
-		return fmt.Errorf("failed to read embedded agents: %w", err)
+		return 0, fmt.Errorf("failed to read embedded agents: %w", err)
 	}
 	agentsDir := filepath.Join(projectRoot, ".claude", "agents")
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .claude/agents/: %w", err)
+		return 0, fmt.Errorf("failed to create .claude/agents/: %w", err)
 	}
+	written := 0
 	for _, a := range agents {
 		path := filepath.Join(agentsDir, "parlay-"+a.Name+".md")
-		if _, err := atomicfile.WriteIfChanged(path, a.Content); err != nil {
-			return fmt.Errorf("failed to write agent %s: %w", path, err)
+		wrote, err := atomicfile.WriteIfChanged(path, a.Content)
+		if err != nil {
+			return written, fmt.Errorf("failed to write agent %s: %w", path, err)
+		}
+		if wrote {
+			written++
 		}
 	}
-	return nil
+	return written, nil
 }
 
-func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) error {
+func writeCLAUDEmd(projectRoot string, skills []embedded.SkillEntry) (bool, error) {
 	parlaySection := parlayMarkerBegin + "\n" + renderProjectConfigBody(skills, projectRoot) + parlayMarkerEnd
 
 	claudePath := filepath.Join(projectRoot, "CLAUDE.md")

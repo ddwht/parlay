@@ -40,6 +40,7 @@ type upgradeResult struct {
 	SchemaCount  int
 	ModuleCount  int
 	SkillCount   int
+	PruneCount   int
 	DeployerName string
 }
 
@@ -102,8 +103,21 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 	if err != nil {
 		return upgradeResult{}, fmt.Errorf("write schemas: %w", err)
 	}
-	if err := writeSchemaDigest(schemasPath); err != nil {
+	// Retired schemas must actually leave existing projects. Without this,
+	// deleting one from the embedded set changed nothing on disk.
+	prunedSchemas, err := embedded.PruneStaleSchemas(schemasPath)
+	if err != nil {
+		return upgradeResult{}, fmt.Errorf("prune schemas: %w", err)
+	}
+
+	// The digest counts as a schema write: it is deployed beside them, from the
+	// same sources, and a run that refreshed it did change the schema surface.
+	digestWrote, err := embedded.WriteSchemaDigest(schemasPath)
+	if err != nil {
 		return upgradeResult{}, fmt.Errorf("write schema digest: %w", err)
+	}
+	if digestWrote {
+		schemaCount++
 	}
 
 	// Re-deploy the phase modules. These are skill sources that no longer
@@ -128,15 +142,17 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 		dep, _ = deployer.Get("generic")
 	}
 	if dep == nil {
-		return upgradeResult{SchemaCount: schemaCount, ModuleCount: moduleCount}, nil
+		return upgradeResult{SchemaCount: schemaCount, ModuleCount: moduleCount, PruneCount: prunedSchemas}, nil
 	}
-	if err := dep.Deploy(rootPath, skills); err != nil {
+	skillWrites, err := dep.Deploy(rootPath, skills)
+	if err != nil {
 		return upgradeResult{}, fmt.Errorf("deploy skills: %w", err)
 	}
 	return upgradeResult{
 		SchemaCount:  schemaCount,
 		ModuleCount:  moduleCount,
-		SkillCount:   len(skills),
+		SkillCount:   skillWrites,
+		PruneCount:   prunedSchemas,
 		DeployerName: dep.Name(),
 	}, nil
 }
@@ -166,10 +182,16 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "  modules — %d written\n", result.ModuleCount)
 	}
 	if result.SkillCount > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "  skills  — %d deployed for %s\n", result.SkillCount, result.DeployerName)
+		fmt.Fprintf(cmd.OutOrStdout(), "  skills  — %d written for %s\n", result.SkillCount, result.DeployerName)
 	}
-	if result.SchemaCount == 0 && result.ModuleCount == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "  schemas and modules already up to date — nothing rewritten")
+	// Removals are not writes, but they are changes: a run that pruned a retired
+	// schema did alter the project, and reporting "nothing rewritten" alone would
+	// be true and misleading at once.
+	if result.PruneCount > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  schemas — %d retired schema(s) removed\n", result.PruneCount)
+	}
+	if result.SchemaCount == 0 && result.ModuleCount == 0 && result.SkillCount == 0 && result.PruneCount == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "  already up to date — nothing rewritten")
 	}
 
 	// parlay-feature: parlay-tool/multi-adapter
