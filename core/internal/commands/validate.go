@@ -442,10 +442,84 @@ func runValidatePageType(cmd *cobra.Command, path string) error {
 	if err != nil {
 		return outputValidate(cmd, path, agent.ValidateLayoutParseError(err, loadValidateAdapter()))
 	}
-	if page.Layout == nil {
-		return outputValidate(cmd, path, nil)
+
+	// Cross-check the manifest's references against the surfaces.
+	//
+	// This checked nothing at all before: a manifest naming a page no feature
+	// targets, a region nothing declares and a fragment no surface produces
+	// validated OK. A manifest is a set of references; a validator that never
+	// resolves them is checking that the file is well-formed YAML, which the
+	// parser already established.
+	errs := validatePageReferences(cmd, path, page)
+
+	if page.Layout != nil {
+		errs = append(errs, agent.ValidateLayoutDeep(page.Layout, loadValidateAdapter())...)
 	}
-	return outputValidate(cmd, path, agent.ValidateLayoutDeep(page.Layout, loadValidateAdapter()))
+	return outputValidate(cmd, path, errs)
+}
+
+// validatePageReferences resolves every @feature/fragment reference in a page
+// manifest against the surfaces that would produce it.
+//
+// Findings are warnings, not errors, and deliberately so: a manifest listing a
+// fragment a feature has not written yet is the normal state of a page being
+// designed ahead of its features, and blocking it would make the manifest
+// unusable for the thing it is for. view-page reports the same drift at
+// assembly time. What was missing was any report at all.
+func validatePageReferences(cmd *cobra.Command, path string, page *parser.Page) []agent.ValidationError {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		// No resolved root — nothing to resolve references against. The
+		// well-formedness checks above still ran.
+		return nil
+	}
+	fragments, err := parser.ScanAllSurfaces(filepath.Join(cfg.Root.Path, config.SpecDir))
+	if err != nil {
+		return nil
+	}
+
+	// The filename stem is the page's identity, not the `name:`/heading. That
+	// is what view-page keys on (spec/pages/<page>.page.md) and what a
+	// surface fragment's `page:` names. Comparing against the heading instead
+	// reports "no fragment targets this page" for every manifest whose title
+	// is capitalised — which is all of them.
+	pageName := strings.TrimSuffix(filepath.Base(path), ".page.md")
+
+	produced := map[string]bool{}
+	targetsThisPage := 0
+	for _, f := range fragments {
+		produced[fmt.Sprintf("@%s/%s", f.Feature, parser.Slugify(f.Name))] = true
+		if f.Page == pageName {
+			targetsThisPage++
+		}
+	}
+
+	var errs []agent.ValidationError
+	if targetsThisPage == 0 {
+		errs = append(errs, agent.ValidationError{
+			Code:     "page-has-no-fragments",
+			Message:  fmt.Sprintf("no surface fragment targets page %q, so this manifest orders nothing", pageName),
+			Context:  "page",
+			Fix:      "set `page: " + pageName + "` on the surface fragments this page is meant to assemble, or delete the manifest",
+			Severity: "warning",
+		})
+	}
+
+	for _, region := range page.Regions {
+		for _, ref := range region.Components {
+			if produced[ref] {
+				continue
+			}
+			errs = append(errs, agent.ValidationError{
+				Code:     "page-fragment-unresolved",
+				Message:  fmt.Sprintf("%s is listed under region %q but no surface produces it", ref, region.Name),
+				Context:  "regions." + region.Name,
+				Fix:      "correct the reference, or add the fragment to the owning feature's surface",
+				Severity: "warning",
+			})
+		}
+	}
+	return errs
 }
 
 // runValidateLayoutType handles --type layout: validates a standalone

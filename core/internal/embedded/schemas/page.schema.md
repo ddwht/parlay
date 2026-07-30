@@ -102,6 +102,30 @@ The page manifest's own shape (the `# Page Name` / `**Owner**:` / `**Status**:` 
 - Tool warns on drift (new/removed fragments) but never auto-updates a locked manifest
 - Does not define layout dimensions or styling — that's the prototype framework's job
 
+## Error codes
+
+`parlay validate --type page` resolves every reference in the manifest against
+the surfaces that would produce it. Before this it resolved none of them: a
+manifest naming a page no feature targets, a region nothing declares, and a
+fragment no surface produces validated `OK`. A manifest *is* a set of
+references, so a validator that never resolves them was only re-checking that
+the parser had parsed.
+
+| Code | When it fires |
+|---|---|
+| `page-fragment-unresolved` (warning) | A listed `@feature/fragment` reference matches no fragment any surface produces |
+| `page-has-no-fragments` (warning) | No surface fragment carries `page: <this page>`, so the manifest orders nothing |
+
+Both are warnings on purpose. A manifest listing a fragment its feature has not
+written yet is the normal state of a page designed ahead of its features, and
+blocking it would make the manifest unusable for the thing it exists to do.
+`view-page` reports the same drift at assembly time; what was missing was any
+report at all.
+
+**Page identity is the filename stem** — `spec/pages/<page>.page.md` — not the
+`# ` heading. That is what `view-page` looks up and what a surface fragment's
+`page:` names; the heading is a display title and is usually capitalised.
+
 ## Parsing
 
 - Page identity: `# ` heading

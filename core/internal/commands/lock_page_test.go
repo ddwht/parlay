@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -194,5 +195,78 @@ func TestLockPageRelockRespectsStatus(t *testing.T) {
 	}
 	if m := manifestAt(t, dir); strings.Contains(m, "someone-else") {
 		t.Error("a locked manifest was overwritten")
+	}
+}
+
+// validate --type page resolved nothing at all: a manifest naming a page no
+// feature targets, a region nothing declares, and a fragment no surface
+// produces returned OK. A manifest IS a set of references, so a validator
+// that never resolves them was only re-checking that the parser had parsed.
+func TestValidatePageResolvesItsReferences(t *testing.T) {
+	dir := setupPageProject(t)
+	pagesDir := filepath.Join(dir, config.SpecDir, "pages")
+	if err := os.MkdirAll(pagesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A manifest wrong in every available way at once.
+	const bogus = `# Ghost
+
+**Owner**: nobody
+**Status**: locked
+
+## invented-region
+
+1. @nosuchfeature/nosuchfragment
+`
+	if err := os.WriteFile(filepath.Join(pagesDir, "ghost.page.md"), []byte(bogus), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := parser.ParsePageFile(filepath.Join(pagesDir, "ghost.page.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := testCommandWithContext(t, testContext(t))
+	got := validatePageReferences(cmd, filepath.Join(pagesDir, "ghost.page.md"), page)
+
+	codes := map[string]bool{}
+	for _, e := range got {
+		codes[e.Code] = true
+		if e.Severity != "warning" {
+			t.Errorf("%s should be a warning — a page designed ahead of its features is normal", e.Code)
+		}
+	}
+	for _, want := range []string{"page-has-no-fragments", "page-fragment-unresolved"} {
+		if !codes[want] {
+			t.Errorf("missing %s; got %+v", want, got)
+		}
+	}
+}
+
+// Page identity is the filename stem, not the `# ` heading. view-page looks
+// pages up as spec/pages/<page>.page.md and a surface fragment's `page:`
+// names the same thing; the heading is a display title and is usually
+// capitalised, so comparing against it reports "no fragment targets this
+// page" for essentially every real manifest.
+func TestValidatePageIdentityIsTheFilenameNotTheHeading(t *testing.T) {
+	dir := setupPageProject(t)
+	if _, err := runLockPageCmd(t, "", false, "home", "--owner", "design", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, config.SpecDir, "pages", "home.page.md")
+
+	page, err := parser.ParsePageFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Name == "home" {
+		t.Skip("heading and stem coincide; this test needs them to differ")
+	}
+	cmd := testCommandWithContext(t, testContext(t))
+	for _, e := range validatePageReferences(cmd, path, page) {
+		if e.Code == "page-has-no-fragments" {
+			t.Errorf("two fragments target this page; identity was taken from the %q heading instead of the filename", page.Name)
+		}
 	}
 }

@@ -120,6 +120,19 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,
 	},
+	// Page-manifest references that do not resolve. Warnings in both modes:
+	// a manifest listing a fragment its feature has not written yet is the
+	// normal state of a page designed ahead of its features, and blocking it
+	// would make the manifest unusable for the thing it exists to do.
+	// view-page reports the same drift at assembly time.
+	"page-fragment-unresolved": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"page-has-no-fragments": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 }
 
 // RuleSeverity returns the per-mode severity for a given rule code. Rules
