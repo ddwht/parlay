@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
@@ -178,7 +179,16 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// the rules land together.
 		validator = validateAdapterFile
 	case "capabilities":
-		validator = wrapOutcomeValidator(agent.ValidateCapabilities)
+		// The entity cross-reference needs the resolved root's domain model, so
+		// the entity names are gathered here and closed over. Resolution failure
+		// is not fatal: declaredCapabilityEntities returns nil, which disables
+		// only the cross-reference — a project with no domain model yet is a
+		// normal state, and refusing to validate capabilities at all because of
+		// it would be a worse answer than checking everything else.
+		entities := declaredCapabilityEntities(cmd)
+		validator = wrapOutcomeValidator(func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
+			return agent.ValidateCapabilities(mode, p, c, entities)
+		})
 	case "coverage-review":
 		// coverage-review validation is hash-aware and needs full inputs;
 		// surface a minimal YAML-shape check here.
@@ -645,4 +655,34 @@ func validateTestcasesAdapter(path string, content []byte) error {
 		return nil
 	}
 	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+}
+
+// declaredCapabilityEntities returns the entity names declared in the resolved
+// root's domain-model.yaml, or nil when there is no resolvable model.
+//
+// It exists so `validate --type capabilities` can perform the cross-artifact
+// check capabilities.schema.md documents: subject.entity and output.entity name
+// declared entities. Nothing loaded the model before, so the reference was
+// declared and never checked.
+//
+// Every failure path returns nil rather than an error. A missing or unparseable
+// domain model is a condition with its own diagnostics under `--type
+// domain-model`; surfacing it a second time here, as a capabilities failure,
+// would report one problem as two and point the author at the wrong file.
+func declaredCapabilityEntities(cmd *cobra.Command) []string {
+	pctx := config.FromCtx(cmd.Context())
+	if pctx == nil {
+		return nil
+	}
+	model, err := pctx.LoadDomainModel()
+	if err != nil || model == nil {
+		return nil
+	}
+	names := make([]string, 0, len(model.Entities))
+	for _, e := range model.Entities {
+		if e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }

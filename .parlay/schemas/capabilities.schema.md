@@ -53,7 +53,7 @@ operations:
 
 ## The `input.type` namespace
 
-`input.type` (e.g., `CreateTaskInput`) is **not** a reference into a closed vocabulary the way `subject.entity`/`output.entity` are references into `domain-model.yaml`'s declared entities. There is no `types:` registry anywhere in the parlay artifact set today — `input.type` is a free-form descriptive name, unvalidated by the capabilities validator, that exists purely for human and AI readability when reading the operation. The Go representation (`parser.CapabilityIO.Type`) is a plain string with no cross-reference check.
+`input.type` (e.g., `CreateTaskInput`) is **not** a reference into a closed vocabulary the way `subject.entity`/`output.entity` are references into `domain-model.yaml`'s declared entities — those two are cross-checked against the resolved root's domain model and fail with `capabilities-entity-undeclared`, which `input.type` has no equivalent of. There is no `types:` registry anywhere in the parlay artifact set today — `input.type` is a free-form descriptive name, unvalidated by the capabilities validator, that exists purely for human and AI readability when reading the operation. The Go representation (`parser.CapabilityIO.Type`) is a plain string with no cross-reference check.
 
 Concretely:
 
@@ -71,6 +71,8 @@ The capabilities validator enforces:
 | `capabilities-not-closed-form` | A capabilities document contains prose-only fragments instead of structured operations. Build mode fails; authoring mode warns. |
 | `capabilities-duplicate-operation-id` | Two operations within one capabilities.yaml share the same id. |
 | `capabilities-stub-unfilled` | An operation declares `kind: unknown` (the migrate-domain-operations stub kind). Build mode fails until the kind is set explicitly. |
+| `capabilities-subject-missing` | An operation declares no `subject.entity`. Required for every operation — the downstream wiring is derived from it. |
+| `capabilities-entity-undeclared` | `subject.entity` or `output.entity` names an entity that `domain-model.yaml` does not declare. Requires a resolvable domain model: with none, the cross-reference is skipped rather than failing every operation, since a project that has not authored a domain model yet is a normal state. |
 | `buildfile-operation-ref-unnormalized` | A downstream buildfile references an operation by bare local id rather than the `@<feature>/operation:<id>` form. |
 
 ## Policy-step-error tie rules

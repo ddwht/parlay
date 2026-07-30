@@ -59,11 +59,43 @@ var ClosedSetPolicies = map[string]bool{
 	"transaction-required": true,
 }
 
-// ValidateCapabilities walks every operation in capabilities.yaml against
-// the closed vocabularies, validates duplicate ids, and surfaces stub
-// operations that need explicit kind:.
-func ValidateCapabilities(mode ValidationMode, path string, content []byte) []ValidationOutcome {
+// ValidateCapabilities walks every operation in capabilities.yaml against the
+// closed vocabularies, validates duplicate ids, surfaces stub operations that
+// need explicit kind:, and cross-checks the entity references the schema has
+// always claimed: subject.entity and output.entity name entities declared in
+// domain-model.yaml.
+//
+// The schema states that as settled fact — it explains what input.type lacks by
+// contrast, "input.type is not a reference into a closed vocabulary the way
+// subject.entity/output.entity are references into domain-model.yaml's declared
+// entities". It was not true. parser.CapabilityOperation.Subject was decoded and
+// then read by nothing, so an operation could name an entity that did not exist
+// and every validator passed it. The failure surfaces later, in build-feature or
+// codegen, as a wiring problem with no obvious cause.
+//
+// declaredEntities is the entity names from the resolved root's
+// domain-model.yaml. A nil or empty slice disables the cross-reference rather
+// than failing every operation: a project with no domain model yet is a normal
+// state, and treating "no model" as "no valid entities" would make the check
+// fire hardest on projects that have not reached it. Absence of the model is a
+// separate condition with its own diagnostics; this check is about references
+// disagreeing with a model that exists.
+// There is deliberately no second entry point that skips the cross-reference.
+// An entity-blind ValidateCapabilities alongside an entity-aware one is two
+// validators with different contracts and one CLI wired to whichever was
+// convenient — the shape this consolidation found five times, and the reason
+// TestConformance_CanonicalValidatorsAreReachable exists. It caught this: the
+// first version of this change left the old signature in place as a wrapper, and
+// the test correctly reported an exported validator no command called. Callers
+// with no domain model pass nil.
+func ValidateCapabilities(mode ValidationMode, path string, content []byte, declaredEntities []string) []ValidationOutcome {
 	var outcomes []ValidationOutcome
+
+	known := make(map[string]bool, len(declaredEntities))
+	for _, e := range declaredEntities {
+		known[e] = true
+	}
+	entityList := strings.Join(declaredEntities, ", ")
 
 	caps, err := parser.ParseCapabilitiesBytes(path, content)
 	if err != nil {
@@ -99,6 +131,25 @@ func ValidateCapabilities(mode ValidationMode, path string, content []byte) []Va
 			outcomes = append(outcomes, NewOutcome(mode, "capabilities-stub-unfilled",
 				fmt.Sprintf("%s: operation %q has kind: unknown — fill in kind: explicitly before build mode", path, op.ID)))
 			continue
+		}
+
+		// subject: is Required. It was marked so in the field reference and
+		// enforced nowhere, so an operation with no subject validated cleanly and
+		// then had nothing for build-feature to wire against.
+		if strings.TrimSpace(op.Subject.Entity) == "" {
+			outcomes = append(outcomes, NewOutcome(mode, "capabilities-subject-missing",
+				fmt.Sprintf("%s: operation %q declares no subject.entity — every operation acts on a primary entity, and the wiring downstream is derived from it", path, op.ID)))
+		} else if len(known) > 0 && !known[op.Subject.Entity] {
+			outcomes = append(outcomes, NewOutcome(mode, "capabilities-entity-undeclared",
+				fmt.Sprintf("%s: operation %q has subject.entity %q, which is not declared in domain-model.yaml (declared: %s)", path, op.ID, op.Subject.Entity, entityList)))
+		}
+
+		// output.entity carries the same reference, and the schema names the two
+		// in one breath. A non-empty shape returns an entity; an empty one does
+		// not, so only check when the shape says something comes back.
+		if op.Output != nil && op.Output.Entity != "" && len(known) > 0 && !known[op.Output.Entity] {
+			outcomes = append(outcomes, NewOutcome(mode, "capabilities-entity-undeclared",
+				fmt.Sprintf("%s: operation %q has output.entity %q, which is not declared in domain-model.yaml (declared: %s)", path, op.ID, op.Output.Entity, entityList)))
 		}
 
 		// Closed-vocabulary checks.
