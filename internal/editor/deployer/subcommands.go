@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ddwht/parlay/studio/internal/config"
-	"github.com/ddwht/parlay/studio/internal/embedded"
+	"github.com/ddwht/parlay/internal/editor/config"
+	"github.com/ddwht/parlay/internal/editor/embedded"
 )
 
 // ErrParlayNotInitialized is the stable sentinel returned when Init or

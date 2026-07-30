@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/internal/editor/server"
 )
 
 // TestSubsystemName asserts the registered tool name is the stable

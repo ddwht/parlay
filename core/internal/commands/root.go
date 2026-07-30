@@ -292,6 +292,7 @@ func init() {
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(domainEditCmd)
 
 	// Agent-facing probes live under `parlay internal`; the AI-agent stubs
 	// stay runnable but out of the help listing. See internal_group.go.

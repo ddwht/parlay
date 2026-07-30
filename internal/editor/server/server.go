@@ -26,7 +26,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/ddwht/parlay/studio/internal/config"
+	"github.com/ddwht/parlay/internal/editor/config"
 )
 
 // Stable codes surfaced by the harness.

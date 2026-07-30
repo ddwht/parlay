@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/internal/editor/server"
 )
 
 // modelResponse is the JSON body of a successful load or save: the model plus

@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ddwht/parlay/studio/internal/config"
-	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/internal/editor/config"
+	"github.com/ddwht/parlay/internal/editor/server"
 )
 
 // TestPanicRecoveryReturnsServerErrorEnvelope asserts that a handler panic

@@ -8,7 +8,7 @@
 // and direct YAML loads of the two config paths
 // (<project-root>/.parlay-studio/config.yaml and the user-scoped
 // $XDG_CONFIG_HOME/parlay-studio/config.yaml) appear only inside
-// studio/internal/config. The boundary is the load-bearing invariant of
+// internal/editor/config. The boundary is the load-bearing invariant of
 // studio-config: keep all reads of STUDIO_* env vars and of either YAML
 // config file confined to this package so downstream tooling cannot
 // accidentally split the source-of-truth.
@@ -43,12 +43,12 @@ type fakeStat struct {
 	name   string
 }
 
-func (s fakeStat) Name() string       { return s.name }
-func (s fakeStat) Size() int64        { return 0 }
-func (s fakeStat) Mode() os.FileMode  { return 0 }
+func (s fakeStat) Name() string          { return s.name }
+func (s fakeStat) Size() int64           { return 0 }
+func (s fakeStat) Mode() os.FileMode     { return 0 }
 func (s fakeStat) ModTime() (t fileTime) { return }
-func (s fakeStat) IsDir() bool        { return s.isDir }
-func (s fakeStat) Sys() any           { return nil }
+func (s fakeStat) IsDir() bool           { return s.isDir }
+func (s fakeStat) Sys() any              { return nil }
 
 type fileTime struct{}
 
@@ -215,16 +215,19 @@ func TestXDGConfigHomeOverridesUserPath(t *testing.T) {
 }
 
 // --- Import boundary tests ---
-// TestImportBoundaryStudioEnvOnlyInConfig walks studio/ and fails if any
-// .go file outside studio/internal/config reads STUDIO_* env vars directly
+// TestImportBoundaryStudioEnvOnlyInConfig walks the module and fails if any
+// .go file outside internal/editor/config reads STUDIO_* env vars directly
 // via os.Getenv("STUDIO_...") or os.LookupEnv("STUDIO_...").
 // The "STUDIO_ string literal must appear in this file because the test
 // scans for it as a substring of source text.
 func TestImportBoundaryStudioEnvOnlyInConfig(t *testing.T) {
 	root := studioRoot(t)
 	violators := scanFiles(t, root, func(path string, src string) bool {
-		// Skip our own package.
-		if strings.Contains(path, "internal/config") {
+		// Skip our own package. The path moved with the module merge:
+		// studio/internal/config -> internal/editor/config, and the old
+		// substring no longer matches, so the package started reporting
+		// itself.
+		if strings.Contains(path, "internal/editor/config") {
 			return false
 		}
 		// Skip test files for the boundary test itself.
@@ -239,19 +242,19 @@ func TestImportBoundaryStudioEnvOnlyInConfig(t *testing.T) {
 			strings.Contains(src, `os.LookupEnv("STUDIO_`)
 	})
 	if len(violators) > 0 {
-		t.Fatalf("studio-config import-boundary violation: STUDIO_ env reads outside studio/internal/config: %v", violators)
+		t.Fatalf("studio-config import-boundary violation: STUDIO_ env reads outside internal/editor/config: %v", violators)
 	}
 }
 
 // TestImportBoundaryConfigYAMLLoadsOnlyInConfig walks studio/ and fails if
-// any .go file outside studio/internal/config decodes either of the two
+// any .go file outside internal/editor/config decodes either of the two
 // Studio config files directly. The substrings .parlay-studio/config.yaml
 // (the project-scoped path tail) and parlay-studio/config.yaml (the
 // user-scoped path tail) are the literal markers the scan looks for.
 func TestImportBoundaryConfigYAMLLoadsOnlyInConfig(t *testing.T) {
 	root := studioRoot(t)
 	violators := scanFiles(t, root, func(path string, src string) bool {
-		if strings.Contains(path, "internal/config") {
+		if strings.Contains(path, "internal/editor/config") {
 			return false
 		}
 		// Skip test files (see above).
@@ -262,7 +265,7 @@ func TestImportBoundaryConfigYAMLLoadsOnlyInConfig(t *testing.T) {
 			strings.Contains(src, "parlay-studio/config.yaml")
 	})
 	if len(violators) > 0 {
-		t.Fatalf("studio-config import-boundary violation: direct config-file reads outside studio/internal/config: %v", violators)
+		t.Fatalf("studio-config import-boundary violation: direct config-file reads outside internal/editor/config: %v", violators)
 	}
 }
 
@@ -278,7 +281,7 @@ func traceFor(traces []Trace, key string) Source {
 }
 
 // studioRoot walks up from this test's location to the studio module root.
-// The test file lives at studio/internal/config/loader_test.go so .. .. lands
+// The test file lives at internal/editor/config/loader_test.go so three .. land
 // at studio/.
 func studioRoot(t *testing.T) string {
 	t.Helper()
@@ -286,10 +289,14 @@ func studioRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("studioRoot: %v", err)
 	}
-	return filepath.Clean(filepath.Join(cwd, "..", ".."))
+	// Three levels up: internal/editor/config -> repo root. Was two, which
+	// pointed at studio/ before the module merge; post-merge two levels reaches
+	// only internal/, so the invariant would have stopped covering core/ —
+	// silently narrowing rather than failing.
+	return filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
 }
 
-// packageRoot returns the absolute path of studio/internal/config/.
+// packageRoot returns the absolute path of internal/editor/config/.
 // (Tests in the same package may consult this to read sibling source files
 // for grep-style invariants.)
 func packageRoot(t *testing.T) string {

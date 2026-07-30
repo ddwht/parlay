@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -154,9 +153,12 @@ func dispatchStudioHook(opts dispatchStudioHookOptions) error {
 		return fmt.Errorf("dispatch studio hook: unknown trio-command/mode %q/%q", opts.TrioCommand, opts.Mode)
 	}
 
-	subcommand, ok := trioToStudioSubcommand[opts.TrioCommand]
-	if !ok {
-		return fmt.Errorf("dispatch studio hook: no parlay-studio subcommand registered for trio %q", opts.TrioCommand)
+	// The trio map still gates which commands may offer the editor at all —
+	// it holds only create-domain-model now, the two entries whose surfaces
+	// were never built having been removed. What it no longer supplies is a
+	// subcommand name to exec.
+	if _, ok := trioToStudioSubcommand[opts.TrioCommand]; !ok {
+		return fmt.Errorf("dispatch studio hook: trio %q does not offer the editor", opts.TrioCommand)
 	}
 
 	fmt.Fprint(out, wording)
@@ -165,15 +167,12 @@ func dispatchStudioHook(opts dispatchStudioHookOptions) error {
 		return nil
 	}
 
-	return invokeStudioSubprocess(invokeStudioOptions{
-		BinaryPath: detection.BinaryPath,
-		Subcommand: subcommand,
-		ActiveRoot: opts.Pctx.Root.Path,
-		FeatureCtx: opts.FeatureCtx,
-		Stdin:      in,
-		Stdout:     out,
-		Stderr:     errOut,
-	})
+	// In-process. This used to shell out to a second binary via
+	// invokeStudioSubprocess, which meant locating it on PATH, checking its
+	// version, normalizing a start failure to exit code 127, and printing a
+	// launch-failure line when it exited non-zero. With one binary none of that
+	// has an analogue: the editor either returns an error or it does not.
+	return OpenDomainEditor(context.Background(), opts.Pctx.Root.Path)
 }
 
 // ttyInteractive returns true exactly when both stdin and stdout are
@@ -231,64 +230,4 @@ func readYNAnswer(in io.Reader) bool {
 		return false
 	}
 	return strings.HasPrefix(answer, "y")
-}
-
-// invokeStudioOptions packages the inputs to a single Studio
-// subprocess invocation. invokeStudioSubprocess is split out so it
-// can be exercised in isolation.
-type invokeStudioOptions struct {
-	BinaryPath string
-	Subcommand string
-	ActiveRoot string
-	FeatureCtx string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-
-	// Ctx bounds the subprocess lifetime. Production callers leave it
-	// nil — the hand-off waits for the designer to close Studio, which
-	// must not be time-bounded — and it defaults to context.Background()
-	// (never cancels), so production behavior is identical to a plain
-	// exec.Command. Tests supply a deadline-bearing context so a
-	// subcommand that blocks (e.g. one that boots the server harness
-	// instead of exiting) is killed rather than hanging the test.
-	Ctx context.Context
-}
-
-// invokeStudioSubprocess runs the configured parlay-studio
-// subcommand synchronously, inheriting stdin/stdout/stderr (or the
-// caller-supplied substitutes) and waits for it to exit. On
-// non-zero exit, prints the launch-failure line on stderr and
-// returns an error so the trio command's RunE propagates the
-// failure.
-func invokeStudioSubprocess(opts invokeStudioOptions) error {
-	args := []string{opts.Subcommand, "--root", opts.ActiveRoot}
-	if opts.FeatureCtx != "" {
-		args = append(args, opts.FeatureCtx)
-	}
-	ctx := opts.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	cmd := exec.CommandContext(ctx, opts.BinaryPath, args...)
-	cmd.Stdin = opts.Stdin
-	cmd.Stdout = opts.Stdout
-	cmd.Stderr = opts.Stderr
-
-	err := cmd.Run()
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			// Could not start at all (binary missing, permission
-			// denied). Surface as exit code 127 by convention.
-			exitCode = 127
-		}
-	}
-	if exitCode != 0 {
-		fmt.Fprintln(opts.Stderr, formatStudioLaunchFailure(opts.Subcommand, exitCode))
-		return fmt.Errorf("parlay-studio %s exited with code %d", opts.Subcommand, exitCode)
-	}
-	return nil
 }

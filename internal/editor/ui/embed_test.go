@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ddwht/parlay/studio/internal/config"
-	"github.com/ddwht/parlay/studio/internal/server"
-	"github.com/ddwht/parlay/studio/internal/ui"
+	"github.com/ddwht/parlay/internal/editor/config"
+	"github.com/ddwht/parlay/internal/editor/server"
+	"github.com/ddwht/parlay/internal/editor/ui"
 )
 
 // TestBundleSatisfiesUIBundle is the compile-time-plus-runtime check that the

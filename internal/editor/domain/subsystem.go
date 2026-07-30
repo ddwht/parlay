@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/internal/editor/server"
 )
 
 // toolName is the unique subsystem name the harness registers this tool

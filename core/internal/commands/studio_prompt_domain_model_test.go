@@ -55,91 +55,16 @@ func resolveParlayStudioBinary(t *testing.T) string {
 	return path
 }
 
-// TestInvokeStudioSubprocess_EndToEnd is the skip-until-binary
-// integration test. When parlay-studio is on PATH, it drives the
-// real invokeStudioSubprocess against the real binary and checks
-// the wait-and-resume contract, exit-code propagation, and the
-// failure-line wording on non-zero exit. When the binary is absent
-// (the world today, until Studio ships), it skips with a clear
-// message — the skipped count is the signal the dependency is still
-// pending. Skip is correct here because the body of the test
-// genuinely cannot run without the binary; there is no observable
-// behavior to assert about its absence beyond what the contract
-// test below already covers.
-func TestInvokeStudioSubprocess_EndToEnd(t *testing.T) {
-	binary := resolveParlayStudioBinary(t)
-	if binary == "" {
-		t.Skip("parlay-studio not on PATH")
-	}
-
-	// Studio is on PATH. Drive the real subprocess via
-	// invokeStudioSubprocess for the domain-edit subcommand. The
-	// helper passes --root and any feature context; we exercise the
-	// full launch-and-wait cycle.
-	t.Run("domain-edit propagates exit code and waits", func(t *testing.T) {
-		stdout := &bytes.Buffer{}
-		stderr := &bytes.Buffer{}
-		// Bound the subprocess: today's parlay-studio boots a blocking
-		// server harness for domain-edit and never exits on its own, so
-		// an unbounded invocation would hang this suite forever. With a
-		// deadline the subprocess is killed and surfaces through the
-		// non-zero-exit failure-line contract asserted below.
-		ctx, cancel := context.WithTimeout(context.Background(), studioProbeTimeout)
-		defer cancel()
-		err := invokeStudioSubprocess(invokeStudioOptions{
-			BinaryPath: binary,
-			Subcommand: "domain-edit",
-			ActiveRoot: t.TempDir(),
-			FeatureCtx: "",
-			Stdin:      strings.NewReader(""),
-			Stdout:     stdout,
-			Stderr:     stderr,
-			Ctx:        ctx,
-		})
-		// The contract: invokeStudioSubprocess returns nil on a
-		// zero exit, returns an error AND prints the failure line
-		// on a non-zero exit. Either outcome is acceptable here
-		// (the real binary's behavior is its own concern); the
-		// test asserts the dispatch surface stays consistent.
-		if err != nil {
-			// Non-zero exit path: the failure-line wording must
-			// appear on stderr verbatim and the error must name
-			// the subcommand.
-			gotErr := err.Error()
-			if !strings.Contains(gotErr, "parlay-studio domain-edit exited with code") {
-				t.Errorf("error wording = %q; want a 'parlay-studio domain-edit exited with code N' substring", gotErr)
-			}
-			gotStderr := stderr.String()
-			wantPrefix := "[ERR] parlay-studio domain-edit exited with code"
-			wantSuffix := "see Studio's output above. Trio-command artifact completed before Studio launched and is on disk."
-			if !strings.Contains(gotStderr, wantPrefix) || !strings.Contains(gotStderr, wantSuffix) {
-				t.Errorf("stderr failure line = %q; want prefix %q and suffix %q", gotStderr, wantPrefix, wantSuffix)
-			}
-		}
-	})
-}
-
-// TestParlayStudioSubcommandContract is the fail-hard red contract
-// test for the three subcommand names hard-coded in
-// trioToStudioSubcommand. Each case invokes
-// `parlay-studio <subcommand> --help` and asserts a non-error
-// exit. When the binary is absent from PATH, every case fails red
-// (not skip) — the absence of parlay-studio from PATH is itself a
-// contract violation while Studio is still pending, and a yellow
-// skipped result would let the contract drift unobserved. The
-// test auto-greens the moment Studio ships and is reachable on
-// PATH AND honors all three subcommand names; no test code change
-// is required when that happens.
+// The subprocess end-to-end suite that used to live here is gone with the
+// merge. It exercised invokeStudioSubprocess against a real parlay-studio on
+// PATH — exit-code propagation, the launch-failure line, the synthesized 127
+// for a start failure. None of those exist now: the editor is a function call,
+// so it either returns an error or it does not, and there is no second binary
+// to locate, version-check, or fail to start.
 //
-// Distinguished from TestInvokeStudioSubprocess_EndToEnd above:
-// that integration test cannot meaningfully run without the binary,
-// so skip is correct there; this contract test asserts a fact about
-// the binary's existence, so absence is a fail.
-//
-// Sits alongside the self-referential
-// TestTrioToStudioSubcommandTable in studio_hook_test.go: the
-// table test is the static check on the in-process map; this is
-// the external-binary contract check. Both are needed.
+// What replaced it is a direct call to OpenDomainEditor. The remaining suite
+// below still checks the surface contract that survives.
+
 func TestParlayStudioSubcommandContract(t *testing.T) {
 	// Derived from the map, not restated. The list used to be hard-coded with
 	// all three names, which let it diverge from what Core actually dispatches

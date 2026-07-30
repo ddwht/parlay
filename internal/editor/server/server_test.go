@@ -18,8 +18,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/ddwht/parlay/studio/internal/config"
-	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/internal/editor/config"
+	"github.com/ddwht/parlay/internal/editor/server"
 )
 
 // TestNewRejectsDuplicateToolNames asserts that server.New refuses to
