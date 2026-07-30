@@ -68,7 +68,11 @@ Codegen has **no TTY-conditional code paths and no interactive prompts** in any 
 Concretely:
 
 - **No TTY checks.** Codegen behaves identically with and without a controlling terminal. A no-TTY container produces output behaviorally equivalent to a local TTY run on the same source state.
-- **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt described in this skill (mount-strategy ambiguity, hand-edited file, etc.) is a **decision request returned to the orchestrator**, not a call codegen makes itself — the codegen execution is prompt-free. Where a step says "STOP and surface the situation" or "let the user choose", codegen halts and returns the choice to its caller, which owns all user interaction. This matters because codegen commonly runs inside a sub-agent where no interactive tool exists at all; a skill that tried to prompt from there would silently skip the gate instead of honoring it. The `--non-interactive` flag is silently accepted for compatibility but has no observable effect; running with or without it produces identical exit codes, the same testcases pass, and the same component tree is emitted.
+- **No interactive prompts.** Codegen never calls AskUserQuestion or any equivalent. Every prompt described in this skill (mount-strategy ambiguity, hand-edited file, etc.) is a **decision request returned to the orchestrator**, not a call codegen makes itself — the codegen execution is prompt-free. Where a step says "STOP and surface the situation" or "let the user choose", codegen halts and returns the choice to its caller, which owns all user interaction. This matters because codegen commonly runs inside a sub-agent where no interactive tool exists at all; a skill that tried to prompt from there would silently skip the gate instead of honoring it.
+
+  Codegen takes no `--non-interactive` flag of its own. It used to claim it accepted one "for compatibility" with no observable effect, which was worth deleting on its own terms: a flag documented as doing nothing is still a promise that something reads it, and nothing did. The property that sentence reached for is the one stated above — codegen has no interactive path to disable — and it holds without a flag to assert it.
+
+  The loop's `--non-interactive` is a different thing at a different layer, and it does reach this phase: it is threaded in so the decision requests raised here carry a `default:` where one is safe, and so the driver aborts rather than answers the `overwrite` and `failure` decisions this phase raises. That governs what the **orchestrator** does with a decision request. It adds no prompt here, because there was never one to add.
 - **Atomic output.** On any per-page failure within a run (stale buildfile, layout precheck refusal, missing binding), no new files are written for the run — a half-written prototype never reaches CI's verification step.
 - **Exit-code is the source of truth.** Process exit code is non-zero on any error path (stale buildfile, layout precheck refusal); zero on success. CI's pass/fail is derived from exit code, not from stdout pattern matching. Two CI workers running against the same source state produce identical exit codes and behaviorally-equivalent output (same testcases pass, same component tree emitted); lexical text may vary because the emitting AI agent is non-deterministic on text, but the CI pass/fail signal stays consistent. This governs generate-code's own output only — `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception with pinned-stable wording that `studio-cli-hooks` pattern-matches on; see that skill's step 6.
 
@@ -87,9 +91,22 @@ options:
   - id: <slug>
     label: "<what the user picks>"
     detail: "<the consequence, when it isn't obvious>"
+default: <id>               # advancement kinds ONLY — see below
 resume: "Re-enter with decision: <id>. <what is written so far>"
 ```
 ````
+
+**The `default:` field.** It names the one option id a driver running `--non-interactive` may take without asking. It exists so an unattended run has a defined answer rather than an inferred one, and it must be an id from your own `options:` list.
+
+Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.
+
+The other three kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
+
+- `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.
+- `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.
+- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.
+
+So: when you raise one of those three, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
 
 Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
 

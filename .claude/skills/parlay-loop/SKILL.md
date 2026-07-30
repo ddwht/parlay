@@ -11,6 +11,7 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 
 - `feature`: The feature reference in standard parlay form — `{feature}` for a top-level feature, `@{initiative}/{feature}` for a feature nested inside an initiative.
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
+- `--non-interactive` (optional): Run unattended — take the declared default on advancement decisions, and abort on decisions that have no safe default. See **Non-interactive mode**. Interactive is the default; the flag never makes a run quieter than this, only less attended.
 
 ## Subcommands
 
@@ -95,13 +96,31 @@ resume: "Re-enter with decision: <id>. Work completed so far is on disk."
 
 The driver then:
 
-1. Presents the decision with **AskUserQuestion**, using `options` verbatim and `context` as the framing. The driver may add options the phase could not know about (e.g. "Back up to dialogs"), but must not drop any.
+1. Presents the decision with **AskUserQuestion**, using `options` verbatim and `context` as the framing. The driver may add options the phase could not know about (e.g. "Back up to dialogs"), but must not drop any. Under `--non-interactive` it does not prompt — it takes the block's `default:` on the two advancement kinds and aborts on the other three (see **Non-interactive mode**).
 2. Resumes the same subagent with the chosen `id`, using the adapter's continue-an-agent primitive (on Claude Code, `SendMessage` to the running agent — its context survives, so the phase picks up exactly where it stopped). If the adapter has no such primitive, re-invoke the phase-group subagent with `decision: <id>` in the prompt; the phase re-reads state from disk, which is why `resume:` must say what is already written.
 3. If the decision ends the loop (`exit`, or a hard block), does **not** resume the subagent — it ends the loop per step 12.
 
 A phase that emits a decision request must have left the filesystem in a coherent state first: the decision is a pause, not a half-write. A phase that cannot pause safely must instead complete the safe option and report what it did.
 
 **Inline degradation.** If no subagent surface exists at all, the driver runs the phases inline in its own context. There, `AskUserQuestion` works, so the driver prompts directly at each decision point instead of round-tripping a decision request. This mode is slower to blow context but has no confirmation gap.
+
+## Non-interactive mode
+
+`--non-interactive` is for callers with nobody to ask: CI, a scheduled run, a batch over several features. It changes what the driver does with a decision request, and nothing else — the phases still raise every decision they would have raised, and the same work lands on disk.
+
+**Two decisions get answered from their own `default:`.** `phase-boundary` and `override` are the advancement decisions: one option is the recommendation and the rest are the user electing to intervene. Taking the recommendation is what the flag asked for. Read the id from the block's `default:` field — do not infer it from the option order, and do not fall back to "the first option" when the field is absent. A phase that should have declared a default and did not is a bug in that phase, and the correct response is the abort below, not a guess that happens to work.
+
+**Three decisions abort the run.** `ambiguity`, `overwrite`, and `failure` have no safe default, for the reasons the decision protocol gives: the cheapest reading of an ambiguity is exactly what the protocol forbids, either answer to an overwrite destroys something, and proceeding past a failed suite is what CI exists to prevent. On any of the three, do not answer it. Emit a single-line JSON envelope on stderr and end the loop with **exit 11** — the same code and shape `--ambiguity-as-signal` uses, so a CI wrapper needs no second convention:
+
+```json
+{"kind":"blocked","decision":"overwrite","phase":"code","feature":"@expenses/submit-expense","question":"src/app/expense-form.ts has changed since it was last generated. Overwrite?","options":["overwrite","keep","exit"],"hint":"re-run without --non-interactive to answer this, or resolve the condition and re-run"}
+```
+
+`kind` is `blocked` rather than the decision's own kind because the envelope reports the run's outcome, not the decision's category; `decision` carries the category. Print the phase's `question` and `options` verbatim — the point of the envelope is that whoever reads the CI log can see the choice they need to make without re-running anything.
+
+**What does not change.** Gap analysis still runs and still reports; critical gaps are surfaced in the log even though the boundary is auto-answered, because a gap the run advanced past is exactly what a later reader needs to find. Readiness ERRORs at the build boundary are still hard blocks — they were never acknowledgeable interactively either, so there is nothing for the flag to relax. The domain-model editor offer (step 11) is skipped entirely: it opens a browser and blocks on a human, which unattended means hanging forever.
+
+**Thread the flag into the phase subagents.** They raise the decisions, so they need to know a human will not see them — a phase aware of the mode declares its `default:` and, where it has a choice, prefers reporting a condition over raising a decision nobody can answer. Pass it in the subagent prompt alongside the feature reference and starting phase.
 
 ## Steps
 
@@ -126,7 +145,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.
 
 5. **Enter the designer phase-group** (if starting phase is intents, dialogs, or artifacts):
-   - Invoke the `parlay-designer` subagent with the feature reference and the starting phase.
+   - Invoke the `parlay-designer` subagent with the feature reference, the starting phase, and `--non-interactive` when it was passed.
    - It runs the three phases in sequence in one context: author/revise `intents.md`; generate or update `dialogs.md`; determine and create the artifact set.
    - Pre-load on-disk upstream artifacts if `--from` skipped phases in this group (dialogs needs intents; artifacts needs intents + dialogs).
    - It runs **Gap analysis** at the end of the intents phase and the dialogs phase (step 9) and folds the result into the `context:` of the boundary decision.
@@ -136,12 +155,12 @@ A phase that emits a decision request must have left the filesystem in a coheren
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
    - Run `parlay internal check-readiness --stage build-feature @{feature-ref}`. **Errors are hard blocks** — not acknowledgeable; route the user back to the artifacts phase. Warnings are informational.
-   - Invoke the `parlay-build` subagent with the feature reference.
+   - Invoke the `parlay-build` subagent with the feature reference, and `--non-interactive` when it was passed.
    - At the end it returns a `phase-boundary` decision; the driver prompts.
 
 7. **Enter the code phase-group** (at the build→code boundary):
    - End the build subagent; announce the new subagent boundary.
-   - Invoke the `parlay-code` subagent (project-level; no `@feature` argument).
+   - Invoke the `parlay-code` subagent (project-level; no `@feature` argument), passing `--non-interactive` when it was passed.
    - The code phase raises an `overwrite` decision for every generated file that changed since it was last generated, and a `failure` decision if the test suite does not pass. Both come to the driver.
    - After the code phase completes successfully, end the loop with the natural completion summary (step 12). No trailing confirmation — there is no next phase.
 
@@ -178,7 +197,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
     On decline, proceed as normal — the option is an offer, never a gate.
 
-    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-studio` was passed or `parlay.no_studio` is true in project config, and when the session is not interactive.
+    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-studio` was passed or `parlay.no_studio` is true in project config, and when the session is not interactive. `--non-interactive` skips it for the same reason, more bluntly: the offer opens a browser and blocks until a human closes it, so unattended it does not time out, it hangs.
 
 12. **End the loop cleanly**:
     - **Natural completion** (after code): print a summary with the feature reference, phases run, and key artifacts on disk. No resume hint. Loop complete.
@@ -210,6 +229,8 @@ The driver — never a phase — uses AskUserQuestion for:
 - NEVER create a new feature without explicit user confirmation — zero matches must prompt, never auto-create.
 - NEVER advance past a `parlay internal check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
 - NEVER treat opening the domain-model editor as an answer to the boundary question — re-ask after the editor session ends, or the loop advances on a confirmation nobody gave.
+- NEVER answer an `ambiguity`, `overwrite`, or `failure` decision from a default, under any flag. Abort with the envelope and exit 11. A flag that says "do not ask me" is not a flag that says "guess for me".
+- NEVER infer a missing `default:` under `--non-interactive` — a phase that omitted one on an advancement decision is a bug in that phase, and taking the first option hides it behind a run that happened to work.
 
 ## Error Handling
 
@@ -219,4 +240,5 @@ The driver — never a phase — uses AskUserQuestion for:
 - `missing-prerequisite-artifact` — starting phase requires an upstream artifact that does not exist. Offer to back up to the earliest missing phase.
 - `phase-failure` — a phase-group returned an error rather than a decision request. Surface it and offer retry / stay-in-phase / exit. "Proceed" is not an option for a failed phase.
 - `malformed-decision` — a phase returned a `parlay-decision` block missing `question` or `options`. Do not guess an answer. Show the raw block to the user and offer retry / exit.
-- `ambiguous-feature` — feature search returned multiple matches. Disambiguate via AskUserQuestion.
+- `ambiguous-feature` — feature search returned multiple matches. Disambiguate via AskUserQuestion. Under `--non-interactive` this is itself unanswerable: emit the blocked envelope with `decision: ambiguity` and exit 11 rather than picking a match.
+- `blocked-non-interactive` — a decision with no safe default was raised under `--non-interactive`. Emit the envelope, exit 11, and change nothing further on disk. Everything already written stays; the run is resumable with `--from` once the condition is resolved.

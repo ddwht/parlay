@@ -90,6 +90,8 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
 
    The flag wins over TTY detection in BOTH directions: with `--non-interactive` set, the skill runs as if headless even when a TTY is attached (so a developer can test CI behavior locally); without it, a missing TTY still triggers headless behavior automatically. Record the resolved mode for the rest of the run; per-node fallback is not allowed.
 
+   **The loop threads its own `--non-interactive` into this phase**, and the two meanings agree rather than compete. This skill's flag decides whether Pass-2 ambiguity prompts or hard-errors; the loop's decides whether a decision request is auto-answered or aborts the run. Both resolve the same underlying question — is there a human here — and both answer an unresolvable case by refusing rather than guessing: headless ambiguity emits `ambiguous-binding` and fails, and the loop aborts on an `ambiguity` decision with exit 11. So treat the loop's flag as setting this one.
+
 7.7. **Resolve layout bindings (two-pass)** — For every layout-bearing page in the active feature, after layouts are loaded and surface + domain are read, walk every layout node that consumes data or emits an action through two ordered passes.
 
    **Rule load.** Compute the active rule set: starter rules merged with project rules from the existing buildfile's `wiring.rules:` (if present). The starter rule set is the only other source; no rules are loaded from surface, domain, layout, or any other artifact. Apply rule-load-time checks before Pass 1 runs:

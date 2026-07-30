@@ -47,9 +47,22 @@ options:
   - id: <slug>
     label: "<what the user picks>"
     detail: "<the consequence, when it isn't obvious>"
+default: <id>               # advancement kinds ONLY — see below
 resume: "Re-enter with decision: <id>. <what is written so far>"
 ```
 ````
+
+**The `default:` field.** It names the one option id a driver running `--non-interactive` may take without asking. It exists so an unattended run has a defined answer rather than an inferred one, and it must be an id from your own `options:` list.
+
+Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.
+
+The other three kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
+
+- `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.
+- `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.
+- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.
+
+So: when you raise one of those three, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
 
 Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
 
@@ -117,6 +130,8 @@ Two things not to do: never narrow the options to spare the user a question, and
    - **Explicit `--non-interactive` flag** on the `parlay build-feature` invocation.
 
    The flag wins over TTY detection in BOTH directions: with `--non-interactive` set, the skill runs as if headless even when a TTY is attached (so a developer can test CI behavior locally); without it, a missing TTY still triggers headless behavior automatically. Record the resolved mode for the rest of the run; per-node fallback is not allowed.
+
+   **The loop threads its own `--non-interactive` into this phase**, and the two meanings agree rather than compete. This skill's flag decides whether Pass-2 ambiguity prompts or hard-errors; the loop's decides whether a decision request is auto-answered or aborts the run. Both resolve the same underlying question — is there a human here — and both answer an unresolvable case by refusing rather than guessing: headless ambiguity emits `ambiguous-binding` and fails, and the loop aborts on an `ambiguity` decision with exit 11. So treat the loop's flag as setting this one.
 
 7.7. **Resolve layout bindings (two-pass)** — For every layout-bearing page in the active feature, after layouts are loaded and surface + domain are read, walk every layout node that consumes data or emits an action through two ordered passes.
 

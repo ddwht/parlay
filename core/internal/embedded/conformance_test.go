@@ -631,3 +631,122 @@ func TestSchemaDigestStaysCompact(t *testing.T) {
 			rendered, d.TotalBytes, limit)
 	}
 }
+
+// TestConformance_DecisionProtocolCarriesADefault pins the field a
+// non-interactive run reads.
+//
+// The protocol is single-sourced in decisionProtocolExpansion and dropped into
+// each phase module by marker, so the five cannot describe it differently. That
+// matters most here: a phase reading a version of this contract without
+// `default:` has nothing to declare, and a driver with nothing to read either
+// aborts a run that should have advanced or — worse — infers an answer.
+func TestConformance_DecisionProtocolCarriesADefault(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	byName := map[string]string{}
+	for _, s := range skills {
+		byName[s.Name] = string(s.Content)
+	}
+
+	for _, name := range phaseModules {
+		body, ok := byName[name]
+		if !ok {
+			t.Errorf("phase module %q is not in the embedded skill set", name)
+			continue
+		}
+		// An unexpanded marker ships a literal HTML comment to the agent, which
+		// reads as nothing at all — a silent loss of the whole contract.
+		if strings.Contains(body, "<!-- parlay:expand-decision-protocol -->") {
+			t.Errorf("%s: the decision-protocol marker did not expand", name)
+		}
+		// Anchored on the YAML field at line start, not on the substring
+		// "default:" anywhere in the body. The prose around the field mentions it
+		// several times, so a Contains check stayed green when the field itself was
+		// deleted — verified by deleting it. A guard satisfied by its own
+		// documentation is not a guard.
+		if !hasYAMLFieldLine(body, "default") {
+			t.Errorf("%s: the expanded protocol's parlay-decision block has no "+
+				"`default:` field; a --non-interactive driver has nothing to read "+
+				"on an advancement decision", name)
+		}
+		// The three kinds with no safe default must be named as such in the text
+		// every phase reads, or a phase will helpfully supply a default for one
+		// and an unattended run will take it.
+		for _, kind := range []string{"ambiguity", "overwrite", "failure"} {
+			if !strings.Contains(body, kind) {
+				t.Errorf("%s: the expanded protocol never names the %q kind, "+
+					"so nothing tells this phase to omit a default for it", name, kind)
+			}
+		}
+	}
+}
+
+// TestConformance_DriverDocumentsNonInteractiveMode is the other end of the
+// same contract: phases declaring defaults is only useful if the driver says
+// what it does with them, and what it refuses to do.
+func TestConformance_DriverDocumentsNonInteractiveMode(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var driver string
+	for _, s := range skills {
+		if s.Name == "loop" {
+			driver = string(s.Content)
+		}
+	}
+	if driver == "" {
+		t.Fatal("the loop driver skill is missing from the embedded set")
+	}
+
+	for _, required := range []string{
+		"--non-interactive", // the flag itself
+		"default:",          // what it reads on an advancement decision
+		"exit 11",           // what it does when there is nothing safe to read
+	} {
+		if !strings.Contains(driver, required) {
+			t.Errorf("loop.skill.md does not mention %q — the non-interactive "+
+				"contract is incomplete on the driver side", required)
+		}
+	}
+}
+
+// TestConformance_NoSkillDocumentsAnInertFlag guards a specific correction, and
+// the general habit behind it. generate-code documented a --non-interactive flag
+// it "silently accepted for compatibility" with no observable effect — a promise
+// that something read it when nothing did. That is the same shape as the
+// aspirational mechanisms recorded as debt elsewhere, and it is the kind of
+// sentence that reads as harmless and gets re-added.
+func TestConformance_NoSkillDocumentsAnInertFlag(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	for _, s := range skills {
+		body := string(s.Content)
+		for _, claim := range []string{
+			"silently accepted for compatibility",
+			"has no observable effect",
+		} {
+			if strings.Contains(body, claim) {
+				t.Errorf("%s.skill.md documents a flag as inert (%q); either the "+
+					"flag does something or the sentence should go", s.Name, claim)
+			}
+		}
+	}
+}
+
+// hasYAMLFieldLine reports whether body contains a line beginning with
+// "<field>:" — the shape of a key inside the parlay-decision block, as opposed
+// to the same word appearing in the prose that explains it.
+func hasYAMLFieldLine(body, field string) bool {
+	prefix := field + ":"
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
