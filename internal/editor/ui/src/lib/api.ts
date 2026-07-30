@@ -68,6 +68,7 @@ export class ApiError extends Error {
 
 const MODEL_URL = '/api/domain-model/model';
 const VALIDATE_URL = '/api/domain-model/validate';
+const SHUTDOWN_URL = '/api/shutdown';
 
 interface ValidateEnvelope {
   fields: Finding[];
@@ -141,7 +142,31 @@ export async function loadModel(): Promise<ModelEnvelope> {
   if (!res.ok) {
     throwFromEnvelope(await res.json().catch(() => ({})));
   }
-  return (await res.json()) as ModelEnvelope;
+  return normalizeEnvelope((await res.json()) as ModelEnvelope);
+}
+
+/**
+ * Defence in depth against a null collection arriving on the wire.
+ *
+ * The server normalises these (see decodeAndMigrate in the domain loader),
+ * and DomainModelDocument types `enums` and `entities` as non-optional
+ * arrays — but the cast that produces the envelope is unchecked, so a server
+ * that regressed would put `null` straight into the store. Every `.length`
+ * and `.map` in the editor would then throw during render and unmount the
+ * page, which is a blank screen with the error visible only in the browser
+ * console. Cheap to prevent at the one boundary every model passes through.
+ *
+ * Same idiom as `env.fields ?? []` in validateModel.
+ */
+function normalizeEnvelope(env: ModelEnvelope): ModelEnvelope {
+  return {
+    ...env,
+    model: {
+      ...env.model,
+      enums: env.model?.enums ?? [],
+      entities: env.model?.entities ?? [],
+    },
+  };
 }
 
 /**
@@ -178,6 +203,35 @@ export async function validateModel(
   return env.fields ?? [];
 }
 
+/**
+ * End the editing session by asking the server to shut down, via
+ * POST /api/shutdown.
+ *
+ * This is what makes the Done control mean anything. The control used to call
+ * a handler that only flipped a local `sessionEnded` flag: the overlay
+ * appeared, the server kept serving, and the process stayed blocked until its
+ * idle timeout — 30 minutes by default. `parlay domain-edit` is designed as a
+ * blocking hook whose process exit is the completion signal, so an agent that
+ * told the user "click Done when you're finished" waited out the timeout no
+ * matter what the user did.
+ *
+ * Deliberately never throws. The server tears the listener down as it shuts
+ * down, so the in-flight request being cut off is the SUCCESS path here, not
+ * an error — a rejected fetch and a 202 mean the same thing to the caller.
+ * Surfacing that as an error would put a failure banner on the one action
+ * that worked.
+ */
+export async function shutdownSession(): Promise<void> {
+  try {
+    await fetch(SHUTDOWN_URL, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+  } catch {
+    // Connection closed by the shutdown we just asked for. Expected.
+  }
+}
+
 export async function saveModel(
   model: DomainModelDocument,
   etag: string,
@@ -200,5 +254,8 @@ export async function saveModel(
   if (!res.ok) {
     throwFromEnvelope(await res.json().catch(() => ({})));
   }
-  return (await res.json()) as ModelEnvelope;
+  // Normalised for the same reason as loadModel: the save handler echoes the
+  // model back, so a null collection sent up round-trips straight into the
+  // store.
+  return normalizeEnvelope((await res.json()) as ModelEnvelope);
 }

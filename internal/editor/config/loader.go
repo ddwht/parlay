@@ -61,6 +61,13 @@ type fileSnapshot struct {
 	Path    string
 	Present bool
 	Raw     map[string]any
+	// Scoped reports whether Raw came from an `editor:` block rather than
+	// from the file's top level. It decides whether unknown-key warnings are
+	// meaningful: inside an editor: block every key is ours and an unrecognised
+	// one is a typo worth flagging, but at the top level of a flat file the
+	// keys belong to parlay itself and warning about them is noise about
+	// keys the same binary wrote.
+	Scoped bool
 }
 
 // LoadOptions controls non-default Load behavior. Callers in production pass
@@ -282,11 +289,43 @@ func warnUnknownKeys(snap *fileSnapshot, logger *log.Logger) {
 		return
 	}
 	known := knownConfigKeys()
+	if !snap.Scoped {
+		// A flat file's top level is shared with parlay itself, so parlay's
+		// own keys are not unknown — they are simply not ours.
+		//
+		// Without this exemption a flat .parlay/config.yaml — exactly what
+		// `parlay init` writes — produced a warning for every one of
+		// ai-agent, sdd-framework and prototype-framework on every single
+		// `parlay domain-edit` run. The same binary authored those keys and
+		// then reported all three as unrecognised. That also defeats the
+		// warning's actual purpose: three false positives every run train the
+		// reader to skip past the line where a real typo would appear.
+		//
+		// A genuine typo at the top level still warns, because it is in
+		// neither set. Inside an `editor:` block nothing is exempt — a parlay
+		// key has no business there either.
+		for k := range coreOwnedConfigKeys {
+			known[k] = true
+		}
+	}
 	for k := range snap.Raw {
 		if !known[k] {
 			logger.Printf("WARN config: unknown key `%s` in %s (ignored)", k, snap.Path)
 		}
 	}
+}
+
+// coreOwnedConfigKeys are parlay's own top-level keys in .parlay/config.yaml.
+// The editor shares that file but does not own these; see warnUnknownKeys for
+// why they must not be reported as unknown. Mirrors config.ProjectConfig in
+// core/internal/config/config.go — kept as a literal rather than imported
+// because internal/editor must not depend on Core's module (enforced by
+// studio/internal/domain/no_core_import_test.go's sibling rule).
+var coreOwnedConfigKeys = map[string]bool{
+	"ai-agent":            true,
+	"sdd-framework":       true,
+	"prototype-framework": true,
+	"parent":              true,
 }
 
 // knownConfigKeys is the union of every snake_case key any fragment loader
@@ -441,6 +480,7 @@ func loadYAMLFile(path string, opts LoadOptions) (*fileSnapshot, error) {
 	// are the ones meant.
 	if nested, ok := snap.Raw["editor"].(map[string]any); ok {
 		snap.Raw = nested
+		snap.Scoped = true
 	}
 	snap.Present = true
 	return snap, nil

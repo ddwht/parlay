@@ -201,6 +201,14 @@ export interface EditorState {
   conflict: { currentEtag: string; attemptedEtag: string } | null;
   serverError: { requestId: string } | null;
   sessionEnded: boolean;
+  /**
+   * Why the session ended, so the terminal screen can say something true.
+   * 'done' means the user ended it deliberately and the server shut down
+   * because we asked; 'unreachable' means it went away underneath us. These
+   * used to share one message asserting the server was unreachable, which is
+   * false on every Done path.
+   */
+  sessionEndReason: 'done' | 'unreachable' | null;
   hadActivity: boolean;
 
   // validation surfaces (out-of-process, recomputed per response)
@@ -298,6 +306,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   conflict: null,
   serverError: null,
   sessionEnded: false,
+  sessionEndReason: null,
   hadActivity: false,
   findings: [],
   validationPanelOpen: false,
@@ -327,6 +336,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       conflict: null,
       serverError: null,
       sessionEnded: false,
+      sessionEndReason: null,
       hadActivity: false,
       findings: [],
       validationPanelOpen: false,
@@ -616,7 +626,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             set({ serverError: { requestId: err.requestId ?? '' } });
             break;
           case 'network-error':
-            if (get().hadActivity) set({ sessionEnded: true });
+            if (get().hadActivity) {
+              set({ sessionEnded: true, sessionEndReason: 'unreachable' });
+            }
             break;
         }
       }

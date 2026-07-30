@@ -171,5 +171,31 @@ func decodeAndMigrate(raw []byte, currentVersion int) (Model, error) {
 	if onDisk < currentVersion {
 		model.SchemaVersion = currentVersion
 	}
+
+	// Normalise the two required collections to empty slices.
+	//
+	// enums: and entities: are both OPTIONAL in domain-model.schema.md, so a
+	// file that omits either is valid and validates clean on the CLI. Left
+	// nil, they marshal to JSON `null` — Enums and Entities are the only two
+	// fields on Model without json:",omitempty", so unlike relationships and
+	// operations they are emitted as a present-but-null key. The editor UI
+	// types them as non-optional arrays and dereferences .length on both, so
+	// `null` is the one shape that gets past TypeScript and throws at render:
+	// the whole page unmounts and the user sees a blank screen with the error
+	// only in the browser console.
+	//
+	// The missing-file bootstrap in Load already builds real empty slices, so
+	// a brand-new project was fine and only a real file that happened to omit
+	// a key was broken — which is why this survived first-run testing.
+	//
+	// Normalising here rather than adding omitempty keeps the wire shape
+	// stable in the direction the UI's types already promise, and mirrors the
+	// idiom the validate handler uses for its own findings list.
+	if model.Enums == nil {
+		model.Enums = []Enum{}
+	}
+	if model.Entities == nil {
+		model.Entities = []Entity{}
+	}
 	return model, nil
 }

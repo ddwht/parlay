@@ -303,3 +303,65 @@ func TestSaveGateDirectAPIGatedIdentically(t *testing.T) {
 		t.Fatalf("direct API save wrote to disk despite the gate:\n%s", after)
 	}
 }
+
+// TestLoadHandlerNeverEmitsNullCollections asserts the two collections that
+// carry no json:",omitempty" are emitted as [] and never as null, for a model
+// file that legitimately omits them.
+//
+// This asserts on the RAW BODY on purpose. Decoding into modelResponse — as
+// every other handler test here does — unmarshals JSON null straight back
+// into a nil slice, so a struct-level assertion passes on exactly the bytes
+// that break the client and cannot catch this class of defect at all. The
+// same reasoning is recorded at core/internal/commands/domain_parity_test.go,
+// which re-declares its wire structs locally rather than sharing them with
+// the code under test.
+//
+// The bug: enums: and entities: are optional in the schema, so a file that
+// omits either is valid. Left nil they marshalled to `null`, the UI types
+// them as non-optional arrays and calls .length on both, and the page threw
+// during render and unmounted — a blank screen with the error only in the
+// browser console. The empty-model bootstrap built real empty slices, so a
+// new project was fine and only a real file was broken.
+func TestLoadHandlerNeverEmitsNullCollections(t *testing.T) {
+	cases := []struct {
+		name  string
+		model string
+	}{
+		{
+			name: "entities only, no enums key",
+			model: "schema_version: 1\n" +
+				"entities:\n  - name: Widget\n    fields:\n      - name: id\n        type: uuid\n",
+		},
+		{
+			name:  "enums only, no entities key",
+			model: "schema_version: 1\nenums:\n  - name: Role\n    values:\n      - value: admin\n",
+		},
+		{
+			name:  "neither key present",
+			model: "schema_version: 1\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			router := mountTestRouter(writeTempModel(t, tc.model))
+			req := httptest.NewRequest(http.MethodGet, "/api/domain-model/model", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			for _, forbidden := range []string{`"enums":null`, `"entities":null`} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("body contains %s — the UI dereferences .length on it and unmounts; body=%s", forbidden, body)
+				}
+			}
+			for _, want := range []string{`"enums":`, `"entities":`} {
+				if !strings.Contains(body, want) {
+					t.Errorf("body is missing %s entirely; body=%s", want, body)
+				}
+			}
+		})
+	}
+}

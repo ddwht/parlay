@@ -4,6 +4,7 @@
 // parlay-extends: domain-model-editor/domain-model-editor-validation/cross-cutting/validation-surfacing-integration
 import { useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
+import { shutdownSession } from '../../lib/api';
 import { EntityList } from './EntityList';
 import { EnumList } from './EnumList';
 import { RelationshipList } from './RelationshipList';
@@ -57,8 +58,21 @@ export function DomainModelEditorPage() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [isDirty]);
 
+  // Ending the session means ending the PROCESS, not just painting an
+  // overlay. `parlay domain-edit` is a blocking hook whose process exit is
+  // the completion signal for whatever invoked it, so a Done control that
+  // only flipped `sessionEnded` left the server serving and the caller
+  // blocked until the idle timeout — 30 minutes by default. An agent that
+  // told the user "click Done when you're finished" waited out that timeout
+  // regardless of what the user did.
+  //
+  // The flag is still set, and set unconditionally: the request is fire-and-
+  // forget by design (shutdownSession never throws, because the server tears
+  // the listener down as it goes and the cut-off request IS the success
+  // path), so the overlay must not be contingent on it resolving.
   const endSession = () => {
-    useEditorStore.setState({ sessionEnded: true });
+    void shutdownSession();
+    useEditorStore.setState({ sessionEnded: true, sessionEndReason: 'done' });
   };
 
   return (

@@ -184,9 +184,15 @@ func Boot(ctx context.Context, deps BootDeps) error {
 		return err
 	}
 
-	// Step (6): log the bound URL.
+	// Step (6): log the bound URL, including the landing path.
+	//
+	// The path matters: `parlay domain-edit` lands on /domain-model, and the
+	// log line used to print only the origin. An operator whose browser did
+	// not open — or who is on a headless box — got a URL that renders the SPA
+	// root rather than the editor, with nothing to say which route they
+	// wanted. Printing what we would have opened makes the line copyable.
 	url := fmt.Sprintf("http://%s", ln.Addr().String())
-	logger.Printf("INFO boot: listening url=%s", url)
+	logger.Printf("INFO boot: listening url=%s", url+deps.BrowserPath)
 
 	// Step (7): open the operator's browser at the bound URL plus the
 	// configured landing path (root for the bare invocation, /domain-model
@@ -259,7 +265,12 @@ func applyBootDefaults(deps BootDeps) BootDeps {
 		deps.Listen = bind127OnlyListener
 	}
 	if deps.OpenBrowser == nil {
-		deps.OpenBrowser = func(string) error { return nil }
+		// The real launcher (openbrowser.go). This used to default to a no-op
+		// that nothing in production ever replaced: open_browser resolved to
+		// true, the boot branch ran, and it called a function that did
+		// nothing. --no-browser and its absence were indistinguishable and
+		// BrowserPath was dead configuration. Tests inject a recorder.
+		deps.OpenBrowser = openBrowser
 	}
 	if deps.BrowserPath == "" {
 		deps.BrowserPath = "/"

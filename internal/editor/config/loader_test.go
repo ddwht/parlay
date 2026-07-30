@@ -441,3 +441,55 @@ func scanFiles(t *testing.T, root string, pred func(path, src string) bool) []st
 // look for visible in this file so the scan-and-grep verification in
 // testcases.yaml finds them.
 var _ = fmt.Sprintf("%s %s %s", ".parlay/config.yaml", "parlay/config.yaml", `os.Getenv("STUDIO_`)
+
+// TestCoreOwnedKeysDoNotWarnInAFlatFile pins the fix for a warning that fired
+// on every run against a stock project.
+//
+// `parlay init` writes a FLAT .parlay/config.yaml containing exactly
+// ai-agent, sdd-framework and prototype-framework. The editor shares that
+// file, and because a flat file has no `editor:` block to unwrap, the whole
+// top level was compared against the editor's own key set — so the same
+// binary that wrote those three keys reported all three as unknown, every
+// time. The warning exists to catch a typo like figma_team_url; three false
+// positives per run is how a reader learns to skip the line a real typo would
+// appear on.
+func TestCoreOwnedKeysDoNotWarnInAFlatFile(t *testing.T) {
+	files := fakeFS{
+		"/proj/.parlay/config.yaml": []byte(
+			"ai-agent: Claude Code\nsdd-framework: None\nprototype-framework: Angular + Clarity\nserver_port: 18099\n"),
+	}
+	cfg, _, stderr, err := runLoad(t, "/proj", nil, map[string]string{}, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, key := range []string{"ai-agent", "sdd-framework", "prototype-framework"} {
+		if strings.Contains(stderr, key) {
+			t.Errorf("parlay's own key %q reported as unknown; stderr:\n%s", key, stderr)
+		}
+	}
+	// The editor's own key in the same flat file must still be read.
+	if cfg.ServerPort != 18099 {
+		t.Errorf("ServerPort = %d, want 18099 — exempting core keys must not stop editor keys being read", cfg.ServerPort)
+	}
+}
+
+// The exemption must not blunt the warning. A genuine typo at the top level
+// of a flat file is in neither key set and still warns — this is the case
+// TestUnknownKeyInConfigFileEmitsWarn covers, asserted here alongside the
+// exemption so the two cannot be "fixed" apart.
+func TestATypoStillWarnsAlongsideCoreKeys(t *testing.T) {
+	files := fakeFS{
+		"/proj/.parlay/config.yaml": []byte(
+			"ai-agent: Claude Code\nfigma_team_url: https://figma.com/team/x\n"),
+	}
+	_, _, stderr, err := runLoad(t, "/proj", nil, map[string]string{}, files)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(stderr, "unknown key `figma_team_url`") {
+		t.Errorf("typo must still warn; stderr:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "ai-agent") {
+		t.Errorf("parlay's own key reported as unknown; stderr:\n%s", stderr)
+	}
+}
