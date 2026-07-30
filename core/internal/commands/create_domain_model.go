@@ -6,8 +6,6 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -30,32 +28,20 @@ func init() {
 
 // runCreateDomainModelHandler is the RunE for `parlay
 // create-domain-model`. The actual extraction is the AI agent's
-// responsibility — this handler exists to print the
-// "use the AI skill" message and to fire the Studio hook prompt at
-// the end of a successful run.
+// responsibility; invoked from a shell this command can only refuse.
 //
-// The trio-command name passed into dispatch is "create-domain-model"
-// — the wording table is keyed by this slug, and the surface intent's
-// rename from extract-domain-model has now landed.
+// The Studio hook dispatch that used to follow the refusal is gone.
+// Its own comment claimed it "fires after the main work above completes
+// successfully" — but the main work was a printed notice, so the hook fired
+// on a run that had produced nothing, offering to open an editor on a domain
+// model that had not been created. Refusing and then running a
+// success-path side effect is the same confusion as refusing and exiting 0.
+//
+// The hook belongs on the path where the model is actually written, which is
+// the agent's; when that lands it should call runStudioPromptForDomainModel
+// directly. The helper and its wording table are kept for that caller.
 func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "create-domain-model requires an AI agent.")
-	fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-create-domain-model skill in your AI agent (e.g., Claude Code).")
-
-	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-domain-model
-	// Hook-point dispatch — fires after the main work above
-	// completes successfully and before the command returns. A
-	// failure of the main work skips the hook entirely; we only
-	// reach this point when the message above has been printed.
-	pctx := config.FromCtx(cmd.Context())
-	if pctx == nil {
-		// No active root resolved — nothing to hand off to Studio
-		// against. Skip the hook silently; the command already
-		// printed its own output.
-		return nil
-	}
-	noStudio := resolveNoStudio(loadProjectConfigNoStudio(pctx))
-	mode := pickDomainModelPromptMode()
-	return runStudioPromptForDomainModel(pctx, mode, noStudio)
+	return agentOnlyStub("create-domain-model", "`/parlay-loop domain-model`")(cmd, args)
 }
 
 // pickDomainModelPromptMode chooses the brownfield vs greenfield

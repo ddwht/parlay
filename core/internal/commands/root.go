@@ -45,6 +45,15 @@ var rootCmd = &cobra.Command{
 	Long:              "Parlay takes user intents and dialogues and parlays them into prototypes, surfaces, and engineering specifications.",
 	PersistentPreRunE: persistentPreRun,
 	SilenceUsage:      true,
+	// main owns error output. Without this Cobra prints "Error: <msg>" from
+	// Execute() and main then prints the bare message again, so every CLI
+	// failure appeared twice and read like two distinct problems.
+	//
+	// It also closes a leak main's own comment claims is already closed: an
+	// ExitCodeError is meant to exit silently because the command has already
+	// written its user-facing output, but Cobra printed "Error: exit code N"
+	// before main ever saw it.
+	SilenceErrors: true,
 }
 
 var versionCmd = &cobra.Command{

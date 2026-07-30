@@ -141,6 +141,24 @@ func parsePageContent(path string, content []byte) (*Page, error) {
 		}
 	}
 
+	// Parse the markdown body — the form page.schema.md's Template section
+	// documents and the one lock-page actually writes.
+	//
+	// Only the frontmatter and the ## Layout block were read before, and a
+	// conforming manifest has neither: it opens with "# <Page Name>", carries
+	// **Owner**/**Status** lines, and lists its regions as "## <Region Name>"
+	// headings with numbered @feature/fragment items. So a manifest in the
+	// documented form parsed to a zero-valued Page — no name, no status, and
+	// NO REGIONS. The writer and the reader had never agreed on a format.
+	//
+	// That is also why `validate --type page` returned OK on a manifest
+	// naming a page, a region and a fragment that all did not exist: nothing
+	// had been decoded to check.
+	//
+	// Frontmatter still wins where present, so a page authored in the YAML
+	// form keeps working; the markdown scan only fills fields left empty.
+	parseMarkdownBody(body, &page)
+
 	layoutYAML, found := extractLayoutSection(body)
 	if !found {
 		// No layout section present — Layout stays nil.
@@ -153,6 +171,95 @@ func parsePageContent(path string, content []byte) (*Page, error) {
 	}
 	page.Layout = layout
 	return &page, nil
+}
+
+// parseMarkdownBody fills Name, Description, Owner, Status and Regions from
+// the markdown form documented in page.schema.md's Fields table. Fields
+// already set from frontmatter are left alone.
+//
+// The `## Layout` section is skipped: its body is a fenced YAML block owned
+// by extractLayoutSection, and treating it as a region would invent one
+// named "Layout" carrying no fragments.
+func parseMarkdownBody(body []byte, page *Page) {
+	var current *PageRegion
+	flush := func() {
+		if current != nil {
+			page.Regions = append(page.Regions, *current)
+			current = nil
+		}
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(body)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	inLayout := false
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		trimmed := strings.TrimSpace(line)
+
+		switch {
+		case strings.HasPrefix(trimmed, "## "):
+			flush()
+			name := strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
+			if strings.EqualFold(name, "Layout") {
+				inLayout = true
+				continue
+			}
+			inLayout = false
+			current = &PageRegion{Name: name}
+		case strings.HasPrefix(trimmed, "# "):
+			flush()
+			inLayout = false
+			if page.Name == "" {
+				page.Name = strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
+			}
+		case inLayout:
+			// Belongs to the fenced YAML block, not to us.
+			continue
+		case strings.HasPrefix(trimmed, "> "):
+			if page.Description == "" {
+				page.Description = strings.TrimSpace(strings.TrimPrefix(trimmed, "> "))
+			}
+		case strings.HasPrefix(trimmed, "**Owner**:"):
+			if page.Owner == "" {
+				page.Owner = strings.TrimSpace(strings.TrimPrefix(trimmed, "**Owner**:"))
+			}
+		case strings.HasPrefix(trimmed, "**Status**:"):
+			if page.Status == "" {
+				page.Status = strings.TrimSpace(strings.TrimPrefix(trimmed, "**Status**:"))
+			}
+		default:
+			if current == nil {
+				continue
+			}
+			if ref, ok := numberedFragmentRef(trimmed); ok {
+				current.Components = append(current.Components, ref)
+			}
+		}
+	}
+	flush()
+}
+
+// numberedFragmentRef matches a "1. @feature/fragment-name" list item and
+// returns the reference.
+//
+// The list ORDER is the manifest's whole purpose — page.schema.md says it
+// "overrides feature surface Order values" — so the slice position carries
+// the meaning and the printed number does not.
+func numberedFragmentRef(line string) (string, bool) {
+	dot := strings.Index(line, ".")
+	if dot <= 0 {
+		return "", false
+	}
+	for _, r := range line[:dot] {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	ref := strings.TrimSpace(line[dot+1:])
+	if !strings.HasPrefix(ref, "@") {
+		return "", false
+	}
+	return ref, true
 }
 
 // splitFrontmatter separates a leading YAML frontmatter block (delimited

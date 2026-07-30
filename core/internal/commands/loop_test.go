@@ -6,6 +6,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -40,11 +41,21 @@ func TestLoopCmd_IsRegistered(t *testing.T) {
 // did nothing.
 func TestLoopCmd_PrintsSkillPointer(t *testing.T) {
 	var out bytes.Buffer
-	loopCmd.SetOut(&out)
-	t.Cleanup(func() { loopCmd.SetOut(nil) })
+	loopCmd.SetErr(&out)
+	t.Cleanup(func() { loopCmd.SetErr(nil) })
 
-	if err := loopCmd.RunE(loopCmd, []string{"@upgrade-plan"}); err != nil {
-		t.Fatalf("loopCmd.RunE returned error: %v", err)
+	// The refusal is now a non-zero exit, not a silent success. A command
+	// that declines to do the work and returns nil is indistinguishable from
+	// one that did it, so any wrapper checking $? concluded the pipeline had
+	// run. The notice goes to stderr for the same reason: it is a refusal,
+	// not output.
+	err := loopCmd.RunE(loopCmd, []string{"@upgrade-plan"})
+	var exitErr *ExitCodeError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("want an ExitCodeError so a script can see the refusal, got %v", err)
+	}
+	if exitErr.Code == 0 {
+		t.Error("an agent-only refusal must not exit 0")
 	}
 
 	output := out.String()

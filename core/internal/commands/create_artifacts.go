@@ -6,9 +6,6 @@
 package commands
 
 import (
-	"fmt"
-
-	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -28,28 +25,14 @@ func init() {
 }
 
 // runCreateArtifactsHandler is the RunE for `parlay create-artifacts`.
-// The artifact decision and emission live in the AI skill; this
-// handler exists to print the "use the AI skill" message and (post
-// this feature) to fire the Studio prompt at the end of a successful
-// run.
+// The artifact decision and emission live in the AI skill; invoked from a
+// shell this command can only refuse.
+//
+// The trailing hook dispatch is gone with the rest of the success path. It
+// was already inert — its own comment records that the Studio "artifact
+// editor" it offered was designed and never built — and it sat after a
+// printed notice that the code described as "the main work", so it ran on a
+// run that had produced nothing.
 func runCreateArtifactsHandler(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "create-artifacts requires an AI agent.")
-	fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-create-artifacts skill in your AI agent (e.g., Claude Code).")
-	fmt.Fprintln(cmd.OutOrStdout())
-	fmt.Fprintln(cmd.OutOrStdout(), "The agent analyzes intents and dialogs to determine whether the feature")
-	fmt.Fprintln(cmd.OutOrStdout(), "needs surface.md (user-facing), infrastructure.md (behind-the-scenes), or both,")
-	fmt.Fprintln(cmd.OutOrStdout(), "then proceeds to create the appropriate artifacts.")
-
-	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
-	// Hook-point dispatch — fires after the main work prints its
-	// summary above and before the command returns. A failure of
-	// the main work would skip this branch.
-	pctx := config.FromCtx(cmd.Context())
-	// No editor hand-off here. This hook offered to open Studio's "artifact
-	// editor" — a surface that was designed (see
-	// spec/intents/studio-support/studio-cli-hooks/intents.md:53) and never
-	// built. The prompt's whole value was saving the designer from remembering
-	// a command; with nothing behind it, it was an offer that could only fail.
-	_ = pctx
-	return nil
+	return agentOnlyStub("create-artifacts", "`/parlay-loop <feature>` (the artifacts phase)")(cmd, args)
 }

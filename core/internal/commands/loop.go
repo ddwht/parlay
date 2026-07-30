@@ -3,8 +3,6 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -16,9 +14,7 @@ Requires an AI agent with sub-agent spawning support (Claude Code, Cursor). On a
 without sub-agent support (Generic CLI), the loop degrades to a fresh-session handoff.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Fprintln(cmd.OutOrStdout(), "loop requires an AI agent.")
-		fmt.Fprintln(cmd.OutOrStdout(), "Use the /parlay-loop skill in your AI agent (e.g., Claude Code or Cursor).")
-		return nil
+		return agentOnlyStub("loop", "`/parlay-loop <feature>`")(cmd, args)
 	},
 }
 
