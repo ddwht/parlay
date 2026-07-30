@@ -160,7 +160,38 @@ Why this exists: `build-feature`'s unit of work is the component, and until now 
 
 **Coverage rule.** Every route in the merged route table needs at least one `scope: route` suite; the walker fires `testcases-route-uncovered` naming the route. Every multi-route flow named in a dialog needs a `scope: flow` suite, or the walker fires `testcases-flow-uncovered`. Both are warnings on a project that has never had them and errors once a project declares any scoped suite — a project mid-adoption should not be blocked, and one that has adopted the concept should not silently regress out of it.
 
-**Fixture coherence is checked separately.** `parlay internal check-composition` compares every feature's fixture data and reports `composition-fixture-contradiction` when two features disagree about the same entity id, and `composition-dangling-reference` when a fixture references an id no feature defines. It deliberately ignores disagreements *within* one feature: alternative scenario fixtures are supposed to disagree, and reporting them buries the cross-feature findings that matter.
+**Fixture coherence is checked separately.** `parlay internal check-composition` compares every feature's fixture data across the whole project. It deliberately ignores disagreements *within* one feature: alternative scenario fixtures are supposed to disagree, and reporting them buries the cross-feature findings that matter.
+
+### The composing fixture
+
+A feature's fixtures back its own suites, and several of them disagree on purpose. Exactly one is different: it holds the data the *running prototype* boots from, which every feature shares. Mark it.
+
+```yaml
+fixtures:
+  three-reports-mixed-status:
+    composes: true      # this is what the prototype boots with
+    data:
+      ExpenseReport:
+        - id: aaaaaaaa-0001-4a01-8a01-aaaaaaaaaaaa
+          status: submitted
+  empty-state:          # a scenario, not the runtime
+    data:
+      ExpenseReport: []
+```
+
+When no fixture is marked, the one named by the feature's `scope: route` suite is used — a route suite is by definition "everything this route renders", which is the same question the seed asks. Zero or several disagreeing route suites is a real design question and is reported rather than guessed.
+
+**The composed seed is the union of every feature's composing fixture**, computed by `parlay internal scaffold-seed`. Per `(entity, id)` it unions fields across contributors; a scalar two features disagree on is a contradiction and the derivation refuses — no last-writer-wins, because silently reconciling hides exactly the defect the seed exists to expose. Per-feature fixtures are unchanged and still back `scope: component` and `scope: route` suites. The composed seed is *additional*: it boots the app, and it is what `scope: flow` suites run against.
+
+### Composition error codes
+
+| Code | When it fires |
+|---|---|
+| `composition-fixture-contradiction` | Two features' fixtures give the same `(entity, id)` different values for the same scalar field |
+| `composition-dangling-reference` | A fixture references an entity id no feature defines |
+| `composition-feature-unbuilt` | A feature has a spec but no `buildfile.yaml`, so its fixtures cannot be compared — reported rather than skipped, because an unexamined feature and a coherent one are not the same answer |
+| `composition-seed-ambiguous` | No fixture is marked `composes: true` and the `scope: route` suites do not settle which one boots the prototype. Build mode fails; authoring mode warns. |
+| `composition-buildfile-unreadable` | A `buildfile.yaml` exists but cannot be parsed, so the feature's contribution is unknown |
 
 ### Coverage walker
 

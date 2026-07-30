@@ -101,6 +101,7 @@ file-conventions:
     types: <path template for a feature's type module — e.g., "features/{feature}/types/{feature}.types.ts">
     feature-routes: <path template for a feature's own route table — e.g., "features/{feature}/{feature}.routes.ts">
     routes: <path to the project route table — e.g., "app.routes.ts">
+    seed: <path to the composed runtime seed — e.g., "core/fixtures/seed.data.ts">
 
 # --- Section 5: Design system inventory ---
 
@@ -339,13 +340,19 @@ All templates are relative to `source-root`. A template is a plain string substi
 
 `component-pattern` stays, and stays an enum: it still tells the agent how to *group* what it writes, which `paths:` deliberately does not express. The two are complementary — one is grouping strategy, the other is destination.
 
+### `paths.seed` — where the composed runtime seed lands
+
+`seed:` names the single file the running prototype boots its data from. Parlay computes *what is in it* — `parlay internal scaffold-seed` unions every feature's composing fixture and emits canonical JSON — and knows nothing about how it is written. The template says where the file goes; the framework decides its shape, which is why a TypeScript adapter points at a `.ts` module exporting a const and a Go adapter could point at an embedded `.json`.
+
+Unlike the other templates, `seed:` takes no placeholders: there is one seed for the whole project, not one per feature or per entity. It is derived from the same entity set as `model:` and regenerates on the same trigger.
+
 ### Why templates rather than logic in the tool
 
 Putting per-framework path rules in Go would mean parlay carrying framework knowledge that adapters exist to hold, and every new framework would need a code change rather than a YAML file. A template keeps the knowledge in the adapter, where a team can also change it — moving components from `features/` to `modules/` is then an adapter edit, not a fork.
 
 ### Absence is not an error
 
-An adapter with no `paths:` block still works; `plan:` derivation is simply unavailable for it and the agent authors those rows by hand, as before. Tooling that derives plan rows must therefore treat a missing template as "cannot derive this row" and say so, rather than guessing a path — a guessed path in `plan:` is worse than an absent one, because it reads as an authorized write target.
+An adapter with no `paths:` block still works; `plan:` derivation is simply unavailable for it and the agent authors those rows by hand, as before. The same holds per-template: an adapter that declares `component:` but no `seed:` derives component rows and no seed row, and that is a correct answer rather than a gap. Most frameworks have no single boot-time dataset — a CLI reads a file per invocation, a static generator has no runtime at all — so demanding one would be parlay asserting framework knowledge it does not have. Tooling that derives plan rows must therefore treat a missing template as "cannot derive this row" and say so, rather than guessing a path — a guessed path in `plan:` is worse than an absent one, because it reads as an authorized write target.
 
 ## Section 5: Design system inventory
 

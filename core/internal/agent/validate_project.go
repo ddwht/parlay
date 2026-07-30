@@ -187,6 +187,21 @@ func ValidateBuildfilesProjectStructured(rootDir string) ([]FeatureVerdict, erro
 				})
 			}
 		}
+		// Which fixture this feature contributes to the composed seed. It is
+		// a project-pass check because that is the only pass that knows a
+		// project has more than one feature: one feature booting from
+		// whichever fixture it likes is harmless, but as soon as features
+		// share a runtime, each has to say which of its fixtures is the real
+		// one, and the union is undefined until they do.
+		if _, ambiguity := ComposingFixture(filepath.Dir(lf.path)); ambiguity != "" {
+			errs = append(errs, ValidationError{
+				Code:    "composition-seed-ambiguous",
+				Message: fmt.Sprintf("feature %q: %s", lf.slug, ambiguity),
+				Context: "fixtures",
+				Fix:     "mark exactly one fixture `composes: true` — the one whose data the running prototype boots with",
+			})
+		}
+
 		// Stamp severity from the shared table, exactly as
 		// ValidateBuildfileDeepStructured does for the single-feature path.
 		//

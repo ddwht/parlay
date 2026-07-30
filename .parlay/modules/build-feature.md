@@ -232,6 +232,7 @@ Two things not to do: never narrow the options to spare the user a question, and
    - Set `feature:`, `schema_version: 1`, and `adapter:` (or `adapter-set:` for multi-target projects) fields
    - Do NOT populate `models:` — it's deprecated. Entities live in `domain-model.yaml`; a non-empty `models:` fails validation with `buildfile-models-deprecated`. Reference domain entities by name from `domain-model.yaml` wherever the buildfile needs to name one (fixtures, data.inputs.model).
    - Create `fixtures:` with representative sample data
+   - **Mark exactly one fixture `composes: true`** — the one whose data the *running prototype* boots with. A feature's other fixtures are scenarios and are supposed to disagree with it (an empty state and a populated one are the same ids at different moments); the composing one is the feature's contribution to the single dataset every feature shares. Pick the fixture your `scope: route` suite uses — that suite already means "everything this route renders", which is the same question. See `testcases.schema.md` § The composing fixture.
    - Map each surface fragment to a `component:`:
      - Look up each Show in the fragment's `**Shows**:` field in the adapter's `shows:` section → write the adapter's widget name as the element's `widget:`
      - Look up each Action in the fragment's `**Actions**:` field in the adapter's `actions:` section → write the adapter's widget name as the action's `widget:`
@@ -295,6 +296,9 @@ Two things not to do: never narrow the options to spare the user a question, and
      - `cross-cutting-target-not-in-plan` — a cross-cutting target-files: path is not represented in plan.modifies. Add the missing plan.modifies row.
      - `plan-modify-target-missing` — plan.modifies names a file that doesn't exist in the source root. Either (a) the file path is wrong (correct it), (b) the entry should be plan.creates instead (this is genuinely a new file), or (c) the integration site was misidentified — re-do step 7.5 to find the real site.
      - `plan-create-collision` — plan.creates names a file that already exists. Surface to the user; either pick a different path or move the entry to plan.modifies.
+   - `parlay internal check-composition` — cross-feature fixture coherence. This is the only check that looks at more than one feature, and nothing ran it before, which is how four features came to hold four contradicting versions of the same expense report while every per-feature gate passed. It is cheap and it is the last chance to catch a disagreement before it becomes a prototype that tells a different story on every screen.
+     - `composition-fixture-contradiction` — two features give the same entity id different values for the same field. Resolve it with the designer: one of the two is wrong about the domain, and answering "which" is a design decision, not a merge. Do not reconcile silently.
+     - `composition-seed-ambiguous` — no fixture is marked `composes: true` and the route suites do not settle it. Go back to step 8 and mark one.
    - If `check-buildfile` reports errors, raise a `failure` decision request (Revise / Accept and document / Cancel) — do NOT silently commit a buildfile that fails validation.
 
 11. **Report** — Confirm the build specification is ready, mention that the artifacts live under `.parlay/build/{feature}/` (tool internals), and tell the user to run `/parlay-generate-code @{feature}` next to produce the prototype code and run tests.

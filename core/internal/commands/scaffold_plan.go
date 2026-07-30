@@ -26,6 +26,13 @@ type adapterPaths struct {
 	Types           string   `yaml:"types"`
 	FeatureRoutes   string   `yaml:"feature-routes"`
 	Routes          string   `yaml:"routes"`
+	// Seed is where the composed runtime seed lands — the one dataset the
+	// whole prototype boots from. Parlay computes the data (scaffold_seed.go)
+	// and knows nothing about how it is rendered: the template says where the
+	// file goes, the adapter's framework decides its shape. Absence is not an
+	// error — an adapter that declares no seed path gets no seed row, exactly
+	// as with paths.model.
+	Seed string `yaml:"seed"`
 }
 
 type adapterFileConventions struct {
@@ -242,6 +249,24 @@ func derivePlanCreates(feature string, components []string, entities []string, a
 				}
 				add(p, "section/models")
 			}
+		}
+	}
+
+	// The composed runtime seed. One file for the whole project, sourced
+	// section/seed and derived from the same entity set as the models —
+	// which is why it is gated the same way, and why it sits here rather
+	// than among the per-feature support files below.
+	//
+	// It is claimed as a create by every feature that has entities, exactly
+	// as the model rows are. The alternative — claiming it only for whichever
+	// feature happens to build first — makes the plan depend on build order,
+	// and the plan is compared against on later runs.
+	if len(entities) > 0 && fc.Paths.Seed != "" {
+		p, err := expandTemplate(fc.Paths.Seed, feature, "", "", naming)
+		if err != nil {
+			undecidable(err.Error())
+		} else {
+			add(p, "section/seed")
 		}
 	}
 

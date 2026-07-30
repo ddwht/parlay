@@ -2,6 +2,7 @@ package commands
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -165,5 +166,57 @@ func TestEntityRowsAreAttributedToTheModelsSection(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Creates[0].Sources, []string{"section/models"}) {
 		t.Errorf("entity sources = %v, want [section/models]", got.Creates[0].Sources)
+	}
+}
+
+// The composed seed is one file for the whole project, sourced section/seed.
+// It is gated on the entity set — the seed is that data — so a feature with
+// no entities gets no seed row, exactly as it gets no model rows.
+func TestSeedRowIsDerivedFromTheDeclaredTemplate(t *testing.T) {
+	ad := angularAdapter(t)
+	ad.FileConventions.Paths.Seed = "core/fixtures/seed.data.ts"
+
+	got := derivePlanCreates("f", nil, []string{"ExpenseReport"}, ad)
+
+	var seedRows []planEntry
+	for _, c := range got.Creates {
+		for _, s := range c.Sources {
+			if s == "section/seed" {
+				seedRows = append(seedRows, c)
+			}
+		}
+	}
+	if len(seedRows) != 1 {
+		t.Fatalf("want exactly 1 section/seed row, got %#v", seedRows)
+	}
+	if seedRows[0].Path != "src/app/core/fixtures/seed.data.ts" {
+		t.Errorf("seed path = %q", seedRows[0].Path)
+	}
+
+	// No entities, no seed: there would be nothing in it.
+	if bare := derivePlanCreates("f", nil, nil, ad); len(bare.Creates) != 0 {
+		t.Errorf("a feature with no entities should derive no seed row, got %#v", bare.Creates)
+	}
+}
+
+// An adapter that declares no seed template gets no seed row and no
+// complaint. Most frameworks have no single boot-time dataset — a CLI reads a
+// file per invocation, a static site has no runtime — so demanding one would
+// be parlay asserting framework knowledge it does not have. Absence is not an
+// error, and it must not show up as undecidable either: "cannot derive this"
+// is a different claim from "this framework has no such thing".
+func TestNoSeedTemplateDerivesNoSeedRowAndNoComplaint(t *testing.T) {
+	got := derivePlanCreates("f", nil, []string{"ExpenseReport"}, angularAdapter(t))
+	for _, c := range got.Creates {
+		for _, s := range c.Sources {
+			if s == "section/seed" {
+				t.Fatalf("derived a seed row from an adapter that declares none: %#v", c)
+			}
+		}
+	}
+	for _, u := range got.Undecidable {
+		if strings.Contains(u, "seed") {
+			t.Errorf("absence of paths.seed must not be reported as undecidable: %q", u)
+		}
 	}
 }

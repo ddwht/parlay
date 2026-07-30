@@ -58,6 +58,7 @@ func registerInternalCommands() {
 		saveBuildStateCmd,
 		scaffoldSignaturesCmd,
 		scaffoldPlanCmd,
+		scaffoldSeedCmd,
 		checkCompositionCmd,
 		schemaDigestCmd,
 		emissionGroupsCmd,

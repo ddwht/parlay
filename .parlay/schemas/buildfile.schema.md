@@ -43,6 +43,7 @@ models:            # DEPRECATED — see "models: is deprecated" below; entities 
 fixtures:
   <fixture-name>:
     description: <scenario this fixture represents>
+    composes: <true on exactly one fixture — the data the running prototype boots from; see testcases.schema.md>
     data:
       <EntityName>:
         - <object matching model properties>
@@ -363,7 +364,9 @@ Each entry has:
 | Field | Required | Description |
 |---|---|---|
 | `path` | Yes | File path relative to the source root |
-| `sources` | Yes | `[component/<name>` or `cross-cutting/<id>]` — buildfile entries that contributed this file |
+| `sources` | Yes | `[component/<name>`, `cross-cutting/<id>`, or `section/<name>]` — what contributed this file |
+
+`section/<name>` covers files that belong to no single component: `section/models` (one per domain entity), `section/service`, `section/types`, `section/routes` and `section/seed`. They are derived from the adapter's `file-conventions.paths` templates rather than from a buildfile entry, which is why nothing owned these rows before — and why codegen was writing files its own plan did not list.
 
 **Required for new buildfiles.** `parlay build-feature` emits a `plan:` section computed deterministically from `targets.presentation.components:` + `cross-cutting:` + the adapter's `file-conventions`. Legacy buildfiles without `plan:` trigger a "regenerate via build-feature" error from generate-code — the missing plan is treated as a hard failure rather than an implicit fallback, because the plan is the integration contract.
 
@@ -620,6 +623,7 @@ models:
 fixtures:
   <fixture-name>:
     description: <scenario this fixture represents>
+    composes: <true on exactly one fixture — the data the running prototype boots from; see testcases.schema.md>
     data:
       <EntityName>:
         - <object matching model properties>

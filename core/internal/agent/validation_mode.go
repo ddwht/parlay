@@ -110,6 +110,16 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// No fixture is designated as the one the prototype boots from, and the
+	// route suites do not settle it. A warning while authoring — a feature
+	// whose testcases are still being written has nothing to designate yet —
+	// and blocking at build, because the composed seed is an input to code
+	// generation and there is nothing sensible to generate from an undecided
+	// one. Guessing is the option this rule exists to remove.
+	"composition-seed-ambiguous": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityError,
+	},
 }
 
 // RuleSeverity returns the per-mode severity for a given rule code. Rules

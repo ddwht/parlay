@@ -286,6 +286,11 @@ Two things not to do: never narrow the options to spare the user a question, and
 
 14. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
     - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. For each entity in the merged model set, check the external type map (from step 5): if the entity is external, emit an import statement pointing to the existing file instead of a type declaration; if the entity is not external, generate the type declaration as before. The resulting models file may contain a mix of imports and declarations. Mark it with `parlay-section: models`.
+    - If `sections.models` is `"changed"` or `"new"` **and the adapter declares `file-conventions.paths.seed`**: regenerate the composed runtime seed. Run `parlay internal scaffold-seed` and write its records to the declared path, in whatever shape the framework wants — a module exporting a const, an embedded JSON file, a fixtures package. Mark it with `parlay-section: seed`.
+      - The command emits canonical JSON and **refuses** rather than guessing: a non-zero exit with `composition-fixture-contradiction` means two features disagree about the same record, and that is a question for the designer, not something to reconcile here. Stop and report it.
+      - Write what the command gives you. Do not add records, drop records, or reorder them — the seed is compared against the derivation on later runs, and a hand-adjusted seed reads as drift forever after.
+      - This file is one per project, not one per feature. Regenerating it from a second feature's run is expected and correct; it is derived from the same entity set every time.
+      - If the adapter declares no `paths.seed`, skip this — most frameworks have no single boot-time dataset, and its absence is not a gap.
     - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from `buildfile.routes`. Mark it with `parlay-section: routes`.
     - If `sections.blueprint` is `"changed"` or `"new"`: regenerate the cross-cutting blueprint-derived files:
       - **Shell components**: One layout component per shell in `blueprint.shells`. Mark each with `parlay-section: shell-{name}`.
