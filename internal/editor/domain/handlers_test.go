@@ -8,6 +8,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/internal/editor/server"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -363,5 +365,44 @@ func TestLoadHandlerNeverEmitsNullCollections(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A hand-broken domain-model.yaml must come back actionable, not as a bare
+// server-error.
+//
+// It used to produce a 500 whose body was a request id and nothing else, while
+// `parlay validate` on the same file named the offending line. The user best
+// placed to fix the file was the one told least about it — and Phase 13's
+// "clean in the editor and passes the build are the same statement" stopped
+// holding for the most ordinary kind of breakage there is.
+func TestLoadHandlerReportsUnparseableYAMLActionably(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "domain-model.yaml") // Load takes the root, not this
+	// A duplicate mapping key — what a careless hand-edit actually produces.
+	if err := os.WriteFile(path, []byte("entities:\n  - name: A\nentities:\n  - name: B\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := Load(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected a load failure")
+	}
+	if !errors.Is(err, ErrInvalidYAML) {
+		t.Fatalf("err = %v, want it to wrap ErrInvalidYAML", err)
+	}
+
+	mapped := mapLoadError(err)
+	var ve *server.ValidationError
+	if !errors.As(mapped, &ve) {
+		t.Fatalf("mapped = %T (%v), want a *server.ValidationError so the client gets validation-failed, not server-error", mapped, mapped)
+	}
+	if len(ve.Fields) != 1 {
+		t.Fatalf("fields = %+v", ve.Fields)
+	}
+	// The parser's own message must survive — the line number is the whole
+	// point of surfacing this at all.
+	if !strings.Contains(ve.Fields[0].Message, "line") {
+		t.Errorf("message should carry the parser's line reference: %q", ve.Fields[0].Message)
 	}
 }

@@ -28,6 +28,16 @@ var (
 	// ErrSchemaVersionNewer — schema_version is newer than this binary.
 	// The actionable fix is `parlay upgrade`.
 	ErrSchemaVersionNewer = errors.New("schema-version-newer-than-binary")
+
+	// ErrInvalidYAML — the file on disk is not parseable YAML.
+	//
+	// This is every bit as actionable as the schema-version failures and was
+	// the one load failure that fell through to a bare server-error: a
+	// hand-broken domain-model.yaml produced a 500 carrying nothing but a
+	// request id, while the CLI on the same file reported invalid-yaml with
+	// the offending line. The user whose file is broken is exactly the user
+	// who needs the line number, and the editor is where they are standing.
+	ErrInvalidYAML = errors.New("invalid-yaml")
 )
 
 // Model is the in-memory domain model the editor loads, edits, and saves.
@@ -139,7 +149,7 @@ func decodeAndMigrate(raw []byte, currentVersion int) (Model, error) {
 		SchemaVersion *int `yaml:"schema_version"`
 	}
 	if err := yaml.Unmarshal(raw, &probe); err != nil {
-		return Model{}, fmt.Errorf("domain: parse model: %w", err)
+		return Model{}, fmt.Errorf("%w: %s", ErrInvalidYAML, err)
 	}
 	if probe.SchemaVersion == nil {
 		return Model{}, ErrMissingSchemaVersion
@@ -152,7 +162,7 @@ func decodeAndMigrate(raw []byte, currentVersion int) (Model, error) {
 
 	var model Model
 	if err := yaml.Unmarshal(raw, &model); err != nil {
-		return Model{}, fmt.Errorf("domain: parse model: %w", err)
+		return Model{}, fmt.Errorf("%w: %s", ErrInvalidYAML, err)
 	}
 
 	// Parse the operations block generically for the JSON wire view.
@@ -160,7 +170,7 @@ func decodeAndMigrate(raw []byte, currentVersion int) (Model, error) {
 		Operations []map[string]any `yaml:"operations"`
 	}
 	if err := yaml.Unmarshal(raw, &opsProbe); err != nil {
-		return Model{}, fmt.Errorf("domain: parse operations: %w", err)
+		return Model{}, fmt.Errorf("%w: %s", ErrInvalidYAML, err)
 	}
 	model.Operations = opsProbe.Operations
 	model.rawOperations = captureOperationsBlock(raw)

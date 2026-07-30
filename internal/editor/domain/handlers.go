@@ -145,13 +145,25 @@ func errorFindingFields(findings []Finding) []server.FieldError {
 	return fields
 }
 
-// mapLoadError narrows loader failures to the closed error surface. The
-// schema-version failures are actionable and map to validation-failed (NOT a
-// generic server-error); everything else falls through to server-error.
+// mapLoadError narrows loader failures to the closed error surface. Failures a
+// person can act on map to validation-failed and carry the reason; everything
+// else falls through to server-error.
+//
+// Unparseable YAML belongs in the first group and used to be in the second.
+// A hand-broken domain-model.yaml produced a 500 whose body was a request id,
+// while `parlay validate` on the same file named the offending line — so the
+// user best placed to fix it was the one told least about it, and "clean in
+// the editor" and "passes the build" stopped being the same statement for the
+// most ordinary kind of breakage there is.
 func mapLoadError(err error) error {
 	if errors.Is(err, ErrSchemaVersionNewer) || errors.Is(err, ErrMissingSchemaVersion) {
 		return &server.ValidationError{
 			Fields: []server.FieldError{{Field: "schema_version", Message: err.Error()}},
+		}
+	}
+	if errors.Is(err, ErrInvalidYAML) {
+		return &server.ValidationError{
+			Fields: []server.FieldError{{Field: "domain-model.yaml", Message: err.Error()}},
 		}
 	}
 	return err
