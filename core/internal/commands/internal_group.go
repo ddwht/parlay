@@ -44,6 +44,7 @@ func registerInternalCommands() {
 		diffCmd,
 		checkCoverageCmd,
 		checkDriftCmd,
+		checkWriteSetCmd,
 		checkReadinessCmd,
 		checkBuildfileCmd,
 		checkSupportsCmd,

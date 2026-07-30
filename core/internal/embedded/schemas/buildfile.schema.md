@@ -204,6 +204,7 @@ Every `bindings:` rule and every `targets.<kind>.operations[]` entry references 
 | `buildfile-components-double-declared` | Top-level `components:` (legacy) AND `targets.presentation.components:` are both populated. |
 | `buildfile-models-deprecated` (warning) | Top-level `models:` is non-empty AND the project has a resolvable `domain-model.yaml`. Warning, not error — see "`models:` is deprecated" for why, and for why the domain-model condition matters. |
 | `buildfile-routes-ambiguous` | Top-level `routes:` (legacy) collide with both `targets.presentation` (client-side) and `targets.transport` (HTTP exposure); designer must disambiguate. |
+| `codegen-wrote-outside-plan` | A file tracked in `.code-hashes.yaml` is declared by no `plan.creates`, `plan.modifies`, or cross-cutting `target-files` / `target-creates`. Emitted by `parlay internal check-write-set`, which audits after the fact — parlay does not perform codegen's writes and cannot intercept them. Two categories are exempt and reported as such: test files (identified by their `parlay-artifact: test` marker; emitted by the test-generation step, not the plan) and project scaffold (files with no `component` attribution, which no feature's plan can declare). |
 
 ### Presentation-only projects
 

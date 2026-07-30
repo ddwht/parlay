@@ -56,6 +56,8 @@ This skill operates in **project-pass mode** by default — it walks every featu
 
 Project-pass mode introduces two cross-feature contracts:
 
+**The plan allowlist is audited, not intercepted.** Writing outside `plan.creates` / `plan.modifies` is an obligation on you: codegen's writes are performed by you, not by the tool, so nothing stops one at the moment it happens. What does exist is `parlay internal check-write-set`, which compares `.code-hashes.yaml` against every declared plan afterwards and reports `codegen-wrote-outside-plan` for anything undeclared. Emitting a file you have not declared is therefore detectable, not invisible — declare it or do not write it.
+
 1. **Sibling-create satisfies modify.** A `plan.modifies` row in feature B is allowed to name a path that does not yet exist on disk, provided some other feature A in the same pass declares that path in its `plan.creates`. The validator (`parlay validate --project`) enforces this; codegen relies on the topological emission order (step 11.6 below) to make sure A's create has actually happened before B's modify runs.
 2. **Cycles are rejected.** If A's `plan.modifies` matches B's `plan.creates` AND B's `plan.modifies` matches A's `plan.creates`, neither feature can run first. The validator surfaces `plan-create-modify-cycle`; codegen refuses to start emission and stops.
 
