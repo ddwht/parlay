@@ -24,7 +24,7 @@ suites:
           - action: <render | click | input | select | navigate | wait>
             target: <element name, action name, or route path>
             value: <input value, selection value — when applicable>
-          - verify: <element | state | route | count | text | visible | hidden | enabled | disabled>
+          - verify: <one of the Verifications table below — element, text, state, route, ...>
             target: <element name, data property, or route path>
             expected: <expected value, count, or state>
 
@@ -70,6 +70,10 @@ suites:
 | file-content | file-path | value or object | File contains the expected content (string match or structured comparison) |
 | directory-exists | directory-path | — | Directory exists at the specified path |
 | error | action-name | error message | Action produces the expected error |
+| hidden | element-name | — | Element is absent or not visible. The negative of `visible`; both spellings are accepted because generated suites use each. |
+| disabled | element-name | — | Element is present but not interactive. The negative of `enabled`, same reasoning as `hidden`. |
+
+**This table is the authoritative list.** The example above abbreviates it, and for a while the two disagreed: the example carried `hidden`/`disabled` that the table omitted, the table carried `class`, `file-exists`, `file-content`, `directory-exists` and `error` that the example omitted, and generated suites used terms from both — so neither list on its own described what the tool produces. `testcases-unknown-term` validates against this table. If a term belongs in the vocabulary, it goes here.
 
 ## Suite organization
 
@@ -177,3 +181,7 @@ Legacy v1 suites without explicit `kind:` load as `kind: presentation` and auto-
 | `testcases-source-refs-missing-legacy` (warning) | A legacy v1 suite was loaded as v2 presentation; auto-populated source_refs would be approximate. |
 | `testcases-suite-kind-unknown` | A suite declares `kind:` outside `{presentation, operation}`. |
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |
+| `testcases-case-unnamed` | A `cases[]` entry declares no `name:`, or an empty one. The name is what a failing test reports, so an unnamed case fails anonymously. |
+| `testcases-unknown-term` | A `cases[].steps[]` entry uses an `action:` outside `{render, click, input, select, navigate, wait}`, a `verify:` outside `{element, state, route, count, text, visible, hidden, enabled, disabled}`, or declares neither. |
+| `testcases-route-uncovered` | A route in the merged route table has no `scope: route` suite. Warning on a project that has never had one, error once any scoped suite is declared. |
+| `testcases-flow-uncovered` | A multi-route flow named in a dialog has no `scope: flow` suite. Same warning-then-error escalation as `testcases-route-uncovered`. |

@@ -61,7 +61,34 @@ var knownUnimplementedCodes = map[string]string{
 	// layout/validate-vocabulary path without these two specific codes.
 	"vocabulary-missing-from-adapter": "adapter-vocabulary resolution does not emit this distinct code; the condition surfaces through validate-vocabulary's generic path.",
 	"vocabulary-unknown-adapter":      "same resolver gap as vocabulary-missing-from-adapter.",
+
+	// These two are additions to this list, which the comment above says not to
+	// make. They are not new gaps: both have been documented and unimplemented
+	// all along, in prose rather than in a code table, and the parser below only
+	// reads tables — so this check never saw them. Moving them into
+	// testcases.schema.md's table is what surfaced them. An entry here is worse
+	// than an implementation and better than an invisible hole.
+	//
+	// Implementing them needs inputs ValidateTestcasesV2 is not given: the merged
+	// route table for route coverage, and the dialog-declared flows for flow
+	// coverage. It receives only the canonical operation list, so route and flow
+	// coverage cannot be computed from what it has.
+	"testcases-route-uncovered": "route coverage needs the merged route table; ValidateTestcasesV2 receives only canonical operations.",
+	"testcases-flow-uncovered":  "flow coverage needs the dialog-declared flow list; same missing input as testcases-route-uncovered.",
 }
+
+// Blind spot worth knowing about: repoSchemaCodes reads codes out of markdown
+// TABLES only. A code documented in running prose — "the walker fires
+// `testcases-route-uncovered` naming the route" — is invisible to this check, and
+// two codes sat in exactly that position until they were moved into a table.
+//
+// Not widened to scan prose, deliberately. Every heuristic for "this backticked
+// hyphenated token is an error code" either misses real codes or matches
+// ordinary terms like `token-reference` and `source-refs`, and a conformance
+// check that fires on prose wording is one that gets silenced by rewording. The
+// durable fix is the house rule the schemas already mostly follow: codes belong
+// in the code table. This note exists so the next person finding a
+// prose-documented code knows it was a known limitation rather than an oversight.
 
 // buildfile-models-deprecated is no longer allowlisted and no longer needs
 // to be: the deep validator the CLI actually uses now emits it (as a

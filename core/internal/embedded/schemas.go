@@ -137,3 +137,15 @@ func endsWithSchemaSuffix(name string) bool {
 	const suffix = ".schema.md"
 	return strings.HasSuffix(name, suffix)
 }
+
+// ReadSchema returns one embedded schema's bytes by file name (e.g.
+// "testcases.schema.md").
+//
+// Exported so validators can hold their closed sets against the tables that
+// document them. The alternative is what happened with the testcases step
+// vocabulary: two lists in one schema drifted apart, a validator was written from
+// the shorter one, and it rejected seven steps in a real generated file. A test
+// that reads the table cannot make that mistake twice.
+func ReadSchema(name string) ([]byte, error) {
+	return schemasFS.ReadFile(filepath.Join("schemas", name))
+}
