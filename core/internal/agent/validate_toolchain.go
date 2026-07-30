@@ -119,8 +119,38 @@ func validateToolchainEntry(e ToolchainEntry, sourceRoot, kind string) []Validat
 		}
 	}
 
+	// A skill entry has to say how the agent calls it. The field reference
+	// marks invoke: required for Skills, and nothing enforced it — an adapter
+	// could declare a skill the agent has no way to reach, and the toolchain
+	// validator would pass it. MCP entries are exempt: they are addressed by
+	// server name plus a tools: list, which is a different calling convention.
+	if e.ID != "" && e.Server == "" && strings.TrimSpace(e.Invoke) == "" {
+		add("toolchain-skill-without-invoke",
+			"a skill entry needs invoke: — it names how the agent calls the skill, "+
+				"and without it the entry declares a tool nothing can reach")
+	}
+
 	switch e.Authority {
 	case "mutating":
+		// owns-markers is the marker-ownership contract, and it was parsed and
+		// then read by nothing. It decides whether parlay's markers survive a
+		// tool's rewrite; a file that falls out of the marker chain falls out of
+		// the hash chain and therefore out of the hand-edit guard, which is how
+		// 17 marked templates went invisible to scan-generated with nothing
+		// reporting it. Required for mutating entries, closed set {parlay, tool}.
+		switch strings.TrimSpace(e.OwnsMarkers) {
+		case "parlay", "tool":
+			// declared
+		case "":
+			add("toolchain-mutating-without-owns-markers",
+				"authority: mutating requires owns-markers: — it decides whether parlay's markers "+
+					"survive the tool's rewrite, and a file outside the marker chain is outside the "+
+					"hand-edit guard with nothing reporting it")
+		default:
+			add("toolchain-mutating-without-owns-markers",
+				fmt.Sprintf("owns-markers: %q is not in the closed set {parlay, tool}", e.OwnsMarkers))
+		}
+
 		if len(e.Preserves) == 0 {
 			add("toolchain-mutating-without-preserves",
 				"authority: mutating requires a preserves: list — without it nothing says what the tool must not break, "+

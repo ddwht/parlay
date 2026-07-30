@@ -509,6 +509,11 @@ func walkLayoutNodes(adapter *Adapter, nodes []parser.LayoutNode, parentType str
 		checkSpacingField(node.Gap, "gap", nodePath, spacingNames, spacingListStr, adapter, violations)
 		checkSpacingField(node.Padding, "padding", nodePath, spacingNames, spacingListStr, adapter, violations)
 
+		// (b2) universal-field-value-invalid for the two universal container
+		// fields whose values are fixed enums rather than adapter tokens.
+		checkUniversalEnumField(node.Direction, "direction", layoutDirections, nodePath, violations)
+		checkUniversalEnumField(node.Alignment, "alignment", layoutAlignments, nodePath, violations)
+
 		// (c) unknown-component-type.
 		comp, known := componentByType[node.Type]
 		if componentByType != nil && !known {
@@ -599,6 +604,46 @@ func walkLayoutNodes(adapter *Adapter, nodes []parser.LayoutNode, parentType str
 // against the raw-value and declared-token-membership rules. A raw
 // literal (e.g. "24px") is raw-value-where-token-required; a non-raw
 // value that isn't a declared spacing token name is unknown-token.
+// layoutDirections and layoutAlignments are the fixed enums layout.schema.md
+// declares for the two universal container fields that are not token
+// references. They are schema-owned rather than adapter-declared — "direction
+// is always one of the fixed enum {horizontal, vertical}" — so they live here
+// as constants rather than being read from the active adapter.
+//
+// Both were parsed into parser.LayoutNode scalars and then never checked. The
+// vocabulary validator does check container parameters against an adapter's
+// parameter_constraints, which is why this looked covered: that path reads
+// vocabulary.Node.LayoutParameters, and these two are decoded out of the
+// property map into typed fields before it ever sees them. So a layout could
+// say `direction: sideways` and pass every validator the pipeline runs.
+var (
+	layoutDirections = []string{"horizontal", "vertical"}
+	layoutAlignments = []string{"start", "center", "end", "stretch"}
+)
+
+// checkUniversalEnumField reports a universal container field whose value falls
+// outside its schema-fixed enum. Empty is not a violation: every universal field
+// is optional, and absent means "the framework default", not "invalid".
+func checkUniversalEnumField(value, field string, allowed []string, nodePath string, violations *[]layoutViolation) {
+	if value == "" {
+		return
+	}
+	for _, a := range allowed {
+		if value == a {
+			return
+		}
+	}
+	allowedStr := strings.Join(allowed, ", ")
+	*violations = append(*violations, layoutViolation{
+		Code:     "universal-field-value-invalid",
+		Message:  fmt.Sprintf("layout node %q sets %s to %q, which is not in the fixed enum {%s}", nodePath, field, value, allowedStr),
+		NodePath: nodePath,
+		Found:    value,
+		Expected: allowedStr,
+		Fix:      fmt.Sprintf("change %s to one of {%s} — the set is fixed by the layout schema, not by the adapter, so it cannot be extended by declaring a token", field, allowedStr),
+	})
+}
+
 func checkSpacingField(value, field, nodePath string, spacingNames map[string]bool, spacingListStr string, adapter *Adapter, violations *[]layoutViolation) {
 	if value == "" {
 		return

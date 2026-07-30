@@ -770,3 +770,127 @@ func TestLayoutPrecheck_PurityNoSideEffects(t *testing.T) {
 		t.Fatalf("adapter mutated by LayoutPrecheck")
 	}
 }
+
+// Suite: universal container fields with schema-fixed enums (D10)
+//
+// direction and alignment were parsed into parser.LayoutNode scalars and then
+// read by nothing. This looked covered because the vocabulary validator does
+// check container parameters against an adapter's parameter_constraints — but
+// that path reads vocabulary.Node.LayoutParameters, and these two are decoded
+// out of the property map into typed fields before it sees them. A layout could
+// declare `direction: sideways` and pass every validator in the pipeline.
+//
+// These are behavioural, not structural: the conformance suite only proves a
+// documented code is reachable in source, which a code emitted behind a
+// condition that never matches also satisfies.
+
+func TestValidateLayoutDeep_InvalidDirectionRejected(t *testing.T) {
+	adapter := fixtureClarity17()
+	layout := &parser.Layout{
+		ComponentVocabulary: "clarity@17",
+		SchemaVersion:       1,
+		Nodes: []parser.LayoutNode{
+			{ID: "root", Type: "clarity.region", Direction: "sideways"},
+		},
+	}
+	errs := ValidateLayoutDeep(layout, adapter)
+	found := false
+	for _, e := range errs {
+		if e.Code != "universal-field-value-invalid" {
+			continue
+		}
+		found = true
+		surface := errSurface(e)
+		// The offending value, the field, and the full allowed set all have to
+		// be in the message: "invalid direction" without the alternatives makes
+		// the author guess at a set the schema owns and they cannot widen.
+		for _, want := range []string{"sideways", "direction", "horizontal", "vertical"} {
+			if !strings.Contains(surface, want) {
+				t.Errorf("diagnostic omits %q: %s", want, surface)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("direction \"sideways\" produced no universal-field-value-invalid; got %+v", errs)
+	}
+}
+
+func TestValidateLayoutDeep_InvalidAlignmentRejected(t *testing.T) {
+	adapter := fixtureClarity17()
+	layout := &parser.Layout{
+		ComponentVocabulary: "clarity@17",
+		SchemaVersion:       1,
+		Nodes: []parser.LayoutNode{
+			{ID: "root", Type: "clarity.region", Alignment: "middle"},
+		},
+	}
+	errs := ValidateLayoutDeep(layout, adapter)
+	found := false
+	for _, e := range errs {
+		if e.Code == "universal-field-value-invalid" {
+			found = true
+			if !strings.Contains(errSurface(e), "stretch") {
+				t.Errorf("diagnostic omits the allowed alignment set: %s", errSurface(e))
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("alignment \"middle\" produced no universal-field-value-invalid; got %+v", errs)
+	}
+}
+
+// Every legal value must pass, and absent must pass. An over-strict check here
+// would reject valid layouts, which is a worse failure than the gap it closes.
+func TestValidateLayoutDeep_ValidAndAbsentUniversalFieldsAccepted(t *testing.T) {
+	adapter := fixtureClarity17()
+	for _, dir := range []string{"", "horizontal", "vertical"} {
+		for _, align := range []string{"", "start", "center", "end", "stretch"} {
+			layout := &parser.Layout{
+				ComponentVocabulary: "clarity@17",
+				SchemaVersion:       1,
+				Nodes: []parser.LayoutNode{
+					{ID: "root", Type: "clarity.region", Direction: dir, Alignment: align},
+				},
+			}
+			for _, e := range ValidateLayoutDeep(layout, adapter) {
+				if e.Code == "universal-field-value-invalid" {
+					t.Errorf("direction=%q alignment=%q rejected: %s", dir, align, errSurface(e))
+				}
+			}
+		}
+	}
+}
+
+// A nested node's violation must be reported against its own path, not the
+// root's — the walk has to reach children, and the locator has to say where.
+func TestValidateLayoutDeep_InvalidDirectionOnNestedNodeNamesItsPath(t *testing.T) {
+	adapter := fixtureClarity17()
+	layout := &parser.Layout{
+		ComponentVocabulary: "clarity@17",
+		SchemaVersion:       1,
+		Nodes: []parser.LayoutNode{
+			{
+				ID: "root", Type: "clarity.region", Direction: "vertical",
+				Children: []parser.LayoutNode{
+					{ID: "inner", Type: "clarity.region", Direction: "diagonal"},
+				},
+			},
+		},
+	}
+	errs := ValidateLayoutDeep(layout, adapter)
+	found := false
+	for _, e := range errs {
+		if e.Code == "universal-field-value-invalid" {
+			found = true
+			if !strings.Contains(errSurface(e), "inner") {
+				t.Errorf("violation does not name the offending nested node: %s", errSurface(e))
+			}
+			if strings.Contains(e.Context, "root") && !strings.Contains(e.Context, "inner") {
+				t.Errorf("violation anchored on the root instead of the child: %s", e.Context)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("nested invalid direction produced no violation; got %+v", errs)
+	}
+}

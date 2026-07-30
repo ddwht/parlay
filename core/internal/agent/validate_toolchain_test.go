@@ -190,3 +190,90 @@ func TestSchemaSection10ExampleValidates(t *testing.T) {
 		}
 	}
 }
+
+// Suite: the two fields that were parsed and never read (D10)
+//
+// Both were declared in the struct, documented in the field reference with a
+// Required column, and consulted by nothing. The schema's own Section 10 example
+// sets both correctly — so the fields were being authored right and simply never
+// checked, which is the quiet version of this bug: no adapter had to be wrong for
+// the gap to exist, and nothing would have reported one that was.
+
+// invoke: is Required for Skills. Without it an adapter declares a skill the
+// agent has no way to call, and the toolchain validator waved it through.
+func TestSkillWithoutInvokeIsRejected(t *testing.T) {
+	tc := &Toolchain{Skills: []ToolchainEntry{{
+		ID: "reviewer", Source: "community", Phase: []string{"code"},
+		Stage: "post-emit", Authority: "advisory",
+		Required: boolPtr(false), Fallback: "skip", ReadSet: []string{"src/**"},
+	}}}
+	if !hasCode(ValidateToolchain(tc, "src/"), "toolchain-skill-without-invoke") {
+		t.Error("a skill entry with no invoke: was accepted; nothing can reach it")
+	}
+}
+
+// MCP entries are addressed by server name plus a tools: list — a different
+// calling convention — so the rule must not fire on them.
+func TestMCPEntryDoesNotNeedInvoke(t *testing.T) {
+	tc := &Toolchain{MCP: []ToolchainEntry{{
+		Server: "angular-cli-mcp", Tools: []string{"ng_lint"},
+		Phase: []string{"code"}, Stage: "pre-emit", Authority: "advisory",
+		Required: boolPtr(false), Fallback: "skip", ReadSet: []string{"src/**"},
+	}}}
+	if hasCode(ValidateToolchain(tc, "src/"), "toolchain-skill-without-invoke") {
+		t.Error("an MCP entry was required to declare invoke:; it is addressed by server + tools")
+	}
+}
+
+// owns-markers: is Required for Mutating, and is the marker-ownership contract:
+// it decides whether parlay's markers survive the tool's rewrite. A file that
+// falls out of the marker chain falls out of the hash chain and so out of the
+// hand-edit guard — the incident the schema cites is 17 marked templates going
+// invisible to scan-generated with nothing reporting it.
+func TestMutatingToolNeedsOwnsMarkers(t *testing.T) {
+	tc := &Toolchain{MCP: []ToolchainEntry{{
+		Server: "fmt", Authority: "mutating", Required: boolPtr(false),
+		Fallback: "skip", WriteSet: []string{"src/app/**"},
+		Preserves: []string{"markers"},
+	}}}
+	if !hasCode(ValidateToolchain(tc, "src/"), "toolchain-mutating-without-owns-markers") {
+		t.Error("a mutating entry with no owns-markers: was accepted")
+	}
+}
+
+// The set is closed. An unrecognised value is worse than an absent one: it reads
+// as a considered answer.
+func TestOwnsMarkersIsAClosedSet(t *testing.T) {
+	for _, value := range []string{"both", "none", "parlay-and-tool", "Parlay", "TOOL"} {
+		tc := &Toolchain{MCP: []ToolchainEntry{{
+			Server: "fmt", Authority: "mutating", Required: boolPtr(false),
+			Fallback: "skip", WriteSet: []string{"src/app/**"},
+			Preserves: []string{"markers"}, OwnsMarkers: value,
+		}}}
+		if !hasCode(ValidateToolchain(tc, "src/"), "toolchain-mutating-without-owns-markers") {
+			t.Errorf("owns-markers %q was accepted; the set is {parlay, tool}", value)
+		}
+	}
+	for _, value := range []string{"parlay", "tool"} {
+		tc := &Toolchain{MCP: []ToolchainEntry{{
+			Server: "fmt", Authority: "mutating", Required: boolPtr(false),
+			Fallback: "skip", WriteSet: []string{"src/app/**"},
+			Preserves: []string{"markers"}, OwnsMarkers: value,
+		}}}
+		if hasCode(ValidateToolchain(tc, "src/"), "toolchain-mutating-without-owns-markers") {
+			t.Errorf("owns-markers %q was refused; it is in the closed set", value)
+		}
+	}
+}
+
+// An advisory entry declares no write-set and rewrites nothing, so marker
+// ownership does not arise. Requiring it there would make the field noise.
+func TestAdvisoryToolDoesNotNeedOwnsMarkers(t *testing.T) {
+	tc := &Toolchain{Skills: []ToolchainEntry{{
+		ID: "reviewer", Invoke: "/review", Authority: "advisory",
+		Required: boolPtr(false), Fallback: "skip", ReadSet: []string{"src/**"},
+	}}}
+	if hasCode(ValidateToolchain(tc, "src/"), "toolchain-mutating-without-owns-markers") {
+		t.Error("an advisory entry was required to declare owns-markers:")
+	}
+}

@@ -602,6 +602,8 @@ Each was earned by something that broke, not chosen for symmetry.
 | `toolchain-optional-without-fallback` | `required: false` with no `fallback:` |
 | `toolchain-advisory-with-write-set` | `authority: advisory` declaring a non-empty `write-set` |
 | `toolchain-unknown-phase` | `phase:` names something outside the five pipeline phases |
+| `toolchain-skill-without-invoke` | A skill entry (an `id:`, no `server:`) declares no `invoke:` |
+| `toolchain-mutating-without-owns-markers` | `authority: mutating` with `owns-markers:` absent, or set to anything outside `{parlay, tool}` |
 
 ### Optional section
 
