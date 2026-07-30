@@ -21,7 +21,7 @@ import (
 // internal constant in package config so the warning text in tests
 // can be asserted by importing this package without dragging in
 // internal config helpers.
-const ExpectedStudioVersionRangeForDisplay = ">=1.0.0"
+const ExpectedStudioVersionRangeForDisplay = ">=0.1.0"
 
 // FormatStudioVersionWarning returns the warning line a
 // version-mismatched Studio should produce. Empty string when the

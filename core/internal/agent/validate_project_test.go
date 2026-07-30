@@ -66,16 +66,21 @@ func TestClassifyCrossCuttingEntry_GenuineModifyStillDetected(t *testing.T) {
 // TestApplyBuildfileSeverity_SharedTable guards the divergence where
 // check-buildfile and validate --deep reported different verdicts for the
 // same buildfile because each carried its own severity table.
+//
+// It used to assert `unknown-component-widget`, a code no validator emits — so
+// it passed while the emitted code, `unknown-widget`, missed the table and
+// blocked. A test naming a phantom is worse than no test: it reports the
+// property holding for a string nothing produces.
 func TestApplyBuildfileSeverity_SharedTable(t *testing.T) {
 	got := ApplyBuildfileSeverity([]ValidationError{
 		{Code: "plan-create-collision"},
 		{Code: "cross-cutting-target-not-in-modifies"},
-		{Code: "unknown-component-widget"},
+		{Code: "unknown-widget"},
 	})
 	want := map[string]string{
 		"plan-create-collision":                string(SeverityWarning),
 		"cross-cutting-target-not-in-modifies": string(SeverityError),
-		"unknown-component-widget":             string(SeverityWarning),
+		"unknown-widget":                       string(SeverityWarning),
 	}
 	for _, f := range got {
 		if f.Severity != want[f.Code] {

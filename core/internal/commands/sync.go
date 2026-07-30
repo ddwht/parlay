@@ -155,11 +155,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
-	// Hook-point dispatch — fires after the textual sync report is
-	// produced and after any template-prompt branch has run.
-	noStudio := resolveNoStudio(loadProjectConfigNoStudio(cfg))
-	return runStudioPromptForSync(cfg, args[0], noStudio)
+	// No editor hand-off here. This hook offered to open Studio "to reconcile
+	// this drift visually" (spec/intents/studio-support/studio-cli-hooks/
+	// intents.md:54) — a surface that was designed and never built. Because
+	// `reconcile` was never a real subcommand, accepting the prompt made this
+	// command exit non-zero after having successfully done its work.
+	_ = cfg
+	return nil
 }
 
 func promptForSelection(cmd *cobra.Command, intents []parser.Intent, reader *bufio.Reader) []parser.Intent {

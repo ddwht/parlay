@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -140,10 +141,26 @@ func TestInvokeStudioSubprocess_EndToEnd(t *testing.T) {
 // table test is the static check on the in-process map; this is
 // the external-binary contract check. Both are needed.
 func TestParlayStudioSubcommandContract(t *testing.T) {
-	contractSubcommands := []string{
-		"domain-edit",
-		"artifacts-review",
-		"reconcile",
+	// Derived from the map, not restated. The list used to be hard-coded with
+	// all three names, which let it diverge from what Core actually dispatches
+	// — and it did: two of the three were dropped because no such surface was
+	// ever built, and a hand-kept list would still be asserting them.
+	//
+	// A note on this test's history, because it is the useful part. It is
+	// deliberately fail-hard red rather than skipped (see below), and it was
+	// red on main for the right reason: two subcommands did not exist. It went
+	// green when parlay-studio learned to answer `--help` before dispatching —
+	// which satisfied this test's literal assertion while the subcommands were
+	// still missing. Asserting `--help` succeeds is not the same as asserting
+	// the subcommand exists, and the gap between those two is where the broken
+	// hand-off lived.
+	var contractSubcommands []string
+	for _, sub := range trioToStudioSubcommand {
+		contractSubcommands = append(contractSubcommands, sub)
+	}
+	sort.Strings(contractSubcommands)
+	if len(contractSubcommands) == 0 {
+		t.Fatal("no trio subcommands to check — trioToStudioSubcommand is empty")
 	}
 
 	binary := resolveParlayStudioBinary(t)

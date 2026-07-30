@@ -17,7 +17,7 @@ func TestFormatStudioVersionWarning_Mismatch(t *testing.T) {
 		Version:    "0.9.0",
 		Reason:     config.StudioReasonDetected,
 	}
-	want := "warning: parlay-studio version 0.9.0 is older than expected (need >=1.0.0); some hooks may not work."
+	want := "warning: parlay-studio version 0.9.0 is older than expected (need >=0.1.0); some hooks may not work."
 	if got := FormatStudioVersionWarning(d); got != want {
 		t.Errorf("FormatStudioVersionWarning = %q, want %q", got, want)
 	}

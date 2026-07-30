@@ -83,15 +83,18 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
-	"unknown-component-widget": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
-	"unknown-component-action": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
-	"unknown-flow": {
+	// An element the active adapter's widget vocabulary does not know. A
+	// warning in both modes on purpose: the adapter may simply be behind the
+	// surface, and blocking would make an incomplete vocabulary un-buildable.
+	//
+	// The key is `unknown-widget` because that is what the validator emits.
+	// This table said `unknown-component-widget` — a string nothing emits — so
+	// the real code missed the table, fell through RuleSeverity's
+	// SeverityError default, and **blocked** the very builds this entry exists
+	// to let through. Two sibling phantoms went with it:
+	// `unknown-component-action` and `unknown-flow` are emitted by nothing and
+	// documented in no schema.
+	"unknown-widget": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},

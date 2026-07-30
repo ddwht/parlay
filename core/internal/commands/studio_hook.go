@@ -36,10 +36,19 @@ import (
 // parlay-studio subcommand it should hand off to on confirmation. The
 // table is intentionally hard-coded here — the trio set is closed and
 // the surface contract is part of this feature's design.
+// Only create-domain-model remains. `artifacts-review` and `reconcile` were
+// named here and implemented nowhere: Studio's dispatcher recognized neither,
+// so the map pointed at subcommands that did not exist. That was survivable
+// while unknown args fell through to a bare server boot; once unknown commands
+// started exiting 1, accepting either prompt made a successful trio command
+// return an error.
+//
+// The two surfaces they were meant to open — visual artifact review and visual
+// drift reconciliation — remain unbuilt and are recorded as deferred in
+// spec/intents/studio-support/studio-cli-hooks/. Naming them here again should
+// wait until something answers.
 var trioToStudioSubcommand = map[string]string{
 	"create-domain-model": "domain-edit",
-	"create-artifacts":    "artifacts-review",
-	"sync":                "reconcile",
 }
 
 // hookPromptWording maps a (trio-command, mode) pair to the exact
@@ -51,12 +60,6 @@ var hookPromptWording = map[string]map[string]string{
 	"create-domain-model": {
 		"brownfield": "Open Studio's Domain Model Editor against this model? (y/N) ",
 		"greenfield": "Empty domain model created — ready to author. Open Studio's Domain Model Editor? (y/N) ",
-	},
-	"create-artifacts": {
-		"default": "Open Studio to review the produced artifacts? (y/N) ",
-	},
-	"sync": {
-		"default": "Open Studio to reconcile this drift visually? (y/N) ",
 	},
 }
 

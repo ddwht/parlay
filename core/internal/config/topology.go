@@ -32,10 +32,10 @@ import (
 type MismatchKind string
 
 const (
-	MismatchBareParent              MismatchKind = "bare-parent"
-	MismatchAgentAtChild            MismatchKind = "agent-at-child"
-	MismatchBothHaveAgent           MismatchKind = "both-have-agent"
-	MismatchSingleRootMissingAgent  MismatchKind = "single-root-missing-ai-agent"
+	MismatchBareParent             MismatchKind = "bare-parent"
+	MismatchAgentAtChild           MismatchKind = "agent-at-child"
+	MismatchBothHaveAgent          MismatchKind = "both-have-agent"
+	MismatchSingleRootMissingAgent MismatchKind = "single-root-missing-ai-agent"
 )
 
 // FieldRemoval describes a field-level edit the proposed fix wants to
@@ -295,9 +295,9 @@ func ValidateAgentIdentitySingleSource(parent, child *ProjectConfig, parentPath,
 type OriginKind string
 
 const (
-	OriginFrom         OriginKind = "from"
+	OriginFrom          OriginKind = "from"
 	OriginInheritedFrom OriginKind = "inherited-from"
-	OriginNotDeclared  OriginKind = "not-declared"
+	OriginNotDeclared   OriginKind = "not-declared"
 )
 
 // FieldOrigin is one resolved config field plus the file it came from

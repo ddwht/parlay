@@ -169,10 +169,10 @@ func TestVersionMismatch(t *testing.T) {
 		{"1.4.0", false},
 		{"1.0.0", false},
 		{"2.5.0", false},
-		{"0.9.0", true},
-		{"0.1.2", true},
-		{"", false},     // empty = unknown, no warning
-		{"abc", true},   // unparseable, treat as mismatch
+		{"0.9.0", false}, // satisfies the >=0.1.0 floor
+		{"0.1.2", false}, // the version actually shipped
+		{"", false},      // empty = unknown, no warning
+		{"abc", true},    // unparseable, treat as mismatch
 		{"1-rc.1", false},
 	}
 	for _, tc := range cases {

@@ -135,46 +135,6 @@ func TestDispatchStudioHook_PromptWordingGreenfield(t *testing.T) {
 	}
 }
 
-func TestDispatchStudioHook_PromptWordingArtifacts(t *testing.T) {
-	out := &bytes.Buffer{}
-	in := strings.NewReader("n\n")
-	err := dispatchStudioHook(dispatchStudioHookOptions{
-		Pctx:          hookCtx(t, true),
-		TrioCommand:   "create-artifacts",
-		Mode:          "default",
-		In:            in,
-		Out:           out,
-		IsInteractive: boolPtr(true),
-	})
-	if err != nil {
-		t.Fatalf("dispatch error: %v", err)
-	}
-	want := "Open Studio to review the produced artifacts? (y/N) "
-	if out.String() != want {
-		t.Errorf("artifacts prompt = %q, want %q", out.String(), want)
-	}
-}
-
-func TestDispatchStudioHook_PromptWordingSync(t *testing.T) {
-	out := &bytes.Buffer{}
-	in := strings.NewReader("n\n")
-	err := dispatchStudioHook(dispatchStudioHookOptions{
-		Pctx:          hookCtx(t, true),
-		TrioCommand:   "sync",
-		Mode:          "default",
-		In:            in,
-		Out:           out,
-		IsInteractive: boolPtr(true),
-	})
-	if err != nil {
-		t.Fatalf("dispatch error: %v", err)
-	}
-	want := "Open Studio to reconcile this drift visually? (y/N) "
-	if out.String() != want {
-		t.Errorf("sync prompt = %q, want %q", out.String(), want)
-	}
-}
-
 func TestDispatchStudioHook_DeclineDoesNotInvokeStudio(t *testing.T) {
 	// "n" answer must NOT trigger a subprocess; if it did, the test
 	// would fail because /usr/local/bin/parlay-studio doesn't exist
@@ -237,19 +197,34 @@ func TestReadYNAnswer(t *testing.T) {
 }
 
 func TestTrioToStudioSubcommandTable(t *testing.T) {
-	cases := map[string]string{
-		"create-domain-model": "domain-edit",
-		"create-artifacts":    "artifacts-review",
-		"sync":                "reconcile",
+	// Only create-domain-model. `artifacts-review` and `reconcile` were named
+	// here and implemented nowhere, so the map pointed at subcommands that did
+	// not exist — and once unknown commands started exiting 1, accepting either
+	// prompt made a successful trio command return an error.
+	if got, want := len(trioToStudioSubcommand), 1; got != want {
+		t.Fatalf("trioToStudioSubcommand has %d entries, want %d: %v",
+			got, want, trioToStudioSubcommand)
 	}
-	for trio, want := range cases {
-		got, ok := trioToStudioSubcommand[trio]
-		if !ok {
-			t.Errorf("missing entry for %q", trio)
-			continue
+	if got := trioToStudioSubcommand["create-domain-model"]; got != "domain-edit" {
+		t.Errorf("trioToStudioSubcommand[create-domain-model] = %q, want domain-edit", got)
+	}
+	for _, unbuilt := range []string{"create-artifacts", "sync"} {
+		if sub, ok := trioToStudioSubcommand[unbuilt]; ok {
+			t.Errorf("%q maps to %q, but no such surface exists — re-adding it "+
+				"resurrects a prompt that can only fail", unbuilt, sub)
 		}
-		if got != want {
-			t.Errorf("trioToStudioSubcommand[%q] = %q, want %q", trio, got, want)
+	}
+}
+
+// The wordings for the two dropped hooks must not come back on their own. A
+// wording with no dispatch behind it is how the broken offer survived review.
+func TestDroppedHookWordingsAreGone(t *testing.T) {
+	for _, trio := range []string{"create-artifacts", "sync"} {
+		if _, ok := hookPromptWording[trio]; ok {
+			t.Errorf("hookPromptWording still carries %q — the surface it offers is unbuilt", trio)
 		}
+	}
+	if _, ok := hookPromptWording["create-domain-model"]; !ok {
+		t.Error("create-domain-model wording disappeared; that hook works and must stay")
 	}
 }

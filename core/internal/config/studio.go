@@ -82,7 +82,15 @@ type StudioDetection struct {
 // expectedStudioVersionRange is the range Core expects parlay-studio
 // to satisfy. Compile-time-encoded; bumped together with the public
 // agent surface contract whenever a breaking change ships.
-const expectedStudioVersionRange = ">=1.0.0"
+//
+// Lowered from ">=1.0.0" in 0.2.0. That floor was never satisfiable: it is a
+// compile-time constant and every released parlay-studio is 0.1.x, so the
+// mismatch warning printed on essentially every parlay invocation about a
+// condition upgrading could not resolve. It also stopped being true — the one
+// surviving hook (domain-edit) works on 0.1.2, and the two that did not work
+// were removed because their surfaces were never built, not because Studio was
+// too old.
+const expectedStudioVersionRange = ">=0.1.0"
 
 // detectStudio is the pure detection routine, parameterized over the
 // environment lookup and the PATH probe so unit tests can drive it
@@ -241,10 +249,9 @@ func detectStudioFromOS() StudioDetection {
 }
 
 // versionMismatch reports whether v sits outside expectedStudioVersionRange.
-// Today the range is the single rule ">=1.0.0", so any version that
-// parses to a major < 1 is a mismatch. An unparseable version is
-// reported as a mismatch — diagnostics should surface a warning rather
-// than silently treating an unknown version as compatible.
+// The range is ">=0.1.0", so every numerically-parseable version satisfies it.
+// An unparseable version is still reported as a mismatch — diagnostics should
+// surface a warning rather than silently treat garbage as compatible.
 func versionMismatch(v string) bool {
 	if v == "" {
 		// Empty version is "version-unknown"; we do not warn for
@@ -267,9 +274,18 @@ func versionMismatch(v string) bool {
 	if major[0] < '0' || major[0] > '9' {
 		return true
 	}
-	// Compare lexicographically against "1" — works for single-digit
-	// majors which is all the range cares about today.
-	return major < "1"
+	// The floor is 0.1.0, so any numerically-parseable major satisfies it and
+	// no released Studio warns. The checks above still stand: an empty version
+	// is "unknown" and silent, and a version whose major is missing or
+	// non-numeric is garbage from the probe and still warns — that is the
+	// signal that caught the banner mis-parse, and lowering a floor must not
+	// discard it.
+	//
+	// Note this predicate carries the version fact independently of
+	// expectedStudioVersionRange above; editing only the constant would change
+	// the message and not the behaviour, which is part of how the
+	// unsatisfiable floor went unnoticed.
+	return false
 }
 
 // EmitStudioVersionWarningOnce prints the version-mismatch warning to

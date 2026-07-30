@@ -64,3 +64,28 @@
 **Note**: This intent presupposes a CLI rename from `parlay extract-domain-model` to `parlay create-domain-model` (with the new command spanning both extraction-from-signals and empty-stub creation). The rename itself is out of scope for this feature and is tracked separately. Affected surfaces include other intents under `parlay-tool/domain-model` and `parlay-tool/multi-root`, the `qualified-identifier-resolver` intents, the `studio-support/domain-model-yaml-migration` feature, and the deployer / embedded skills / embedded schemas / CLI command registration that ship the current command name.
 
 ---
+
+## Deferred: artifacts-review and reconcile
+
+Two of the three hooks specified above were dropped in 0.2.0. They are recorded here rather than
+deleted, because the surfaces they were designed to open are still wanted.
+
+- **`artifacts-review`** — the `create-artifacts` hook (see the Verify bullet on reviewing produced
+  artifacts) offered Studio's *artifact editor*: read `surface.yaml` / `capabilities.yaml` /
+  `infrastructure.md` visually instead of as YAML.
+- **`reconcile`** — the `sync` hook offered Studio *to reconcile drift visually*: resolve an
+  intents/dialogs divergence in a diff view instead of by hand.
+
+Neither surface was built. Studio's dispatcher never recognized either subcommand name, so Core's
+hook map pointed at commands that did not exist. While unknown arguments fell through to a bare
+server boot this was merely wrong — Studio opened on the wrong page. Once unknown commands started
+exiting non-zero, accepting either prompt made a successful `parlay create-artifacts` or `parlay sync`
+return an error after its work was already on disk.
+
+Both prompts and both map entries are therefore removed. The `create-domain-model` hook, whose
+surface exists, is unchanged.
+
+**Re-adding either requires the surface first, not the prompt.** The prompt's stated value in this
+feature is saving the designer from remembering a command; an offer with nothing behind it has none of
+that value and a real cost. The contract test now derives its subcommand list from Core's map rather
+than restating it, so a name re-added here without an implementation fails loudly.

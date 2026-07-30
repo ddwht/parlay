@@ -127,4 +127,3 @@ func TestContext_ResolveAdapterChildFirst(t *testing.T) {
 		t.Errorf("missing: want empty, got %s", got)
 	}
 }
-

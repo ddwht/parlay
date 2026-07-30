@@ -58,3 +58,36 @@ func TestFilterMode_BuildKeepsErrorsOnly(t *testing.T) {
 		t.Errorf("build: got %+v", out)
 	}
 }
+
+// TestUnknownWidgetIsAWarningNotABlock pins D2. The severity table named
+// `unknown-component-widget` while the validator emits `unknown-widget`, so the
+// real code missed the table, fell through RuleSeverity's SeverityError
+// default, and blocked builds the entry exists to let through.
+//
+// The failure was invisible from either side alone: the table looked like it
+// graded adapter-vocabulary mismatches as warnings, and the validator looked
+// like it emitted a warning-graded code. Only the two strings side by side
+// showed they were different.
+func TestUnknownWidgetIsAWarningNotABlock(t *testing.T) {
+	for _, mode := range []ValidationMode{ModeAuthoring, ModeBuild} {
+		if got := RuleSeverity("unknown-widget", mode); got != SeverityWarning {
+			t.Errorf("RuleSeverity(unknown-widget, %v) = %v, want warning — "+
+				"an adapter whose vocabulary lags the surface must not block the build", mode, got)
+		}
+	}
+}
+
+// The three phantom codes are gone. Each was named in a severity table and
+// emitted by nothing; keeping them invites the same mismatch back.
+func TestPhantomSeverityCodesAreGone(t *testing.T) {
+	for _, phantom := range []string{
+		"unknown-component-widget",
+		"unknown-component-action",
+		"unknown-flow",
+	} {
+		if _, present := ruleSeverityTable[phantom]; present {
+			t.Errorf("%q is back in ruleSeverityTable — no validator emits it, "+
+				"so it can only shadow the code that is emitted", phantom)
+		}
+	}
+}

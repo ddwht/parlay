@@ -21,17 +21,25 @@ func TestLooksLikeVersion_BannerShapes(t *testing.T) {
 	}
 }
 
-// TestVersionMismatch_RealBannerVersion checks the downstream effect: with
-// the version extracted correctly, the range comparison operates on a real
-// number instead of a commit hash.
+// TestVersionMismatch_RealBannerVersion checks the downstream effect of the
+// banner fix: with the version extracted correctly, the range comparison
+// operates on a real number instead of a commit hash.
+//
+// It no longer asserts that 0.1.2 mismatches — the floor moved to >=0.1.0
+// because the old ">=1.0.0" was unsatisfiable by every released Studio. What
+// still matters here, and is what this test was really about, is that a
+// commit-hash token is recognized as garbage rather than silently accepted.
 func TestVersionMismatch_RealBannerVersion(t *testing.T) {
-	if !versionMismatch("0.1.2") {
-		t.Error("0.1.2 should be reported as older than the >=1.0.0 floor")
+	for _, ok := range []string{"0.1.2", "1.0.0", "2.3.4", "1-rc.1"} {
+		if versionMismatch(ok) {
+			t.Errorf("%s satisfies the >=0.1.0 floor and must not warn", ok)
+		}
 	}
-	if versionMismatch("1.0.0") {
-		t.Error("1.0.0 satisfies the floor and must not warn")
-	}
-	if versionMismatch("2.3.4") {
-		t.Error("2.3.4 satisfies the floor and must not warn")
+	// The token the old last-field parse used to select. Garbage must still
+	// warn, or lowering the floor would have thrown away the P0-1 signal.
+	for _, garbage := range []string{"ddwht)", "abc", "commit"} {
+		if !versionMismatch(garbage) {
+			t.Errorf("versionMismatch(%q) = false — an unparseable probe result must still warn", garbage)
+		}
 	}
 }

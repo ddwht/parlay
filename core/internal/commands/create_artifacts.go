@@ -45,9 +45,11 @@ func runCreateArtifactsHandler(cmd *cobra.Command, args []string) error {
 	// summary above and before the command returns. A failure of
 	// the main work would skip this branch.
 	pctx := config.FromCtx(cmd.Context())
-	if pctx == nil {
-		return nil
-	}
-	noStudio := resolveNoStudio(loadProjectConfigNoStudio(pctx))
-	return runStudioPromptForArtifacts(pctx, args[0], noStudio)
+	// No editor hand-off here. This hook offered to open Studio's "artifact
+	// editor" — a surface that was designed (see
+	// spec/intents/studio-support/studio-cli-hooks/intents.md:53) and never
+	// built. The prompt's whole value was saving the designer from remembering
+	// a command; with nothing behind it, it was an offer that could only fail.
+	_ = pctx
+	return nil
 }
