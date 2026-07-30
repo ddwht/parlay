@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/internal/vocabulary"
 )
 
@@ -285,5 +286,125 @@ func TestIsWrappingHelpersUseErrorsIs(t *testing.T) {
 	}
 	if !errors.Is(vocabulary.ErrVocabularyUnknownAdapter, vocabulary.ErrVocabularyUnknownAdapter) {
 		t.Fatal("errors.Is reflexive failed for ErrVocabularyUnknownAdapter")
+	}
+}
+
+// --- adapter-resolution path (Stage 4's orphan check) -----------------------
+
+// vocabAdapterFixture is an adapter declaring componentVocabulary clarity@17,
+// mirroring internal/vocabulary's own fixture. Restated here rather than
+// exported from that package's test file, which is not importable.
+const vocabAdapterFixture = `name: react-vite-radix-tailwind
+framework: React + Radix + Tailwind
+version: 0.1.0
+kind: presentation
+componentVocabulary:
+  name: clarity@17
+vocabulary:
+  components:
+    - name: clarity.button
+      properties: [label, disabled]
+      variants:
+        kind: [primary, secondary, tertiary]
+  spacing_tokens: [spacing-sm, spacing-md, spacing-lg]
+  color_tokens: [color-status-info, color-status-danger]
+  layout_containers:
+    - container_type: clarity.region
+      admissible_parameters: [direction, gap]
+      parameter_constraints:
+        direction:
+          type: enum
+          allowed_values: [horizontal, vertical]
+`
+
+// newVocabTestContext builds a Context rooted at a temp dir containing
+// .parlay/adapters/<slug>.adapter.yaml, so AdaptersPath() resolves to a real
+// directory the discovery loop can read.
+func newVocabTestContext(t *testing.T, adapters map[string]string) *config.Context {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, config.ParlayDir, config.AdaptersDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir adapters: %v", err)
+	}
+	for slug, body := range adapters {
+		if err := os.WriteFile(filepath.Join(dir, slug+".adapter.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatalf("write adapter %s: %v", slug, err)
+		}
+	}
+	return &config.Context{Root: config.Root{Name: filepath.Base(root), Path: root}}
+}
+
+// TestResolveVocabularyForLayoutDiscoversAdapters covers the wiring that keeps
+// vocabulary.ResolveForLayout alive.
+//
+// Stage 4 retires the design-loop skill, and the concern on record was that
+// design-loop might be ResolveForLayout's only consumer — retiring it would then
+// leave the adapter-resolution path dead without anything saying so. It is not:
+// `parlay internal validate-vocabulary` calls it through
+// resolveVocabularyForLayout, right here.
+//
+// But that call site had zero test coverage, so "still exercised" rested on a
+// line no test ran — which is the same shape as a documented code whose only
+// emitter is unreachable. Both halves are covered below so the claim keeps
+// holding on its own.
+func TestResolveVocabularyForLayoutDiscoversAdapters(t *testing.T) {
+	t.Cleanup(func() { validateVocabularyAdapterFile = "" })
+	validateVocabularyAdapterFile = ""
+
+	cfg := newVocabTestContext(t, map[string]string{
+		"react-vite-radix-tailwind": vocabAdapterFixture,
+	})
+
+	vocab, ref, err := resolveVocabularyForLayout(cfg, &layoutShape{ComponentVocabulary: "clarity@17"})
+	if err != nil {
+		t.Fatalf("resolveVocabularyForLayout: %v", err)
+	}
+	if ref != "clarity@17" {
+		t.Fatalf("adapter ref = %q, want clarity@17", ref)
+	}
+	if len(vocab.Components) == 0 {
+		t.Fatalf("resolved an empty vocabulary; the adapter's vocabulary block did not load: %+v", vocab)
+	}
+}
+
+// TestResolveVocabularyForLayoutUnknownAdapterCodeFlows asserts the stable code
+// survives the trip through the command layer. The command echoes resErr
+// verbatim to stderr and into its JSON envelope, so a wrapped or reworded error
+// here is a wire-contract break.
+func TestResolveVocabularyForLayoutUnknownAdapterCodeFlows(t *testing.T) {
+	t.Cleanup(func() { validateVocabularyAdapterFile = "" })
+	validateVocabularyAdapterFile = ""
+
+	cfg := newVocabTestContext(t, map[string]string{
+		"react-vite-radix-tailwind": vocabAdapterFixture,
+	})
+
+	_, _, err := resolveVocabularyForLayout(cfg, &layoutShape{ComponentVocabulary: "nope@99"})
+	if err == nil {
+		t.Fatal("want ErrVocabularyUnknownAdapter, got nil")
+	}
+	if !IsVocabularyUnknownAdapterError(err) {
+		t.Fatalf("classifier did not recognize the error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "vocabulary-unknown-adapter") {
+		t.Fatalf("stable code missing from the message the command prints: %v", err)
+	}
+}
+
+// TestResolveVocabularyForLayoutMissingAdaptersDir asserts a root with no
+// .parlay/adapters/ names the directory it could not read, rather than
+// reporting an unknown adapter against an empty registered list.
+func TestResolveVocabularyForLayoutMissingAdaptersDir(t *testing.T) {
+	t.Cleanup(func() { validateVocabularyAdapterFile = "" })
+	validateVocabularyAdapterFile = ""
+
+	cfg := &config.Context{Root: config.Root{Path: filepath.Join(t.TempDir(), "no-such-root")}}
+	_, _, err := resolveVocabularyForLayout(cfg, &layoutShape{ComponentVocabulary: "clarity@17"})
+	if err == nil {
+		t.Fatal("want a read error for a missing adapters dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "read adapters dir") {
+		t.Fatalf("error should name the unreadable directory: %v", err)
 	}
 }
