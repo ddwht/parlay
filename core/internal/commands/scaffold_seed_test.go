@@ -393,3 +393,51 @@ fixtures:
 		t.Fatalf("non-scalar difference must not refuse the seed: %+v", out.Findings)
 	}
 }
+
+// A refusal must withhold the data, not merely flag it.
+//
+// The records were emitted alongside derivable:false, and they embodied exactly
+// the last-writer-wins the design forbids: the contradicting field held
+// whichever contributor sorted last. A consumer reading `records` without
+// first checking `derivable` got a silently reconciled seed — the defect the
+// refusal exists to prevent, reintroduced one field over.
+func TestRefusedSeedEmitsNoRecords(t *testing.T) {
+	cfg := setupCompositionProject(t, map[string]string{
+		"expenses-list": `feature: expenses-list
+fixtures:
+  mine:
+    composes: true
+    data:
+      ExpenseReport:
+        - id: rpt-1
+          status: submitted
+      Employee:
+        - id: emp-1
+          name: Dana
+`,
+		"approvals/review-queue": `feature: review-queue
+fixtures:
+  queue:
+    composes: true
+    data:
+      ExpenseReport:
+        - id: rpt-1
+          status: rejected
+`,
+	})
+
+	out := deriveSeedForTest(t, cfg)
+	if out.Derivable {
+		t.Fatal("expected a refusal")
+	}
+	if len(out.Records) != 0 {
+		t.Fatalf("a refused derivation must emit no records, got %d: %+v", len(out.Records), out.Records)
+	}
+	// The uncontradicted records are withheld too — a seed missing the rows the
+	// contradiction touched is not a seed, it is a different dataset.
+	for _, r := range out.Records {
+		if r.Entity == "Employee" {
+			t.Error("no partial seed: uncontradicted rows must not ship either")
+		}
+	}
+}

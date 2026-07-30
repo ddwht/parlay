@@ -236,6 +236,21 @@ func deriveSeed(cfg *config.Context, features []string) seedOutput {
 
 	sort.Slice(out.Findings, func(i, j int) bool { return out.Findings[i].Message < out.Findings[j].Message })
 	out.Derivable = len(out.Findings) == 0
+
+	// A seed either exists or it does not. There is no partial one.
+	//
+	// The records were still being emitted alongside derivable:false, and those
+	// records embodied exactly the last-writer-wins this design forbids — the
+	// contradicting field held whichever contributor sorted last. Any consumer
+	// reading `records` without first checking `derivable` would have gotten a
+	// silently reconciled seed, which is the defect the refusal exists to
+	// prevent, reintroduced one field over.
+	//
+	// Withholding them is what makes the refusal load-bearing rather than
+	// advisory.
+	if !out.Derivable {
+		out.Records = nil
+	}
 	return out
 }
 
