@@ -27,11 +27,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/parlay-tool/parlay/studio/internal/config"
-	"github.com/parlay-tool/parlay/studio/internal/deployer"
-	"github.com/parlay-tool/parlay/studio/internal/domain"
-	"github.com/parlay-tool/parlay/studio/internal/server"
-	"github.com/parlay-tool/parlay/studio/internal/ui"
+	"github.com/ddwht/parlay/studio/internal/config"
+	"github.com/ddwht/parlay/studio/internal/deployer"
+	"github.com/ddwht/parlay/studio/internal/domain"
+	"github.com/ddwht/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/studio/internal/ui"
 )
 
 // Set by goreleaser ldflags at release time; defaults are sentinels that

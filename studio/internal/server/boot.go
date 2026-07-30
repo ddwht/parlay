@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/parlay-tool/parlay/studio/internal/config"
+	"github.com/ddwht/parlay/studio/internal/config"
 )
 
 // drainDeadline is the hard-coded graceful-shutdown drain budget. Handlers

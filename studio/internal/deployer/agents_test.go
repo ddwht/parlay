@@ -132,24 +132,14 @@ func TestDetectAgentSurfacesPartialSurface(t *testing.T) {
 	}
 }
 
-// TestAgentsPackageHasNoCoreImports — the duplicate-locally invariant.
-// The agents.go source MUST contain no import path matching the
-// parlay-tool/parlay/core path (or any other core/* import).
-func TestAgentsPackageHasNoCoreImports(t *testing.T) {
-	data, err := os.ReadFile("agents.go")
-	if err != nil {
-		t.Fatalf("ReadFile agents.go: %v", err)
-	}
-	forbidden := []string{
-		"parlay-tool/parlay/core",
-		"github.com/parlay-tool/parlay/core/",
-	}
-	for _, f := range forbidden {
-		if strings.Contains(string(data), f) {
-			t.Fatalf("forbidden core/* import %q present in agents.go", f)
-		}
-	}
-}
+// The duplicate-locally invariant that used to live here — agents.go must not
+// import any core/* package — is gone with the module merge. Two independent
+// reasons: the boundary only existed because Studio shipped as its own Go
+// module and had to stay binary-independent of Core's API, and the guard matched
+// the pre-merge module path, so after the rename it could not have caught an
+// offending import even if the boundary still applied.
+//
+// Its sibling in domain/no_core_import_test.go went for the same reason.
 
 func TestAgentSurfaceStrings(t *testing.T) {
 	cases := map[AgentSurface]string{

@@ -41,10 +41,15 @@ func postValidate(t *testing.T, router http.Handler, body string) *httptest.Resp
 // --- file-exists cases ------------------------------------------------------
 
 // TestValidationSourceFilesExist mirrors the file-exists testcases: the
-// subprocess wrapper, the parity suite, and the no-Core-import guard all live
-// in this package.
+// subprocess wrapper and the parity suite live in this package.
+//
+// no_core_import_test.go is deliberately gone. It walked the studio module and
+// failed on any import of Core, enforcing a boundary that existed because
+// Studio shipped as its own Go module and reached Core only out of process.
+// With one module there is no boundary left to guard — the guard would now fail
+// on every legitimate shared import.
 func TestValidationSourceFilesExist(t *testing.T) {
-	for _, f := range []string{"validate.go", "parity_test.go", "no_core_import_test.go"} {
+	for _, f := range []string{"validate.go", "parity_test.go"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Fatalf("expected source file %s to exist: %v", f, err)
 		}

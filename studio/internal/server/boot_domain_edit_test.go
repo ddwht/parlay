@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parlay-tool/parlay/studio/internal/config"
+	"github.com/ddwht/parlay/studio/internal/config"
 )
 
 // bootHarness captures the observable outcomes the blocking-domain-edit

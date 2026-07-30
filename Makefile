@@ -42,20 +42,18 @@ endef
 # binary is emitted to the repo root alongside parlay.
 build:
 	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
-	cd studio && CGO_ENABLED=0 $(GO) build -o ../parlay-studio ./cmd/parlay-studio
+	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
 
 # Run the test suite across BOTH Go modules. studio/ is a nested module
 # with its own go.mod, so the root module's `./...` never reaches it — it
 # must be tested from its own directory. CGO stays off to match `build`.
 test:
 	CGO_ENABLED=0 $(GO) test ./...
-	cd studio && CGO_ENABLED=0 $(GO) test ./...
 
 # Vet both modules the same way: root module, then the nested studio
 # module from its own directory. Same CGO/two-module reasoning as `test`.
 vet:
 	CGO_ENABLED=0 $(GO) vet ./...
-	cd studio && CGO_ENABLED=0 $(GO) vet ./...
 
 # Edit-source -> build -> upgrade, in one shot.
 # Use this after changing anything under core/internal/embedded/{skills,schemas}/.

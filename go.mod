@@ -8,18 +8,7 @@ require (
 )
 
 require (
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/spf13/pflag v1.0.9
 )
-
-// parlay-feature: design-loop/vocabulary-validation
-// parlay-component: cross-cutting/core-cli-wiring
-//
-// In-process dependency on the studio module so the validate-vocabulary
-// CLI command can call vocabulary.Validate / vocabulary.LoadFromAdapterFile
-// directly. The replace directive pins the actual sources to the sibling
-// ./studio directory (local-only wiring). When studio publishes a tagged
-// release the replace can be dropped.
-require github.com/parlay-tool/parlay/studio v0.0.0
-
-replace github.com/parlay-tool/parlay/studio => ./studio

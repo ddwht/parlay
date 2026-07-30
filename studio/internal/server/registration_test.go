@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/parlay-tool/parlay/studio/internal/config"
-	"github.com/parlay-tool/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/studio/internal/config"
+	"github.com/ddwht/parlay/studio/internal/server"
 )
 
 // TestRegistrationMountsHandler confirms a Registration constructor wires

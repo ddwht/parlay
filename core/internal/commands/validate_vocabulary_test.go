@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/parlay-tool/parlay/studio/pkg/vocabulary"
+	"github.com/ddwht/parlay/internal/vocabulary"
 )
 
 // adapterFixture mirrors the studio adapter fixture; both halves are
@@ -261,7 +261,7 @@ func TestImportPathIsStudioVocabulary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read source: %v", err)
 	}
-	if !strings.Contains(string(data), `"github.com/parlay-tool/parlay/studio/pkg/vocabulary"`) {
+	if !strings.Contains(string(data), `"github.com/ddwht/parlay/internal/vocabulary"`) {
 		t.Fatal("validate_vocabulary.go does not import the studio vocabulary library")
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
-	"github.com/parlay-tool/parlay/studio/pkg/vocabulary"
+	"github.com/ddwht/parlay/internal/vocabulary"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -34,7 +34,7 @@ declared in the resolved adapter's vocabulary: block. Emits the
 structured report as JSON on stdout. Exit code 0 means no
 error-severity entries; exit code 1 means at least one error entry.
 
-The command imports github.com/parlay-tool/parlay/studio/pkg/vocabulary
+The command imports github.com/ddwht/parlay/internal/vocabulary
 directly (in-process; no subprocess) so the CLI report is byte-equivalent
 to a library call against the same (layout, adapter) pair.`,
 	Args: cobra.ExactArgs(1),

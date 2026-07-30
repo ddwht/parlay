@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/parlay-tool/parlay/studio/internal/server"
+	"github.com/ddwht/parlay/studio/internal/server"
 )
 
 // TestSaveMatchingEtagWrites asserts a save presenting the load-time etag
