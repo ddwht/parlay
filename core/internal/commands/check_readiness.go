@@ -236,6 +236,7 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	// Multi-adapter v1 prefers surface.yaml over surface.md and
 	// capabilities.yaml over infrastructure.md; legacy forms still count.
 	surfacePath := parser.ResolveSurfacePath(featurePath)
+	issues = append(issues, surfaceResolutionIssues(featurePath)...)
 	infraPath := filepath.Join(featurePath, "infrastructure.md")
 	hasArtifacts := phaseAtLeast(phase, PhaseArtifacts)
 	hasSurface := surfacePath != ""

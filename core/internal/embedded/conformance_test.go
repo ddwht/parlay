@@ -1,6 +1,10 @@
 package embedded
 
 import (
+	"bytes"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -29,7 +33,12 @@ import (
 var codeTableHeader = regexp.MustCompile(`^\|\s*Code\s*\|`)
 
 // codeRow matches a table row whose first cell is a backticked code.
-var codeRow = regexp.MustCompile("^\\|\\s*`([a-z][a-z0-9-]+)`\\s*\\|")
+// The first cell may annotate the code with its severity — schemas write
+// rows like "| `surface-md-superseded` (warning) | …". Requiring the closing
+// backtick to sit immediately before the pipe skipped every annotated row, so
+// those codes were never extracted and the emission check never saw them. Allow
+// any non-pipe text after the code.
+var codeRow = regexp.MustCompile("^\\|\\s*`([a-z][a-z0-9-]+)`[^|]*\\|")
 
 // knownUnimplementedCodes are documented error codes that no Go source
 // currently emits. Each entry is a real gap, not an exemption to be added
@@ -119,8 +128,30 @@ func goSourceRoot(t *testing.T) string {
 
 func goSourceCorpus(t *testing.T) string {
 	t.Helper()
+	return goSourceCorpusExcluding(t, nil)
+}
+
+// goSourceCorpusExcluding builds the production-source corpus with comments
+// stripped and the named base filenames skipped.
+//
+// **Comments must be stripped.** The reachability check below asks whether a
+// validator is referenced anywhere beyond its own declaration. Every Go
+// function has a doc comment naming itself, so with comments in the corpus the
+// reference count was ≥2 for every function in the package and the check
+// silently passed on everything — six unreachable validators included. That is
+// the bug this helper exists to prevent, and it is worth doing with the parser
+// rather than a regex: a `//` inside a string literal would make a hand-rolled
+// stripper delete real code, which is the same class of mistake one layer down.
+func goSourceCorpusExcluding(t *testing.T, skipBase []string) string {
+	t.Helper()
+	skip := map[string]bool{}
+	for _, b := range skipBase {
+		skip[b] = true
+	}
+
 	var sb strings.Builder
 	root := goSourceRoot(t)
+	fset := token.NewFileSet()
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -139,11 +170,31 @@ func goSourceCorpus(t *testing.T) string {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
+		if skip[filepath.Base(path)] {
+			return nil
+		}
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return nil
 		}
-		sb.Write(data)
+		// Parse without ParseComments, then re-print: the output carries
+		// every declaration and literal and no comment text.
+		file, parseErr := parser.ParseFile(fset, path, data, 0)
+		if parseErr != nil {
+			// Unparseable file: fall back to raw bytes rather than
+			// dropping it. A missing file would report a real reference
+			// as absent, which fails in the noisy direction — acceptable
+			// — but dropping it silently would not.
+			sb.Write(data)
+			sb.WriteByte('\n')
+			return nil
+		}
+		var buf bytes.Buffer
+		if printErr := printer.Fprint(&buf, fset, file); printErr != nil {
+			sb.Write(data)
+		} else {
+			sb.Write(buf.Bytes())
+		}
 		sb.WriteByte('\n')
 		return nil
 	})
@@ -153,6 +204,14 @@ func goSourceCorpus(t *testing.T) string {
 	return sb.String()
 }
 
+// severityTableFile holds ruleSeverityTable, whose keys are quoted code
+// literals. It is excluded from the *emission* corpus because assigning a
+// severity to a code is not emitting it — with the file included, a code that
+// existed only as a severity-table key read as "emitted" and the documented-
+// codes check passed on it. That is how `surface-md-superseded` and the
+// `unknown-component-*` phantoms stayed invisible.
+const severityTableFile = "validation_mode.go"
+
 // TestConformance_DocumentedErrorCodesAreEmitted asserts that every error
 // code a schema documents appears as a literal in Go source. A documented
 // code that no code path can produce is a promise the tool does not keep.
@@ -161,7 +220,7 @@ func TestConformance_DocumentedErrorCodesAreEmitted(t *testing.T) {
 	if len(byFile) == 0 {
 		t.Fatal("parsed zero error-code tables — the table-detection heuristic has drifted from the schema format")
 	}
-	corpus := goSourceCorpus(t)
+	corpus := goSourceCorpusExcluding(t, []string{severityTableFile})
 
 	var missing []string
 	seen := map[string]bool{}
@@ -226,7 +285,11 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 	agentDir := filepath.Join(root, "internal", "agent")
 	commandsDir := filepath.Join(root, "internal", "commands")
 
-	exported := regexp.MustCompile(`(?m)^func (Validate[A-Za-z0-9_]+)\(`)
+	// Both prefixes. It matched only `Validate` before, so every `Check*`
+	// validator was invisible to the reachability test — which is how
+	// CheckVocabularyBlockParity and CheckCrossAdapterParity, both
+	// unreachable, went unreported.
+	exported := regexp.MustCompile(`(?m)^func ((?:Validate|Check)[A-Za-z0-9_]+)\(`)
 	var entryPoints []string
 	err := filepath.WalkDir(agentDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -282,8 +345,13 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 		if ref.MatchString(corpus) {
 			continue
 		}
-		// Reached indirectly via another agent-package function? Any
-		// reference beyond its own definition counts.
+		// Reached indirectly via another agent-package function? The corpus
+		// has comments stripped, so the declaration contributes exactly one
+		// occurrence and anything above that is a genuine second reference.
+		//
+		// With comments in the corpus this threshold was met by every
+		// function — its own doc comment names it — so the check passed
+		// unconditionally. Do not reintroduce a raw-source corpus here.
 		if len(ref.FindAllString(agentCorpus, -1)) > 1 {
 			continue
 		}
@@ -300,8 +368,29 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 
 // knownUnreachableValidators records validators deliberately not wired up
 // yet, with the reason. Same discipline as knownUnimplementedCodes.
+// Each entry is a bill, not an exemption: it says a documented capability is
+// present in source and unreachable at runtime. Shrink this list.
+//
+// All but the first were invisible until this test was repaired — the
+// reachability probe counted a function's own doc comment as a second
+// reference, so it passed on everything, and it matched only `Validate*` so no
+// `Check*` validator was ever considered. Both are fixed above.
 var knownUnreachableValidators = map[string]string{
 	"ValidateBuildfileCanonical": "duplicate of the models:-deprecation logic now implemented in the deep validator (which the CLI actually uses). Kept for the multi-target canonical shape; delete it once v2 validation lands, rather than maintaining two implementations of the same rule.",
+
+	"ValidateBuildfileDeep": "v1 leftover returning []string; every command reaches ValidateBuildfileDeepStructured instead. Sharpest case on this list: seven tests in validate_test.go call it, so they report confidence about a path the tool never executes. Deleting it means repointing those tests at the structured entry point — which is the actual win, not the deletion.",
+
+	"ValidateInfrastructureDeep": "the non-Deep sibling ValidateInfrastructure is what `validate --type infrastructure` reaches. Determine whether the Deep variant adds a rule the shallow one lacks; if it does, wire it behind --deep like the buildfile pair, and if it does not, delete it.",
+
+	"ValidateAdapterSetLinks": "multi-target machinery. `validate --type adapter-set` reaches ValidateAdapterSet but not the link check, so cross-slot references in an adapter-set are unvalidated. Wire into that same command; it is the natural home and needs no new surface.",
+
+	"ValidateBlueprintStrategy": "closes a documented gap directly — blueprint-strategy-unknown is in knownUnimplementedCodes precisely because this validator is never called. Wiring it into blueprint validation removes an entry from both lists at once, which makes it the highest-value item here.",
+
+	"CheckVocabularyBlockParity": "adapter-hygiene check comparing componentVocabulary:/tokens: against the vocabulary: block. `validate --type adapter` now exists (it was added for the toolchain rules) and is the obvious home; this predates it.",
+
+	"CheckCrossAdapterParity": "layout parity across adapters in a multi-target project. No command validates a layout against more than one adapter today, so unlike the others this one has no existing surface to attach to — it needs the multi-target validation path first.",
+
+	"ValidateTestcasesV2": "there is no `validate --type testcases`, so nothing checks a testcases.yaml against its schema; the build phase writes it and only the coverage walker reads it. Adding the type is small and would make the v2 suite-shape rules enforceable.",
 }
 
 // phaseModules are the skills that run inside a parlay-loop subagent

@@ -36,7 +36,13 @@ import (
 var digestCodeTableHeader = regexp.MustCompile(`^\|\s*Code\s*\|`)
 
 // digestCodeRow matches a table row whose first cell is a backticked code.
-var digestCodeRow = regexp.MustCompile("^\\|\\s*`([a-z][a-z0-9-]+)`\\s*\\|(.*)")
+//
+// The first cell may annotate the code with its severity — schemas write rows
+// like "| `surface-md-superseded` (warning) | …". Requiring the closing backtick
+// to sit immediately before the pipe skipped every annotated row, so the digest
+// silently under-reported. The identical hole existed in the conformance
+// suite's extractor; fixing that one is what surfaced this one.
+var digestCodeRow = regexp.MustCompile("^\\|\\s*`([a-z][a-z0-9-]+)`[^|]*\\|(.*)")
 
 // Closed vocabularies are deliberately NOT extracted.
 //
