@@ -36,22 +36,23 @@ endef
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
 # faster and works in environments without a C toolchain.
 #
-# studio/ is a nested module with its own go.mod, so the root module does
-# not contain ./studio/cmd/parlay-studio — it must be built from its own
-# directory (same two-module reasoning as `test` and `vet` below). The
-# binary is emitted to the repo root alongside parlay.
+# parlay-studio is a retirement notice, not a program — see
+# studio/cmd/parlay-studio/main.go. It is built for one release so that an
+# already-installed copy gets replaced by something that says where the
+# commands went, rather than continuing to boot a server from an old build.
+# Drop this line and that file together after that release.
 build:
 	CGO_ENABLED=0 $(GO) build -o parlay ./core/cmd/parlay
 	CGO_ENABLED=0 $(GO) build -o parlay-studio ./studio/cmd/parlay-studio
 
-# Run the test suite across BOTH Go modules. studio/ is a nested module
-# with its own go.mod, so the root module's `./...` never reaches it — it
-# must be tested from its own directory. CGO stays off to match `build`.
+# Run the test suite. One module since Stage 1 absorbed studio/, so `./...`
+# reaches everything; the second `go test` from studio/'s own directory that
+# used to be here would now re-run a subset of the same packages. CGO stays
+# off to match `build`.
 test:
 	CGO_ENABLED=0 $(GO) test ./...
 
-# Vet both modules the same way: root module, then the nested studio
-# module from its own directory. Same CGO/two-module reasoning as `test`.
+# Vet the module. Same one-module reasoning as `test`.
 vet:
 	CGO_ENABLED=0 $(GO) vet ./...
 
