@@ -5,7 +5,7 @@ description: "Parlay: Onboard existing codebase and draft adapter"
 
 # Onboard Existing Codebase
 
-Analyze an existing codebase and draft a framework adapter with mount-strategies, file conventions, and coding conventions populated from the project's actual structure and patterns. This is a one-time setup skill for brownfield projects.
+Analyze an existing codebase and draft the framework adapter(s) it needs — with mount-strategies, file conventions, and coding conventions populated from the project's actual structure and patterns — then pin the topology in `.parlay/adapter-set.yaml`. Handles both homogeneous projects (one presentation adapter) and **heterogeneous** ones where the frontend is one technology and the backend another (e.g. React + NestJS + Prisma), drafting a per-kind adapter for each layer. This is a one-time setup skill for brownfield projects.
 
 ## Arguments
 
@@ -30,22 +30,14 @@ Who resolves it depends on where you are running. If you own the user interactio
    - The source-root directory exists and contains source files
    - If an adapter is already registered, ask the user whether to replace it or cancel
 
-2. **Detect framework** — Scan the source root and project root for framework indicators:
-   - `package.json` → check `dependencies` and `devDependencies` for React, Angular, Vue, Next.js, etc.
-   - `go.mod` → Go project; check for `spf13/cobra`, `urfave/cli`
-   - `angular.json` → Angular project
-   - File extensions: `.tsx`/`.jsx` suggest React; `.component.ts` suggests Angular
-   - UI library: check imports across source files for `antd`, `@angular/material`, `@clr/angular`, `@mui/material`
-   - Test framework: check for `jest.config`, `vitest.config`, `cypress.config`, `*_test.go`
-   - If the framework cannot be determined, ask the user:
-     ```
-     I couldn't automatically detect your UI framework. What are you using?
-     A: React + Ant Design
-     B: Angular + Clarity
-     C: Angular + Material
-     D: Go CLI
-     E: Other (describe)
-     ```
+2. **Detect the stack — presentation AND backend** — A project may be homogeneous (one framework, one source root) or **heterogeneous** (frontend one technology, backend another — e.g. React + NestJS + Prisma). Scan for indicators of every layer, and record which adapter *kind* each detected technology fills: `presentation`, `transport`, `application`, `persistence`.
+   - **Presentation** (UI): `package.json` deps for React, Angular, Vue, Next.js; `angular.json`; `.tsx`/`.jsx` (React) or `.component.ts` (Angular); UI library imports (`antd`, `@angular/material`, `@clr/angular`, `@mui/material`); `go.mod` with `spf13/cobra` (Go CLI).
+   - **Application** (backend orchestration): `@nestjs/*` in `package.json` + `*.controller.ts`/`*.service.ts`/`*.module.ts`; `fastapi` in `requirements.txt`/`pyproject.toml`; Go HTTP handlers.
+   - **Persistence** (storage/ORM): `prisma/schema.prisma` + `@prisma/client`; `typeorm`; SQLAlchemy models.
+   - **Transport** (wire/protocol, optional): an OpenAPI spec, `@nestjs/swagger`, gRPC `.proto` files.
+   - **Source roots**: in a monorepo, each layer often lives under its own root (`apps/web`, `apps/api`, `packages/*`). Record the root each kind emits into — these become the `targets.<kind>.root` values.
+   - Test framework: `jest.config`, `vitest.config`, `cypress.config`, `*_test.go`.
+   - If a layer's technology cannot be determined, ask the user (offer the bundled options — presentation: React+Ant Design, Angular+Clarity, Angular+Material, Go CLI; application: NestJS, FastAPI; persistence: Prisma+Postgres, TypeORM). A single-stack frontend-only project fills only the `presentation` slot — that is the normal single-target case and needs no backend adapters.
 
 3. **Load base adapter template** — If the detected framework matches a bundled adapter template, read it as a starting point. Its `shows:`, `actions:`, `flows:` mappings will be used as-is. If no bundled template matches, start from a blank adapter structure and ask the user to fill in widget mappings later.
 
@@ -109,10 +101,16 @@ Who resolves it depends on where you are running. If you own the user interactio
    C: Re-scan with a different source root
    ```
 
+8.5. **Draft backend adapters (heterogeneous projects only)** — For each non-presentation kind detected in step 2, draft a separate adapter. Backend adapters differ from presentation adapters in shape:
+   - Set `kind:` to the layer (`application`, `persistence`, `transport`) — presentation adapters omit `kind:` (it defaults to presentation).
+   - **They carry a `supports:` block, not `shows:`/`actions:`/`flows:`.** A non-presentation adapter declares which closed-vocabulary `operation_kinds`, `steps`, `policies`, and `errors` it can generate (drawn from `operation-kinds.schema.md`, `steps.schema.md`, `policies.schema.md`, `errors.schema.md`). Populate it from what the framework can actually do — start from the bundled `nestjs-application` / `prisma-postgres` / `openapi-rest` templates if the detected framework matches, and narrow to what the codebase demonstrates.
+   - `file-conventions.paths` for a backend adapter is feature/entity-driven: an application adapter declares `service`/`controller`/`module` templates keyed off `{feature}`; a persistence adapter declares a shared `model:` schema template. See `adapter.schema.md` "Backend (non-presentation) path keys".
+   - Do NOT run vocabulary (`shows`/`actions`/`flows`) or mount-strategy detection on backend adapters — those are presentation concerns.
+
 9. **Register** — On approval:
-   - Write the adapter to `.parlay/adapters/{name}.adapter.yaml`
-   - Update `.parlay/config.yaml` with the prototype framework
-   - Report completion and suggest next steps: "You can now add features with `/parlay-add-feature` and they'll generate code that fits your existing codebase."
+   - Write each drafted adapter to `.parlay/adapters/{name}.adapter.yaml` (the presentation adapter plus any backend adapters from step 8.5).
+   - **Write `.parlay/adapter-set.yaml`** pinning the topology: one `targets.<kind>` entry per detected layer, each naming its adapter slug and the `root:` it emits into, plus a `links:` block authorizing the cross-kind edges the stack uses (`presentation → application` via `calls`, `application → persistence` via `persists`, etc.). This replaces the deprecated `config.yaml prototype-framework:` field — do not write `prototype-framework:` (it emits `prototype-framework-deprecated` and is removed in v0.3). A frontend-only project still writes `adapter-set.yaml` with a single `presentation` slot.
+   - Report completion and suggest next steps: "You can now add features with `/parlay-add-feature` and they'll generate code that fits your existing codebase — each target emitting into its own root."
 
 ## Error Handling
 

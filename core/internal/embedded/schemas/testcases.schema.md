@@ -195,11 +195,14 @@ The discriminator is a `verify: state` step *after* the crossing. That is checka
 
 | Code | When it fires |
 |---|---|
-| `composition-fixture-contradiction` | Two features' fixtures give the same `(entity, id)` different values for the same scalar field |
+| `composition-fixture-contradiction` | Two features' **composing** fixtures give the same `(entity, id)` different values for the same scalar field. Both sides must be the fixture their feature contributes to the composed seed — that is what makes the two values coexist in the running prototype. |
+| `composition-scenario-fixture-divergence` | The same disagreement, but at least one side is a fixture that never reaches the composed seed. Those two states never coexist at runtime, so this is a **note** and does not fail the check — like the other composition codes it is graded by which list it lands in, not by a severity marker. Mark a fixture `composes: true` if it is meant to reach the composed runtime; an undesignated fixture counts as non-composing. |
 | `composition-dangling-reference` | A fixture references an entity id no feature defines |
 | `composition-feature-unbuilt` | A feature has a spec but no `buildfile.yaml`, so its fixtures cannot be compared — reported rather than skipped, because an unexamined feature and a coherent one are not the same answer |
 | `composition-seed-ambiguous` | No fixture is marked `composes: true` and the `scope: route` suites do not settle which one boots the prototype. Build mode fails; authoring mode warns. |
 | `composition-buildfile-unreadable` | A `buildfile.yaml` exists but cannot be parsed, so the feature's contribution is unknown |
+| `composition-cardinality-violated` | Two or more records in the composed seed point at the same parent through a relationship the domain model declares `one-to-one`. The prototype boots with data its own model forbids. |
+| `composition-cardinality-unresolvable` | A `one-to-one` relationship could not be joined to the field that realises it — either nothing on the child entity targets the parent, or several fields do. A **note**: guessing which field implements the relationship would let the check fail a correct model. Add `relationship: <name>` to the intended field to settle it. |
 | `composition-flow-unsatisfiable` | A `scope: flow` suite asserts on domain state after crossing from one feature's route into another's, and the project has no shared runtime that could carry the write across. An **error** when the adapter declares `file-conventions.paths.store` and a participating feature's plan does not wire it; a **note** when the adapter declares no store at all, since the framework may simply have no shared runtime and no better code would satisfy the assertion. |
 
 ### Coverage walker

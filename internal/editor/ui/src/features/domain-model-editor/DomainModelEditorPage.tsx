@@ -13,6 +13,7 @@ import { EnumFormPanel } from './EnumFormPanel';
 import { RelationshipFormPanel } from './RelationshipFormPanel';
 import { ERDiagramView } from './ERDiagramView';
 import { DeprecatedOperationsNotice } from './DeprecatedOperationsNotice';
+import { ContributionReviewPanel } from './ContributionReviewPanel';
 import { ValidationPanel } from './ValidationPanel';
 import { ValidationCountIndicator } from './ValidationCountIndicator';
 import { DoneControl } from './DoneControl';
@@ -32,7 +33,8 @@ import { SessionEndedScreen } from '../../components/SessionEndedScreen';
  *               form    → EntityFormPanel | EnumFormPanel | RelationshipFormPanel
  *                         (by selection), ErrorEnvelopeFeedback
  *               diagram → ERDiagramView
- *             plus the self-hiding DeprecatedOperationsNotice
+ *             plus the self-hiding DeprecatedOperationsNotice and
+ *             ContributionReviewPanel
  *   footer  → SaveBar
  *   dialog  → ConflictReloadPrompt, SessionEndedScreen
  *
@@ -143,6 +145,7 @@ export function DomainModelEditorPage() {
             )}
           </div>
 
+          <ContributionReviewPanel />
           <DeprecatedOperationsNotice />
           <ErrorEnvelopeFeedback />
         </main>

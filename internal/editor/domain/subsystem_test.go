@@ -20,7 +20,7 @@ import (
 // TestSubsystemName asserts the registered tool name is the stable
 // "domain-model" the harness collision path keys on.
 func TestSubsystemName(t *testing.T) {
-	if got := New("/project", nil).Name(); got != "domain-model" {
+	if got := New("/project", nil, ContributionSource{}).Name(); got != "domain-model" {
 		t.Fatalf("Name() = %q, want %q", got, "domain-model")
 	}
 }
@@ -28,17 +28,22 @@ func TestSubsystemName(t *testing.T) {
 // TestSubsystemSatisfiesToolRegistration is a compile-time-plus-runtime check
 // that Subsystem plugs into the harness registration surface.
 func TestSubsystemSatisfiesToolRegistration(t *testing.T) {
-	var _ server.ToolRegistration = New("/project", nil)
+	var _ server.ToolRegistration = New("/project", nil, ContributionSource{})
 }
 
 // TestMountRegistersPersistencePlusQueryUnderPrefix asserts Mount registers
-// exactly two PERSISTENCE endpoints (GET load, PUT save) plus one QUERY
-// endpoint (POST validate) — three routes total, all under /api/domain-model
-// and nothing outside it. The validate route is a query; the persistence
-// surface stays at exactly two.
+// exactly two PERSISTENCE endpoints (GET load, PUT save) plus the QUERY
+// endpoints (POST validate, GET contribution) — all under /api/domain-model
+// and nothing outside it.
+//
+// The load-bearing assertion is the last one: the persistence surface stays at
+// exactly two. Queries read and write nothing, so adding one does not widen
+// what the editor can change — the contribution review is a query for exactly
+// that reason, and accepting a contribution goes out through the same PUT as
+// any other edit.
 func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 	r := chi.NewRouter()
-	New("/project", nil).Mount(r)
+	New("/project", nil, ContributionSource{}).Mount(r)
 
 	type route struct{ method, path string }
 	var routes []route
@@ -50,11 +55,11 @@ func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 		t.Fatalf("chi.Walk: %v", err)
 	}
 
-	if len(routes) != 3 {
-		t.Fatalf("registered %d routes, want exactly 3 (2 persistence + 1 query): %+v", len(routes), routes)
+	if len(routes) != 4 {
+		t.Fatalf("registered %d routes, want exactly 4 (2 persistence + 2 queries): %+v", len(routes), routes)
 	}
 
-	var haveGet, havePut, havePost bool
+	var haveGet, havePut, havePost, haveContribution bool
 	var persistence int
 	for _, rt := range routes {
 		if !strings.HasPrefix(rt.path, "/api/domain-model") {
@@ -69,6 +74,8 @@ func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 			persistence++
 		case rt.method == http.MethodPost && rt.path == "/api/domain-model/validate":
 			havePost = true
+		case rt.method == http.MethodGet && rt.path == "/api/domain-model/contribution":
+			haveContribution = true
 		}
 	}
 	if !haveGet || !havePut {
@@ -76,6 +83,9 @@ func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 	}
 	if !havePost {
 		t.Fatalf("want a POST /validate query endpoint; got %+v", routes)
+	}
+	if !haveContribution {
+		t.Fatalf("want a GET /contribution query endpoint; got %+v", routes)
 	}
 	if persistence != 2 {
 		t.Fatalf("persistence surface widened: want exactly 2 persistence endpoints, got %d: %+v", persistence, routes)
@@ -87,7 +97,7 @@ func TestMountRegistersPersistencePlusQueryUnderPrefix(t *testing.T) {
 // existing tool-name-collision path.
 func TestDuplicateRegistrationRejected(t *testing.T) {
 	_, err := server.New(server.Deps{
-		Tools: []server.ToolRegistration{New("/a", nil), New("/b", nil)},
+		Tools: []server.ToolRegistration{New("/a", nil, ContributionSource{}), New("/b", nil, ContributionSource{})},
 	})
 	if !errors.Is(err, server.ErrToolNameCollision) {
 		t.Fatalf("expected ErrToolNameCollision for a duplicate tool name, got %v", err)

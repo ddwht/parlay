@@ -33,7 +33,7 @@ func cleanValidator(context.Context, Model) ([]Finding, error) { return nil, nil
 func mountTestRouterWithValidator(root string, validate func(context.Context, Model) ([]Finding, error)) http.Handler {
 	r := chi.NewRouter()
 	// nil validator: every caller of this helper replaces s.validate below.
-	s := New(root, nil)
+	s := New(root, nil, ContributionSource{})
 	s.validate = validate
 	s.Mount(r)
 	return r

@@ -184,7 +184,7 @@ func endpointFindings(t *testing.T, modelYAML []byte) []string {
 
 	// The real subsystem with the real validator Core wires in production.
 	// Injecting one here would test the injection.
-	s := domain.New("/project", domainValidator)
+	s := domain.New("/project", domainValidator, domain.ContributionSource{})
 	r := chi.NewRouter()
 	s.Mount(r)
 

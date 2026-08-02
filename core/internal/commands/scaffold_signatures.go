@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
@@ -261,7 +262,7 @@ func runScaffoldSignatures(cmd *cobra.Command, args []string) error {
 
 	adapterPath := scaffoldSignaturesAdapter
 	if adapterPath == "" {
-		adapterPath = firstAdapterFile(cfg.AdaptersPath())
+		adapterPath = presentationAdapterFile(cfg)
 	}
 
 	sigs, err := computeSourceSignatures(featureDir, cfg.RepoRoot(), adapterPath)
@@ -292,6 +293,25 @@ func runScaffoldSignatures(cmd *cobra.Command, args []string) error {
 func dirExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()
+}
+
+// presentationAdapterFile resolves the adapter whose vocabulary the
+// presentation-scoped commands (signatures, composition/shared-store) need.
+// In a multi-target project it returns the presentation slot's adapter from
+// adapter-set.yaml — never firstAdapterFile, which in a react+nest+prisma
+// project sorts to the backend nestjs adapter and would make these commands
+// read a widget-less backend adapter. Falls back to firstAdapterFile for
+// single-target projects with no adapter-set.
+func presentationAdapterFile(cfg *config.Context) string {
+	if as, err := parser.ParseAdapterSet(cfg.AdapterSetPath()); err == nil {
+		if tgt, ok := as.Targets["presentation"]; ok && tgt.Adapter != "" {
+			candidate := filepath.Join(cfg.AdaptersPath(), tgt.Adapter+".adapter.yaml")
+			if fileExistsAt(candidate) {
+				return candidate
+			}
+		}
+	}
+	return firstAdapterFile(cfg.AdaptersPath())
 }
 
 // firstAdapterFile returns the lexically-first *.adapter.yaml in dir, or ""

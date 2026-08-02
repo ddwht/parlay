@@ -5,6 +5,16 @@ export interface DomainField {
   type: string;
   target?: string;
   enum?: string;
+  /**
+   * Names the declared relationship this ref field realises. Optional, and
+   * only meaningful on a ref field — it exists so an author can settle which
+   * field implements which edge when two relationships connect the same pair
+   * of entities.
+   *
+   * Typed here because the serializer round-trips it: a key the editor's model
+   * does not carry is a key the editor silently drops on save.
+   */
+  relationship?: string;
   required: boolean;
 }
 

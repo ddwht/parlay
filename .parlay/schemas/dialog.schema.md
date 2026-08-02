@@ -88,6 +88,23 @@ Intent-to-dialog traceability is managed by `/parlay sync`, not by manual annota
 - Branch sections: `#### Branch:` heading
 - Commands: `/` prefix in user turn content
 
+## Validation
+
+`parlay validate --type dialog spec/intents/<feature>/dialogs.md` checks a file
+against this schema.
+
+Dialogs have no required fields — a dialogs.md with no dialogs in it is what
+`parlay add-feature` writes and is a valid starting point. What is checkable is
+the closed set of four turn forms above. Anything else the parser ignores, so a
+near-miss turn (`System (foo):`, `Systems:`, `System (condition: x) : y`) is not
+a syntax error anywhere — the turn simply is not there, and every artifact
+derived from the dialog is missing it with no indication why.
+
+| Code | When it fires |
+|---|---|
+| `dialogs-not-readable` | The file does not exist, or cannot be read as markdown |
+| `unknown-turn-form` | A line names `User` or `System` as its speaker but matches none of the four documented turn forms, so it is dropped rather than read as a turn. Lines inside fenced code blocks are not checked — those are examples, not transcript. |
+
 ## References
 
 - By title slug: `@<feature>/<dialog-slug>`

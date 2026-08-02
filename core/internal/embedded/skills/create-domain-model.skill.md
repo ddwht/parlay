@@ -164,6 +164,12 @@ Analyze all features in the active root and write a single
    If validation fails, surface the structured errors to the user and
    stop. Do not commit the YAML.
 
+   The command exits non-zero when it found blocking findings, and 0 when
+   the array is empty or holds warnings only — so the exit code and the
+   array agree, and either one is a valid way to read the result. Warnings
+   alone (`domain-operations-deprecated`, chiefly) are not a failure: they
+   are reported and the model still commits.
+
 8. **Report** — Print the absolute YAML path on stdout, plus the
    appropriate one-line summary on the next line:
 

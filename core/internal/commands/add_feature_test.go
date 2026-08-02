@@ -24,6 +24,53 @@ func TestAddFeature_CreatesFeatureFolder(t *testing.T) {
 	}
 }
 
+// A standalone feature must be born in all three trees, exactly as one
+// created inside an initiative is. The other standalone tests assert
+// only on FeaturePath, which is why the asymmetry survived: every
+// feature added without --initiative was immediately in a state
+// `parlay repair` calls a mismatch.
+func TestAddFeature_CreatesAllThreeTrees(t *testing.T) {
+	setupTestDir(t)
+	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
+
+	if err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"fleet", "overview"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testContext(t)
+	for _, path := range []string{
+		cfg.FeaturePath("fleet-overview"),
+		cfg.HandoffPath("fleet-overview"),
+		cfg.BuildPath("fleet-overview"),
+	} {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("directory not created: %s", path)
+		}
+	}
+}
+
+// The tree-parity detector must be satisfied by a freshly-added
+// standalone feature. This is the assertion that ties the fix to the
+// rule `repair` and `status`'s trees: line enforce, rather than to the
+// three paths above.
+func TestAddFeature_LeavesNoRepairMismatch(t *testing.T) {
+	setupTestDir(t)
+	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
+
+	if err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"fleet", "overview"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testContext(t)
+	mismatches, err := detectMismatches(cfg.IntentsRoot(), threeTreeRoots(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mismatches) != 0 {
+		t.Errorf("a newly added feature should need no repair, got %d mismatches: %+v", len(mismatches), mismatches)
+	}
+}
+
 func TestAddFeature_CreatesIntentsMd(t *testing.T) {
 	setupTestDir(t)
 	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)

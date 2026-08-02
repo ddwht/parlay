@@ -191,6 +191,114 @@ func TestVerifyGenerated_MissingFile(t *testing.T) {
 	}
 }
 
+// R4-18. A snapshot with no `schema-version` predates provenance, so it
+// cannot legitimately carry any — yet the field was read, reported as
+// `schema_version: 0`, and then never routed on. A v0 snapshot whose entries
+// happened to say `provenance: generated` graded every one of its files
+// `stable`: the least trustworthy snapshot in the tree produced the most
+// reassuring report in it, and `--strict` passed on it.
+//
+// The fix is the third answer — "could not be checked" — and the point of
+// this test is that it must not be reachable by writing the right word into
+// a file format that never promised it.
+func TestVerifyGenerated_PreProvenanceSnapshotIsUnknownNotStable(t *testing.T) {
+	dir := setupTestDir(t)
+	sourceRoot := filepath.Join(dir, "cmd", "legacy")
+
+	generated := filepath.Join(sourceRoot, "generated.go")
+	adopted := filepath.Join(sourceRoot, "adopted.go")
+	gone := filepath.Join(sourceRoot, "gone.go")
+	writeMarkedFile(t, generated, "legacy", "generated-comp", "func Generated() {}")
+	writeMarkedFile(t, adopted, "legacy", "adopted-comp", "func Adopted() {}")
+	writeMarkedFile(t, gone, "legacy", "gone-comp", "func Gone() {}")
+
+	cfg := testContext(t)
+	hashes, _, err := buildCodeHashes(cfg, "legacy", sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Forge the pre-provenance snapshot: no schema-version, but entries
+	// carrying provenance words a v0 writer could never have written.
+	hashes.SchemaVersion = 0
+	for path, entry := range hashes.Files {
+		switch entry.Component {
+		case "generated-comp":
+			entry.Provenance = ProvenanceGenerated
+		case "adopted-comp":
+			entry.Provenance = ProvenanceAdopted
+		case "gone-comp":
+			entry.Provenance = ProvenanceGenerated
+		}
+		hashes.Files[path] = entry
+	}
+	if err := saveCodeHashes(cfg, "legacy", hashes); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := computeVerifyOutput(cfg, "legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.SchemaVersion != 0 {
+		t.Fatalf("test setup: wanted a v0 snapshot, got schema_version=%d", output.SchemaVersion)
+	}
+	if len(output.Stable) != 0 {
+		t.Errorf("Stable = %+v, want [] — a v0 snapshot cannot certify anything", output.Stable)
+	}
+	if len(output.Adopted) != 0 {
+		t.Errorf("Adopted = %+v, want [] — a v0 snapshot's provenance is not readable", output.Adopted)
+	}
+	if len(output.Unknown) != 2 {
+		t.Errorf("Unknown = %+v, want both present files", output.Unknown)
+	}
+	// Missing survives the version check. It is not a claim about provenance:
+	// the file is absent, which this command established itself. Folding it
+	// into Unknown would discard a fact to express a doubt about another one.
+	if len(output.Missing) != 1 || output.Missing[0].Component != "gone-comp" {
+		t.Errorf("Missing = %+v, want [gone-comp] regardless of schema version", output.Missing)
+	}
+}
+
+// The control. A current snapshot still reads its provenance, so the fix
+// above is scoped to the version that cannot be trusted rather than
+// disabling provenance everywhere.
+func TestVerifyGenerated_CurrentSnapshotStillReadsProvenance(t *testing.T) {
+	dir := setupTestDir(t)
+	sourceRoot := filepath.Join(dir, "cmd", "current")
+
+	generated := filepath.Join(sourceRoot, "generated.go")
+	writeMarkedFile(t, generated, "current", "generated-comp", "func Generated() {}")
+
+	cfg := testContext(t)
+	hashes, _, err := buildCodeHashes(cfg, "current", sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashes.SchemaVersion = CodeHashesSchemaVersion
+	for path, entry := range hashes.Files {
+		entry.Provenance = ProvenanceGenerated
+		hashes.Files[path] = entry
+	}
+	if err := saveCodeHashes(cfg, "current", hashes); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := computeVerifyOutput(cfg, "current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(output.Stable) != 1 || output.Stable[0].Component != "generated-comp" {
+		t.Errorf("Stable = %+v, want [generated-comp]", output.Stable)
+	}
+	if len(output.Unknown) != 0 {
+		t.Errorf("Unknown = %+v, want []", output.Unknown)
+	}
+}
+
 func TestCodeHashesPath(t *testing.T) {
 	dir := setupTestDir(t)
 	cfg := testContext(t)

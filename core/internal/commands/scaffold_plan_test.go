@@ -1,12 +1,14 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -306,6 +308,70 @@ entities:
 	want := []string{"Employee", "ExpenseReport"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entities = %v, want %v", got, want)
+	}
+}
+
+// In a parent/child project, plan derivation must read the CHILD's
+// domain-model.yaml. It used to join RepoRoot() — the parent for a child
+// root — so it derived model rows from the parent's entities while
+// `validate` checked capabilities against the child's. Two commands, two
+// files, one project.
+func TestScaffoldPlanReadsTheActiveRootsDomainModel(t *testing.T) {
+	parent := t.TempDir()
+	parent, _ = filepath.EvalSymlinks(parent)
+	makeProjectRoot(t, parent)
+
+	child := filepath.Join(parent, "apps", "web")
+	makeProjectRoot(t, child)
+
+	// Two models that disagree about which entities exist. Only the
+	// child's should reach the derived plan.
+	if err := os.WriteFile(filepath.Join(parent, "domain-model.yaml"),
+		[]byte("entities:\n  - name: ParentOnlyEntity\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(child, "domain-model.yaml"),
+		[]byte("entities:\n  - name: ChildOnlyEntity\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	adaptersDir := filepath.Join(child, config.ParlayDir, config.AdaptersDir)
+	if err := os.MkdirAll(adaptersDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adaptersDir, "angular.adapter.yaml"),
+		[]byte(angularPathsYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	buildDir := filepath.Join(child, config.ParlayDir, config.BuildDir, "reporting")
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, "buildfile.yaml"),
+		[]byte("components:\n  summary-table: {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := config.Root{
+		Name:       "web",
+		Path:       child,
+		Kind:       config.RootKindChild,
+		ParentPath: parent,
+	}
+	cmd := withCtx(t, root, nil)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	if err := runScaffoldPlan(cmd, []string{"reporting"}); err != nil {
+		t.Fatalf("scaffold-plan: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "child-only-entity.ts") {
+		t.Errorf("expected a model row derived from the child's entity, got:\n%s", out)
+	}
+	if strings.Contains(out, "parent-only-entity.ts") {
+		t.Errorf("the parent's model bled into the child's plan:\n%s", out)
 	}
 }
 

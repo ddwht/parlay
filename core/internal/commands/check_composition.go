@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -42,6 +43,16 @@ type entityRecord struct {
 	Fields  map[string]interface{}
 	Feature string
 	Fixture string
+	// Composing says whether this record's fixture is the one its feature
+	// contributes to the composed runtime seed — `composes: true`, or the
+	// designation agent.ComposingFixture infers from the route suites. A
+	// record from any other fixture describes a scenario the running
+	// prototype never boots into, so two such records cannot both be on
+	// screen and cannot contradict each other in the sense this command
+	// exists to catch. Undesignated counts as non-composing: a feature
+	// mid-authoring, or one whose designation is ambiguous, degrades to a
+	// note rather than to a failure or to silence.
+	Composing bool
 }
 
 // recordSite is where a value came from, keeping feature and fixture as
@@ -49,8 +60,9 @@ type entityRecord struct {
 // is for display only; nothing derives the feature back out of it. See
 // spansMultipleFeatures for why that distinction is load-bearing.
 type recordSite struct {
-	Feature string
-	Fixture string
+	Feature   string
+	Fixture   string
+	Composing bool
 }
 
 func (s recordSite) String() string { return s.Feature + "/" + s.Fixture }
@@ -144,6 +156,17 @@ func collectFixtureRecords(cfg *config.Context, features []string) ([]entityReco
 		// reintroduce the ambiguity this fix removes.
 		contributing = append(contributing, slug)
 
+		// Which of this feature's fixtures reaches the composed runtime.
+		// Asked of agent.ComposingFixture — already exported, and already
+		// what `scaffold-seed` and `validate --project` consult — rather
+		// than decoded again here. fixtureBuildfile above has no
+		// `composes` field at all, and that blind spot is the whole
+		// defect: two decoders over one file meant scaffold-seed and this
+		// command could return opposite verdicts under the same code
+		// string. An ambiguous or absent designation yields "", so every
+		// fixture in that feature counts as non-composing.
+		composingFixture, _ := agent.ComposingFixture(cfg.BuildPath(slug))
+
 		for fxName, fx := range bf.Fixtures {
 			for entity, rows := range fx.Data {
 				for _, row := range rows {
@@ -154,6 +177,7 @@ func collectFixtureRecords(cfg *config.Context, features []string) ([]entityReco
 					records = append(records, entityRecord{
 						Entity: entity, ID: id, Fields: row,
 						Feature: slug, Fixture: fxName,
+						Composing: composingFixture != "" && fxName == composingFixture,
 					})
 				}
 			}
@@ -171,7 +195,40 @@ func collectFixtureRecords(cfg *config.Context, features []string) ([]entityReco
 // `rejected` in a third. Each feature's own tests passed against its own
 // fixture, so the contradiction was invisible per-feature and obvious the
 // moment a user clicked from one page to another.
-func findContradictions(records []entityRecord) []compositionFinding {
+//
+// It returns two slices because the finding has two strengths. The check
+// already ignores disagreements *within* one feature, on the grounds that
+// alternative scenarios are supposed to differ — an empty draft and a
+// submitted report are two states of the same id, and flagging that would
+// bury the real finding. `composes: true` extends the same reasoning
+// across features: a fixture that never reaches the composed seed
+// describes a scenario the prototype never boots into, so it cannot
+// coexist on screen with anything. Reporting it as a contradiction is
+// what forced a run-3 build agent to renumber a scenario fixture for no
+// reason.
+//
+// The two strengths are decided by PARTITIONING the group first, not by
+// classifying it and then demoting. The demoting form was R4-16: a single
+// `allComposing` flag was computed across every site in the group, spanning
+// all values, so one non-composing scenario fixture anywhere in the group
+// silently downgraded a genuine disagreement between two *composing*
+// fixtures sitting beside it. The error the whole command exists to raise
+// became a note because unrelated data was nearby.
+//
+// Partitioning also makes this agree with `scaffold-seed` by construction
+// rather than by anyone keeping the two in step. agent.ComposingFixture
+// returns at most one fixture per feature (see collectFixtureRecords), so
+// every Composing site for a given feature comes from that one fixture, and
+// therefore two distinct values among composing sites necessarily span two
+// or more features. The composing-only comparison below is thus equivalent
+// to deriveSeed's contradiction loop, and spansMultipleFeatures is
+// redundant over that subset — it is kept as the outer guard because the
+// NOTE still needs it.
+//
+// Both findings can fire for the same cell, which is correct: two composing
+// fixtures disagreeing and a scenario fixture diverging are two true
+// statements about the same field.
+func findContradictions(records []entityRecord) (errors, notes []compositionFinding) {
 	type key struct{ entity, id, field string }
 	seen := map[key]map[string][]recordSite{} // value -> sites
 
@@ -191,11 +248,12 @@ func findContradictions(records []entityRecord) []compositionFinding {
 				seen[k] = map[string][]recordSite{}
 			}
 			val := fmt.Sprint(v)
-			seen[k][val] = append(seen[k][val], recordSite{Feature: r.Feature, Fixture: r.Fixture})
+			seen[k][val] = append(seen[k][val], recordSite{
+				Feature: r.Feature, Fixture: r.Fixture, Composing: r.Composing,
+			})
 		}
 	}
 
-	var out []compositionFinding
 	for k, values := range seen {
 		if len(values) < 2 {
 			continue
@@ -209,28 +267,94 @@ func findContradictions(records []entityRecord) []compositionFinding {
 		if !spansMultipleFeatures(values) {
 			continue
 		}
-		var parts []string
-		var sites []string
+		// Partition first. The composing subset is the composed runtime: a
+		// disagreement inside it is a disagreement a user actually sees.
+		composing := map[string][]recordSite{}
+		anyNonComposing := false
 		for val, s := range values {
-			labels := make([]string, 0, len(s))
 			for _, site := range s {
-				labels = append(labels, site.String())
+				if site.Composing {
+					composing[val] = append(composing[val], site)
+				} else {
+					anyNonComposing = true
+				}
 			}
-			sort.Strings(labels)
-			parts = append(parts, fmt.Sprintf("%q in %s", val, strings.Join(labels, ", ")))
-			sites = append(sites, labels...)
 		}
-		sort.Strings(parts)
-		sort.Strings(sites)
-		out = append(out, compositionFinding{
-			Code:   "composition-fixture-contradiction",
-			Entity: k.entity, ID: k.id, Field: k.field,
-			Sites: sites,
-			Message: fmt.Sprintf("%s %s has conflicting %s across features: %s. "+
-				"Each feature's tests pass against its own fixture; a user navigating between them sees both values.",
-				k.entity, k.id, k.field, strings.Join(parts, "; ")),
-		})
+
+		contradicted := len(composing) >= 2
+		if contradicted {
+			// Named over the composing sites ONLY. A refusal has to name the
+			// specific conflict, and a scenario fixture that merely sits in
+			// the same group is not part of it.
+			parts, sites := describeValues(composing)
+			errors = append(errors, compositionFinding{
+				Code:   "composition-fixture-contradiction",
+				Entity: k.entity, ID: k.id, Field: k.field,
+				Sites: sites,
+				Message: fmt.Sprintf("%s %s has conflicting %s across features: %s. "+
+					"Each feature's tests pass against its own fixture; a user navigating between them sees both values.",
+					k.entity, k.id, k.field, strings.Join(parts, "; ")),
+			})
+		}
+
+		if anyNonComposing {
+			parts, sites := describeValues(values)
+			message := fmt.Sprintf("%s %s carries different %s values across features: %s. "+
+				"At least one side is not the fixture its feature composes into the runtime seed, "+
+				"so the two never coexist in the running prototype — reported rather than failed. "+
+				"Mark a fixture `composes: true` if it is meant to reach the composed runtime.",
+				k.entity, k.id, k.field, strings.Join(parts, "; "))
+			if contradicted {
+				// Do not tell the reader this was "reported rather than
+				// failed" when the same cell just failed. The note is the
+				// residue: the sides the running prototype never holds.
+				message = fmt.Sprintf("%s %s carries different %s values across features: %s. "+
+					"The disagreement between the composing fixtures is failed separately as "+
+					"composition-fixture-contradiction; this note covers the remaining sides, which are not "+
+					"the fixture their feature composes into the runtime seed and so never reach the running prototype. "+
+					"Mark a fixture `composes: true` if it is meant to reach the composed runtime.",
+					k.entity, k.id, k.field, strings.Join(parts, "; "))
+			}
+			notes = append(notes, compositionFinding{
+				Code:   "composition-scenario-fixture-divergence",
+				Entity: k.entity, ID: k.id, Field: k.field,
+				Sites:   sites,
+				Message: message,
+			})
+		}
 	}
+	sortCompositionFindings(errors)
+	sortCompositionFindings(notes)
+	return errors, notes
+}
+
+// describeValues renders a value→sites group into the two forms a finding
+// needs: the quoted "value in feature/fixture" clauses its message reads
+// out, and the flat site list it carries in JSON. Both are sorted, so the
+// output does not depend on map iteration order.
+//
+// It takes the group as an argument rather than reading the enclosing one,
+// because the contradiction and the divergence are now rendered over
+// different subsets of the same cell.
+func describeValues(values map[string][]recordSite) (parts, sites []string) {
+	for val, s := range values {
+		labels := make([]string, 0, len(s))
+		for _, site := range s {
+			labels = append(labels, site.String())
+		}
+		sort.Strings(labels)
+		parts = append(parts, fmt.Sprintf("%q in %s", val, strings.Join(labels, ", ")))
+		sites = append(sites, labels...)
+	}
+	sort.Strings(parts)
+	sort.Strings(sites)
+	return parts, sites
+}
+
+// sortCompositionFindings gives both grades of contradiction the same
+// stable order, so two runs over the same project produce byte-identical
+// JSON regardless of map iteration order.
+func sortCompositionFindings(out []compositionFinding) {
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Entity != out[j].Entity {
 			return out[i].Entity < out[j].Entity
@@ -240,7 +364,6 @@ func findContradictions(records []entityRecord) []compositionFinding {
 		}
 		return out[i].Field < out[j].Field
 	})
-	return out
 }
 
 // findDanglingReferences reports a field whose value is shaped like another
@@ -330,7 +453,24 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 
 	records, contributing, notes := collectFixtureRecords(cfg, all)
 
-	findings := append(findContradictions(records), findDanglingReferences(records)...)
+	contradictions, divergences := findContradictions(records)
+	notes = append(notes, divergences...)
+	findings := append(contradictions, findDanglingReferences(records)...)
+
+	// The composed seed against the model's own declared cardinalities.
+	// This runs here rather than in the domain-model validator because
+	// that validator is a pure function of one file's bytes — threading
+	// fixtures into it would break the property that makes it usable on
+	// stdin and in the editor. This command already has the context, the
+	// walk and the composed records.
+	//
+	// A project with no domain model is a normal state, not a failure:
+	// the check simply has nothing to hold the data against.
+	if model, err := cfg.LoadDomainModel(); err == nil {
+		cardErrs, cardNotes := findCardinalityViolations(model, records)
+		findings = append(findings, cardErrs...)
+		notes = append(notes, cardNotes...)
+	}
 
 	// Cross-feature flow assertions. Whether an unsatisfiable one is an error
 	// or a note depends on whether the framework has a shared runtime at all,
@@ -416,7 +556,7 @@ func spansMultipleFeatures(values map[string][]recordSite) bool {
 // carry domain state across a feature boundary, so a cross-feature assertion
 // is unsatisfiable for a reason nobody can fix by writing better code.
 func sharedStorePath(cfg *config.Context) (string, bool) {
-	adapterPath := firstAdapterFile(cfg.AdaptersPath())
+	adapterPath := presentationAdapterFile(cfg)
 	if adapterPath == "" {
 		return "", true
 	}

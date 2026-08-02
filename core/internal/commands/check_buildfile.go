@@ -105,13 +105,28 @@ func autoDiscoverAdapter(cfg *config.Context, buildfilePath string) string {
 		return ""
 	}
 	type adapterField struct {
-		Adapter string `yaml:"adapter"`
+		Adapter    string `yaml:"adapter"`
+		AdapterSet string `yaml:"adapter-set"`
+		Targets    map[string]struct {
+			Adapter string `yaml:"adapter"`
+		} `yaml:"targets"`
 	}
 	var bf adapterField
-	if err := yaml.Unmarshal(data, &bf); err != nil || bf.Adapter == "" {
+	if err := yaml.Unmarshal(data, &bf); err != nil {
 		return ""
 	}
-	candidate := filepath.Join(cfg.AdaptersPath(), bf.Adapter+".adapter.yaml")
+	// v1: the top-level adapter:. v2: the presentation slot's adapter — the
+	// only kind whose vocabulary (widgets/actions/flows) the deep validator
+	// checks. Backend adapters carry no widget vocabulary, so vocabulary
+	// validation stays presentation-scoped.
+	name := bf.Adapter
+	if name == "" && bf.AdapterSet != "" {
+		name = bf.Targets["presentation"].Adapter
+	}
+	if name == "" {
+		return ""
+	}
+	candidate := filepath.Join(cfg.AdaptersPath(), name+".adapter.yaml")
 	if _, err := os.Stat(candidate); err != nil {
 		return ""
 	}

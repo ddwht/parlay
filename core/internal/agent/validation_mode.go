@@ -133,7 +133,32 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A capabilities.yaml referencing an entity that no root model declares
+	// but some feature's contribution proposes. A warning in both modes: the
+	// reference is correct about where the project is going, and the only
+	// thing outstanding is a review someone else has to do. Blocking it is
+	// what forced two features in the regression run to ship placeholders
+	// for an entity a third was about to introduce.
+	"capabilities-entity-pending": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	// An intents.md with a feature header and no intent blocks is what
+	// `parlay add-feature` writes. Refusing it while the designer is
+	// still typing would make the validator useless for the artifact it
+	// exists to check; refusing it at build is the point, because every
+	// downstream artifact derives from those blocks.
+	"no-intents": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityError,
+	},
 }
+
+// unknown-turn-form is deliberately absent from this table, so it is an
+// error in both modes. A half-typed turn does not reach the check — the
+// pattern requires a complete speaker-and-colon shape — so what it
+// catches is a finished line in the wrong form, which is a mistake at
+// any stage of authoring, not an intermediate state.
 
 // RuleSeverity returns the per-mode severity for a given rule code. Rules
 // not in the table default to error.

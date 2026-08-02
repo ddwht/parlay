@@ -403,9 +403,9 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 // reference, so it passed on everything, and it matched only `Validate*` so no
 // `Check*` validator was ever considered. Both are fixed above.
 var knownUnreachableValidators = map[string]string{
-	"ValidateBuildfileCanonical": "duplicate of the models:-deprecation logic now implemented in the deep validator (which the CLI actually uses). Kept for the multi-target canonical shape; delete it once v2 validation lands, rather than maintaining two implementations of the same rule.",
-
-	"ValidateAdapterSetLinks": "not merely uncalled — it has no possible caller. It consumes []CrossKindEdge, and nothing in the tree produces a CrossKindEdge: the type is declared in this same file and never constructed outside tests. So the missing piece is the edge extractor that projects buildfile edges crossing adapter kinds, not a call site. Feature work, not wiring.",
+	// ValidateBuildfileCanonical is now wired into validateBuildfileDeepCore
+	// for v2 (adapter-set) buildfiles — see validate.go check 5b. Removed from
+	// this list when multi-target v2 validation landed.
 
 	"CheckCrossAdapterParity": "same shape as ValidateAdapterSetLinks: no command validates a layout against more than one adapter, so there is no multi-adapter context to call it from. Needs the multi-target validation path to exist first; wiring it to a single-adapter caller would make it assert nothing.",
 }
@@ -888,5 +888,55 @@ func TestConformance_EmissionIsDeclaredNotDiscovered(t *testing.T) {
 	}
 	if found == 0 {
 		t.Error("generate-code no longer invokes save-build-state with --source-root; the emission declaration is unenforced")
+	}
+}
+
+// The manifest has to be appended to WHILE files are being written, which is
+// several steps earlier than where it gets passed to save-build-state. The
+// whole instruction once lived in the final step: an agent read "declare what
+// you wrote" only after the writing was over, and answered it from memory. A
+// regression run wrote 18 files and recorded none — and because a manifest-less
+// save still succeeds (see the test above), that read as success.
+//
+// So: the manifest must be named repeatedly BEFORE the command that consumes
+// it. Anchored on the manifest path and the consuming command — both closed
+// identifiers — rather than on step numbers or prose, so the skill can be
+// rewritten or renumbered freely. Collapsing the instruction back into the
+// final step fails this.
+func TestConformance_EmissionManifestIsInstructedWhereFilesAreWritten(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var codegen string
+	for _, s := range skills {
+		if s.Name == "generate-code" {
+			codegen = string(s.Content)
+		}
+	}
+	if codegen == "" {
+		t.Fatal("generate-code is missing from the embedded skill set")
+	}
+
+	const manifest = ".parlay/build/_project/.emitted"
+
+	// Everything up to the first save-build-state invocation is "while the
+	// agent is still writing files". Anything after it is too late to be an
+	// instruction about appending.
+	consume := strings.Index(codegen, "save-build-state --source-root")
+	if consume < 0 {
+		t.Fatal("generate-code no longer invokes save-build-state --source-root; cannot locate the point the manifest is consumed")
+	}
+	beforeConsumption := strings.Count(codegen[:consume], manifest)
+
+	// One mention per file-writing step, with headroom: components, the
+	// cross-cutting/section files, brownfield mount, cross-cutting entries,
+	// and test code. A single mention would mean the instruction is back to
+	// being stated once, far from where it has to be followed.
+	const wantAtLeast = 4
+	if beforeConsumption < wantAtLeast {
+		t.Errorf("the emission manifest %s is named %d time(s) before save-build-state consumes it, want at least %d — "+
+			"the append instruction has to sit with each step that writes files, not only at the step that reads the manifest",
+			manifest, beforeConsumption, wantAtLeast)
 	}
 }

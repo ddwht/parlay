@@ -1,0 +1,141 @@
+# fixture: contradiction-diluted
+# property: same, with a scenario fixture carrying one of the values (R4-16 probe A)
+
+=== check-composition
+verdict: violated
+exit: 1
+{
+  "features": [
+    "approvals",
+    "audit",
+    "expense-list"
+  ],
+  "features_examined": 3,
+  "fixture_records": 3,
+  "findings": [
+    {
+      "code": "composition-fixture-contradiction",
+      "message": "ExpenseReport rep-1 has conflicting status across features: \"approved\" in approvals/seed; \"submitted\" in expense-list/seed. Each feature's tests pass against its own fixture; a user navigating between them sees both values.",
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "field": "status",
+      "sites": [
+        "approvals/seed",
+        "expense-list/seed"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "code": "composition-scenario-fixture-divergence",
+      "message": "ExpenseReport rep-1 carries different status values across features: \"approved\" in approvals/seed, audit/rejection-scenario; \"submitted\" in expense-list/seed. The disagreement between the composing fixtures is failed separately as composition-fixture-contradiction; this note covers the remaining sides, which are not the fixture their feature composes into the runtime seed and so never reach the running prototype. Mark a fixture `composes: true` if it is meant to reach the composed runtime.",
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "field": "status",
+      "sites": [
+        "approvals/seed",
+        "audit/rejection-scenario",
+        "expense-list/seed"
+      ]
+    }
+  ],
+  "coherent": false
+}
+
+=== scaffold-seed
+verdict: violated
+exit: 1
+{
+  "contributors": {
+    "approvals": "seed",
+    "expense-list": "seed"
+  },
+  "records": null,
+  "findings": [
+    {
+      "code": "composition-fixture-contradiction",
+      "message": "ExpenseReport rep-1 has conflicting status across the composing fixtures: \"approved\" in approvals; \"submitted\" in expense-list. There is one runtime, so one of these has to be wrong.",
+      "sites": [
+        "approvals",
+        "expense-list"
+      ]
+    },
+    {
+      "code": "composition-seed-ambiguous",
+      "message": "audit: no fixture is marked `composes: true` and there is no testcases.yaml to infer one from",
+      "sites": [
+        "audit"
+      ]
+    }
+  ],
+  "derivable": false
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "approvals",
+        "phase": "build"
+      },
+      {
+        "id": "audit",
+        "phase": "build"
+      },
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

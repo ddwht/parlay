@@ -29,8 +29,12 @@ func ValidateBuildfile(path string, content []byte) error {
 		return err
 	}
 	var bf struct {
-		Feature    string      `yaml:"feature"`
-		Adapter    string      `yaml:"adapter"`
+		Feature    string `yaml:"feature"`
+		Adapter    string `yaml:"adapter"`
+		AdapterSet string `yaml:"adapter-set"`
+		Targets    map[string]struct {
+			Adapter string `yaml:"adapter"`
+		} `yaml:"targets"`
 		Components interface{} `yaml:"components"`
 	}
 	if err := yaml.Unmarshal(content, &bf); err != nil {
@@ -39,10 +43,23 @@ func ValidateBuildfile(path string, content []byte) error {
 	if bf.Feature == "" {
 		return fmt.Errorf("buildfile missing 'feature' field")
 	}
-	if bf.Adapter == "" {
-		return fmt.Errorf("buildfile missing 'adapter' field")
+	// v1 (frozen shape): a top-level adapter: is present. This branch is
+	// byte-identical in behavior to before multi-target — a project that
+	// sets adapter: never reaches the v2 code below, so single-target
+	// buildfiles are provably untouched.
+	if bf.Adapter != "" {
+		return nil
 	}
-	return nil
+	// v2 (multi-target): accepted only when adapter-set: names the topology
+	// AND a presentation target resolves an adapter. Anything short of that
+	// keeps the exact legacy error string below, which the schema doc and
+	// conformance match literally.
+	if bf.AdapterSet != "" {
+		if pres, ok := bf.Targets["presentation"]; ok && pres.Adapter != "" {
+			return nil
+		}
+	}
+	return fmt.Errorf("buildfile missing 'adapter' field")
 }
 
 // ValidateSurface checks surface.md has fragment headings with Shows fields.
@@ -282,12 +299,61 @@ func ValidateBlueprint(path string, content []byte) error {
 type deepBuildfile struct {
 	Feature      string                   `yaml:"feature"`
 	Adapter      string                   `yaml:"adapter"`
+	AdapterSet   string                   `yaml:"adapter-set"`
+	Targets      map[string]deepTarget    `yaml:"targets"`
 	Models       map[string]interface{}   `yaml:"models"`
 	Fixtures     map[string]deepFixture   `yaml:"fixtures"`
 	Routes       []deepRoute              `yaml:"routes"`
 	Components   map[string]deepComponent `yaml:"components"`
 	CrossCutting []deepCrossCuttingEntry  `yaml:"cross-cutting"`
 	Plan         *deepPlan                `yaml:"plan"`
+}
+
+// deepTarget is one entry of the v2 targets: block. Only the fields the deep
+// reference/vocabulary checks consult are captured — presentation carries
+// components + routes (the former top-level v1 fields); every kind carries
+// its adapter slug.
+type deepTarget struct {
+	Adapter    string                   `yaml:"adapter"`
+	Components map[string]deepComponent `yaml:"components"`
+	Routes     []deepRoute              `yaml:"routes"`
+}
+
+// resolvedComponents returns the components the reference and vocabulary
+// checks operate on: the v1 top-level components: for single-target
+// buildfiles, or targets.presentation.components: for v2 multi-target ones.
+// This lets the existing checks run unchanged against whichever shape is
+// present.
+func (bf deepBuildfile) resolvedComponents() map[string]deepComponent {
+	if bf.AdapterSet != "" {
+		if t, ok := bf.Targets["presentation"]; ok {
+			return t.Components
+		}
+		return nil
+	}
+	return bf.Components
+}
+
+// resolvedRoutes mirrors resolvedComponents for the routes: block.
+func (bf deepBuildfile) resolvedRoutes() []deepRoute {
+	if bf.AdapterSet != "" {
+		if t, ok := bf.Targets["presentation"]; ok {
+			return t.Routes
+		}
+		return nil
+	}
+	return bf.Routes
+}
+
+// presentationAdapter is the adapter slug occupying the presentation slot of
+// a v2 buildfile, "" if none. Vocabulary validation resolves against this
+// adapter for multi-target buildfiles (widgets live only in presentation
+// adapters).
+func (bf deepBuildfile) presentationAdapter() string {
+	if t, ok := bf.Targets["presentation"]; ok {
+		return t.Adapter
+	}
+	return ""
 }
 
 type deepPlan struct {
@@ -416,11 +482,18 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 		}}
 	}
 
+	// The reference and vocabulary checks operate on the resolved component
+	// and route sets: v1 top-level components:/routes:, or v2
+	// targets.presentation.components:/routes:. resolvedComponents() and
+	// resolvedRoutes() collapse the difference so the checks below are shape-
+	// agnostic.
+	comps := bf.resolvedComponents()
+
 	// 1. Component references in routes must exist in components
-	for _, route := range bf.Routes {
+	for _, route := range bf.resolvedRoutes() {
 		for regionName, region := range route.Regions {
 			for _, compRef := range region.Components {
-				if _, ok := bf.Components[compRef]; !ok {
+				if _, ok := comps[compRef]; !ok {
 					errors = append(errors, ValidationError{
 						Code:    "missing-component-reference",
 						Message: fmt.Sprintf("route %q region %q references component %q which is not defined", route.Path, regionName, compRef),
@@ -469,7 +542,7 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 		return fmt.Sprintf("declare %q in the project's domain-model.yaml, or change the input to reference an existing entity", name)
 	}
 
-	for compName, comp := range bf.Components {
+	for compName, comp := range comps {
 		if comp.Data != nil {
 			for _, input := range comp.Data.Inputs {
 				if input.Model != "" {
@@ -487,7 +560,7 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 
 		// 3. Children references must exist in components
 		for _, child := range comp.Children {
-			if _, ok := bf.Components[child]; !ok {
+			if _, ok := comps[child]; !ok {
 				errors = append(errors, ValidationError{
 					Code:    "missing-child-reference",
 					Message: fmt.Sprintf("component %q references child %q which is not defined", compName, child),
@@ -513,10 +586,31 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 		}
 	}
 
-	// 5. Adapter vocabulary validation (if adapter path provided)
+	// 5. Adapter vocabulary validation (if adapter path provided). For a v2
+	// buildfile the caller resolves adapterPath to the presentation adapter —
+	// widgets live only there — so vocabulary runs against react/angular/etc,
+	// never against a backend adapter that has no widget vocabulary.
 	if adapterPath != "" {
 		adapterErrors := validateAdapterVocabulary(bf, adapterPath)
 		errors = append(errors, adapterErrors...)
+	}
+
+	// 5b. Multi-target canonical-once + operation-ref resolution. Runs only
+	// for v2 buildfiles (adapter-set: present); single-target buildfiles never
+	// reach it, so their behavior is unchanged. This is the check the schema's
+	// "canonical fields belong under operations: only" rule needs — without
+	// it a target could name an operation the canonical block doesn't carry
+	// and codegen would silently emit nothing.
+	if bf.AdapterSet != "" {
+		for _, o := range ValidateBuildfileCanonical(ModeBuild, buildfilePath, content) {
+			errors = append(errors, ValidationError{
+				Code:     o.Code,
+				Message:  o.Message,
+				Context:  o.Context,
+				Fix:      o.Fix,
+				Severity: string(o.Severity),
+			})
+		}
 	}
 
 	// 6. Cross-cutting entry validation
@@ -603,10 +697,17 @@ func validateCrossCuttingEntries(entries []deepCrossCuttingEntry) []ValidationEr
 func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []ValidationError {
 	var errors []ValidationError
 
+	// The adapter slug to fall back on: v1 top-level adapter:, or the v2
+	// presentation adapter (the only kind that carries widget vocabulary).
+	adapterSlug := bf.Adapter
+	if adapterSlug == "" {
+		adapterSlug = bf.presentationAdapter()
+	}
+
 	data, err := os.ReadFile(adapterPath)
 	if err != nil {
 		// Adapter file doesn't exist — try resolving from .parlay/adapters/
-		resolved := filepath.Join(".parlay", "adapters", bf.Adapter+".adapter.yaml")
+		resolved := filepath.Join(".parlay", "adapters", adapterSlug+".adapter.yaml")
 		data, err = os.ReadFile(resolved)
 		if err != nil {
 			return []ValidationError{{
@@ -645,12 +746,12 @@ func validateAdapterVocabulary(bf deepBuildfile, adapterPath string) []Validatio
 			}
 		}
 	}
-	for compName, comp := range bf.Components {
+	for compName, comp := range bf.resolvedComponents() {
 		if comp.Widget != "" && comp.Widget != "not-applicable" {
 			if !allWidgets[comp.Widget] {
 				errors = append(errors, ValidationError{
 					Code:    "unknown-widget",
-					Message: fmt.Sprintf("component %q uses widget %q which is not in adapter %q", compName, comp.Widget, bf.Adapter),
+					Message: fmt.Sprintf("component %q uses widget %q which is not in adapter %q", compName, comp.Widget, adapterSlug),
 					Context: fmt.Sprintf("components.%s.widget", compName),
 					Fix:     fmt.Sprintf("change the widget to one defined in the adapter's shows/actions/flows sections, or add %q to the adapter", comp.Widget),
 				})

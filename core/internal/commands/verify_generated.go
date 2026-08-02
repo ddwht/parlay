@@ -29,7 +29,7 @@ var verifyGeneratedStrict bool
 
 func init() {
 	verifyGeneratedCmd.Flags().BoolVar(&verifyGeneratedStrict, "strict", false,
-		"Exit non-zero when any file was changed outside codegen (adopted) or has undeclared provenance")
+		"Exit non-zero unless every recorded file is confirmed safe to overwrite — fails on adopted, undeclared provenance, or contents that differ from the last recorded emission")
 }
 
 type verifyFileEntry struct {
@@ -65,9 +65,28 @@ type verifyOutput struct {
 // an ordinary regeneration, and saying so is more useful than guessing.
 // Adopted is different in kind: it is a CONFIRMED hand-edit, established at
 // save time by a declaration, not inferred here from bytes.
+//
+// A schema-version of 0 disqualifies the provenance fork entirely. That
+// version predates provenance, so a v0 snapshot cannot legitimately carry
+// any — whatever is in the field got there some way the writer of this
+// format never sanctioned, and reading it would be trusting a value no
+// writer promised. The version was already read and reported (see
+// verifyOutput.SchemaVersion) and then never acted on, which is R4-18:
+// every file in a v0 snapshot graded `stable`, so the most uncertain
+// snapshot in the tree produced the most reassuring report in it.
+//
+// Missing and Modified survive the version check, because neither is a
+// claim about provenance. A file that is absent, or whose bytes differ from
+// the recorded hash, is established by evidence this command gathered
+// itself; folding those into Unknown would discard a fact to express a
+// doubt about a different one.
 func (o *verifyOutput) classify(entry CodeHashEntry, fileEntry verifyFileEntry, currentHash string) {
 	if currentHash != entry.Hash {
 		o.Modified = append(o.Modified, fileEntry)
+		return
+	}
+	if o.SchemaVersion == 0 {
+		o.Unknown = append(o.Unknown, fileEntry)
 		return
 	}
 	switch entry.Provenance {
@@ -193,15 +212,30 @@ func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error
 // consumer — generate-code.skill.md step 10 — parses the JSON and decides;
 // making the reporter decide instead would break that step and put the policy
 // in the wrong place. --strict exists for CI, which has no such consumer.
+//
+// --strict fails on Modified as well as Adopted and Unknown (R4-17). Modified
+// is the honestly ambiguous bucket: re-emission is only functionally
+// deterministic, so differing bytes really could be a hand-edit or an ordinary
+// regeneration, and this command cannot tell which. That ambiguity is the
+// reason to stop, not a reason to continue. --strict asks "is every recorded
+// file confirmed safe to overwrite", and a file parlay cannot account for is
+// not confirmed — resolving the doubt toward "carry on" is what loses the
+// hand-edit that was never saved.
+//
+// The interactive path already reaches this conclusion by itself:
+// generate-code.skill.md tells the agent that a modified file must not be
+// silently overwritten and that the user chooses. --strict is that same rule
+// for the caller that has no user to ask.
 func emitVerifyJSON(cmd *cobra.Command, output *verifyOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
-	if verifyGeneratedStrict && (len(output.Adopted) > 0 || len(output.Unknown) > 0) {
+	if verifyGeneratedStrict && (len(output.Adopted) > 0 || len(output.Unknown) > 0 || len(output.Modified) > 0) {
 		fmt.Fprintf(cmd.ErrOrStderr(),
-			"--strict: %d adopted, %d of unknown provenance\n", len(output.Adopted), len(output.Unknown))
+			"--strict: %d adopted, %d of unknown provenance, %d differing from the last recorded emission\n",
+			len(output.Adopted), len(output.Unknown), len(output.Modified))
 		return NewExitCodeError(1)
 	}
 	return nil

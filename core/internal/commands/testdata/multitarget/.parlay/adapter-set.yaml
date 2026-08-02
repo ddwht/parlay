@@ -1,0 +1,17 @@
+name: notes-stack
+
+# A genuinely heterogeneous project: React on the front, NestJS + Prisma on the
+# back. Each slot pins one adapter (the HOW) and the source root it emits into
+# (the WHERE). presentation lands in apps/web; application and persistence share
+# apps/api. The root: values here override each adapter's own source-root.
+targets:
+  presentation: { adapter: react-antd, root: apps/web }
+  application:  { adapter: nestjs-application, root: apps/api }
+  persistence:  { adapter: prisma-postgres, root: apps/api }
+
+# Authorized cross-kind edges. The UI calls the application layer; the
+# application layer persists through Prisma. Any buildfile edge crossing kinds
+# that is not covered here fails adapter-set-link validation.
+links:
+  - { from: presentation, relation: calls, to: application }
+  - { from: application, relation: persists, to: persistence }

@@ -56,6 +56,21 @@ Contains one or more intent blocks. Starts with an optional feature header.
 - Priority: single token on a single line (P0, P1, P2)
 - Feature-to-intent hierarchy: file location + heading structure
 
+## Validation
+
+`parlay validate --type intent spec/intents/<feature>/intents.md` checks a file
+against this schema. The same rules back `parlay check-readiness --stage
+create-surface`, which runs them in build mode — one implementation, two callers.
+
+| Code | When it fires |
+|---|---|
+| `intents-not-readable` | The file does not exist, or cannot be read as markdown |
+| `no-intents` | The file has no `## ` intent headings. Build mode fails; authoring mode warns, because a scaffolded intents.md legitimately starts empty. |
+| `missing-goal` | An intent block has no `**Goal**:` line |
+| `missing-persona` | An intent block has no `**Persona**:` line |
+| `duplicate-intent-title` | Two intent titles in one feature slugify to the same value, so `@<feature>/<intent-slug>` cannot name one of them |
+| `invalid-priority` | A `**Priority**:` line carries something other than `P0`, `P1` or `P2`. An omitted line is valid and means `P1`. |
+
 ## References
 
 - Feature: `@<feature-name>` (folder name)

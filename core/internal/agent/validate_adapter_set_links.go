@@ -10,9 +10,111 @@ package agent
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ddwht/parlay/core/internal/parser"
 )
+
+// edgeKindRank orders adapter kinds from UI down to storage. A cross-kind edge
+// runs between two consecutive layers that both touch the same operation.
+var edgeKindRank = map[string]int{
+	"presentation": 0,
+	"transport":    1,
+	"application":  2,
+	"persistence":  3,
+}
+
+// crossKindEdgeShape projects the parts of a v2 buildfile the edge extractor
+// reads: each backend target's projected operation refs, and the presentation
+// components' actions (an action that calls an operation ties the UI layer to
+// whichever backend layer projects that operation).
+type crossKindEdgeShape struct {
+	Targets map[string]struct {
+		Operations map[string]yaml.Node `yaml:"operations"`
+		Components  map[string]struct {
+			Actions []struct {
+				Target string `yaml:"target"`
+			} `yaml:"actions"`
+		} `yaml:"components"`
+	} `yaml:"targets"`
+}
+
+// ExtractCrossKindEdges projects a v2 buildfile's cross-kind edges. For each
+// operation, the layers that touch it — presentation via a component action
+// that calls it, a backend kind via its targets.<kind>.operations projection —
+// are ordered UI→storage by edgeKindRank and an edge is emitted between each
+// consecutive pair. So an operation the UI calls, the application orchestrates,
+// and persistence stores yields presentation→application and
+// application→persistence. Deterministic and side-effect free; the result
+// feeds ValidateAdapterSetLinks.
+//
+// This is the edge producer whose absence kept ValidateAdapterSetLinks
+// unreachable: the type existed but nothing built a CrossKindEdge from a real
+// buildfile.
+func ExtractCrossKindEdges(content []byte) []CrossKindEdge {
+	var bf crossKindEdgeShape
+	if err := yaml.Unmarshal(content, &bf); err != nil {
+		return nil
+	}
+
+	touched := map[string]map[string]bool{}
+	touch := func(op, kind string) {
+		if touched[op] == nil {
+			touched[op] = map[string]bool{}
+		}
+		touched[op][kind] = true
+	}
+	for kind, t := range bf.Targets {
+		if kind == "presentation" {
+			for _, comp := range t.Components {
+				for _, a := range comp.Actions {
+					if isOperationRef(a.Target) {
+						touch(a.Target, "presentation")
+					}
+				}
+			}
+			continue
+		}
+		for opRef := range t.Operations {
+			if isOperationRef(opRef) {
+				touch(opRef, kind)
+			}
+		}
+	}
+
+	var ops []string
+	for op := range touched {
+		ops = append(ops, op)
+	}
+	sort.Strings(ops)
+
+	seen := map[string]bool{}
+	var edges []CrossKindEdge
+	for _, op := range ops {
+		var kinds []string
+		for k := range touched[op] {
+			kinds = append(kinds, k)
+		}
+		sort.Slice(kinds, func(i, j int) bool { return edgeKindRank[kinds[i]] < edgeKindRank[kinds[j]] })
+		for i := 0; i+1 < len(kinds); i++ {
+			from, to := kinds[i], kinds[i+1]
+			key := from + "->" + to
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			edges = append(edges, CrossKindEdge{From: from, To: to, Ref: op})
+		}
+	}
+	return edges
+}
+
+func isOperationRef(s string) bool {
+	return strings.HasPrefix(s, "@") && strings.Contains(s, "/operation:")
+}
 
 // linkRelations is the closed set of cross-kind relations.
 var linkRelations = map[string]bool{

@@ -60,6 +60,7 @@ func registerInternalCommands() {
 		scaffoldPlanCmd,
 		scaffoldSeedCmd,
 		checkCompositionCmd,
+		domainImpactCmd,
 		schemaDigestCmd,
 		emissionGroupsCmd,
 		serveCmd,

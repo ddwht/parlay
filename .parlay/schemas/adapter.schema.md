@@ -341,6 +341,10 @@ All templates are relative to `source-root`. A template is a plain string substi
 
 `component-pattern` stays, and stays an enum: it still tells the agent how to *group* what it writes, which `paths:` deliberately does not express. The two are complementary — one is grouping strategy, the other is destination.
 
+**Backend (non-presentation) path keys.** A presentation adapter is component-driven, so its templates key off `{name}`. An `application` adapter is *feature*-driven — one module/controller/service trio per parlay feature — so it declares `service:`, `controller:`, and `module:`, each keyed off `{feature}` (no `{name}`). A `persistence` adapter is *entity*-driven: its `model:` template names the shared schema file (e.g. `prisma/schema.prisma`) and, carrying no `{entity}` placeholder, expands to the same path for every entity, which the plan deriver collapses to one shared row. `parlay internal scaffold-plan` derives per-target rows from these keys via `derivePlanTargets`.
+
+**Root override in a multi-target project.** When `.parlay/adapter-set.yaml` pins a target to a `root:`, that root replaces the adapter's own `source-root` for plan derivation — the topology, not the adapter, decides where each target emits. So the same `nestjs-application` adapter (`source-root: apps/api`) emits under whatever backend root the adapter-set names, and a presentation adapter's `src/…` templates land under the presentation root (`apps/web`).
+
 ### `paths.seed` — where the composed runtime seed lands
 
 `seed:` names the single file the running prototype boots its data from. Parlay computes *what is in it* — `parlay internal scaffold-seed` unions every feature's composing fixture and emits canonical JSON — and knows nothing about how it is written. The template says where the file goes; the framework decides its shape, which is why a TypeScript adapter points at a `.ts` module exporting a const and a Go adapter could point at an embedded `.json`.

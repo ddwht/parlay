@@ -104,6 +104,77 @@ func TestStatus_ListsFeatures(t *testing.T) {
 	}
 }
 
+// TestStatus_ReportsTreeParitySeparatelyFromTopology pins the fix for
+// the contradiction where `status` printed `topology: ok` on a tree
+// `repair --dry-run` reported mismatches on. The two answer different
+// questions, so they get one line each: `topology:` still reflects
+// config.yaml/roots.yaml wiring only, and stays ok here.
+func TestStatus_ReportsTreeParitySeparatelyFromTopology(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+	makeProjectRoot(t, tmp)
+
+	// A feature present in spec/intents/ and nowhere else — exactly
+	// what `parlay add-feature` used to produce.
+	featDir := filepath.Join(tmp, config.SpecDir, config.IntentsDir, "lonely")
+	if err := os.MkdirAll(featDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featDir, "intents.md"), []byte("# Lonely"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := config.Root{Path: tmp, Kind: config.RootKindStandalone}
+	cmd := withCtx(t, root, nil)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	if err := runStatus(cmd, nil); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "trees:    needs repair") {
+		t.Errorf("expected the trees line to report the missing handoff/build dirs, got: %s", out)
+	}
+	if !strings.Contains(out, "topology: ok") {
+		t.Errorf("topology answers a different question and should stay ok, got: %s", out)
+	}
+}
+
+// A project whose three trees agree reports `trees: ok`, so the line is
+// always present rather than being an anomaly flag.
+func TestStatus_TreeParityCleanWhenTreesAgree(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+	makeProjectRoot(t, tmp)
+
+	featDir := filepath.Join(tmp, config.SpecDir, config.IntentsDir, "paired")
+	if err := os.MkdirAll(featDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featDir, "intents.md"), []byte("# Paired"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{
+		filepath.Join(tmp, config.SpecDir, config.HandoffDir, "paired"),
+		filepath.Join(tmp, config.ParlayDir, "build", "paired"),
+	} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	root := config.Root{Path: tmp, Kind: config.RootKindStandalone}
+	cmd := withCtx(t, root, nil)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	if err := runStatus(cmd, nil); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if out := buf.String(); !strings.Contains(out, "trees:    ok") {
+		t.Errorf("expected 'trees:    ok' for matching trees, got: %s", out)
+	}
+}
+
 // TestStatus_FlagsOrphanedBuildDir confirms status surfaces a
 // .parlay/build/<feature>/ directory that carries build artifacts but
 // has no matching spec/intents/<feature>/intents.md, instead of

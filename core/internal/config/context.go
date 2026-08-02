@@ -326,11 +326,20 @@ type DomainEntity struct {
 }
 
 type DomainField struct {
-	Name     string `yaml:"name"`
-	Type     string `yaml:"type"`
-	Target   string `yaml:"target,omitempty"`
-	Enum     string `yaml:"enum,omitempty"`
-	Required bool   `yaml:"required"`
+	Name   string `yaml:"name"`
+	Type   string `yaml:"type"`
+	Target string `yaml:"target,omitempty"`
+	Enum   string `yaml:"enum,omitempty"`
+	// Relationship names the declared relationship this ref field
+	// realises. Optional, and only meaningful on a ref field. Nothing
+	// otherwise links a relationship to the field that implements it —
+	// DomainRelationship names no field — so a check that wants to hold
+	// data against a declared cardinality has to infer the join from the
+	// target. That inference is unambiguous until two relationships
+	// connect the same pair of entities; this field is how an author
+	// settles it rather than having the check guess.
+	Relationship string `yaml:"relationship,omitempty"`
+	Required     bool   `yaml:"required"`
 }
 
 type DomainRelationship struct {

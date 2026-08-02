@@ -1,0 +1,105 @@
+# fixture: coherent
+# property: the control — two features that agree, both composing
+
+=== check-composition
+verdict: satisfied
+exit: 0
+{
+  "features": [
+    "approvals",
+    "expense-list"
+  ],
+  "features_examined": 2,
+  "fixture_records": 2,
+  "findings": null,
+  "coherent": true
+}
+
+=== scaffold-seed
+verdict: satisfied
+exit: 0
+{
+  "contributors": {
+    "approvals": "seed",
+    "expense-list": "seed"
+  },
+  "records": [
+    {
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "fields": {
+        "status": "submitted"
+      },
+      "from": [
+        "approvals",
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": true
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "approvals",
+        "phase": "build"
+      },
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

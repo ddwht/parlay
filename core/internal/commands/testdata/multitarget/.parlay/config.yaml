@@ -1,0 +1,4 @@
+sdd-framework: GitHub SpecKit
+# No prototype-framework: this project configures its adapters via
+# adapter-set.yaml (the modern, multi-target path). Setting prototype-framework
+# here would trigger the prototype-framework-deprecated warning.

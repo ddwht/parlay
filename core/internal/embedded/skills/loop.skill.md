@@ -142,6 +142,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
    - It runs **Gap analysis** at the end of the intents phase and the dialogs phase (step 9) and folds the result into the `context:` of the boundary decision.
    - Every boundary and every override comes back as a decision request; the driver prompts and resumes (see above).
    - The artifacts phase's boundary decision carries an `artifacts:` list naming what it wrote. If that list contains `domain-model`, offer the editor (step 11) before the designer→build boundary is answered.
+   - Whatever that list contains, run the contribution review (step 11.5) before the designer→build boundary is answered. A feature's contribution is a proposal against the project model, and the boundary is where it gets accepted or left standing.
 
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
@@ -190,6 +191,34 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
     The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-studio` was passed or `parlay.no_studio` is true in project config, and when the session is not interactive. `--non-interactive` skips it for the same reason, more bluntly: the offer opens a browser and blocks until a human closes it, so unattended it does not time out, it hangs.
 
+11.5. **Review the feature's domain-model contribution** (at the artifacts→build boundary, before the boundary question of step 10 is answered):
+
+    A feature that needs something the project model lacks writes it into its own `spec/intents/{feature}/domain-model.yaml` rather than editing the root model. That file is a **proposal**. This is where it gets reviewed, and nothing lands in the root model until the designer accepts it here.
+
+    Run `parlay internal domain-impact @{feature-ref}`. Read the JSON:
+
+    - `contributed: false` — the feature proposes nothing. Say nothing and carry on; a project that only ever authors the root model never sees this step.
+    - `additions` — entities, fields, enum values and relationships the root model lacks.
+    - `conflicts` — the feature describes something the root already describes differently. Each carries both descriptions.
+    - `affects` — per touched entity, which **other** features reference it and which of their fixtures would need the new field.
+
+    **Report what changes and who it affects, not the diff.** The additions are one line each; the work they create is spread across other people's fixtures. Say both:
+
+    > `submit-expense` proposes one new field: `ExpenseReport.settledAt` (datetime).
+    > Two other features read `ExpenseReport` — `dashboard` and `expense-list` — and two fixtures hold records that would need it: `dashboard/seed`, `expense-list/mixed-status`.
+
+    Then add one more option to the phase-boundary question of step 10:
+
+    > **Accept this contribution into the project domain model?** — Accept / Adjust in the editor / Leave it proposed.
+
+    - **Accept** — run `parlay internal domain-impact @{feature-ref} --apply`. The merge is additive and goes through the same write path as `domain-edit`. Then run `parlay internal check-drift @{feature-ref}` and report it: the domain model is shared, so accepting dirties every feature that reads it, not only this one.
+    - **Adjust in the editor** — run `parlay domain-edit --contribution @{feature-ref}` and block until the session ends, exactly as step 11 does. Then re-run `domain-impact` and re-present, because the answer may have changed.
+    - **Leave it proposed** — nothing is written. The contribution stays on disk, and other features referencing its entities report `capabilities-entity-pending` rather than failing. This is a valid answer, not a deferral to nag about.
+
+    **When `conflicts` is non-empty, do not offer Accept.** The command exits non-zero and writes nothing; there is no auto-merge and no last-writer-wins, because which of two descriptions is right is a design question. Present both descriptions and route the user back to the artifacts phase or into the editor.
+
+    `--non-interactive` skips the offer and reports the impact as information, exactly as it skips step 11 — an unattended run has nobody to accept on its behalf.
+
 12. **End the loop cleanly**:
     - **Natural completion** (after code): print a summary with the feature reference, phases run, and key artifacts on disk. No resume hint. Loop complete.
     - **User-chosen exit**: print a summary naming what completed, plus a resume command (`/parlay {feature-ref} --from {next-phase}`).
@@ -207,6 +236,7 @@ The driver — never a phase — uses AskUserQuestion for:
 - Phase failure recovery (retry / stay / exit)
 - Backing up to an earlier phase when `--from` prerequisites are missing or upstream output is stale
 - The domain-model editor offer at the artifacts boundary (step 11)
+- The contribution review at the artifacts boundary — accept / adjust / leave proposed (step 11.5)
 - Every `parlay-decision` block a phase-group returns
 
 ## Hard rules

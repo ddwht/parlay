@@ -85,11 +85,17 @@ type Entity struct {
 // Field is one entity field. Target is set only for ref-typed fields; enum is
 // set only when type names a declared enum.
 type Field struct {
-	Name     string `yaml:"name" json:"name"`
-	Type     string `yaml:"type" json:"type"`
-	Target   string `yaml:"target,omitempty" json:"target,omitempty"`
-	Enum     string `yaml:"enum,omitempty" json:"enum,omitempty"`
-	Required bool   `yaml:"required" json:"required"`
+	Name   string `yaml:"name" json:"name"`
+	Type   string `yaml:"type" json:"type"`
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+	Enum   string `yaml:"enum,omitempty" json:"enum,omitempty"`
+	// Relationship names the declared relationship this ref field
+	// realises — the author's way of settling which relationship a field
+	// implements when two of them connect the same pair of entities.
+	// Carried here so a round-trip through the editor preserves it: a key
+	// this serializer does not know is a key it silently drops.
+	Relationship string `yaml:"relationship,omitempty" json:"relationship,omitempty"`
+	Required     bool   `yaml:"required" json:"required"`
 }
 
 // Relationship is a named edge between two declared entities.
@@ -133,6 +139,30 @@ func Load(ctx context.Context, root string) (Model, Etag, error) {
 		return Model{}, "", err
 	}
 	return model, computeEtag(raw), nil
+}
+
+// ErrNoContribution reports that a feature has no domain-model.yaml of its
+// own. Contributions are optional — a project that authors only the root
+// model behaves exactly as it did before they existed — so this is a normal
+// state a caller distinguishes rather than an error to surface.
+var ErrNoContribution = errors.New("no-contribution")
+
+// LoadFile decodes a domain model from an explicit path, through the same
+// decode-and-migrate path Load uses.
+//
+// A feature's contribution is the same artifact shape as the root model, and
+// nothing about reading one differs — so it reads through the same decoder.
+// A separate parse for the per-feature file is precisely the second decoder
+// this package exists to avoid.
+func LoadFile(path string) (Model, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Model{}, ErrNoContribution
+	}
+	if err != nil {
+		return Model{}, fmt.Errorf("domain: read model: %w", err)
+	}
+	return decodeAndMigrate(raw, CurrentSchemaVersion)
 }
 
 // decodeAndMigrate parses raw model bytes, enforces the schema-version gate

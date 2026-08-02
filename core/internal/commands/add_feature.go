@@ -48,8 +48,10 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 
 	displayName := toTitleCase(name)
 
-	if err := os.MkdirAll(featurePath, 0755); err != nil {
-		return fmt.Errorf("creating feature directory: %w", err)
+	for _, root := range threeTreeRoots(cfg) {
+		if mkErr := os.MkdirAll(filepath.Join(root, slug), 0755); mkErr != nil {
+			return fmt.Errorf("creating feature directory in %s: %w", root, mkErr)
+		}
 	}
 
 	intentsContent := fmt.Sprintf("# %s\n\n> \n\n---\n\n", displayName)

@@ -94,6 +94,27 @@ func ValidateProjectMultiTarget(mode ValidationMode, rootPath string) []Validati
 		}
 	}
 
+	// Cross-kind link enforcement: project each feature buildfile's edges and
+	// assert every one is authorized by the adapter-set links: block. This is
+	// the call site that makes ValidateAdapterSetLinks reachable — the walker
+	// is the only place with both the buildfiles (to extract edges) and the
+	// adapter-set (to authorize them).
+	buildRoot := filepath.Join(rootPath, ".parlay", "build")
+	if buildEntries, err := os.ReadDir(buildRoot); err == nil {
+		for _, be := range buildEntries {
+			if !be.IsDir() {
+				continue
+			}
+			bfContent, err := os.ReadFile(filepath.Join(buildRoot, be.Name(), "buildfile.yaml"))
+			if err != nil {
+				continue
+			}
+			if edges := ExtractCrossKindEdges(bfContent); len(edges) > 0 {
+				outcomes = append(outcomes, ValidateAdapterSetLinks(mode, adapterSet, edges)...)
+			}
+		}
+	}
+
 	// Blueprint scope + strategy gate (multi-target only).
 	bpPath := filepath.Join(rootPath, ".parlay", "blueprint.yaml")
 	if bpContent, err := os.ReadFile(bpPath); err == nil {

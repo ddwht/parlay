@@ -1,0 +1,115 @@
+# fixture: contradiction-clean
+# property: two composing fixtures contradicting, no scenario involved
+
+=== check-composition
+verdict: violated
+exit: 1
+{
+  "features": [
+    "approvals",
+    "expense-list"
+  ],
+  "features_examined": 2,
+  "fixture_records": 2,
+  "findings": [
+    {
+      "code": "composition-fixture-contradiction",
+      "message": "ExpenseReport rep-1 has conflicting status across features: \"approved\" in approvals/seed; \"submitted\" in expense-list/seed. Each feature's tests pass against its own fixture; a user navigating between them sees both values.",
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "field": "status",
+      "sites": [
+        "approvals/seed",
+        "expense-list/seed"
+      ]
+    }
+  ],
+  "coherent": false
+}
+
+=== scaffold-seed
+verdict: violated
+exit: 1
+{
+  "contributors": {
+    "approvals": "seed",
+    "expense-list": "seed"
+  },
+  "records": null,
+  "findings": [
+    {
+      "code": "composition-fixture-contradiction",
+      "message": "ExpenseReport rep-1 has conflicting status across the composing fixtures: \"approved\" in approvals; \"submitted\" in expense-list. There is one runtime, so one of these has to be wrong.",
+      "sites": [
+        "approvals",
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": false
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "approvals",
+        "phase": "build"
+      },
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

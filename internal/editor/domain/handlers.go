@@ -155,6 +155,63 @@ func errorFindingFields(findings []Finding) []server.FieldError {
 // user best placed to fix it was the one told least about it, and "clean in
 // the editor" and "passes the build" stopped being the same statement for the
 // most ordinary kind of breakage there is.
+// contributionResponse is the JSON body of a contribution query: whether the
+// editor is reviewing one at all, the feature proposing it, the proposed model
+// itself, and how it differs from the root.
+//
+// Present is stated rather than left to be inferred from an empty delta.
+// "This feature proposes nothing" and "the editor was not opened to review
+// anything" are different answers, and a UI that conflates them shows a review
+// panel for a session with nothing to review.
+type contributionResponse struct {
+	Present bool   `json:"present"`
+	Feature string `json:"feature,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Model   *Model `json:"model,omitempty"`
+	Delta   *Delta `json:"delta,omitempty"`
+}
+
+// contributionHandler serves GET /api/domain-model/contribution. It is a
+// QUERY: it reads the root model and the feature's proposal and returns the
+// difference. It writes nothing — accepting a contribution goes out through
+// the ordinary save, so the persistence surface stays at two endpoints.
+//
+// A session not opened in contribution mode, and a feature with no
+// contribution file, both return present:false at HTTP 200. Neither is an
+// error: contributions are optional, and an ordinary editing session is the
+// common case.
+func (s *Subsystem) contributionHandler(w http.ResponseWriter, r *http.Request) {
+	if s.Contribution.Path == "" {
+		writeJSON(w, r, http.StatusOK, contributionResponse{Present: false})
+		return
+	}
+
+	contribution, err := LoadFile(s.Contribution.Path)
+	if errors.Is(err, ErrNoContribution) {
+		writeJSON(w, r, http.StatusOK, contributionResponse{Present: false})
+		return
+	}
+	if err != nil {
+		server.WriteError(w, r, mapLoadError(err))
+		return
+	}
+
+	root, _, err := Load(r.Context(), s.Root)
+	if err != nil {
+		server.WriteError(w, r, mapLoadError(err))
+		return
+	}
+
+	delta := Diff(root, contribution)
+	writeJSON(w, r, http.StatusOK, contributionResponse{
+		Present: true,
+		Feature: s.Contribution.Feature,
+		Path:    s.Contribution.Path,
+		Model:   &contribution,
+		Delta:   &delta,
+	})
+}
+
 func mapLoadError(err error) error {
 	if errors.Is(err, ErrSchemaVersionNewer) || errors.Is(err, ErrMissingSchemaVersion) {
 		return &server.ValidationError{

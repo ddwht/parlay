@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,12 @@ type adapterPaths struct {
 	Types           string   `yaml:"types"`
 	FeatureRoutes   string   `yaml:"feature-routes"`
 	Routes          string   `yaml:"routes"`
+	// Controller and Module are application-adapter (backend) templates: a
+	// feature-driven target emits one module/controller/service trio per
+	// parlay feature, keyed off {feature}. Presentation adapters leave these
+	// empty. See deriveApplicationPlan.
+	Controller string `yaml:"controller"`
+	Module     string `yaml:"module"`
 	// Seed is where the composed runtime seed lands — the one dataset the
 	// whole prototype boots from. Parlay computes the data (scaffold_seed.go)
 	// and knows nothing about how it is rendered: the template says where the
@@ -332,6 +339,106 @@ func derivePlanCreates(feature string, components []string, entities []string, a
 	return out
 }
 
+// adaptersForProject reads .parlay/adapter-set.yaml and loads the adapter
+// file occupying each slot, keyed by kind. It is the multi-target counterpart
+// of firstAdapterFile: instead of grabbing the lexically-first adapter, it
+// resolves the right adapter per kind from the pinned topology. Returns an
+// error if the adapter-set is unreadable or any pinned adapter file is
+// missing.
+func adaptersForProject(cfg *config.Context) (map[string]adapterForPlan, *parser.AdapterSet, error) {
+	as, err := parser.ParseAdapterSet(cfg.AdapterSetPath())
+	if err != nil {
+		return nil, nil, err
+	}
+	out := map[string]adapterForPlan{}
+	for kind, tgt := range as.Targets {
+		p := filepath.Join(cfg.AdaptersPath(), tgt.Adapter+".adapter.yaml")
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil, nil, fmt.Errorf("adapter for target %s (%q): %w", kind, tgt.Adapter, err)
+		}
+		var ad adapterForPlan
+		if err := yaml.Unmarshal(data, &ad); err != nil {
+			return nil, nil, fmt.Errorf("parse adapter %s: %w", p, err)
+		}
+		out[kind] = ad
+	}
+	return out, as, nil
+}
+
+// derivePlanTargets derives one plan per filled adapter-set slot. Each kind is
+// driven by its natural inputs:
+//   - presentation is component-driven (reuses derivePlanCreates);
+//   - application is feature-driven (one module/controller/service trio);
+//   - persistence is entity-driven (the shared schema, one row for all
+//     entities).
+//
+// Every slot's rows are pathed under that slot's root: from the adapter-set,
+// which overrides the adapter's own source-root — the topology, not the
+// adapter, decides where each target lands. In a project with a persistence
+// slot the domain entities become that slot's schema, so the presentation slot
+// derives no model rows; entities belong to exactly one target.
+func derivePlanTargets(feature string, presComponents []string, hasOperations bool, entities []string, as *parser.AdapterSet, adapters map[string]adapterForPlan) map[string]derivedPlan {
+	out := map[string]derivedPlan{}
+	_, hasPersistence := as.Targets["persistence"]
+	for kind, tgt := range as.Targets {
+		ad, ok := adapters[kind]
+		if !ok {
+			continue
+		}
+		ad.FileConventions.SourceRoot = tgt.Root
+		switch kind {
+		case "presentation":
+			ents := entities
+			if hasPersistence {
+				ents = nil // models live in the persistence target
+			}
+			out[kind] = derivePlanCreates(feature, presComponents, ents, ad)
+		case "application":
+			out[kind] = deriveApplicationPlan(feature, hasOperations, ad)
+		case "persistence":
+			// The persistence schema is entity-driven and component-less;
+			// derivePlanCreates with no components emits exactly the model
+			// rows (which collapse to the single shared schema file).
+			out[kind] = derivePlanCreates(feature, nil, entities, ad)
+		default:
+			// transport and any future kinds are out of the vertical slice.
+		}
+	}
+	return out
+}
+
+// deriveApplicationPlan emits the per-feature backend files an application
+// adapter produces — module, controller, service — for a feature that
+// declares operations. Unlike a presentation target there is no per-component
+// fan-out: one trio per feature, keyed off {feature}. A feature with no
+// operations gets no backend files.
+func deriveApplicationPlan(feature string, hasOperations bool, ad adapterForPlan) derivedPlan {
+	var out derivedPlan
+	if !hasOperations {
+		return out
+	}
+	fc := ad.FileConventions
+	for _, t := range []struct{ label, tmpl string }{
+		{"service", fc.Paths.Service},
+		{"controller", fc.Paths.Controller},
+		{"module", fc.Paths.Module},
+	} {
+		if t.tmpl == "" {
+			out.Undecidable = append(out.Undecidable,
+				fmt.Sprintf("no file-conventions.paths.%s template; %s rows must be authored by hand", t.label, t.label))
+			continue
+		}
+		p, err := expandTemplate(t.tmpl, feature, "", "", fc.Naming)
+		if err != nil {
+			out.Undecidable = append(out.Undecidable, err.Error())
+			continue
+		}
+		out.Creates = append(out.Creates, planEntry{Path: path.Join(fc.SourceRoot, p), Sources: []string{"section/operations"}})
+	}
+	return out
+}
+
 // scaffoldPlanCmd derives the mechanical plan.creates rows for a feature and
 // prints them. It does not write the buildfile: the point of the first
 // release is to be able to compare derivation against what agents actually
@@ -353,12 +460,16 @@ func init() {
 
 type scaffoldPlanOutput struct {
 	Feature      string      `json:"feature"`
-	Adapter      string      `json:"adapter"`
-	Creates      []planEntry `json:"creates"`
+	Adapter      string      `json:"adapter,omitempty"`
+	Creates      []planEntry `json:"creates,omitempty"`
 	Undecidable  []string    `json:"undecidable,omitempty"`
 	OnlyDerived  []string    `json:"only_in_derived,omitempty"`
 	OnlyAuthored []string    `json:"only_in_authored,omitempty"`
 	Agrees       *bool       `json:"agrees,omitempty"`
+	// Targets carries the per-kind derived plans for a multi-target
+	// (adapter-set) buildfile, mirroring plan.targets.<kind> in the schema.
+	// Empty for single-target projects, which populate Creates instead.
+	Targets map[string]derivedPlan `json:"targets,omitempty"`
 }
 
 func runScaffoldPlan(cmd *cobra.Command, args []string) error {
@@ -374,14 +485,40 @@ func runScaffoldPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	var bf struct {
-		Components map[string]struct{} `yaml:"components"`
-		Plan       struct {
+		Components map[string]struct{}  `yaml:"components"`
+		AdapterSet string               `yaml:"adapter-set"`
+		Operations map[string]yaml.Node `yaml:"operations"`
+		Targets    struct {
+			Presentation struct {
+				Components map[string]struct{} `yaml:"components"`
+			} `yaml:"presentation"`
+		} `yaml:"targets"`
+		Plan struct {
 			Creates []planEntry `yaml:"creates"`
+			Targets map[string]struct {
+				Creates []planEntry `yaml:"creates"`
+			} `yaml:"targets"`
 		} `yaml:"plan"`
 	}
 	if err := yaml.Unmarshal(data, &bf); err != nil {
 		return fmt.Errorf("parse %s: %w", buildfilePath, err)
 	}
+
+	// Multi-target (adapter-set) buildfiles derive one plan per slot, each
+	// pathed under its target's root. Single-target buildfiles keep the
+	// original single-adapter path below.
+	if bf.AdapterSet != "" {
+		var presComps []string
+		for name := range bf.Targets.Presentation.Components {
+			presComps = append(presComps, name)
+		}
+		authored := map[string][]planEntry{}
+		for kind, t := range bf.Plan.Targets {
+			authored[kind] = t.Creates
+		}
+		return runScaffoldPlanMultiTarget(cmd, cfg, slug, presComps, len(bf.Operations) > 0, authored)
+	}
+
 	var comps []string
 	for name := range bf.Components {
 		comps = append(comps, name)
@@ -400,7 +537,12 @@ func runScaffoldPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse adapter %s: %w", adapterPath, err)
 	}
 
-	entities := domainEntityNamesAt(filepath.Join(cfg.RepoRoot(), "domain-model.yaml"))
+	// The ACTIVE root's model, not the repo-level one. RepoRoot()
+	// resolves to the parent for a child root, so joining it here made
+	// plan derivation read a different file from the one
+	// declaredCapabilityEntities validates against — and each child
+	// root has an independent domain-model.yaml by contract.
+	entities := domainEntityNamesAt(cfg.DomainModelPath())
 	derived := derivePlanCreates(slug, comps, entities, ad)
 
 	out := scaffoldPlanOutput{
@@ -417,6 +559,57 @@ func runScaffoldPlan(cmd *cobra.Command, args []string) error {
 		}
 		for _, e := range bf.Plan.Creates {
 			authoredSet[e.Path] = true
+		}
+		for p := range derivedSet {
+			if !authoredSet[p] {
+				out.OnlyDerived = append(out.OnlyDerived, p)
+			}
+		}
+		for p := range authoredSet {
+			if !derivedSet[p] {
+				out.OnlyAuthored = append(out.OnlyAuthored, p)
+			}
+		}
+		sort.Strings(out.OnlyDerived)
+		sort.Strings(out.OnlyAuthored)
+		agrees := len(out.OnlyDerived) == 0 && len(out.OnlyAuthored) == 0
+		out.Agrees = &agrees
+	}
+
+	buf, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Fprintln(cmd.OutOrStdout(), string(buf))
+	return nil
+}
+
+// runScaffoldPlanMultiTarget derives and prints the per-target plan for a
+// multi-target (adapter-set) buildfile. Each slot's rows are pathed under its
+// own root; --compare flattens all targets into one path set (the roots make
+// paths globally unique) and reports aggregate agreement against the authored
+// plan.targets.<kind>.creates rows.
+func runScaffoldPlanMultiTarget(cmd *cobra.Command, cfg *config.Context, slug string, presComps []string, hasOperations bool, authored map[string][]planEntry) error {
+	adapters, as, err := adaptersForProject(cfg)
+	if err != nil {
+		return err
+	}
+	entities := domainEntityNamesAt(cfg.DomainModelPath())
+	derived := derivePlanTargets(slug, presComps, hasOperations, entities, as, adapters)
+
+	out := scaffoldPlanOutput{
+		Feature: slug,
+		Targets: derived,
+	}
+
+	if scaffoldPlanCompare {
+		derivedSet, authoredSet := map[string]bool{}, map[string]bool{}
+		for _, dp := range derived {
+			for _, e := range dp.Creates {
+				derivedSet[e.Path] = true
+			}
+		}
+		for _, rows := range authored {
+			for _, e := range rows {
+				authoredSet[e.Path] = true
+			}
 		}
 		for p := range derivedSet {
 			if !authoredSet[p] {

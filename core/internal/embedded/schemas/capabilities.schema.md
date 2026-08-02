@@ -72,7 +72,8 @@ The capabilities validator enforces:
 | `capabilities-duplicate-operation-id` | Two operations within one capabilities.yaml share the same id. |
 | `capabilities-stub-unfilled` | An operation declares `kind: unknown` (the migrate-domain-operations stub kind). Build mode fails until the kind is set explicitly. |
 | `capabilities-subject-missing` | An operation declares no `subject.entity`. Required for every operation — the downstream wiring is derived from it. |
-| `capabilities-entity-undeclared` | `subject.entity` or `output.entity` names an entity that `domain-model.yaml` does not declare. Requires a resolvable domain model: with none, the cross-reference is skipped rather than failing every operation, since a project that has not authored a domain model yet is a normal state. |
+| `capabilities-entity-undeclared` | `subject.entity` or `output.entity` names an entity that `domain-model.yaml` does not declare **and no feature's contribution proposes**. Requires a resolvable domain model: with none, the cross-reference is skipped rather than failing every operation, since a project that has not authored a domain model yet is a normal state. |
+| `capabilities-entity-pending` (warning) | The referenced entity is not in the root model yet, but a feature's `spec/intents/<feature>/domain-model.yaml` contribution proposes it. The finding names the proposing feature. This case used to be indistinguishable from a typo — both graded as errors — so a feature referencing an entity a sibling was about to introduce had to ship a placeholder. Accept the proposing contribution and the reference resolves. |
 | `buildfile-operation-ref-unnormalized` | A downstream buildfile references an operation by bare local id rather than the `@<feature>/operation:<id>` form. |
 
 ## Policy-step-error tie rules

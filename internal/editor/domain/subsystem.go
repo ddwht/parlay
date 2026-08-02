@@ -36,8 +36,26 @@ const toolName = "domain-model"
 // locate now, and nothing about the editor's behaviour depends on what happens
 // to be installed on the machine running it.
 type Subsystem struct {
-	Root     string
-	validate func(ctx context.Context, model Model) ([]Finding, error)
+	Root string
+	// Contribution, when set, puts the editor in contribution mode: it serves
+	// the root model as usual AND the named feature's proposal, so the UI can
+	// show what the feature adds and where the two disagree before the normal
+	// save path commits anything.
+	//
+	// Zero is the ordinary mode, and the ordinary mode is unchanged — the
+	// contribution endpoint reports that there is nothing to review and the
+	// editor behaves exactly as it did before contributions existed.
+	Contribution ContributionSource
+	validate     func(ctx context.Context, model Model) ([]Finding, error)
+}
+
+// ContributionSource names the feature whose contribution the editor is
+// reviewing and the file it lives in. The path is supplied rather than derived
+// because mapping a feature identifier to a directory is the caller's job —
+// this package would otherwise need a second copy of that resolution.
+type ContributionSource struct {
+	Feature string
+	Path    string
 }
 
 // compile-time assertion that Subsystem satisfies the harness plug-in surface.
@@ -54,8 +72,13 @@ var _ server.ToolRegistration = (*Subsystem)(nil)
 // Construction cannot fail. It used to resolve an executable and swallow the
 // error, which left a subsystem that looked constructed and failed on its first
 // validate instead — a bad state to be able to hold.
-func New(root string, validate ValidatorFunc) *Subsystem {
-	s := &Subsystem{Root: root}
+// The contribution source is a parameter for the same reason the validator is:
+// it is resolved from a feature identifier, and that resolution lives on the
+// caller's side of the boundary. Pass the zero value for an ordinary editing
+// session — every call site that does gets exactly the behaviour it had before
+// contributions existed.
+func New(root string, validate ValidatorFunc, contribution ContributionSource) *Subsystem {
+	s := &Subsystem{Root: root, Contribution: contribution}
 	s.validate = func(ctx context.Context, model Model) ([]Finding, error) {
 		return Validate(ctx, validate, model)
 	}
@@ -78,4 +101,9 @@ func (s *Subsystem) Mount(r chi.Router) {
 	r.Get("/api/domain-model/model", s.loadHandler)
 	r.Put("/api/domain-model/model", s.saveHandler)
 	r.Post("/api/domain-model/validate", s.validateHandler)
+	// One more QUERY: what a feature proposes against the model being edited.
+	// It reads two files and writes nothing, so it does not widen the
+	// persistence surface — accepting a contribution goes out through the
+	// same PUT as any other edit.
+	r.Get("/api/domain-model/contribution", s.contributionHandler)
 }

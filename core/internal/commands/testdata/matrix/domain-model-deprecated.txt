@@ -1,0 +1,111 @@
+# fixture: domain-model-deprecated
+# property: domain model carrying only the deprecated operations: block — warning severity
+
+=== check-composition
+verdict: satisfied
+exit: 0
+{
+  "features": [
+    "expense-list"
+  ],
+  "features_examined": 1,
+  "fixture_records": 1,
+  "findings": null,
+  "coherent": true
+}
+
+=== scaffold-seed
+verdict: satisfied
+exit: 0
+{
+  "contributors": {
+    "expense-list": "seed"
+  },
+  "records": [
+    {
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "fields": {
+        "status": "submitted"
+      },
+      "from": [
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": true
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== validate --type domain-model --json
+verdict: satisfied
+exit: 0
+[
+  {
+    "code": "domain-operations-deprecated",
+    "message": "domain-model.yaml carries a populated deprecated 'operations:' block; the top-level operations: field is deprecated in favor of per-feature capabilities.yaml",
+    "context": "\u003cdomain-model\u003e",
+    "fix": "migrate the operations: block via `parlay migrate-domain-operations`",
+    "severity": "warning"
+  }
+]
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

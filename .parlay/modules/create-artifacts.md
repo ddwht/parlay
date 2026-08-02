@@ -124,7 +124,11 @@ Two things not to do: never narrow the options to spare the user a question, and
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.md or surface.yaml, validate)
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
    - **If infrastructure**: guide the designer to author `infrastructure.md` — show the fragment format, the field set (Name, Source intent, Affects, Behavior, Invariants), and a worked example drawn from the matching architectural category (boundary, probe, allowlist, dependency pin)
-   - **If domain-model**: guide the designer to author or extend `domain-model.yaml` with the new entities, relationships, or vocabulary
+   - **If domain-model**: write what this feature needs into the **feature's own** `spec/intents/{feature}/domain-model.yaml` — a *contribution*. Do **not** edit the project's root `domain-model.yaml` from a feature phase.
+     - The contribution uses the same schema as the root model and holds **only what this feature proposes** — the new entities, the new fields on existing entities, the new enum values, the new relationships. It is not a copy of the root with edits.
+     - The root model stays the source of truth. A contribution is a proposal: the loop reports it at the artifacts→build boundary, names which other features it affects, and the designer accepts it there. Editing the root directly from a feature phase is how one feature's need silently becomes every other feature's problem.
+     - **Referencing an entity that only another feature's contribution proposes is fine.** `capabilities.yaml` reports it as `capabilities-entity-pending` — a warning naming the proposer — rather than failing. Do not invent a placeholder entity to work around it.
+     - A project that has no contributions and only ever edits the root model still works exactly as before; the contribution file is optional.
    - When multiple artifacts are required, author them in order: domain-model first (so other artifacts can reference its entities), then surface and capabilities and infrastructure in any order
 
 6. **Report** — Confirm which artifacts were created and what the next pipeline step is (`/parlay-build-feature @{feature}`).

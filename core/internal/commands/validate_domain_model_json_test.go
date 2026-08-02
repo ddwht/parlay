@@ -4,8 +4,9 @@
 //
 // CLI-level tests for `parlay validate --type domain-model --json`:
 // per-violation findings from stdin and from a path, the bare-array shape,
-// exit-0-as-query semantics, stdin/path equivalence, the preserved human
-// path, unparseable-input handling, and authoring-mode severity.
+// the exit code agreeing with the findings, stdin/path equivalence, the
+// preserved human path, unparseable-input handling, and authoring-mode
+// severity.
 
 package commands
 
@@ -97,12 +98,27 @@ func TestValidateDMVJSON_CleanStdinEmptyArray(t *testing.T) {
 	}
 }
 
-// model with two violations prints a two-element array and exits 0.
-func TestValidateDMVJSON_TwoViolationsArrayExit0(t *testing.T) {
+// model with two violations prints a two-element array AND exits non-zero.
+//
+// R4-22. This asserted exit 0 until the contract question behind it was
+// settled: `--json` chooses how the result is rendered, not whether the
+// command has a verdict. A surface that prints two blocking problems and
+// reports success is the ambiguity the whole consolidation exists to remove,
+// and it contradicted parlay's own instruction that the exit code is the one
+// thing a CI script may trust.
+//
+// The output half of this test is unchanged, and that is the point: nothing
+// that parses stdout notices this change. Only a caller that trusted the exit
+// code does, and it stops being misled.
+func TestValidateDMVJSON_TwoViolationsArrayExitsNonZero(t *testing.T) {
 	cmd, out := newDMVCmd(dmvTwoViolations)
 	err := runValidateDomainModelJSON(cmd, "-")
-	if err != nil {
-		t.Fatalf("expected exit 0 (a finding list is a query result), got: %v", err)
+	if err == nil {
+		t.Fatalf("expected a non-zero exit for a model with blocking findings, got nil: %s", out.String())
+	}
+	var exitErr *ExitCodeError
+	if !errors.As(err, &exitErr) {
+		t.Errorf("expected an ExitCodeError, got %T: %v", err, err)
 	}
 	var findings []agent.ValidationError
 	if jerr := json.Unmarshal(out.Bytes(), &findings); jerr != nil {
@@ -113,7 +129,8 @@ func TestValidateDMVJSON_TwoViolationsArrayExit0(t *testing.T) {
 	}
 }
 
-// path input and piped bytes produce the same finding set.
+// path input and piped bytes produce the same finding set and the same exit.
+// Rendering is identical either way, so the verdict has to be too.
 func TestValidateDMVJSON_StdinPathEquivalence(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "domain-model.yaml")
@@ -122,15 +139,18 @@ func TestValidateDMVJSON_StdinPathEquivalence(t *testing.T) {
 	}
 
 	cmdPath, outPath := newDMVCmd("")
-	if err := runValidateDomainModelJSON(cmdPath, p); err != nil {
-		t.Fatalf("path run errored: %v", err)
-	}
+	errPath := runValidateDomainModelJSON(cmdPath, p)
 	cmdStdin, outStdin := newDMVCmd(dmvTwoViolations)
-	if err := runValidateDomainModelJSON(cmdStdin, "-"); err != nil {
-		t.Fatalf("stdin run errored: %v", err)
-	}
+	errStdin := runValidateDomainModelJSON(cmdStdin, "-")
+
 	if outPath.String() != outStdin.String() {
 		t.Errorf("path and stdin runs produced different findings for identical bytes:\npath:  %s\nstdin: %s", outPath.String(), outStdin.String())
+	}
+	if (errPath == nil) != (errStdin == nil) {
+		t.Errorf("path and stdin runs disagreed on the exit code: path=%v stdin=%v", errPath, errStdin)
+	}
+	if errPath == nil {
+		t.Errorf("both runs carry blocking findings and must exit non-zero")
 	}
 }
 
@@ -167,12 +187,15 @@ func TestValidateDMVJSON_HumanPathPreservedNonZeroExit(t *testing.T) {
 	}
 }
 
-// unparseable model under --json emits a stable parse-failure code as valid JSON.
+// unparseable model under --json emits a stable parse-failure code as valid
+// JSON, and exits non-zero. The invariant being defended here is that the
+// command never crashes and never emits non-JSON on stdout — not that it
+// pretends an unreadable model is fine.
 func TestValidateDMVJSON_UnparseableStableCode(t *testing.T) {
 	cmd, out := newDMVCmd("schema_version: 1\nentities: [oops")
 	err := runValidateDomainModelJSON(cmd, "-")
-	if err != nil {
-		t.Fatalf("unparseable input must still exit 0 with valid JSON, got: %v", err)
+	if err == nil {
+		t.Errorf("a model that could not be parsed must not report success")
 	}
 	var findings []agent.ValidationError
 	if jerr := json.Unmarshal(out.Bytes(), &findings); jerr != nil {
@@ -183,11 +206,18 @@ func TestValidateDMVJSON_UnparseableStableCode(t *testing.T) {
 	}
 }
 
-// findings under --json carry authoring-mode severity.
+// findings under --json carry authoring-mode severity — and a warning-only
+// model still exits 0.
+//
+// This is the carve-out that keeps the new exit rule usable for authoring:
+// the exit code follows blocking findings, on the same rule the human path
+// has always used, so a deprecation notice does not fail the caller. Without
+// it, every model still carrying the old operations block would start failing
+// the two skills that write models, which is not what a deprecation means.
 func TestValidateDMVJSON_AuthoringSeverity(t *testing.T) {
 	cmd, out := newDMVCmd(dmvWithOperations)
 	if err := runValidateDomainModelJSON(cmd, "-"); err != nil {
-		t.Fatalf("run errored: %v", err)
+		t.Fatalf("a warning-only model must still exit 0, got: %v", err)
 	}
 	var findings []agent.ValidationError
 	if jerr := json.Unmarshal(out.Bytes(), &findings); jerr != nil {

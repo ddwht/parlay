@@ -154,7 +154,9 @@ Two things not to do: never narrow the options to spare the user a question, and
    - Record `data` settings — the fetching strategy and caching config drive the data infrastructure setup.
    - If the blueprint doesn't exist, proceed without it — the agent uses its own judgment for these decisions (as it did before the blueprint existed). This is the backwards-compatible path.
 
-7. **Determine source root** — From the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
+7. **Determine source root(s)** —
+   - **Single-target project** (no `.parlay/adapter-set.yaml`, or one with only the presentation slot): from the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
+   - **Multi-target project** (adapter-set with a non-presentation slot): there is **one source root per target**, taken from `adapter-set.yaml`'s `targets.<kind>.root` — NOT the adapter's own `source-root`, which the target root overrides. Codegen loops the filled slots and emits each target's files under its own root using the kind-appropriate adapter: `presentation` (e.g. React under `apps/web`), `application` (e.g. NestJS controllers/services/modules under `apps/api`), `persistence` (e.g. the Prisma schema under `apps/api`). The buildfile's `plan.targets.<kind>.creates` is authoritative for which files land where — emit exactly those paths, per target, and never recompute them from the adapter's `source-root`. Run `parlay internal scaffold-plan @{feature}` to see the derived per-target plan.
 
 8. **Compute the project-level diff** — Run: `parlay internal diff` (no @feature) to get the unified change report. The JSON output has:
    - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
@@ -187,7 +189,7 @@ Two things not to do: never narrow the options to spare the user a question, and
 
     Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
 
-11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set, **plus the two exempt classes below**. Refuse any write to a path that is neither in the plan nor exempt — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
+11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. **For a multi-target (adapter-set) buildfile the plan rows are nested under `plan.targets.<kind>.creates` / `.modifies` / `.deletes` — union every filled target's rows into the same allowlist.** Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set, **plus the two exempt classes below**. Refuse any write to a path that is neither in the plan nor exempt — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
 
    **Exempt classes (authorized by this skill, not by the buildfile).** `build-feature` emits `plan:` rows for component implementation files and cross-cutting targets only. It emits none for the two categories this skill separately *requires* you to write, so a literal reading of the allowlist forbids exactly the files steps 14 and 15 mandate. Both are therefore exempt:
 
@@ -281,13 +283,15 @@ Two things not to do: never narrow the options to spare the user a question, and
       <function or class declaration for the extending behavior>
       ```
       These per-function markers are documentation only; the file-level marker block is what scan-generated reads.
+    - **Record each file as you write it:** append its path to `.parlay/build/_project/.emitted`, one path per line, immediately after writing it — implementation files, test files and merged files alike. Not at the end of the run. Step 17 explains what the manifest is for and what goes wrong without it.
 
 13. **Delete removed-component files** — For each component in `components.removed[]`, look up the file path from the scan-generated output and delete the file. Only delete files that have a `parlay-component:` or `parlay-section:` marker — never touch user-owned files.
+    - Deletions do **not** go into `.parlay/build/_project/.emitted`. The manifest declares what this run wrote; `save-build-state` drops the record for a file that no longer exists.
 
 14. **Regenerate cross-cutting files (section-derived)** — Consult `diff.sections` to determine which cross-cutting files need regeneration:
     - If `sections.models` is `"changed"` or `"new"`: regenerate the models/types file from `buildfile.models`. For each entity in the merged model set, check the external type map (from step 5): if the entity is external, emit an import statement pointing to the existing file instead of a type declaration; if the entity is not external, generate the type declaration as before. The resulting models file may contain a mix of imports and declarations. Mark it with `parlay-section: models`.
     - If `sections.models` is `"changed"` or `"new"` **and the adapter declares `file-conventions.paths.seed`**: regenerate the composed runtime seed. Run `parlay internal scaffold-seed` and write its records to the declared path, in whatever shape the framework wants — a module exporting a const, an embedded JSON file, a fixtures package. Mark it with `parlay-section: seed`.
-      - The command emits canonical JSON and **refuses** rather than guessing: a non-zero exit with `composition-fixture-contradiction` means two features disagree about the same record, and that is a question for the designer, not something to reconcile here. Stop and report it.
+      - The command emits canonical JSON and **refuses** rather than guessing: a non-zero exit with `composition-fixture-contradiction` means two features' composing fixtures disagree about the same record, and that is a question for the designer, not something to reconcile here. Stop and report it. A `composition-scenario-fixture-divergence` note is different — at least one side is a fixture that never reaches the composed seed, so the two states never coexist and the derivation proceeds. Do not edit a scenario fixture to silence it.
       - Write what the command gives you. Do not add records, drop records, or reorder them — the seed is compared against the derivation on later runs, and a hand-adjusted seed reads as drift forever after.
       - This file is one per project, not one per feature. Regenerating it from a second feature's run is expected and correct; it is derived from the same entity set every time.
       - If the adapter declares no `paths.seed`, skip this — most frameworks have no single boot-time dataset, and its absence is not a gap.
@@ -313,6 +317,7 @@ Two things not to do: never narrow the options to spare the user a question, and
       // parlay-scope: project
       // parlay-section: models
       ```
+    - **Record each file as you write it:** append its path to `.parlay/build/_project/.emitted`, one path per line, immediately after writing it. The models file, the seed, the store, the routes file and every blueprint-derived file each get a line. Step 17 explains what the manifest is for and what goes wrong without it.
 
 14.5. **Mount into existing files (brownfield)** — This step runs when the project has existing source files that are not Parlay-generated (i.e., files without `parlay-component:` or `parlay-section:` markers). It has two tiers:
 
@@ -384,6 +389,8 @@ Two things not to do: never narrow the options to spare the user a question, and
 
    8. **Apply or skip**: on approval, write the modified file. On skip, continue to the next route. On edit, accept the user's modification and apply it.
 
+   9. **Record each file as you write it**: append the path of every file you modify here to `.parlay/build/_project/.emitted`, one path per line, immediately after applying the diff. A mounted file counts as emitted — this run wrote its current bytes. A skipped file does not. Step 17 explains what the manifest is for and what goes wrong without it.
+
    Tier 1 diffs are typically small (1-3 files, a few lines each — adding tabs, panels, section, route entries, menu items). Tier 2 diffs are typically larger (a new function plus a dispatch line plus flag declarations) but still additive — the agent does not rewrite existing logic, it layers new logic alongside.
 
 14.7. **Process cross-cutting entries** — If any feature's buildfile has a `cross-cutting:` section, process each entry here — AFTER component generation (step 12–14) and brownfield mount (step 14.5), but BEFORE tests (step 15). This ensures infrastructure changes are in place when tests exercise the components that depend on them.
@@ -412,9 +419,12 @@ Two things not to do: never narrow the options to spare the user a question, and
 
    4. **Apply or skip**: on approval, write the modified file. On skip, continue.
 
+   5. **Record each file as you write it**: append the path of every file you write or modify here to `.parlay/build/_project/.emitted`, one path per line, immediately after applying the diff — both the strict-modify targets and any `target-creates:` files. Step 17 explains what the manifest is for and what goes wrong without it.
+
    Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay internal diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
 15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+    - **Record each file as you write it:** append its path to `.parlay/build/_project/.emitted`, one path per line, immediately after writing it. Test files are generated files and are recorded like any other. Step 17 explains what the manifest is for and what goes wrong without it.
 
 16. **Run tests** — Execute the generated tests against the generated prototype. Capture the result.
     - **If any test fails, STOP.** Do not proceed to step 17. Report the failures and ask the user how to proceed (show details / regenerate failing components / stop). The build state must NOT be committed when tests are failing — see step 15.
@@ -453,8 +463,8 @@ Three read helpers and one write helper cooperate to make incremental rebuilds s
 - **`parlay internal verify-generated @{feature}`** — compares each recorded generated file against its stored content hash and its recorded provenance. Classifies as `stable`, `modified`, `missing`, `adopted`, or `unknown`. Source-of-truth for "did the user hand-edit a generated file."
   - `modified` is honestly ambiguous — the bytes differ from the snapshot, and because re-emission is not byte-stable that could be either a hand-edit or a regeneration.
   - `adopted` is not ambiguous: a previous save found the file in a state no emission declared, so something other than codegen wrote it. Treat it as user-owned and surface it before overwriting.
-  - `unknown` means provenance was never declared — most often a snapshot written before `--emitted` was used. It is reported separately from `stable` so an uncertified snapshot cannot read as a clean bill of health.
-  - Exit code stays 0 whatever it finds; parse the JSON and decide. `--strict` exits non-zero on any `adopted` or `unknown`, for CI.
+  - `unknown` means provenance was never declared — most often a snapshot written before `--emitted` was used. It is reported separately from `stable` so an uncertified snapshot cannot read as a clean bill of health. A snapshot with no `schema-version` predates provenance entirely and grades **every** file `unknown`, whatever its entries claim: that version could not have written a provenance value, so any value found in one is unreadable rather than authoritative.
+  - Exit code stays 0 whatever it finds; parse the JSON and decide. `--strict` exits non-zero on any `adopted`, `unknown`, or `modified`, for CI — it answers "is every recorded file confirmed safe to overwrite", and all three of those buckets mean *no*. `modified` is included precisely *because* it is ambiguous: a caller with no user to ask cannot resolve the ambiguity, and resolving it toward "carry on" is what overwrites an unsaved hand-edit.
 - **`parlay internal save-build-state --source-root {source-root} --emitted .parlay/build/_project/.emitted`** — atomically commits the source baselines, the code hashes and their emission provenance after a successful end-to-end generation. This is the **only** sanctioned write path for those files. It takes no `@feature` argument: the command operates at project level.
 
 The skill calls the three read helpers before regenerating, then `parlay internal save-build-state` after writing files AND running tests successfully. The saves happen exactly once per successful e2e run and represent the state at that point in time.

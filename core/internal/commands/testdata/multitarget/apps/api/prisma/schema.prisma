@@ -1,0 +1,21 @@
+// parlay-feature: notes
+// parlay-section: models
+//
+// Persistence target (prisma-postgres adapter, root apps/api). One Prisma model
+// per domain-model.yaml entity; the shared schema all entities land in.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+}

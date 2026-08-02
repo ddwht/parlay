@@ -53,7 +53,9 @@ Who resolves it depends on where you are running. If you own the user interactio
    parlay validate --type domain-model --json /tmp/incoming-domain-model.yaml
    ```
 
-   On failure, surface the structured errors and stop.
+   On failure, surface the structured errors and stop. The command exits
+   non-zero on blocking findings and 0 on an empty array or warnings only,
+   so the exit code and the array agree — reading either is valid.
 
 4. **Schema-version dispatch** — read the incoming YAML's
    `schema_version` and route through the migrator chain:

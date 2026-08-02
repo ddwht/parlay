@@ -1,0 +1,119 @@
+# fixture: seed-ambiguous
+# property: no composes: marker anywhere, two features disagreeing
+
+=== check-composition
+verdict: satisfied
+exit: 0
+{
+  "features": [
+    "approvals",
+    "expense-list"
+  ],
+  "features_examined": 2,
+  "fixture_records": 2,
+  "findings": null,
+  "notes": [
+    {
+      "code": "composition-scenario-fixture-divergence",
+      "message": "ExpenseReport rep-1 carries different status values across features: \"approved\" in approvals/seed; \"submitted\" in expense-list/seed. At least one side is not the fixture its feature composes into the runtime seed, so the two never coexist in the running prototype — reported rather than failed. Mark a fixture `composes: true` if it is meant to reach the composed runtime.",
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "field": "status",
+      "sites": [
+        "approvals/seed",
+        "expense-list/seed"
+      ]
+    }
+  ],
+  "coherent": true
+}
+
+=== scaffold-seed
+verdict: violated
+exit: 1
+{
+  "contributors": {},
+  "records": null,
+  "findings": [
+    {
+      "code": "composition-seed-ambiguous",
+      "message": "approvals: no fixture is marked `composes: true` and there is no testcases.yaml to infer one from",
+      "sites": [
+        "approvals"
+      ]
+    },
+    {
+      "code": "composition-seed-ambiguous",
+      "message": "expense-list: no fixture is marked `composes: true` and there is no testcases.yaml to infer one from",
+      "sites": [
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": false
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "approvals",
+        "phase": "build"
+      },
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

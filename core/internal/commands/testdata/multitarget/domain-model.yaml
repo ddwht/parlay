@@ -1,0 +1,16 @@
+schema_version: 1
+
+# The shared vocabulary both targets reference: the React UI displays Notes, the
+# NestJS service operates on them, and the Prisma schema stores them. One entity
+# set, three targets.
+entities:
+  - name: Note
+    fields:
+      - name: id
+        type: uuid
+      - name: title
+        type: string
+      - name: body
+        type: string
+      - name: createdAt
+        type: datetime

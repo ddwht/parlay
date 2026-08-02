@@ -1,0 +1,29 @@
+schema_version: 1
+feature: notes
+
+# The backend operations this feature exposes. Every term (kind, step.type,
+# errors, policies) sits inside the intersection of the nestjs-application and
+# prisma-postgres supports: blocks — the multi-target walker validates each
+# operation against BOTH backend adapters, so a term only one of them supports
+# would fail the supports gate.
+operations:
+  - id: notes.create-note
+    kind: command
+    subject: { entity: Note }
+    input: { type: CreateNoteInput }
+    output: { shape: one, entity: Note }
+    steps:
+      - { type: create-one, entity: Note }
+      - { type: return-one, entity: Note }
+    errors: [conflict, server-error]
+    policies: []
+
+  - id: notes.list-notes
+    kind: query
+    subject: { entity: Note }
+    output: { shape: many, entity: Note }
+    steps:
+      - { type: read-many, entity: Note }
+      - { type: return-many, entity: Note }
+    errors: [server-error]
+    policies: []

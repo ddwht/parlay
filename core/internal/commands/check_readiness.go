@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -110,47 +111,22 @@ func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 	var issues []readinessIssue
 	phase := featurePathPhase(featurePath)
 
-	// Intents file must exist and have at least one valid intent.
-	// Content validation requires the parser; the helper only tells us
-	// the file exists.
+	// Intent content rules come from the intent validator, not from a
+	// second copy of them here. This gate implemented `intents-not-readable`,
+	// `no-intents`, `missing-goal` and `missing-persona` itself for as long
+	// as `parlay validate` had no `--type intent`; keeping both would mean
+	// two answers to "does this intent need a Goal", which is how they
+	// drift. Build mode, because a readiness gate is asking whether the
+	// artifact can be built from — the same question the strict mode
+	// answers.
 	intentsPath := filepath.Join(featurePath, "intents.md")
-	intents, err := parser.ParseIntentsFile(intentsPath)
-	if err != nil {
+	for _, o := range agent.ValidateIntentsDeep(agent.ModeBuild, intentsPath, nil) {
 		issues = append(issues, readinessIssue{
-			Severity: "error",
-			Code:     "intents-not-readable",
-			Message:  fmt.Sprintf("cannot read intents.md: %s", err),
-			Fix:      "ensure spec/intents/{feature}/intents.md exists and is valid",
+			Severity: string(o.Severity),
+			Code:     o.Code,
+			Message:  o.Message,
+			Fix:      o.Fix,
 		})
-		return issues
-	}
-	if len(intents) == 0 {
-		issues = append(issues, readinessIssue{
-			Severity: "error",
-			Code:     "no-intents",
-			Message:  "intents.md has no intent blocks",
-			Fix:      "add at least one intent (## Title with Goal and Persona)",
-		})
-		return issues
-	}
-
-	for _, intent := range intents {
-		if intent.Goal == "" {
-			issues = append(issues, readinessIssue{
-				Severity: "error",
-				Code:     "missing-goal",
-				Message:  fmt.Sprintf("intent %q has no Goal", intent.Title),
-				Fix:      "add **Goal**: line to the intent",
-			})
-		}
-		if intent.Persona == "" {
-			issues = append(issues, readinessIssue{
-				Severity: "error",
-				Code:     "missing-persona",
-				Message:  fmt.Sprintf("intent %q has no Persona", intent.Title),
-				Fix:      "add **Persona**: line to the intent",
-			})
-		}
 	}
 
 	// Dialogs file is recommended but not required for surface

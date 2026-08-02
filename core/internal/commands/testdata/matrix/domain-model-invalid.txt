@@ -1,0 +1,118 @@
+# fixture: domain-model-invalid
+# property: domain model with a dangling ref and an out-of-set type — error severity
+
+=== check-composition
+verdict: satisfied
+exit: 0
+{
+  "features": [
+    "expense-list"
+  ],
+  "features_examined": 1,
+  "fixture_records": 1,
+  "findings": null,
+  "coherent": true
+}
+
+=== scaffold-seed
+verdict: satisfied
+exit: 0
+{
+  "contributors": {
+    "expense-list": "seed"
+  },
+  "records": [
+    {
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "fields": {
+        "status": "submitted"
+      },
+      "from": [
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": true
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== validate --type domain-model --json
+verdict: violated
+exit: 1
+[
+  {
+    "code": "field-type-outside-closed-set",
+    "message": "entities.ExpenseReport.fields.amount declares type \"sideways\" which is not in the closed set (uuid, string, int, float, bool, datetime, ref, \u003cnamed-enum\u003e)",
+    "context": "entities.ExpenseReport.fields.amount.type",
+    "fix": "change the type to one of {uuid, string, int, float, bool, datetime, ref, \u003cnamed-enum\u003e} or to a declared enum name",
+    "severity": "error"
+  },
+  {
+    "code": "undeclared-entity-reference",
+    "message": "relationships.report-owner.to references undeclared entity \"Employee\"",
+    "context": "relationships.report-owner.to",
+    "fix": "declare entity \"Employee\" in entities: or change relationship endpoint",
+    "severity": "error"
+  }
+]
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

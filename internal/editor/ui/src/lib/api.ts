@@ -67,6 +67,7 @@ export class ApiError extends Error {
 }
 
 const MODEL_URL = '/api/domain-model/model';
+const CONTRIBUTION_URL = '/api/domain-model/contribution';
 const VALIDATE_URL = '/api/domain-model/validate';
 const SHUTDOWN_URL = '/api/shutdown';
 
@@ -258,4 +259,94 @@ export async function saveModel(
   // model back, so a null collection sent up round-trips straight into the
   // store.
   return normalizeEnvelope((await res.json()) as ModelEnvelope);
+}
+
+
+/** What part of the model a contribution element is. */
+export type ContributionElementKind =
+  | 'enum'
+  | 'enum-value'
+  | 'entity'
+  | 'field'
+  | 'relationship';
+
+/**
+ * One element a feature's contribution proposes, identified by the same
+ * element path validation findings use — so a reader can move between the
+ * review panel and the validation panel without translating.
+ */
+export interface ContributionElement {
+  kind: ContributionElementKind;
+  path: string;
+  entity?: string;
+  name: string;
+  summary: string;
+}
+
+/**
+ * An element the root model already describes differently. Both descriptions
+ * travel: "these disagree" on its own leaves the reader to go and look up what
+ * the root says, which is the lookup the panel exists to save them.
+ */
+export interface ContributionConflict extends ContributionElement {
+  root: string;
+  proposed: string;
+}
+
+export interface ContributionDelta {
+  additions: ContributionElement[] | null;
+  conflicts: ContributionConflict[] | null;
+  redundant: ContributionElement[] | null;
+}
+
+/**
+ * The contribution review, if this session was opened to do one.
+ *
+ * `present` is a field rather than something to infer from an empty delta.
+ * "This feature proposes nothing" and "the editor was not opened to review
+ * anything" are different answers, and conflating them shows a review panel
+ * for a session with nothing to review.
+ */
+export interface ContributionEnvelope {
+  present: boolean;
+  feature?: string;
+  path?: string;
+  model?: DomainModelDocument;
+  delta?: ContributionDelta;
+}
+
+/**
+ * Load the feature contribution this session is reviewing, via
+ * GET /api/domain-model/contribution.
+ *
+ * A QUERY: it reads and writes nothing. An ordinary editing session gets
+ * `present: false` at 200, not an error — reviewing a contribution is the
+ * exceptional mode, and the common case must not have to handle a failure.
+ */
+export async function loadContribution(): Promise<ContributionEnvelope> {
+  let res: Response;
+  try {
+    res = await fetch(CONTRIBUTION_URL, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+  } catch (err) {
+    throw new ApiError('network-error', {
+      message: err instanceof Error ? err.message : 'Network request failed.',
+    });
+  }
+  if (!res.ok) {
+    throwFromEnvelope(await res.json().catch(() => ({})));
+  }
+  const env = (await res.json()) as ContributionEnvelope;
+  // Same defence as normalizeEnvelope: the cast is unchecked, and a null
+  // collection reaching a .map in the panel unmounts the page.
+  if (env.delta) {
+    env.delta = {
+      additions: env.delta.additions ?? [],
+      conflicts: env.delta.conflicts ?? [],
+      redundant: env.delta.redundant ?? [],
+    };
+  }
+  return env;
 }

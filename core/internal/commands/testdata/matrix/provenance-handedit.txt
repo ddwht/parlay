@@ -1,0 +1,112 @@
+# fixture: provenance-handedit
+# property: hand-edited generated file with no intervening save (R4-17)
+# removes the input of: verify-generated, verify-generated --strict
+
+=== check-composition
+verdict: satisfied
+exit: 0
+{
+  "features": [
+    "expense-list"
+  ],
+  "features_examined": 1,
+  "fixture_records": 1,
+  "findings": null,
+  "coherent": true
+}
+
+=== scaffold-seed
+verdict: satisfied
+exit: 0
+{
+  "contributors": {
+    "expense-list": "seed"
+  },
+  "records": [
+    {
+      "entity": "ExpenseReport",
+      "id": "rep-1",
+      "fields": {
+        "status": "submitted"
+      },
+      "from": [
+        "expense-list"
+      ]
+    }
+  ],
+  "derivable": true
+}
+
+=== status --json
+verdict: satisfied
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [
+      {
+        "id": "expense-list",
+        "phase": "build"
+      }
+    ],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: violated
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": true,
+  "schema_version": 1,
+  "modified": [
+    {
+      "path": "<project>/src/list.go",
+      "component": "list-comp"
+    }
+  ]
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 1
+{
+  "feature": "expense-list",
+  "has_hashes": true,
+  "schema_version": 1,
+  "modified": [
+    {
+      "path": "<project>/src/list.go",
+      "component": "list-comp"
+    }
+  ]
+}
+--strict: 0 adopted, 0 of unknown provenance, 1 differing from the last recorded emission
+
+=== check-coverage
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "covered": [
+    {
+      "intent": "View The List",
+      "dialog": "View The List"
+    }
+  ],
+  "uncovered": null,
+  "orphans": null
+}
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

@@ -34,8 +34,23 @@ var validateAdapter string
 var validateJSON bool
 var validateProject bool
 
+// validateTypes is the single list of accepted --type values. There were
+// three hardcoded lists — the flag's help text, the "--type is required"
+// message and the "unknown type" message — and they disagreed: the
+// required-message omitted `adapter` and `testcases`, and the
+// unknown-type message omitted `page` and `layout` despite both being
+// handled sixty lines above it. A person reading either message would
+// have concluded a working type did not exist. One list, three readers.
+var validateTypes = []string{
+	"intent", "dialog", "surface", "buildfile", "blueprint", "yaml",
+	"infrastructure", "domain-model", "adapter", "adapter-set",
+	"capabilities", "coverage-review", "testcases", "page", "layout",
+}
+
+func validateTypeList() string { return strings.Join(validateTypes, ", ") }
+
 func init() {
-	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, testcases, page, layout")
+	validateCmd.Flags().StringVar(&validateType, "type", "", "File type: "+validateTypeList())
 	validateCmd.Flags().BoolVar(&validateDeep, "deep", false, "Enable cross-reference validation (buildfile, infrastructure)")
 	validateCmd.Flags().StringVar(&validateAdapter, "adapter", "", "Path to adapter file for vocabulary validation (used with --deep)")
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "Output structured JSON errors for agent consumption")
@@ -96,9 +111,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Structured JSON mode for domain-model (intent: json-validation-mode).
 	// When --json is set with --type domain-model, emit the full per-violation
 	// finding list as a bare JSON array (one entry per violation, [] for a
-	// clean model) and exit 0 whether or not findings are present — a finding
-	// list is a query result, not a command failure. Accepts `-` to read the
-	// model from stdin. The non-JSON domain-model path below is unchanged.
+	// clean model). The exit code follows the findings on the same rule as
+	// every other validate path — blocking findings exit 1, warnings alone
+	// exit 0 — because --json chooses how the result is rendered, not whether
+	// the command has a verdict. Accepts `-` to read the model from stdin.
+	// The non-JSON domain-model path below is unchanged.
 	//
 	// parlay-feature: studio-support/structured-domain-model-validation
 	// parlay-component: cross-cutting/json-validation-mode
@@ -118,7 +135,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// --type is required for the non-project paths.
 	if validateType == "" {
-		return fmt.Errorf("--type is required (one of: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter-set, capabilities, coverage-review, page, layout)")
+		return fmt.Errorf("--type is required (one of: %s)", validateTypeList())
 	}
 
 	// page and layout route through the unified layout validator
@@ -138,6 +155,14 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	var validator agent.Validator
 	switch validateType {
+	// The two designer-authored artifacts. Their schemas shipped and
+	// deployed while neither type was accepted here, so the only
+	// hand-written files in the pipeline were the only ones nothing
+	// could check.
+	case "intent":
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateIntentsDeep)
+	case "dialog":
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateDialogsDeep)
 	case "surface":
 		validator = agent.ValidateSurface
 	case "buildfile":
@@ -185,16 +210,23 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// only the cross-reference — a project with no domain model yet is a
 		// normal state, and refusing to validate capabilities at all because of
 		// it would be a worse answer than checking everything else.
+		//
+		// The proposals are gathered the same way and for the same reason:
+		// without them, a reference to an entity a sibling feature is about
+		// to introduce is indistinguishable from a typo, and the validator
+		// grades both as an error. That is what forced two features in the
+		// regression run to ship placeholders.
 		entities := declaredCapabilityEntities(cmd)
-		validator = wrapOutcomeValidator(func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
-			return agent.ValidateCapabilities(mode, p, c, entities)
+		proposed := proposedCapabilityEntities(cmd)
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
+			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
 		})
 	case "coverage-review":
 		// coverage-review validation is hash-aware and needs full inputs;
 		// surface a minimal YAML-shape check here.
 		validator = agent.ValidateYAML
 	default:
-		return fmt.Errorf("unknown type %q — supported: surface, buildfile, blueprint, yaml, infrastructure, domain-model, adapter, adapter-set, capabilities, coverage-review, testcases", validateType)
+		return fmt.Errorf("unknown type %q — supported: %s", validateType, validateTypeList())
 	}
 
 	if err := validator(path, content); err != nil {
@@ -236,9 +268,31 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // authoring mode, so domain-operations-deprecated surfaces at warning
 // severity (the editor's context). A clean model prints "[]".
 //
-// The command exits 0 regardless of whether findings are present: the list
-// is a query result, not a command failure. Unlike the generic
-// outputValidate path, a non-empty list does NOT set a non-zero exit code.
+// The exit code agrees with the findings, on the same rule as the generic
+// outputValidate path: blocking findings exit 1, warnings alone exit 0. This
+// used to exit 0 unconditionally, on the reading that the list is a query
+// result rather than a command failure — which made `--json` a flag that
+// switched the command's contract rather than its rendering, and left parlay
+// with one surface where a printed problem still reported success. That is
+// R4-22, and it contradicted parlay's own stated CI rule (build-feature's
+// "process exit code is the source of truth ... CI scripts MUST NOT
+// pattern-match stdout/stderr text"). Rendering does not decide verdicts.
+//
+// This is safe for the callers that exist. Both deployed consumers —
+// create-domain-model step 7 and load-domain-model steps 3 and 8 — read the
+// findings array and stop on a non-empty one; neither inspects exit status,
+// so neither changes behaviour. The editor does not shell out at all: it
+// calls agent.ValidateDomainModelStructuredMode in process (see
+// domain_validator.go), so no in-tree consumer regresses.
+//
+// Warnings still exit 0, which is what keeps the authoring context usable:
+// domain-operations-deprecated resolves at warning severity here, and a
+// deprecation is not a reason to fail the caller.
+//
+// The output is unchanged either way — still the bare finding array, still
+// "[]" for a clean model, still valid JSON on a read failure. A caller that
+// parses stdout keeps working; a caller that trusted the exit code stops
+// being misled.
 //
 // The positional path may be "-" to read the model bytes from stdin; a real
 // path and "-" are mutually exclusive and, for identical bytes, produce an
@@ -281,6 +335,9 @@ func runValidateDomainModelJSON(cmd *cobra.Command, path string) error {
 
 	data, _ := json.MarshalIndent(findings, "", "  ")
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	if blockingCount(findings) > 0 {
+		return NewExitCodeError(1)
+	}
 	return nil
 }
 
@@ -422,6 +479,34 @@ func wrapOutcomeValidator(fn func(agent.ValidationMode, string, []byte) []agent.
 		for _, o := range outcomes {
 			if o.Severity == agent.SeverityError {
 				msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
+			}
+		}
+		if len(msgs) == 0 {
+			return nil
+		}
+		return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+	}
+}
+
+// reportingOutcomeValidator is wrapOutcomeValidator with the warnings kept.
+// The designer-authored artifacts lean on the authoring/build severity
+// split — an empty intents.md and a half-typed turn are both normal
+// mid-authoring states that block the build — so dropping warnings here
+// would leave `parlay validate --type intent` silent about the two things
+// it most needs to say while a person is still writing the file. Warnings
+// go to the command's stderr; the exit code still turns on errors alone.
+func reportingOutcomeValidator(warnings io.Writer, fn func(agent.ValidationMode, string, []byte) []agent.ValidationOutcome) agent.Validator {
+	return func(path string, content []byte) error {
+		outcomes := fn(agent.ModeAuthoring, path, content)
+		var msgs []string
+		for _, o := range outcomes {
+			if o.Severity == agent.SeverityError {
+				msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
+				continue
+			}
+			fmt.Fprintf(warnings, "[warning] [%s] %s\n", o.Code, o.Message)
+			if o.Fix != "" {
+				fmt.Fprintf(warnings, "          %s\n", o.Fix)
 			}
 		}
 		if len(msgs) == 0 {
@@ -765,6 +850,18 @@ func declaredCapabilityEntities(cmd *cobra.Command) []string {
 		}
 	}
 	return names
+}
+
+// proposedCapabilityEntities maps each entity a feature's contribution
+// proposes to the feature proposing it. Nil when the project has no
+// contributions, which restores the previous behaviour exactly — an
+// undeclared entity is an undeclared entity when nothing proposes it.
+func proposedCapabilityEntities(cmd *cobra.Command) map[string]string {
+	pctx := config.FromCtx(cmd.Context())
+	if pctx == nil {
+		return nil
+	}
+	return agent.ProposedEntities(loadContributions(pctx))
 }
 
 // validateDomainModelAdapter runs the domain-model validator and splits its

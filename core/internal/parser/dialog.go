@@ -102,6 +102,15 @@ func ParseDialogsFile(path string) ([]Dialog, error) {
 	return dialogs, scanner.Err()
 }
 
+// IsRecognisedTurn reports whether a line is one of the four turn forms
+// dialog.schema.md documents. It is parseTurn's own answer, exported so
+// the dialog validator asks the parser what counts as a turn rather than
+// carrying a second list that would drift from this one.
+func IsRecognisedTurn(line string) bool {
+	_, ok := parseTurn(line)
+	return ok
+}
+
 func parseTurn(line string) (Turn, bool) {
 	if strings.HasPrefix(line, "User:") {
 		return Turn{

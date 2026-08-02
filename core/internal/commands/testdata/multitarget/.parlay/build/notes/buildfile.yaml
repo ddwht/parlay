@@ -1,0 +1,87 @@
+feature: notes
+schema_version: 1
+adapter-set: notes-stack
+
+# Canonical operation declarations live here and ONLY here. Each target below
+# references them by @<feature>/operation:<id> and carries projection metadata
+# only — restating any canonical field (kind/subject/input/output/errors/
+# policies/steps) under a target fails buildfile-target-restates-canonical.
+operations:
+  "@notes/operation:notes.create-note":
+    kind: command
+    subject: { entity: Note }
+    input: { type: CreateNoteInput }
+    output: { shape: one, entity: Note }
+    errors: [conflict, server-error]
+    policies: []
+    steps:
+      - { type: create-one, entity: Note }
+      - { type: return-one, entity: Note }
+  "@notes/operation:notes.list-notes":
+    kind: query
+    subject: { entity: Note }
+    output: { shape: many, entity: Note }
+    errors: [server-error]
+    policies: []
+    steps:
+      - { type: read-many, entity: Note }
+      - { type: return-many, entity: Note }
+
+targets:
+  presentation:
+    adapter: react-antd
+    components:
+      note-list:
+        source: "@notes/note-list"
+        widget: Table
+        description: Lists existing notes
+        actions:
+          - { name: refresh, effect: call, target: "@notes/operation:notes.list-notes" }
+      note-form:
+        source: "@notes/note-form"
+        widget: Form
+        description: Creates a new note
+        actions:
+          - { name: submit, effect: call, target: "@notes/operation:notes.create-note" }
+    routes:
+      - path: /notes
+        page: NotesPage
+  application:
+    adapter: nestjs-application
+    # Keyed-map projection: each operation ref must resolve to a key declared
+    # under top-level operations:. The value carries per-target projection
+    # metadata only (never a canonical field).
+    operations:
+      "@notes/operation:notes.create-note": { http: "POST /notes" }
+      "@notes/operation:notes.list-notes": { http: "GET /notes" }
+  persistence:
+    adapter: prisma-postgres
+    operations:
+      "@notes/operation:notes.create-note": { model: Note }
+      "@notes/operation:notes.list-notes": { model: Note }
+
+# Per-target plan. Each row is pathed under its target's adapter-set root:
+# presentation → apps/web, application/persistence → apps/api. This is what
+# `parlay scaffold-plan @notes --compare` derives and agrees with.
+plan:
+  targets:
+    presentation:
+      creates:
+        # {feature} renders in the adapter's naming case (react-antd is
+        # PascalCase), so the feature folder is Notes/.
+        - { path: apps/web/src/features/Notes/NoteForm.tsx, sources: [component/note-form] }
+        - { path: apps/web/src/features/Notes/NoteForm.test.tsx, sources: [component/note-form] }
+        - { path: apps/web/src/features/Notes/NoteList.tsx, sources: [component/note-list] }
+        - { path: apps/web/src/features/Notes/NoteList.test.tsx, sources: [component/note-list] }
+    application:
+      creates:
+        - { path: apps/api/src/notes/notes.controller.ts, sources: [section/operations] }
+        - { path: apps/api/src/notes/notes.module.ts, sources: [section/operations] }
+        - { path: apps/api/src/notes/notes.service.ts, sources: [section/operations] }
+    persistence:
+      creates:
+        - { path: apps/api/prisma/schema.prisma, sources: [section/models] }
+
+source-signatures:
+  capabilities: unset
+  domain: unset

@@ -107,7 +107,8 @@ A page manifest may embed an optional `## Layout` section (a fenced YAML block c
 - `testcases.yaml` is a tool internal. It drives cross-validation and feeds spec generation, but is **not** handed off to engineering. Engineering writes their own real tests from `specification.md`.
 - `specification.md` is currently the only handoff artifact. Future Phase 8 additions (fixtures, API stubs, etc.) will also live under `spec/handoff/<feature>/`.
 - `spec/pages/` is optional — don't create until `/parlay lock-page` is invoked.
-- `.parlay/build/` is created during `parlay init` and populated per-feature by `/parlay build-feature` (and `/parlay review-coverage` for `coverage-review.yaml`).
-- `spec/handoff/` is created during `parlay init` and populated per-feature by `/parlay generate-enggspec`.
+- **All three per-feature directories are created together, when the feature is created.** `parlay add-feature` makes `spec/intents/<feature>/`, `spec/handoff/<feature>/` and `.parlay/build/<feature>/` in one step, whether or not the feature sits inside an initiative; `parlay new-initiative` does the same for the initiative's own directory. The handoff and build directories start empty — they are *created* eagerly and *filled* later. This is the rule `parlay repair` and `parlay status`'s `trees:` line both enforce: a feature missing any of the three is a mismatch to repair, not a phase not yet reached.
+- `.parlay/build/` is created during `parlay init`; its per-feature directory is created by `parlay add-feature` and populated by `/parlay build-feature` (and `/parlay review-coverage` for `coverage-review.yaml`).
+- `spec/handoff/` is created during `parlay init`; its per-feature directory is created by `parlay add-feature` and populated by `/parlay generate-enggspec`.
 - Prototype code lives outside `spec/` and `.parlay/` (in `src/`, `cmd/`, `app/`, etc.).
 - Deleting a feature folder under `spec/intents/<feature>/` should also clean up `spec/handoff/<feature>/` and `.parlay/build/<feature>/`. Page manifests will flag missing fragments. The project's `domain-model.yaml` is unaffected — it is not per-feature.

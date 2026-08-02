@@ -3,8 +3,11 @@ package commands
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 
+	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/ddwht/parlay/internal/editor/domain"
 	"github.com/ddwht/parlay/internal/editor/server"
 	"github.com/ddwht/parlay/internal/editor/ui"
@@ -53,9 +56,10 @@ var serveCmd = &cobra.Command{
 }
 
 var (
-	editorPort        int
-	editorIdleTimeout string
-	editorNoBrowser   bool
+	editorPort         int
+	editorIdleTimeout  string
+	editorNoBrowser    bool
+	editorContribution string
 )
 
 func init() {
@@ -63,6 +67,27 @@ func init() {
 		c.Flags().IntVar(&editorPort, "server-port", 0, "Port to bind (0 = let the OS choose)")
 		c.Flags().StringVar(&editorIdleTimeout, "idle-timeout", "", "Shut down after this much inactivity (e.g. 30m; 0 disables)")
 		c.Flags().BoolVar(&editorNoBrowser, "no-browser", false, "Do not open a browser on boot")
+	}
+	domainEditCmd.Flags().StringVar(&editorContribution, "contribution", "",
+		"Review a feature's proposed domain-model contribution alongside the project model (e.g. @submit-expense)")
+}
+
+// contributionSource resolves --contribution to the feature and the file the
+// editor should review. The zero value is ordinary editing, which is what
+// every session without the flag gets.
+//
+// The path is resolved here rather than inside the editor because this is the
+// layer that already knows how a feature identifier maps to a directory. A
+// second copy of that resolution living in the editor is the shape of bug this
+// codebase keeps finding.
+func contributionSource(cfg *config.Context) domain.ContributionSource {
+	if editorContribution == "" {
+		return domain.ContributionSource{}
+	}
+	slug := parser.FeatureSlug(editorContribution)
+	return domain.ContributionSource{
+		Feature: slug,
+		Path:    filepath.Join(cfg.FeaturePath(slug), ContributionFile),
 	}
 }
 
@@ -95,7 +120,7 @@ func runEditor(cmd *cobra.Command, browserPath string) error {
 
 	err = server.Boot(cmd.Context(), server.BootDeps{
 		Args:        bootArgs,
-		Tools:       []server.ToolRegistration{domain.New(root, domainValidator)},
+		Tools:       []server.ToolRegistration{domain.New(root, domainValidator, contributionSource(cfg))},
 		UIBundle:    ui.Bundle{},
 		BrowserPath: browserPath,
 	})
@@ -115,7 +140,7 @@ func runEditor(cmd *cobra.Command, browserPath string) error {
 func OpenDomainEditor(ctx context.Context, root string) error {
 	return server.Boot(ctx, server.BootDeps{
 		Args:        []string{"--project", root},
-		Tools:       []server.ToolRegistration{domain.New(root, domainValidator)},
+		Tools:       []server.ToolRegistration{domain.New(root, domainValidator, domain.ContributionSource{})},
 		UIBundle:    ui.Bundle{},
 		BrowserPath: "/domain-model",
 	})

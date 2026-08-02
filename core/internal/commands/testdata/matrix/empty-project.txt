@@ -1,0 +1,59 @@
+# fixture: empty-project
+# property: no features at all — every surface has nothing to check
+# removes the input of: check-composition, scaffold-seed, status --json, verify-generated, verify-generated --strict, check-coverage, check-drift
+
+=== check-composition
+verdict: indeterminate
+exit: 1
+
+
+=== scaffold-seed
+verdict: indeterminate
+exit: 1
+
+
+=== status --json
+verdict: indeterminate
+exit: 0
+{
+  "schema_version": 1,
+  "root": {
+    "path": "<project>",
+    "kind": "standalone",
+    "source": "cwd-walk-up",
+    "features": [],
+    "orphaned_build_dirs": []
+  },
+  "children": []
+}
+
+=== verify-generated
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== verify-generated --strict
+verdict: indeterminate
+exit: 0
+{
+  "feature": "expense-list",
+  "has_hashes": false,
+  "schema_version": 0
+}
+
+=== check-coverage
+verdict: indeterminate
+exit: 1
+
+
+=== check-drift
+verdict: satisfied
+exit: 0
+{
+  "feature": "expense-list",
+  "has_drift": false
+}

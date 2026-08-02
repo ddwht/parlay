@@ -143,6 +143,17 @@ func runStatusHuman(cmd *cobra.Command, pctx *config.Context) error {
 		renderTopologyLine(cmd.OutOrStdout(), len(mismatches))
 	}
 
+	// Tree-parity line — deliberately separate from `topology:`.
+	// ScanTopology answers "is this root wired up correctly" by reading
+	// config.yaml and roots.yaml only; it never looks at the three
+	// parallel trees, so a project can print `topology: ok` while
+	// `parlay repair` reports missing handoff or build directories.
+	// Folding the two into one word is what made that contradiction
+	// invisible, so they get one line each.
+	if mismatches, err := detectMismatches(pctx.IntentsRoot(), threeTreeRoots(pctx)); err == nil {
+		renderTreeParityLine(cmd.OutOrStdout(), len(mismatches))
+	}
+
 	// Active root's own features. Treat a missing intents/ tree as
 	// zero features — bare-parent topology is supported, not an
 	// error. The Phase column is appended to every feature line via
@@ -473,4 +484,18 @@ func renderTopologyLine(out interface{ Write([]byte) (int, error) }, mismatchCou
 		return
 	}
 	fmt.Fprintf(out, "topology: needs repair (%d mismatches — run `parlay repair`)\n", mismatchCount)
+}
+
+// renderTreeParityLine writes one line summarizing whether the three
+// parallel trees — spec/intents/, spec/handoff/ and .parlay/build/ —
+// carry the same feature directories. It reports the same count
+// `parlay repair --dry-run` would, from the same detector, so the two
+// commands can no longer disagree. Like the topology line it never
+// enumerates per-mismatch detail and never changes the exit code.
+func renderTreeParityLine(out interface{ Write([]byte) (int, error) }, mismatchCount int) {
+	if mismatchCount == 0 {
+		fmt.Fprintln(out, "trees:    ok")
+		return
+	}
+	fmt.Fprintf(out, "trees:    needs repair (%d mismatches — run `parlay repair`)\n", mismatchCount)
 }
