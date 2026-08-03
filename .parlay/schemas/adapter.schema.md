@@ -634,6 +634,12 @@ Each was earned by something that broke, not chosen for symmetry.
 | `toolchain-skill-without-invoke` | A skill entry (an `id:`, no `server:`) declares no `invoke:` |
 | `toolchain-mutating-without-owns-markers` | `authority: mutating` with `owns-markers:` absent, or set to anything outside `{parlay, tool}` |
 
+### Runtime consumption
+
+The block is not just validated — it is **consumed at the code phase**. `parlay internal toolchain-plan @<feature> [--phase code] [--stage pre-emit|post-emit]` surfaces the entries (resolved across the adapter-set for multi-target, labeled by `target`) as JSON, and `generate-code` invokes them: pre-emit tools before it writes each layer, post-emit tools after emission and before the test run (so `preserves: [testcases]` is enforced by that run). parlay never dials MCP or runs a skill itself — the code agent calls the host agent's own tools by name (the `invoke` slash command for skills, `mcp__{server}__{tool}` for MCP, restricted to the `tools:` allowlist).
+
+The runtime half of the contract is enforced as follows: `read-set` (the codegen boundary) and the MCP `tools:` allowlist are agent obligations parlay cannot intercept; `write-set` is admitted deterministically by `parlay internal check-write-set` (a `mutating` tool's writes within its declared write-set are not flagged `codegen-wrote-outside-plan`); `preserves: [testcases]` rides the code phase's test run; `preserves: [markers]` is a `scan-generated` before/after diff. Two codegen-owned errors surface at run time: `toolchain-required-tool-absent` (a `required: true` tool is missing) and `toolchain-preserves-violated` (a `mutating` tool broke a `preserves:` guarantee).
+
 ### Optional section
 
 `toolchain:` is optional, and an adapter without one behaves exactly as before. An adapter *with* one on an agent that has none of the named tools installed also behaves as before, provided every entry is `required: false`.

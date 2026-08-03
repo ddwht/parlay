@@ -7,14 +7,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 // The plan: allowlist was enforced by nothing.
@@ -114,6 +118,10 @@ func runCheckWriteSet(cmd *cobra.Command, args []string) error {
 		Findings: []writeSetFinding{},
 	}
 
+	// A mutating toolchain tool may write within its declared write-set; those
+	// writes are authorized by the tool contract, not the plan, so admit them.
+	writeSetRegions := toolchainWriteSetRegions(cfg)
+
 	paths := make([]string, 0, len(hashes.Files))
 	for p := range hashes.Files {
 		paths = append(paths, p)
@@ -125,6 +133,10 @@ func runCheckWriteSet(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if reason := exemptFromPlan(cfg, p, hashes.Files[p].Component); reason != "" {
+			out.Exempt++
+			continue
+		}
+		if withinAnyRegion(normalizeWriteSetPath(p), writeSetRegions) {
 			out.Exempt++
 			continue
 		}
@@ -220,6 +232,96 @@ func declaredPlanPaths(cfg *config.Context, args []string) (map[string]bool, []s
 		}
 	}
 	return declared, features, nil
+}
+
+// toolchainWriteSetRegions resolves the directory prefixes that active
+// code-phase MUTATING toolchain tools may write into. Each entry's write-set
+// glob is reduced to its directory region; for a multi-target project it is
+// rebased under the entry's target root (the same root override the plan uses),
+// since the adapter authors write-set relative to its own source-root but the
+// files land under the adapter-set root.
+//
+// Coarse by design: admission is by write-set REGION, not per-tool attribution
+// — .code-hashes.yaml records no writer identity, so a file inside a declared
+// mutating write-set is authorized by the tool contract, full stop. This is the
+// runtime half of the write-set contract (ValidateToolchain enforces the
+// declaration at registration; this admits the emission).
+func toolchainWriteSetRegions(cfg *config.Context) []string {
+	var regions []string
+	addEntry := func(e agent.ToolchainEntry, targetRoot string) {
+		if e.Authority != "mutating" || !slices.Contains(e.Phase, "code") {
+			return
+		}
+		for _, g := range e.WriteSet {
+			region := writeSetRegion(g)
+			if region == "" {
+				continue
+			}
+			if targetRoot != "" {
+				region = normalizeWriteSetPath(path.Join(targetRoot, region))
+			}
+			regions = append(regions, region)
+		}
+	}
+
+	// Multi-target: each filled slot's adapter, rebased under its target root.
+	if as, err := parser.ParseAdapterSet(cfg.AdapterSetPath()); err == nil && as.IsMultiTarget() {
+		if adapters, _, err := adaptersForProject(cfg); err == nil {
+			for kind, ad := range adapters {
+				if ad.Toolchain != nil {
+					root := as.Targets[kind].Root
+					for _, e := range ad.Toolchain.MCP {
+						addEntry(e, root)
+					}
+					for _, e := range ad.Toolchain.Skills {
+						addEntry(e, root)
+					}
+				}
+			}
+			return regions
+		}
+	}
+
+	// Single-target: the one adapter; write-set globs used as authored (already
+	// bound to the adapter's source-root).
+	if adapterPath := firstAdapterFile(cfg.AdaptersPath()); adapterPath != "" {
+		if data, err := os.ReadFile(adapterPath); err == nil {
+			var ad adapterForPlan
+			if yaml.Unmarshal(data, &ad) == nil && ad.Toolchain != nil {
+				for _, e := range ad.Toolchain.MCP {
+					addEntry(e, "")
+				}
+				for _, e := range ad.Toolchain.Skills {
+					addEntry(e, "")
+				}
+			}
+		}
+	}
+	return regions
+}
+
+// writeSetRegion reduces a write-set glob to its directory prefix:
+// "src/**" → "src", "src/app/**" → "src/app", "src" → "src".
+func writeSetRegion(glob string) string {
+	g := strings.TrimSpace(glob)
+	g = strings.TrimPrefix(g, "./")
+	for _, suf := range []string{"/**", "/*", "/", "**", "*"} {
+		g = strings.TrimSuffix(g, suf)
+	}
+	return strings.TrimSuffix(g, "/")
+}
+
+// withinAnyRegion reports whether a normalized path falls inside any region.
+func withinAnyRegion(p string, regions []string) bool {
+	for _, r := range regions {
+		if r == "" {
+			continue
+		}
+		if p == r || strings.HasPrefix(p, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // writeSetBuildfiles resolves which buildfiles to read: one feature's when named,

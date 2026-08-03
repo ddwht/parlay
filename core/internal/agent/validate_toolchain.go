@@ -30,6 +30,12 @@ var toolchainPhases = map[string]bool{
 	"intents": true, "dialogs": true, "artifacts": true, "build": true, "code": true,
 }
 
+// ValidToolchainPhase reports whether p is one of the closed pipeline phases
+// {intents, dialogs, artifacts, build, code}. Exported so consumers (e.g. the
+// toolchain-plan emitter) validate a --phase flag against the single source of
+// truth rather than restating the set.
+func ValidToolchainPhase(p string) bool { return toolchainPhases[p] }
+
 // preservesVocabulary is the closed set of behavioral guarantees a mutating
 // tool can be held to.
 var preservesVocabulary = map[string]bool{

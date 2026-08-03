@@ -402,3 +402,33 @@ mount-strategies:
         <{{Component}} />
       </Collapse.Panel>
     description: "Add a new collapsible panel to an Ant Design Collapse"
+
+# --- Section 10: Toolchain — external skills and MCP servers ---
+# Proving ground for runtime toolchain consumption. write-set globs stay under
+# this adapter's own source-root (src/), which is what ValidateToolchain bounds
+# them against (the adapter-set root apps/web is a separate axis).
+toolchain:
+  skills:
+    - id: react-a11y-review
+      invoke: "/react-review"
+      source: community
+      phase: [code]
+      stage: post-emit
+      authority: advisory
+      required: false
+      read-set: ["src/**"]
+      write-set: []
+      fallback: "skip the accessibility review"
+  mcp:
+    - server: react-scaffold-mcp
+      tools: [scaffold_component]
+      source: project
+      phase: [code]
+      stage: pre-emit
+      authority: mutating
+      required: false
+      read-set: ["src/**"]
+      write-set: ["src/**"]
+      owns-markers: parlay
+      preserves: [testcases, declared-elements, markers]
+      fallback: "emit from adapter templates"

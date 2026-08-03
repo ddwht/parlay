@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -57,6 +58,10 @@ type adapterFileConventions struct {
 
 type adapterForPlan struct {
 	FileConventions adapterFileConventions `yaml:"file-conventions"`
+	// Toolchain is the adapter's Section-10 external-skill/MCP block. Additive:
+	// the plan derivers ignore it; toolchain-plan reads it so multi-target
+	// resolution (adaptersForProject) surfaces it per kind for free.
+	Toolchain *agent.Toolchain `yaml:"toolchain"`
 }
 
 // planEntry is one derived plan row.

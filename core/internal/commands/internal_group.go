@@ -59,6 +59,7 @@ func registerInternalCommands() {
 		scaffoldSignaturesCmd,
 		scaffoldPlanCmd,
 		scaffoldOperationsCmd,
+		toolchainPlanCmd,
 		scaffoldSeedCmd,
 		checkCompositionCmd,
 		domainImpactCmd,
