@@ -54,7 +54,6 @@ var knownUnimplementedCodes = map[string]string{
 	"adapter-set-duplicate-kind":  "adapter-set slot-topology validation is not implemented; no code path inspects duplicate kinds.",
 	"blueprint-override-conflict": "the blueprint > adapter-set > adapter precedence resolver is not implemented, so no conflict can be detected.",
 	"buildfile-routes-ambiguous":  "multi-target route disambiguation is not implemented; single-target projects cannot reach the ambiguous case.",
-	"error-no-mapping":            "canonical operation-error mapping across adapter layers is not implemented.",
 
 	// vocabulary-missing-from-adapter and vocabulary-unknown-adapter were here.
 	// Both left the allowlist by leaving the vocabulary, not by being

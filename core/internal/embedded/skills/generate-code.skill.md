@@ -494,3 +494,7 @@ Reads of `spec/intents/**` are forbidden and mechanically enforced. Attempts sur
 ### Layered emission order
 
 Default emission order: persistence → application → transport → presentation. Each layer fully completes before the next starts; freshly-emitted outputs feed the next layer's prompt context. This ordering ensures that downstream layers can consult the shape upstream layers committed to.
+
+### Step ownership (`owns:`)
+
+Each backend target's `targets.<kind>.operations."@f/op:id"` carries an `owns:` list — the steps that layer implements. When emitting a target, implement the steps in its `owns:` list using the adapter's conventions (the persistence target implements `create-one` as `prisma.<entity>.create`; the application target implements `validate-input`/`authorize`/`return-*` via its pipes/guards/return values). For a step owned by a **downstream** target (e.g. the application service orchestrating a persistence-owned `create-one`), do not re-implement it — **call** the downstream layer's output across the authorized `links` edge. The persistence-first emission order guarantees the owned code exists before the orchestrator that calls it. This makes the layer split a pre-decided contract rather than a codegen-time judgment. **Backward-compatible:** if `owns:` is absent (older buildfiles), fall back to emitting each backend layer from the adapter conventions + the plan paths as before.

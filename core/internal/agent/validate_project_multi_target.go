@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -69,7 +71,13 @@ func ValidateProjectMultiTarget(mode ValidationMode, rootPath string) []Validati
 	intentsRoot := filepath.Join(rootPath, "spec", "intents")
 	features, _ := walkCapabilitiesFiles(intentsRoot)
 
-	// Per-non-presentation-slot supports gate.
+	// Supports gate, two parts:
+	//   (a) per-adapter shape/vocabulary validation (ValidateSupports), and
+	//   (b) UNION coverage across all filled backend slots
+	//       (ValidateOperationsCoverage). A term passes if ANY backend adapter
+	//       supports it — an adapter legitimately lists only its own layer's
+	//       terms, so intersection would wrongly reject normal operations.
+	backendAdapters := map[string][]byte{}
 	for slotKind, target := range adapterSet.Targets {
 		if slotKind == "presentation" {
 			continue
@@ -81,17 +89,62 @@ func ValidateProjectMultiTarget(mode ValidationMode, rootPath string) []Validati
 				fmt.Sprintf("targets.%s.adapter %q: %v", slotKind, target.Adapter, err)))
 			continue
 		}
-		// Walk every loaded capabilities file against this adapter's
-		// supports block.
-		for _, capFile := range features {
-			caps, err := parser.ParseCapabilities(capFile)
-			if err != nil {
-				outcomes = append(outcomes, NewOutcome(mode, "capabilities-not-closed-form",
-					fmt.Sprintf("%s: %v", capFile, err)))
-				continue
-			}
-			outcomes = append(outcomes, ValidateSupports(mode, adapterContent, caps)...)
+		outcomes = append(outcomes, ValidateSupports(mode, adapterContent)...)
+		backendAdapters[slotKind] = adapterContent
+	}
+
+	// Ambiguous-ownership guard (warning). Ownership resolves deterministically
+	// (deepest layer wins), so a step two backend slots both list is not an
+	// error — but a project that fills, say, both a transport and an
+	// application slot deserves to be told which steps have contested ownership
+	// rather than silently tie-broken. Fires for nobody today (the bundled
+	// stacks fill at most one backend slot per step); it is the guard that
+	// makes a future multi-backend project legible. Curating a disjoint
+	// transport/application split is deferred until a real transport project
+	// exists to validate it against.
+	stepClaims := map[string][]string{}
+	for kind, content := range backendAdapters {
+		var shape struct {
+			Supports struct {
+				Steps []string `yaml:"steps"`
+			} `yaml:"supports"`
 		}
+		if err := yaml.Unmarshal(content, &shape); err != nil {
+			continue
+		}
+		for _, s := range shape.Supports.Steps {
+			stepClaims[s] = append(stepClaims[s], kind)
+		}
+	}
+	var contested []string
+	for step, kinds := range stepClaims {
+		if len(kinds) > 1 {
+			contested = append(contested, step)
+		}
+	}
+	sort.Strings(contested)
+	for _, step := range contested {
+		kinds := append([]string{}, stepClaims[step]...)
+		sort.Strings(kinds)
+		outcomes = append(outcomes, ValidationOutcome{
+			Mode:     mode,
+			Code:     "adapter-supports-step-ambiguous-owner",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("step %q is listed by multiple backend adapters (%s); ownership resolves to the deepest layer, but give each step a single owning layer for an unambiguous contract", step, strings.Join(kinds, ", ")),
+			Fix:      "list each step in exactly one backend adapter's supports.steps",
+		})
+	}
+
+	// Union coverage: every operation term must be supported by at least one
+	// filled backend adapter.
+	for _, capFile := range features {
+		caps, err := parser.ParseCapabilities(capFile)
+		if err != nil {
+			outcomes = append(outcomes, NewOutcome(mode, "capabilities-not-closed-form",
+				fmt.Sprintf("%s: %v", capFile, err)))
+			continue
+		}
+		outcomes = append(outcomes, ValidateOperationsCoverage(mode, backendAdapters, caps)...)
 	}
 
 	// Cross-kind link enforcement: project each feature buildfile's edges and

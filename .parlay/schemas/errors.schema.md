@@ -20,6 +20,6 @@ Closed vocabulary for the `errors:` list on a capability operation declared in `
 
 An `errors:` entry outside this set fails capability validation with `capabilities-unknown-term`. An adapter declaring `supports.errors: [...]` whose entries fall outside this set fails validation with `adapter-supports-unknown-term`.
 
-## Mapping requirement
+## Error representation is a codegen-time concern
 
-For every operation, every declared error MUST have a mapping at one of the layers — adapter, adapter-set, or blueprint. The blueprint resolver walks the layered settings and confirms a mapping exists. Unmapped errors fail validation with `error-no-mapping` naming the missing layer.
+How a declared error is represented in generated code — `conflict` → `ConflictException` / HTTP 409, Prisma `P2002` → `conflict`, and so on — is handled by each adapter's error-mapping **conventions**, applied by codegen. It is not a pre-codegen structured gate: there is no `error-no-mapping` validator. The supports gate already ensures every declared error is one some filled backend layer lists (union coverage); mapping that error onto a framework construct is then the adapter's job at generation time.

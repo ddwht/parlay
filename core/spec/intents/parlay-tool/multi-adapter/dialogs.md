@@ -87,17 +87,17 @@ System: Validation passes regardless of whether `links:` is present or absent. T
 
 ### Adapter `supports` contract gates codegen pre-AI
 
-**Trigger**: `parlay build-feature` resolves a feature's `capabilities.yaml` into the buildfile and walks each operation's terms against the adapter's `supports:` declarations.
+**Trigger**: `parlay build-feature` resolves a feature's `capabilities.yaml` into the buildfile and checks each operation's terms by union coverage across the filled backend adapters' `supports:` declarations.
 
-User: Authors `nestjs-application.adapter.yaml` with `supports: {operation_kinds: [command, query], steps: [validate-input, authorize, create-one, read-one, return-one], policies: [transaction-required], errors: [validation-failed, conflict, not-found]}`. Builds a feature whose `task.create` operation uses only those terms.
-System (background): For each operation in `capabilities.yaml`, walks `(kind, every step.type, every policy, every error)` and looks them up in the application adapter's `supports`. All terms are present.
-System: Validation passes. Build-feature emits the buildfile with the operation projected through the application target.
+User: Authors `nestjs-application.adapter.yaml` with the terms the application layer owns — `supports: {operation_kinds: [command, query], steps: [validate-input, authorize, return-one], policies: [auth-required], errors: [validation-failed, unauthorized]}` — and `prisma-postgres.adapter.yaml` with the terms the persistence layer owns — `supports: {operation_kinds: [command, query], steps: [create-one, read-one], policies: [transaction-required], errors: [conflict, not-found]}`. Builds a feature whose `task.create` operation uses `validate-input`, `create-one`, `return-one`.
+System (background): Runs the per-adapter shape/vocabulary check on each backend adapter, then checks each operation term by **union coverage**: `validate-input` and `return-one` are owned by the application adapter, `create-one` by the persistence adapter — every term is owned by some filled backend layer.
+System: Validation passes. Build-feature emits the buildfile with the operation projected through the application and persistence targets, each target's `operations."@f/op:id".owns:` listing the steps it implements.
 
-#### Branch: Feature uses a step the adapter does not support
+#### Branch: Feature uses a step no backend layer supports
 
-User: Adds a step `read-tree` to `task.search` while the application adapter's `supports.steps` lacks `read-tree`.
-System (background): Walks `task.search.steps`; finds `read-tree` is not in `supports.steps` for the application adapter.
-System: Emits `adapter-supports-missing-step` naming the operation `@task-list/operation:task.search`, the term `read-tree`, and the adapter `nestjs-application`. Fix message: `either remove the step from this operation, or use an application adapter that supports it`. Generation does not proceed; the AI is not invoked.
+User: Adds a step `read-tree` to `task.search`; no filled backend adapter lists `read-tree` in its `supports.steps`.
+System (background): Union coverage: `read-tree` appears in no filled backend adapter's `supports.steps`.
+System: Emits `adapter-supports-missing-step` naming the operation `@task-list/operation:task.search`, the term `read-tree`, and the filled backend slots. Fix message: `no configured backend layer implements this step — add or swap in an adapter whose layer supports it, or remove the step`. Generation does not proceed; the AI is not invoked.
 
 #### Branch: Adapter declares a term not in the closed vocabulary
 
@@ -117,10 +117,10 @@ User: Authors an application adapter with `supports.steps: [validate-input, crea
 System (background): Validation walks `supports`, not pattern descriptions. The `read-tree` description is unused but does no harm.
 System: Validation passes. Pattern descriptions feed the AI prompt at codegen time only when their term is used; an unused description has zero validation footprint.
 
-#### Branch: Feature uses an unsupported policy
+#### Branch: Feature uses a policy no backend layer owns
 
-User: Adds `policies: [transaction-required]` to an operation while the application adapter's `supports.policies` lacks `transaction-required`.
-System: Emits `adapter-supports-missing-policy` naming the operation, the policy, and the adapter. Generation does not proceed.
+User: Adds `policies: [transaction-required]` to an operation in a project whose only filled backend slot is `application` (no persistence adapter). `transaction-required` is persistence-owned, so no filled backend adapter lists it.
+System: Emits `adapter-supports-missing-policy` naming the operation, the policy `transaction-required`, and the filled backend slots. Generation does not proceed. (Add a persistence adapter that owns `transaction-required` and union coverage passes.)
 
 ---
 
@@ -153,7 +153,7 @@ System: Emits `capabilities-unknown-term` naming the step type and the v1 step l
 
 User: Lands a schema PR that adds `read-tree` to `steps.schema.md` but no shipped adapter declares `read-tree` in `supports.steps`.
 System (background): The two-gate extension rule applies — schema gains the term, then at least one adapter must declare support before any feature may use it.
-System: A feature using `read-tree` fails with `adapter-supports-missing-step` for every adapter that lacks the declaration; the schema-extension test in CI flags `read-tree` as "added but unimplemented" until an adapter ships support.
+System: A feature using `read-tree` fails with `adapter-supports-missing-step` because no filled backend adapter supports it; the schema-extension test in CI flags `read-tree` as "added but unimplemented" until an adapter ships support.
 
 #### Branch: Schema docs build catches drift between intent and schema files
 

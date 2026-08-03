@@ -200,16 +200,21 @@ Adapters whose kind is transport, application, or persistence MUST declare a `su
 | `policies` | `policies.schema.md` |
 | `errors` | `errors.schema.md` |
 
-The `supports:` block declares which terms the adapter can fulfill at codegen time. During `parlay build-feature`, every operation in the resolved capabilities.yaml is walked against the supports block of the adapter occupying the relevant slot. The build fails before any AI invocation when a feature requires a term the adapter does not declare.
+The `supports:` block declares which terms **this adapter's layer** can fulfill at codegen time. An adapter lists only what its own layer implements — a persistence adapter lists the data steps (`create-one`, `read-many`, …) and the transaction policy; an application adapter lists orchestration steps (`validate-input`, `authorize`, `return-*`) and the auth policies. It does **not** list terms another layer owns.
+
+During `parlay build-feature`, each operation term is checked by **union coverage** across all filled non-presentation slots: a term passes if **at least one** backend adapter supports it. This is why the two checks are separate — one per-adapter, one project-wide:
 
 | Code | When it fires |
 |---|---|
-| `adapter-supports-missing-operation-kind` | Operation declares a `kind:` value not in the adapter's `supports.operation_kinds`. |
-| `adapter-supports-missing-step` | Operation declares a `step.type` not in the adapter's `supports.steps`. |
-| `adapter-supports-missing-policy` | Operation declares a policy not in the adapter's `supports.policies`. |
-| `adapter-supports-missing-error` | Operation declares an error not in the adapter's `supports.errors`. |
-| `adapter-supports-unknown-term` | The adapter declares an entry that falls outside the closed vocabulary file. |
-| `adapter-supports-shape-mismatch` | A `presentation` adapter declares a `supports:` block (forbidden), or a non-presentation adapter omits it (required). |
+| `adapter-supports-missing-operation-kind` | An operation's `kind:` is supported by **no** filled backend adapter. |
+| `adapter-supports-missing-step` | An operation's `step.type` is supported by **no** filled backend adapter (e.g. a `create-one` step in a project with no persistence slot). |
+| `adapter-supports-missing-policy` | An operation's policy is supported by **no** filled backend adapter. |
+| `adapter-supports-missing-error` | An operation's error is supported by **no** filled backend adapter. |
+| `adapter-supports-unknown-term` | An adapter declares an entry outside the closed vocabulary file. Per-adapter, unchanged by union. |
+| `adapter-supports-shape-mismatch` | A `presentation` adapter declares a `supports:` block (forbidden), or a non-presentation adapter omits it (required). Per-adapter. |
+| `adapter-supports-step-ambiguous-owner` (warning) | Two filled backend adapters both list the same step in `supports.steps`, so step ownership is contested. Ownership still resolves deterministically (deepest layer wins), so this is a warning, not an error — a nudge to give each step a single owning layer. Fires only in a project that fills more than one backend slot claiming the same step. |
+
+The first four (coverage) are asked once across the union of backend adapters — not once per adapter — so an adapter legitimately supporting only its own layer's terms never causes a false rejection. The last two (shape/vocabulary) remain per-adapter. Because each step is listed by exactly one layer, the union also fixes coverage gaps honestly: a step no filled layer owns is supported by nobody and fails.
 
 Pattern descriptions for non-presentation kinds (e.g., describing how an application adapter wires steps to NestJS controllers) live alongside `supports:` but are AI prompt material, not validator input.
 

@@ -28,13 +28,15 @@ var edgeKindRank = map[string]int{
 }
 
 // crossKindEdgeShape projects the parts of a v2 buildfile the edge extractor
-// reads: each backend target's projected operation refs, and the presentation
-// components' actions (an action that calls an operation ties the UI layer to
-// whichever backend layer projects that operation).
+// reads: each backend target's per-operation step OWNERSHIP (owns:), and the
+// presentation components' actions (an action whose target is an operation ref
+// is the UI calling that operation).
 type crossKindEdgeShape struct {
 	Targets map[string]struct {
-		Operations map[string]yaml.Node `yaml:"operations"`
-		Components  map[string]struct {
+		Operations map[string]struct {
+			Owns []string `yaml:"owns"`
+		} `yaml:"operations"`
+		Components map[string]struct {
 			Actions []struct {
 				Target string `yaml:"target"`
 			} `yaml:"actions"`
@@ -42,71 +44,107 @@ type crossKindEdgeShape struct {
 	} `yaml:"targets"`
 }
 
-// ExtractCrossKindEdges projects a v2 buildfile's cross-kind edges. For each
-// operation, the layers that touch it — presentation via a component action
-// that calls it, a backend kind via its targets.<kind>.operations projection —
-// are ordered UI→storage by edgeKindRank and an edge is emitted between each
-// consecutive pair. So an operation the UI calls, the application orchestrates,
-// and persistence stores yields presentation→application and
-// application→persistence. Deterministic and side-effect free; the result
-// feeds ValidateAdapterSetLinks.
+// ExtractCrossKindEdges derives a v2 buildfile's cross-kind edges from step
+// OWNERSHIP rather than co-projection. The model: every operation is entered at
+// the orchestrator layer (the lowest-edgeKindRank backend kind present — the UI
+// calls it), and the orchestrator delegates each step owned by a DIFFERENT
+// layer to that layer across a cross-kind edge. So for an operation the UI
+// calls, whose return-* steps the application owns and whose create-one step
+// persistence owns, the edges are presentation→application (UI calls the op) and
+// application→persistence (orchestrator delegates the owned write). The owned-
+// step→owner relationship IS the cross-kind link — no separate heuristic.
 //
-// This is the edge producer whose absence kept ValidateAdapterSetLinks
-// unreachable: the type existed but nothing built a CrossKindEdge from a real
-// buildfile.
+// Deterministic and side-effect free; the result feeds ValidateAdapterSetLinks.
+// Ownership comes from targets.<kind>.operations.<opRef>.owns, materialized by
+// build-feature via `parlay internal scaffold-operations`.
 func ExtractCrossKindEdges(content []byte) []CrossKindEdge {
 	var bf crossKindEdgeShape
 	if err := yaml.Unmarshal(content, &bf); err != nil {
 		return nil
 	}
 
-	touched := map[string]map[string]bool{}
-	touch := func(op, kind string) {
-		if touched[op] == nil {
-			touched[op] = map[string]bool{}
-		}
-		touched[op][kind] = true
-	}
+	// Orchestrator = the entry backend layer = the lowest-rank backend kind
+	// that carries operations (transport if present, else application, else
+	// persistence).
+	orchestrator := ""
+	orchRank := int(^uint(0) >> 1)
 	for kind, t := range bf.Targets {
-		if kind == "presentation" {
-			for _, comp := range t.Components {
-				for _, a := range comp.Actions {
-					if isOperationRef(a.Target) {
-						touch(a.Target, "presentation")
-					}
-				}
-			}
+		if kind == "presentation" || len(t.Operations) == 0 {
 			continue
 		}
-		for opRef := range t.Operations {
-			if isOperationRef(opRef) {
-				touch(opRef, kind)
+		if r := edgeKindRank[kind]; r < orchRank {
+			orchRank, orchestrator = r, kind
+		}
+	}
+
+	// Per operation, the backend kinds that own at least one of its steps.
+	opOwners := map[string]map[string]bool{}
+	for kind, t := range bf.Targets {
+		if kind == "presentation" {
+			continue
+		}
+		for opRef, entry := range t.Operations {
+			if !isOperationRef(opRef) || len(entry.Owns) == 0 {
+				continue
+			}
+			if opOwners[opRef] == nil {
+				opOwners[opRef] = map[string]bool{}
+			}
+			opOwners[opRef][kind] = true
+		}
+	}
+
+	// Operations the UI invokes (presentation action → operation ref).
+	uiCalls := map[string]bool{}
+	if pres, ok := bf.Targets["presentation"]; ok {
+		for _, comp := range pres.Components {
+			for _, a := range comp.Actions {
+				if isOperationRef(a.Target) {
+					uiCalls[a.Target] = true
+				}
 			}
 		}
 	}
 
+	// Deterministic op ordering: every op that has owners or is UI-called.
+	opSet := map[string]bool{}
+	for opRef := range opOwners {
+		opSet[opRef] = true
+	}
+	for opRef := range uiCalls {
+		opSet[opRef] = true
+	}
 	var ops []string
-	for op := range touched {
-		ops = append(ops, op)
+	for opRef := range opSet {
+		ops = append(ops, opRef)
 	}
 	sort.Strings(ops)
 
 	seen := map[string]bool{}
 	var edges []CrossKindEdge
-	for _, op := range ops {
-		var kinds []string
-		for k := range touched[op] {
-			kinds = append(kinds, k)
+	addEdge := func(from, to, ref string) {
+		if from == "" || to == "" || from == to {
+			return
 		}
-		sort.Slice(kinds, func(i, j int) bool { return edgeKindRank[kinds[i]] < edgeKindRank[kinds[j]] })
-		for i := 0; i+1 < len(kinds); i++ {
-			from, to := kinds[i], kinds[i+1]
-			key := from + "->" + to
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, CrossKindEdge{From: from, To: to, Ref: op})
+		key := from + "->" + to
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		edges = append(edges, CrossKindEdge{From: from, To: to, Ref: ref})
+	}
+
+	for _, opRef := range ops {
+		if uiCalls[opRef] {
+			addEdge("presentation", orchestrator, opRef)
+		}
+		var owners []string
+		for owner := range opOwners[opRef] {
+			owners = append(owners, owner)
+		}
+		sort.Slice(owners, func(i, j int) bool { return edgeKindRank[owners[i]] < edgeKindRank[owners[j]] })
+		for _, owner := range owners {
+			addEdge(orchestrator, owner, opRef)
 		}
 	}
 	return edges

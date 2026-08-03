@@ -1,11 +1,11 @@
 schema_version: 1
 feature: notes
 
-# The backend operations this feature exposes. Every term (kind, step.type,
-# errors, policies) sits inside the intersection of the nestjs-application and
-# prisma-postgres supports: blocks — the multi-target walker validates each
-# operation against BOTH backend adapters, so a term only one of them supports
-# would fail the supports gate.
+# The backend operations this feature exposes. Terms are validated by UNION
+# coverage: each term must be supported by at least one filled backend adapter.
+# So validate-input + auth-required (application-owned, in nestjs-application
+# only) coexist with create-one (persistence-owned, in prisma-postgres only) —
+# something the old intersection gate wrongly rejected.
 operations:
   - id: notes.create-note
     kind: command
@@ -13,10 +13,11 @@ operations:
     input: { type: CreateNoteInput }
     output: { shape: one, entity: Note }
     steps:
+      - { type: validate-input }
       - { type: create-one, entity: Note }
       - { type: return-one, entity: Note }
-    errors: [conflict, server-error]
-    policies: []
+    errors: [validation-failed, conflict, server-error]
+    policies: [auth-required]
 
   - id: notes.list-notes
     kind: query

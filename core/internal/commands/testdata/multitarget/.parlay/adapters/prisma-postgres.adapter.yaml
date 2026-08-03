@@ -14,6 +14,11 @@ supports:
   operation_kinds:
     - command
     - query
+  # Persistence layer owns the data steps and the transaction mechanism
+  # (prisma.$transaction). It does NOT own return-* (output shaping is the
+  # application/transport layer's job) or validate-input/authorize. Listing only
+  # what this layer implements is what makes the supports gate's union coverage
+  # correct: a create operation needs a persistence adapter that owns create-one.
   steps:
     - create-one
     - update-one
@@ -21,9 +26,6 @@ supports:
     - read-one
     - read-many
     - search
-    - return-one
-    - return-many
-    - return-empty
   policies:
     - transaction-required
   errors:

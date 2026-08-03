@@ -89,6 +89,9 @@ func runCheckSupports(cmd *cobra.Command, args []string) error {
 		return emitSupportsJSON(cmd, out)
 	}
 
+	// (a) Per-adapter shape/vocabulary validation + collect the backend
+	// adapters for (b) union coverage across all filled slots.
+	backendAdapters := map[string][]byte{}
 	for slotKind, target := range adapterSet.Targets {
 		if slotKind == "presentation" {
 			continue
@@ -103,14 +106,18 @@ func runCheckSupports(cmd *cobra.Command, args []string) error {
 			})
 			continue
 		}
-		for _, o := range agent.ValidateSupports(agent.ModeBuild, adapterContent, caps) {
+		for _, o := range agent.ValidateSupports(agent.ModeBuild, adapterContent) {
 			if o.Severity == agent.SeverityError {
-				out.Issues = append(out.Issues, supportsIssue{
-					Severity: "error",
-					Code:     o.Code,
-					Message:  o.Message,
-				})
+				out.Issues = append(out.Issues, supportsIssue{Severity: "error", Code: o.Code, Message: o.Message})
 			}
+		}
+		backendAdapters[slotKind] = adapterContent
+	}
+
+	// (b) Union coverage: a term passes if any filled backend adapter supports it.
+	for _, o := range agent.ValidateOperationsCoverage(agent.ModeBuild, backendAdapters, caps) {
+		if o.Severity == agent.SeverityError {
+			out.Issues = append(out.Issues, supportsIssue{Severity: "error", Code: o.Code, Message: o.Message})
 		}
 	}
 

@@ -30,10 +30,10 @@ fragments:
     - actions: invoke
       name: Pre-Codegen Support Gate Failure
       notes:
-        - Output for `parlay build-feature` when a feature's resolved capability operations use a term that is not in the relevant adapter's `supports:` block. Fails before any AI invocation.
+        - Output for `parlay build-feature` when a feature's resolved capability operations use a term that no filled backend adapter's `supports:` block covers (union coverage across backend slots). Fails before any AI invocation.
         - '`status` names the missing-term kind (operation kind, step, policy, error) or the unknown-term-in-supports case.'
         - '`code` is one of `adapter-supports-missing-operation-kind`, `adapter-supports-missing-step`, `adapter-supports-missing-policy`, `adapter-supports-missing-error`, `adapter-supports-unknown-term`, `adapter-supports-shape-mismatch`.'
-        - '`message` names the operation, the term, the term kind, and the adapter — and offers two fix paths: remove the term from this operation, or use an adapter that supports it.'
+        - '`message` names the operation, the term, the term kind, and the filled backend slots — and offers two fix paths: remove the term from this operation, or add/swap a backend adapter whose layer supports it.'
         - 'This is a "fail before generation" surface: the AI is never invoked, no source files are touched.'
       order: 1
       page: build-feature

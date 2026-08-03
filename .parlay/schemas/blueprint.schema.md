@@ -320,4 +320,3 @@ Every strategy choice — `data.fetching`, `auth.strategy`, `errors.retry`, etc.
 | `blueprint-strategy-unsupported` | A strategy value is in vocabulary but the relevant adapter does not declare support. |
 | `blueprint-scope-violation` | A top-level key falls outside the closed scope set. |
 | `blueprint-override-conflict` | Two layers attempt to set the same key with conflicting values that the resolver cannot reconcile. |
-| `error-no-mapping` | A canonical operation error has no mapping at any layer (adapter, adapter-set, blueprint). |

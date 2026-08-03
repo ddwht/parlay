@@ -590,9 +590,11 @@ targets:
   transport:
     routes:     [...]        # HTTP routes when transport adapter is present
   application:
-    operations: [...]        # per-target projection metadata only
+    operations:              # keyed map: opRef -> projection metadata
+      "@f/op:id": { owns: [validate-input, return-one], ... }
   persistence:
-    operations: [...]        # per-target projection metadata only
+    operations:
+      "@f/op:id": { owns: [create-one], ... }
 
 plan:
   modifies:  [...]
@@ -606,6 +608,8 @@ plan:
 ```
 
 See "Canonical-once rule" and "Operation-ref resolution" above for the field-ownership and reference-resolution rules governing these two blocks.
+
+**`owns:` — per-step layer ownership.** Each backend target's per-operation entry may carry an `owns:` list naming the steps that layer implements (derived by `parlay internal scaffold-operations` from the adapters' `supports.steps`). It is projection metadata, not a canonical field — but note the container MUST be `owns:`, **not** `steps:`: `steps` is a canonical field name and restating it under a target fails `buildfile-target-restates-canonical`. Ownership drives two things: codegen implements each target's owned steps and delegates the rest across `links` edges, and `ExtractCrossKindEdges` derives the cross-kind edges (`orchestrator → owner`) from it. A step owned by no filled backend layer is a coverage error caught earlier by the supports gate, so it never appears in `owns:`.
 
 ### Legacy buildfile normalization
 

@@ -55,6 +55,11 @@ func TestValidateBuildfile_V2WithoutPresentationRejected(t *testing.T) {
 }
 
 func TestExtractCrossKindEdges_AuthorizedByLinks(t *testing.T) {
+	// Edges derive from step OWNERSHIP: the UI calls the operation
+	// (presentation→orchestrator), the application orchestrates and owns
+	// return-one, and persistence owns create-one — so the orchestrator
+	// (application) delegates the persistence-owned step across
+	// application→persistence.
 	content := []byte(`adapter-set: stack
 operations:
   "@notes/operation:create": { kind: command }
@@ -66,10 +71,10 @@ targets:
           - { name: submit, effect: call, target: "@notes/operation:create" }
   application:
     operations:
-      "@notes/operation:create": { http: "POST /notes" }
+      "@notes/operation:create": { http: "POST /notes", owns: [return-one] }
   persistence:
     operations:
-      "@notes/operation:create": { model: Note }
+      "@notes/operation:create": { model: Note, owns: [create-one] }
 `)
 	edges := ExtractCrossKindEdges(content)
 	got := map[string]bool{}

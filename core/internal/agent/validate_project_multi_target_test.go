@@ -99,6 +99,36 @@ operations:
 	}
 }
 
+// Two filled backend slots (application + transport) that both list the same
+// step get a WARNING about contested ownership — not an error. The bundled
+// stacks never trip this (they fill one backend slot per step); it is the guard
+// for a future multi-backend project.
+func TestValidateProjectMultiTarget_AmbiguousStepOwnerWarns(t *testing.T) {
+	root := setupProject(t,
+		`name: stack
+targets:
+  presentation: { adapter: react-antd, root: apps/web }
+  application:  { adapter: nestjs-application, root: apps/api }
+  transport:    { adapter: openapi-rest, root: apps/api }
+`,
+		map[string]string{
+			"react-antd":         "name: react-antd\nkind: presentation\n",
+			"nestjs-application": "name: nestjs-application\nkind: application\nsupports:\n  operation_kinds: [command]\n  steps: [validate-input, return-one]\n  policies: []\n  errors: []\n",
+			"openapi-rest":       "name: openapi-rest\nkind: transport\nsupports:\n  operation_kinds: [command]\n  steps: [validate-input, return-one]\n  policies: []\n  errors: []\n",
+		},
+		nil,
+	)
+	outcomes := ValidateProjectMultiTarget(ModeBuild, root)
+	if !findCode(outcomes, "adapter-supports-step-ambiguous-owner") {
+		t.Errorf("expected ambiguous-owner warning for contested validate-input/return-one; got %+v", outcomes)
+	}
+	for _, o := range outcomes {
+		if o.Code == "adapter-supports-step-ambiguous-owner" && o.Severity != SeverityWarning {
+			t.Errorf("ambiguous-owner must be a warning, got severity %q", o.Severity)
+		}
+	}
+}
+
 func TestValidateProjectMultiTarget_PrototypeFrameworkDeprecatedWarning(t *testing.T) {
 	dir := t.TempDir()
 	parlay := filepath.Join(dir, ".parlay")

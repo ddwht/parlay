@@ -14,22 +14,22 @@ supports:
   operation_kinds:
     - command
     - query
+  # Application layer owns orchestration: input validation, authorization, and
+  # shaping the operation's return value. It does NOT own the data steps
+  # (create-one/read-many/…) — those are the persistence adapter's job; the
+  # application service orchestrates them by calling across the adapter-set
+  # `persists` link. Listing only what this layer implements is what lets the
+  # supports gate reason per-layer (union coverage) instead of demanding every
+  # backend adapter support every term.
   steps:
     - validate-input
     - authorize
-    - create-one
-    - update-one
-    - delete-one
-    - read-one
-    - read-many
-    - search
     - return-one
     - return-many
     - return-empty
   policies:
     - auth-required
     - permission-required
-    - transaction-required
   errors:
     - validation-failed
     - unauthorized

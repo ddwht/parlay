@@ -2,9 +2,14 @@
 // parlay-component: blueprint-scope-and-precedence
 //
 // Layered-setting resolver for the blueprint > adapter-set > adapter-default
-// precedence chain. Used by validate_blueprint_scope.go to attribute every
-// effective setting to the layer that produced it, and to confirm that
-// every canonical operation error has a mapping at one of the layers.
+// precedence chain. Scaffolding for that precedence feature, which is not yet
+// wired into a production caller (no validator consults it today) — kept so the
+// resolution semantics land with tests ahead of the feature.
+//
+// Note: canonical operation-error mapping is NOT a pre-codegen gate. Error
+// representation (conflict -> ConflictException, P2002 -> conflict, etc.) is a
+// codegen-time concern handled by each adapter's error-mapping conventions, so
+// there is no structured error-mapping validator here.
 
 package agent
 
@@ -46,19 +51,4 @@ func ResolveLayeredSetting(layers LayeredSettings, key string) (interface{}, Sou
 		return v, SourceLayerAdapter
 	}
 	return nil, SourceLayerDefault
-}
-
-// MissingMappingLayer walks the supplied operation errors against the
-// resolved layered settings and returns any error term that has no mapping
-// at any layer. Used by the blueprint-scope validator to fire
-// error-no-mapping with the offending layer named.
-func MissingMappingLayer(layers LayeredSettings, opErrors []string) []string {
-	var missing []string
-	for _, e := range opErrors {
-		key := "errors." + e
-		if _, src := ResolveLayeredSetting(layers, key); src == SourceLayerDefault {
-			missing = append(missing, e)
-		}
-	}
-	return missing
 }

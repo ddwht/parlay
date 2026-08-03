@@ -42,13 +42,3 @@ func TestResolveLayeredSetting_DefaultLayer(t *testing.T) {
 		t.Errorf("source: got %q, want default", src)
 	}
 }
-
-func TestMissingMappingLayer(t *testing.T) {
-	layers := LayeredSettings{
-		Blueprint: map[string]interface{}{"errors.validation-failed": "400"},
-	}
-	missing := MissingMappingLayer(layers, []string{"validation-failed", "not-found"})
-	if len(missing) != 1 || missing[0] != "not-found" {
-		t.Errorf("missing: got %v, want [not-found]", missing)
-	}
-}

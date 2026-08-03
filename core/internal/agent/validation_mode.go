@@ -40,6 +40,13 @@ type ValidationOutcome struct {
 // ruleSeverityTable records per-mode severity for every multi-adapter rule.
 // Entries default to error in both modes when absent.
 var ruleSeverityTable = map[string]map[ValidationMode]Severity{
+	// Contested step ownership is a nudge, not a blocker — ownership still
+	// resolves deterministically (deepest layer wins), so it warns in both
+	// modes rather than failing the build.
+	"adapter-supports-step-ambiguous-owner": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	"domain-operations-deprecated": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,

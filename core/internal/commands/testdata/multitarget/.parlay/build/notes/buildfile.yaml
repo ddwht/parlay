@@ -12,9 +12,10 @@ operations:
     subject: { entity: Note }
     input: { type: CreateNoteInput }
     output: { shape: one, entity: Note }
-    errors: [conflict, server-error]
-    policies: []
+    errors: [validation-failed, conflict, server-error]
+    policies: [auth-required]
     steps:
+      - { type: validate-input }
       - { type: create-one, entity: Note }
       - { type: return-one, entity: Note }
   "@notes/operation:notes.list-notes":
@@ -50,15 +51,17 @@ targets:
     adapter: nestjs-application
     # Keyed-map projection: each operation ref must resolve to a key declared
     # under top-level operations:. The value carries per-target projection
-    # metadata only (never a canonical field).
+    # metadata only (never a canonical field). owns: lists the steps THIS layer
+    # implements — derived by `parlay internal scaffold-operations`. The
+    # container is `owns:` (not `steps:`) to avoid the canonical-once rule.
     operations:
-      "@notes/operation:notes.create-note": { http: "POST /notes" }
-      "@notes/operation:notes.list-notes": { http: "GET /notes" }
+      "@notes/operation:notes.create-note": { http: "POST /notes", owns: [return-one, validate-input] }
+      "@notes/operation:notes.list-notes": { http: "GET /notes", owns: [return-many] }
   persistence:
     adapter: prisma-postgres
     operations:
-      "@notes/operation:notes.create-note": { model: Note }
-      "@notes/operation:notes.list-notes": { model: Note }
+      "@notes/operation:notes.create-note": { model: Note, owns: [create-one] }
+      "@notes/operation:notes.list-notes": { model: Note, owns: [read-many] }
 
 # Per-target plan. Each row is pathed under its target's adapter-set root:
 # presentation → apps/web, application/persistence → apps/api. This is what
