@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+// installTestAdapter puts an adapter file in the root's .parlay/adapters/.
+// Readiness now checks that a configured adapter is actually installed — a
+// project used to pass readiness on the config field alone and then fail at
+// adapter resolution with no adapter file anywhere.
+func installTestAdapter(t *testing.T, dir string) {
+	t.Helper()
+	adapters := filepath.Join(dir, ".parlay", "adapters")
+	if err := os.MkdirAll(adapters, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adapters, "go-cli.adapter.yaml"),
+		[]byte("name: go-cli\nkind: presentation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReadiness_CreateSurface_Empty(t *testing.T) {
 	dir := setupTestDir(t)
 	featureDir := filepath.Join(dir, "spec", "intents", "test-feature")
@@ -135,6 +151,7 @@ func TestReadiness_BuildFeature_FragmentMissingPage(t *testing.T) {
 
 func TestReadiness_BuildFeature_Valid(t *testing.T) {
 	dir := setupTestDir(t)
+	installTestAdapter(t, dir)
 	featureDir := filepath.Join(dir, "spec", "intents", "test-feature")
 	os.MkdirAll(featureDir, 0755)
 
@@ -173,6 +190,7 @@ func TestReadiness_BuildFeature_Valid(t *testing.T) {
 // must treat that as configured, not block it.
 func TestReadiness_BuildFeature_AdapterSetSatisfiesAdapterRequirement(t *testing.T) {
 	dir := setupTestDir(t)
+	installTestAdapter(t, dir)
 	featureDir := filepath.Join(dir, "spec", "intents", "test-feature")
 	os.MkdirAll(featureDir, 0755)
 

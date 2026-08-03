@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/config"
 	parlayParser "github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
@@ -57,7 +59,11 @@ func runSimplify(cmd *cobra.Command, args []string) error {
 		generatedPaths = append(generatedPaths, m.Path)
 	}
 
-	groups, err := findDuplicateFunctions(generatedPaths)
+	// Resolve the shared-helper destination from the adapter rather than
+	// assuming one. mustContext failing is not fatal here — simplify can run
+	// against a bare source tree, and sharedHelperDestination falls back to it.
+	cfg, _ := mustContext(cmd)
+	groups, err := findDuplicateFunctions(generatedPaths, sharedHelperDestination(cfg, sourceRoot))
 	if err != nil {
 		return fmt.Errorf("scanning for duplicates: %w", err)
 	}
@@ -77,7 +83,7 @@ func runSimplify(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func findDuplicateFunctions(paths []string) ([]duplicateGroup, error) {
+func findDuplicateFunctions(paths []string, target string) ([]duplicateGroup, error) {
 	type funcInfo struct {
 		Name     string
 		BodyHash string
@@ -157,7 +163,7 @@ func findDuplicateFunctions(paths []string) ([]duplicateGroup, error) {
 			FunctionName:   name,
 			Similarity:     "identical",
 			SourceFiles:    files,
-			ProposedTarget: proposeTarget(name),
+			ProposedTarget: target,
 			BodyHash:       fis[0].BodyHash,
 		})
 		_ = key
@@ -184,7 +190,7 @@ func findDuplicateFunctions(paths []string) ([]duplicateGroup, error) {
 			FunctionName:   name,
 			Similarity:     "near-identical",
 			SourceFiles:    files,
-			ProposedTarget: proposeTarget(name),
+			ProposedTarget: target,
 			Differences:    "function bodies differ in literals or error messages",
 		})
 	}
@@ -192,6 +198,45 @@ func findDuplicateFunctions(paths []string) ([]duplicateGroup, error) {
 	return groups, nil
 }
 
-func proposeTarget(funcName string) string {
-	return "internal/config/helpers.go"
+// sharedHelperDestination resolves where an extracted helper should live from
+// the active adapter's file-conventions, per helper-extraction/intents.md:
+// "The target shared package should be determined from the adapter's
+// file-conventions and the project's existing package structure."
+//
+// This used to return a hardcoded "internal/config/helpers.go" — parlay's own
+// layout — so every project was told to extract into a directory that may not
+// exist in it. `packages:` is the block that answers this question: no `paths:`
+// template names a shared-code destination, because `paths:` is per-artifact
+// (component, model, service, routes) while this is "where does reusable code
+// live". That is why both blocks exist.
+//
+// Falls back to the source root when the adapter declares no shared package,
+// which is a correct answer rather than a guess: a flat project genuinely has
+// nowhere else to put it.
+func sharedHelperDestination(cfg *config.Context, sourceRoot string) string {
+	dir := ""
+	if cfg != nil {
+		if adapterPath := presentationAdapterFile(cfg); adapterPath != "" {
+			if a, err := agent.LoadAdapterFile(adapterPath); err == nil && a.FileConventions != nil {
+				fc := a.FileConventions
+				// Preference order: the most-shared package first.
+				for _, key := range []string{"utils", "shared", "core", "lib"} {
+					if v := strings.TrimSpace(fc.Packages[key]); v != "" {
+						dir = v
+						break
+					}
+				}
+				if dir == "" && strings.TrimSpace(fc.SourceRoot) != "" {
+					dir = fc.SourceRoot
+				}
+			}
+		}
+	}
+	if dir == "" {
+		dir = sourceRoot
+	}
+	// The duplicate analyzer parses Go only (see findDuplicateFunctions), so
+	// the emitted destination is a .go file. When it grows to other languages
+	// the extension follows the adapter the same way the directory now does.
+	return filepath.Join(dir, "helpers.go")
 }

@@ -6,6 +6,7 @@ package commands
 
 import (
 	"bytes"
+	"github.com/ddwht/parlay/core/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,7 +72,7 @@ func uniqueB() string { return "b" }
 	groups, err := findDuplicateFunctions([]string{
 		filepath.Join(dir, "a.go"),
 		filepath.Join(dir, "b.go"),
-	})
+	}, "internal/config/helpers.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func sharedHelper() []string {
 	groups, err := findDuplicateFunctions([]string{
 		filepath.Join(dir, "a.go"),
 		filepath.Join(dir, "b.go"),
-	})
+	}, "internal/config/helpers.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +137,7 @@ func sharedHelper() []string {
 	groups, err := findDuplicateFunctions([]string{
 		filepath.Join(dir, "a.go"),
 		filepath.Join(dir, "a_test.go"),
-	})
+	}, "internal/config/helpers.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,9 +146,41 @@ func sharedHelper() []string {
 	}
 }
 
-func TestSimplify_ProposesTarget(t *testing.T) {
-	target := proposeTarget("threeTreeRoots")
-	if target == "" {
-		t.Error("expected non-empty proposed target")
+// The extraction destination comes from the adapter's file-conventions, not a
+// hardcoded path. helper-extraction/intents.md:20 requires it ("determined from
+// the adapter's file-conventions"); the previous implementation returned
+// parlay's own "internal/config/helpers.go" to every project.
+func TestSimplify_DestinationComesFromAdapterPackages(t *testing.T) {
+	dir := t.TempDir()
+	adapters := filepath.Join(dir, ".parlay", "adapters")
+	if err := os.MkdirAll(adapters, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapter := `name: react-antd
+kind: presentation
+file-conventions:
+  source-root: "src/"
+  packages:
+    utils: "src/utils/"
+`
+	if err := os.WriteFile(filepath.Join(adapters, "react-antd.adapter.yaml"), []byte(adapter), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.NewContext(&config.ResolutionResult{
+		ActiveRoot: config.Root{Name: "p", Path: dir, Kind: config.RootKindStandalone},
+		Source:     config.SourceCwdWalkUp,
+	}, nil)
+
+	if got, want := sharedHelperDestination(cfg, "src/"), filepath.Join("src/utils/", "helpers.go"); got != want {
+		t.Errorf("destination = %q, want %q", got, want)
+	}
+
+	// No adapter at all: fall back to the source root rather than inventing one.
+	bare := config.NewContext(&config.ResolutionResult{
+		ActiveRoot: config.Root{Name: "b", Path: t.TempDir(), Kind: config.RootKindStandalone},
+		Source:     config.SourceCwdWalkUp,
+	}, nil)
+	if got, want := sharedHelperDestination(bare, "cmd/"), filepath.Join("cmd/", "helpers.go"); got != want {
+		t.Errorf("fallback destination = %q, want %q", got, want)
 	}
 }

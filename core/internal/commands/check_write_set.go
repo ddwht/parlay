@@ -284,7 +284,7 @@ func toolchainWriteSetRegions(cfg *config.Context) []string {
 
 	// Single-target: the one adapter; write-set globs used as authored (already
 	// bound to the adapter's source-root).
-	if adapterPath := firstAdapterFile(cfg.AdaptersPath()); adapterPath != "" {
+	if adapterPath, _ := soleAdapterFile(cfg); adapterPath != "" {
 		if data, err := os.ReadFile(adapterPath); err == nil {
 			var ad adapterForPlan
 			if yaml.Unmarshal(data, &ad) == nil && ad.Toolchain != nil {

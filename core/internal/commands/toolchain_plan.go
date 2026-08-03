@@ -121,7 +121,7 @@ func runToolchainPlan(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Single-target: the one adapter under .parlay/adapters/.
-		adapterPath := firstAdapterFile(cfg.AdaptersPath())
+		adapterPath, _ := soleAdapterFile(cfg)
 		if adapterPath != "" {
 			adData, err := os.ReadFile(adapterPath)
 			if err != nil {

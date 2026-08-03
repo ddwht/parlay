@@ -8,6 +8,7 @@ from somewhere other than the start.
 
 ## Available Commands
 
+- `/parlay-create-adapter` — Author a new framework adapter from scratch and validate it
 - `/parlay-doctor` — Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
@@ -73,4 +74,6 @@ Or use `make sync-skills` to do steps 2+3 in one shot. Verify sync with `make ve
 
 **Warning**: `parlay upgrade` overwrites this CLAUDE.md file. The dogfooding section below the "File Ownership" header is project-local and must be re-added manually after each upgrade until the deployer supports preserving user sections.
 
-**Adapters are NOT covered by this rule.** Per-project adapters under `.parlay/adapters/` are project-owned and may be customized via `parlay onboard`. `parlay upgrade` deliberately leaves them alone.
+**Adapters are NOT covered by this rule.** Per-project adapters under `.parlay/adapters/` are project-owned and may be customized via `parlay onboard`. `parlay upgrade` never redeploys them from the binary. The one exception is an explicit, interactive opt-in: `upgrade` offers to add `kind:` to adapters that predate the field, and rewrites only the files you approve.
+
+In a multi-root project adapters are resolved **child-first with parent fallback**, so a child root inherits the repo-level adapters and only needs its own file when it wants to override one.

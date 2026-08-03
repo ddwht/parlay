@@ -92,6 +92,12 @@ func slugifyFramework(framework string) string {
 		return "react-antd"
 	case "angular + clarity", "angular clarity", "angular-clarity":
 		return "angular-clarity"
+	case "angular + material", "angular material", "angular-material":
+		return "angular-material"
+	case "none (register adapter later)", "none", "":
+		// The init menu's opt-out. Kebab-casing the label produced the slug
+		// "none-(register-adapter-later)", which names no adapter and no file.
+		return ""
 	default:
 		s := strings.ToLower(framework)
 		s = strings.ReplaceAll(s, " ", "-")
@@ -101,14 +107,21 @@ func slugifyFramework(framework string) string {
 	}
 }
 
-// defaultRootForFramework picks a sensible default source-root per
-// framework slug. Matches what the bundled adapters declare.
+// defaultRootForFramework picks a sensible default source-root per framework
+// slug, mirroring each bundled adapter's own file-conventions.source-root.
+//
+// The previous values did not match: it returned "internal/commands" for
+// go-cli (the value this repo's own dogfood adapter uses, not the bundled
+// one's "cmd/"), "src" for angular-clarity (whose adapter declares "src/app/"),
+// and had no case for angular-material at all.
 func defaultRootForFramework(slug string) string {
 	switch slug {
 	case "go-cli":
-		return "internal/commands"
-	case "react-antd", "angular-clarity":
+		return "cmd"
+	case "react-antd":
 		return "src"
+	case "angular-clarity", "angular-material":
+		return "src/app"
 	default:
 		return "src"
 	}

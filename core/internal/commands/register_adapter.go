@@ -261,7 +261,23 @@ func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintf(cmd.OutOrStdout(), "Adapter saved to %s\n", dstPath)
-	fmt.Fprintln(cmd.OutOrStdout(), "Set it as the prototype framework in .parlay/config.yaml to use it with build-feature.")
+	// Point at adapter-set.yaml, not the deprecated prototype-framework field
+	// this line used to recommend — the tool warns about that field elsewhere
+	// and removes it in v0.3.
+	kind := adapterKindOrDefault(data)
+	fmt.Fprintf(cmd.OutOrStdout(), "Pin it in .parlay/adapter-set.yaml to use it:\n\n  targets:\n    %s:\n      adapter: %s\n      root: <source-root>\n", kind, adapter.Name)
 
 	return nil
+}
+
+// adapterKindOrDefault reports an adapter file's declared kind, defaulting an
+// absent one to presentation per adapter.schema.md Section 0.
+func adapterKindOrDefault(content []byte) string {
+	var shape struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(content, &shape); err == nil && shape.Kind != "" {
+		return shape.Kind
+	}
+	return "presentation"
 }

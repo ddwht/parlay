@@ -46,6 +46,8 @@ Who resolves it depends on where you are running. If you own the user interactio
    - `component-pattern`: detect from directory layout — `feature-modules` (directories per feature), `one-file-per-component` (flat), `atomic` (atoms/molecules/organisms)
    - `naming`: detect from existing filenames — `PascalCase`, `kebab-case`, `snake_case`
    - `entry-point`: find main/App/index file (e.g., `src/App.tsx`, `cmd/root.go`, `src/main.ts`)
+   - **`paths:` templates** — derive one per artifact kind from the layout you just detected (`component`, `test`, and whichever of `model`/`service`/`types`/`feature-routes`/`routes` the tree actually has), written **relative to `source-root`** with `{feature}`/`{name}`/`{entity}` placeholders. This is what makes `plan:` derivable; an adapter without it generates a feature whose plan has to be hand-written, and every hand-written plan has drifted from what codegen emitted.
+   - **`packages:`** — the shared-code directories (`components`, `hooks`, `utils`, `core`) if the tree has them. Distinct from `paths:`: it names where reusable code lives, which is what `parlay simplify` needs to place an extracted helper.
    - Update the adapter's `file-conventions:` section with detected values
 
 5. **Scan for conventions** — Read 5-10 representative component files to extract coding patterns:

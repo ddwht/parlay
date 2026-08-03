@@ -37,6 +37,11 @@ file-conventions:
   component-pattern: "one-file-per-route"
   naming: "kebab-case"
   entry-point: "apps/api/src/openapi.yaml"
+  # A transport adapter is route-driven: one route table per feature plus the
+  # shared spec the whole API exposes. Templates are relative to source-root.
+  paths:
+    feature-routes: "src/routes/{feature}.routes.ts"
+    routes: "src/openapi.yaml"
 
 # --- Conventions ---
 conventions:

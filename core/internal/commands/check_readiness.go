@@ -334,8 +334,21 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 			Severity: "error",
 			Code:     "no-adapter-configured",
 			Message:  "no adapter configured (neither adapter-set.yaml nor prototype-framework)",
-			Fix:      "define .parlay/adapter-set.yaml (recommended) or set prototype-framework in .parlay/config.yaml",
+			Fix:      "define .parlay/adapter-set.yaml (recommended) or run `parlay register-adapter <path>`",
 		})
+	} else if adapters, _ := filepath.Glob(filepath.Join(cfg.AdaptersPath(), "*.adapter.yaml")); len(adapters) == 0 {
+		// Configuration named an adapter; check one is actually installed.
+		// Readiness used to pass on the field alone, so a project could be
+		// declared ready and then fail at adapter resolution with no adapter
+		// file anywhere.
+		if p, _ := soleAdapterFile(cfg); p == "" {
+			issues = append(issues, readinessIssue{
+				Severity: "error",
+				Code:     "no-adapter-configured",
+				Message:  fmt.Sprintf("an adapter is configured but %s holds no .adapter.yaml file", cfg.AdaptersPath()),
+				Fix:      "run `parlay register-adapter <path>`, or re-run `parlay init` to install a bundled adapter",
+			})
+		}
 	}
 
 	return issues

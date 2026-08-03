@@ -368,6 +368,45 @@ Like `seed:`, it takes no placeholders — there is one store per project. It is
 
 **Omitting `store:` is a real answer, not a gap.** `parlay internal check-composition` reports a cross-feature flow assertion it cannot satisfy either way, but it distinguishes the two: with no store declared it is a **note** naming the framework fact, because no amount of better code would satisfy the assertion; with a store declared and a feature that does not wire it, it is an **error**, because the mechanism exists and that feature is not using it.
 
+### `packages:` — where shared, reusable code lives
+
+`paths:` answers "what file does *this artifact* land at". `packages:` answers a
+different question that no `paths:` template expresses: **where does reusable
+code live** — the shared component directory, hooks, utils, the core package.
+
+```yaml
+file-conventions:
+  source-root: "src/"
+  paths:                              # per-artifact templates → plan rows
+    component: "features/{feature}/{Name}.tsx"
+  packages:                           # shared-code directories → no plan rows
+    components: "src/components/"
+    hooks:      "src/hooks/"
+    utils:      "src/utils/"
+```
+
+The two are complementary, not alternatives, and both are load-bearing:
+
+- **`paths:` derives.** Every entry becomes a `plan.creates` row via
+  `parlay internal scaffold-plan`. This is the machine-readable half.
+- **`packages:` never derives.** It produces no plan row and is not expanded
+  per feature or per entity. It is consulted when something needs a *shared*
+  destination — `parlay simplify` resolves where to extract a duplicated
+  helper from `packages.utils` / `shared` / `core` / `lib`, falling back to
+  `source-root`. Without it, extraction has to guess a directory.
+
+An adapter may declare either, both, or neither. Declaring only `packages:`
+means plan derivation is unavailable (see "Absence is not an error" below);
+declaring only `paths:` means shared-code destinations fall back to the source
+root.
+
+**Rooting.** `paths:` templates are relative to `source-root`. `packages:`
+values are written as project-relative directories (they name a location a
+person would `cd` to), which is why the shipped blocks repeat the source-root
+segment. Keep a `packages:` entry consistent with the rest of the adapter: a
+value that contradicts `source-root` sends shared code somewhere the framework
+does not look.
+
 ### Why templates rather than logic in the tool
 
 Putting per-framework path rules in Go would mean parlay carrying framework knowledge that adapters exist to hold, and every new framework would need a code change rather than a YAML file. A template keeps the knowledge in the adapter, where a team can also change it — moving components from `features/` to `modules/` is then an adapter edit, not a fork.
@@ -435,8 +474,8 @@ Mount strategies are consumed by `generate-code` (step 14.5) when a surface frag
 4. Scans the adapter's `mount-strategies:` for strategies whose `detection` pattern appears in the file
 5. Applies disambiguation:
    - **1 match**: proceeds automatically
-   - **0 matches**: asks the user via AskUserQuestion ("file doesn't match any mount strategy — how should the component be added?")
-   - **Multiple matches**: asks the user to choose which integration point, showing each match with its line number
+   - **0 matches**: returns a decision request to the orchestrator ("file doesn't match any mount strategy — how should the component be added?"). Codegen never prompts directly; see generate-code.skill.md's non-interactive contract.
+   - **Multiple matches**: returns a decision request naming the candidate integration points, showing each match with its line number
 6. Finds existing instances of the matched template pattern in the file — these serve as style examples for indentation, prop naming, and code conventions
 7. Generates a new instance following the template with placeholders filled from the buildfile component data
 8. Produces a reviewable diff for the user (apply / skip / edit)
@@ -648,23 +687,41 @@ The runtime half of the contract is enforced as follows: `read-set` (the codegen
 
 The adapter file has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — this is a **deliberate deferral**, not an oversight. Don't confuse it with the top-level `version:` field, which tracks the *adapter's own* revision (a team-owned value, unrelated to the file *format*), or `componentVocabulary.name`'s `@<version>` suffix, which pins a design-system vocabulary revision. None of the three is a stand-in for the others.
 
-Adapters are hand-authored, team-owned, and long-lived — exactly the profile that would normally call for a migrator chain per the house rule. The reason there isn't one yet: the adapter file *format* (which top-level sections exist, what each requires) hasn't had a breaking change since this feature space stabilized, so there's no prior version to migrate from and no migrator to write. Adding an unused `schema_version: 1` field now, with no migrator and nothing to gate, would be exactly the kind of premature versioning the house rule warns against. When the adapter format needs its first breaking change, that's the point to add `schema_version:` with a real migrator — following `domain-model.schema.md`'s pattern — rather than before.
+Adapters are hand-authored, team-owned, and long-lived — exactly the profile that would normally call for a migrator chain per the house rule. The reason there isn't one yet: the adapter file *format* has only ever grown additively — `kind:`, `supports:`, `paths:` and `toolchain:` were added as optional-or-kind-conditional sections, and the one removal (`vocabulary:`) took its only consumer with it — so no existing adapter needs rewriting and there is no prior version to migrate from. Adding an unused `schema_version: 1` field now, with no migrator and nothing to gate, would be exactly the kind of premature versioning the house rule warns against. When the adapter format needs its first breaking change, that's the point to add `schema_version:` with a real migrator — following `domain-model.schema.md`'s pattern — rather than before.
 
 ## Validation
 
-When an adapter file is loaded, the tool verifies:
-- Every Show type from the surface vocabulary has an entry in `shows:`
-- Every Action type from the surface vocabulary has an entry in `actions:`
-- Every Flow type from the surface vocabulary has an entry in `flows:`
-- Missing vocabulary entries are errors — the adapter must be comprehensive
-- `widget: not-applicable` is allowed (with description explaining why)
-- `requires: custom-implementation` is allowed (the agent writes the implementation)
-- The `file-conventions` section is complete
-- `compositions:`, `conventions:`, and `design-system:` sections are optional but recommended
-- If `design-system:` is present, each category must have a `source:` field with value `framework`, `figma`, or `not-defined`
-- If `mount-strategies:` is present, each strategy must have `detection:`, `template:`, and `description:` fields. `detection:` must be a non-empty string. `template:` must contain at least one `{{placeholder}}`
-- If `componentVocabulary:` is present, the `name:` field MUST include `@<version>` (bare names are rejected). Every property `type:` must be drawn from the closed set `{string, token-reference, enum, boolean, int, child-list}`. Every component `category:` must be one of `{container, leaf, data-shape}`. Universal container fields (`direction`, `gap`, `padding`, `alignment`) MUST NOT appear inside any component's `properties:` — they live in the layout schema and re-declaring them fails parse with `universal-field-redeclared`.
-- If `tokens:` is present, the `modes:` list MUST contain at least one mode. Every color token's `emit-forms:` must cover every declared mode (a missing per-mode form fails parse naming the token and the missing mode). Color token `tone:` (when present) must be one of `{neutral, info, warning, danger, success}`. Typography token `use-site:` must be one of `{heading-page, heading-section, body, caption}`.
+`parlay validate --type adapter <path>` runs the complete check; `register-adapter` and `parlay init` run the same one before installing. It reports **every** finding at once rather than stopping at the first, and each carries a stable code.
+
+Rules are conditional on `kind:` — a presentation adapter owes the framework vocabulary, a backend adapter owes `supports:`, and neither is asked for the other's.
+
+| Code | Fires when |
+|---|---|
+| `adapter-invalid-yaml` | The file does not parse. |
+| `adapter-name-missing` | No top-level `name:`. |
+| `adapter-name-slug-mismatch` | `name:` disagrees with the filename slug. Resolvers look adapters up by filename, so a mismatch desynchronises resolution from diagnostics. |
+| `adapter-kind-unknown` | `kind:` is outside `{presentation, transport, application, persistence}`. |
+| `adapter-supports-shape-mismatch` | A presentation adapter declares `supports:` (forbidden), or a non-presentation adapter omits it (required). |
+| `adapter-supports-unknown-term` | A `supports.*` entry is outside its closed vocabulary. |
+| `adapter-vocabulary-incomplete` | A presentation adapter is missing `shows:`/`actions:`/`flows:`, or missing terms within them. Every Show, Action and Flow in the surface vocabulary must map to a framework implementation — a missing entry leaves codegen with no widget for a term a designer may legitimately write. `widget: not-applicable` and `requires: custom-implementation` are both valid mappings. |
+| `adapter-vocabulary-unknown-term` | `shows:`/`actions:`/`flows:` declares a term that is not in the surface vocabulary. |
+| `adapter-composition-invalid` | A `compositions:` entry omits `trigger:`, `wiring:` or `description:`. |
+| `adapter-convention-invalid` | A `conventions:` entry omits `rule:` or `applies-to:`. |
+| `adapter-file-conventions-missing` | No `file-conventions:` — nothing can decide where generated code goes. |
+| `adapter-source-root-missing` | No `source-root:`. Not cosmetic: an empty one silently disables toolchain write-set containment. |
+| `adapter-file-conventions-incomplete` | `component-pattern:` or `entry-point:` is absent. |
+| `adapter-naming-unknown` | `naming:` is absent or outside `{kebab-case, snake_case, PascalCase, camelCase}`. Absent is an error because path templates otherwise fall back to kebab-case silently. |
+| `adapter-path-template-invalid` | A `paths.*` template uses a placeholder outside `{feature} {name} {entity} {Feature} {Name} {Entity}` — it would expand to a literal brace, and a path with a brace in it is not a path. |
+| `adapter-packages-invalid` | A `packages:` entry names an empty directory. |
+| `adapter-design-system-source-unknown` | A `design-system:` category's `source:` is outside `{framework, figma, not-defined}`. |
+| `adapter-mount-strategy-invalid` | A mount strategy omits `detection:` or `description:`, or its `template:` contains no `{{placeholder}}`. |
+| `adapter-component-vocabulary-invalid` | Any `componentVocabulary:` rule: `name:` without `@<version>`; a missing or out-of-set `category:`; a container without `allowed-children:`; `type: enum` without `enum-values:`; `type: child-list` without `child-types:`; a duplicate component `type:`; a property type outside `{string, token-reference, enum, boolean, int, child-list}`; or a re-declared universal container field (`direction`, `gap`, `padding`, `alignment`), which belongs to the layout schema. |
+| `adapter-tokens-invalid` | Any `tokens:` rule: no `modes:`; a colour token whose `emit-forms:` misses a declared mode; a `tone:` outside `{neutral, info, warning, danger, success}`; a `use-site:` outside `{heading-page, heading-section, body, caption}`; a missing `emit-form:`; a duplicate token name; or a reused spacing `order:`. |
+| `toolchain-*` | See Section 10's table. `toolchain-source-missing` and `toolchain-stage-unknown` cover the two Required fields there. |
+
+`compositions:`, `conventions:`, `design-system:`, `mount-strategies:`, `componentVocabulary:`, `tokens:` and `toolchain:` are all optional; when present they are validated in full.
+
+**`patterns:` is deliberately not validated.** Section 6 defines it as taste — preferences rather than rules, with further keys permitted — so its value space is open. A closed set would reject correct framework-appropriate values: the bundled `go-cli` adapter uses `error-placement: console` and `confirmation: prompt`, which no browser-framework enum contains.
 
 ## Relationship to buildfile
 

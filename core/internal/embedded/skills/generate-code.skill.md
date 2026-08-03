@@ -80,7 +80,7 @@ Concretely:
    - `.parlay/schemas/adapter.schema.md`
    - `.parlay/schemas/blueprint.schema.md`
 
-2. **Load project config** — Read `.parlay/config.yaml` to determine the prototype framework.
+2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. `prototype-framework:` in config.yaml is deprecated (removed in v0.3); fall back to it only when no adapter-set exists.
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary, file conventions, and patterns.
 

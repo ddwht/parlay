@@ -313,7 +313,7 @@ func TestConformance_CanonicalValidatorsAreReachable(t *testing.T) {
 
 	// Both prefixes. It matched only `Validate` before, so every `Check*`
 	// validator was invisible to the reachability test — which is how
-	// CheckVocabularyBlockParity and CheckCrossAdapterParity, both
+	// CheckCrossAdapterParity,
 	// unreachable, went unreported.
 	exported := regexp.MustCompile(`(?m)^func ((?:Validate|Check)[A-Za-z0-9_]+)\(`)
 	var entryPoints []string
@@ -581,6 +581,10 @@ func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
 		"loop":    true, // the driver
 		"doctor":  true, // diagnosis-first repair and migration
 		"onboard": true, // brownfield entry
+		// greenfield counterpart to onboard: a person invokes it by name when
+		// their stack has no bundled adapter and there is no codebase to
+		// derive one from.
+		"create-adapter": true,
 	}
 
 	got := map[string]bool{}

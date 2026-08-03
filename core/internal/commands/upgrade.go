@@ -267,15 +267,28 @@ func offerAdapterKindOptIn(cmd *cobra.Command, rootPath string) error {
 		return nil
 	}
 
-	updated := 0
+	updated, skipped := 0, 0
 	for _, p := range missing {
 		content, _ := os.ReadFile(p)
-		newContent := injectKindPresentation(content)
-		if err := os.WriteFile(p, newContent, 0644); err == nil {
-			updated++
+		if _, ok := inferAdapterKind(content); !ok {
+			// A backend adapter: it declares supports:, so presentation is the
+			// wrong answer and nothing here can name the right one.
+			fmt.Fprintf(cmd.OutOrStdout(), "  skipped %s — it declares supports:, so it is a backend adapter; add its kind: (transport|application|persistence) by hand\n", filepath.Base(p))
+			skipped++
+			continue
 		}
+		newContent := injectKindPresentation(content)
+		if err := os.WriteFile(p, newContent, 0644); err != nil {
+			// A partial rewrite reported as success is how a half-migrated
+			// adapters directory goes unnoticed.
+			return fmt.Errorf("add kind: to %s: %w", p, err)
+		}
+		updated++
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated\n  %d file(s) gained an explicit kind: presentation line\n", updated)
+	if skipped > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  %d backend adapter(s) skipped — see above\n", skipped)
+	}
 	return nil
 }
 
@@ -293,6 +306,25 @@ func hasKindField(content []byte) bool {
 		}
 	}
 	return false
+}
+
+// inferAdapterKind reads the kind a kind-less adapter actually is, rather than
+// assuming presentation.
+//
+// The opt-in used to stamp `kind: presentation` on every file lacking the
+// field. That is right for the adapters that predate it, but wrong for an
+// onboard-drafted backend adapter: stamping presentation onto a file that
+// declares `supports:` makes it fail adapter-supports-shape-mismatch and
+// collide with its own adapter-set slot. A file declaring supports: is a
+// backend adapter whose kind we cannot name from the outside, so it is skipped
+// and reported instead of guessed.
+func inferAdapterKind(content []byte) (kind string, ok bool) {
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.HasPrefix(line, "supports:") {
+			return "", false
+		}
+	}
+	return "presentation", true
 }
 
 // injectKindPresentation inserts `kind: presentation` after the existing

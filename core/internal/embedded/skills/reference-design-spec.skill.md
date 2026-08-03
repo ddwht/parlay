@@ -36,7 +36,7 @@ This is an **optional** step between surface creation and build-feature. The pip
 
 3. **Load feature surface** — Read `spec/intents/{feature}/surface.md`. Parse fragment names. If the file does not exist, stop and tell the user to create the surface first.
 
-4. **Load adapter** — Read `.parlay/config.yaml` to determine the prototype framework. Read `.parlay/adapters/{framework}.adapter.yaml`. Extract the `design-system:` section to identify which categories have `source: figma`.
+4. **Load adapter** — Resolve the adapter from `.parlay/adapter-set.yaml`'s presentation slot and read `.parlay/adapters/{slug}.adapter.yaml`. Fall back to the deprecated `prototype-framework:` in `.parlay/config.yaml` only when no adapter-set exists. Extract the `design-system:` section to identify which categories have `source: figma`.
 
 5. **Read Figma via MCP** — Connect to Figma and read the file/frame at the provided link. Extract:
    - Component hierarchy and naming

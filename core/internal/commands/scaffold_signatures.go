@@ -298,30 +298,58 @@ func dirExists(p string) bool {
 // presentationAdapterFile resolves the adapter whose vocabulary the
 // presentation-scoped commands (signatures, composition/shared-store) need.
 // In a multi-target project it returns the presentation slot's adapter from
-// adapter-set.yaml — never firstAdapterFile, which in a react+nest+prisma
-// project sorts to the backend nestjs adapter and would make these commands
-// read a widget-less backend adapter. Falls back to firstAdapterFile for
-// single-target projects with no adapter-set.
+// adapter-set.yaml, resolved child-first with parent fallback so a child root
+// inherits the parent's adapters. Falls back to soleAdapterFile for
+// single-target projects with no adapter-set, which refuses to guess when a
+// root holds several adapters rather than picking by filename order.
 func presentationAdapterFile(cfg *config.Context) string {
 	if as, err := parser.ParseAdapterSet(cfg.AdapterSetPath()); err == nil {
 		if tgt, ok := as.Targets["presentation"]; ok && tgt.Adapter != "" {
-			candidate := filepath.Join(cfg.AdaptersPath(), tgt.Adapter+".adapter.yaml")
-			if fileExistsAt(candidate) {
-				return candidate
+			// ResolveAdapter, not a bare join: in a multi-root project a child
+			// inherits the parent's adapters, which is what the generated
+			// CLAUDE.md has always told users happens.
+			if p, _ := cfg.ResolveAdapter(tgt.Adapter); p != "" {
+				return p
 			}
 		}
 	}
-	return firstAdapterFile(cfg.AdaptersPath())
+	if p, err := soleAdapterFile(cfg); err == nil {
+		return p
+	}
+	return ""
 }
 
-// firstAdapterFile returns the lexically-first *.adapter.yaml in dir, or ""
-// when there is none. Deterministic by sort so a multi-adapter project
-// hashes the same file on every run rather than whatever readdir returned.
-func firstAdapterFile(dir string) string {
-	matches, err := filepath.Glob(filepath.Join(dir, "*.adapter.yaml"))
-	if err != nil || len(matches) == 0 {
-		return ""
+// soleAdapterFile resolves "the" adapter for a project that has not pinned an
+// adapter-set: the single adapter file at the active root, or — for a child
+// root with none of its own — the single one inherited from the parent.
+//
+// It refuses to choose when several are present. The predecessor
+// (firstAdapterFile) returned the lexically-first match, which in a
+// react-nest-prisma project is `nestjs-application.adapter.yaml` — a widget-less
+// backend adapter silently standing in for the presentation one. A wrong
+// adapter produces plausible, wrong paths; an error produces a fix.
+func soleAdapterFile(cfg *config.Context) (string, error) {
+	dirs := []string{cfg.AdaptersPath()}
+	if cfg.Root.Kind == config.RootKindChild && cfg.Root.ParentPath != "" {
+		dirs = append(dirs, filepath.Join(cfg.Root.ParentPath, config.ParlayDir, config.AdaptersDir))
 	}
-	sort.Strings(matches)
-	return matches[0]
+	for _, dir := range dirs {
+		matches, err := filepath.Glob(filepath.Join(dir, "*.adapter.yaml"))
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+		names := make([]string, 0, len(matches))
+		for _, m := range matches {
+			names = append(names, strings.TrimSuffix(filepath.Base(m), ".adapter.yaml"))
+		}
+		return "", fmt.Errorf("%s holds %d adapters (%s) and the project pins no .parlay/adapter-set.yaml — "+
+			"declare which adapter fills which target kind rather than leaving the choice to filename order",
+			dir, len(matches), strings.Join(names, ", "))
+	}
+	return "", fmt.Errorf("no adapter found under %s", cfg.AdaptersPath())
 }
+

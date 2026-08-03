@@ -346,7 +346,7 @@ func derivePlanCreates(feature string, components []string, entities []string, a
 
 // adaptersForProject reads .parlay/adapter-set.yaml and loads the adapter
 // file occupying each slot, keyed by kind. It is the multi-target counterpart
-// of firstAdapterFile: instead of grabbing the lexically-first adapter, it
+// of soleAdapterFile: instead of resolving a single adapter, it
 // resolves the right adapter per kind from the pinned topology. Returns an
 // error if the adapter-set is unreadable or any pinned adapter file is
 // missing.
@@ -357,7 +357,12 @@ func adaptersForProject(cfg *config.Context) (map[string]adapterForPlan, *parser
 	}
 	out := map[string]adapterForPlan{}
 	for kind, tgt := range as.Targets {
-		p := filepath.Join(cfg.AdaptersPath(), tgt.Adapter+".adapter.yaml")
+		// Child-first with parent fallback, so a child root inherits the
+		// parent's adapters rather than needing its own copy.
+		p, _ := cfg.ResolveAdapter(tgt.Adapter)
+		if p == "" {
+			return nil, nil, fmt.Errorf("adapter for target %s (%q): not found under this root or its parent", kind, tgt.Adapter)
+		}
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("adapter for target %s (%q): %w", kind, tgt.Adapter, err)
@@ -406,8 +411,8 @@ func derivePlanTargets(feature string, presComponents []string, hasOperations bo
 			// derivePlanCreates with no components emits exactly the model
 			// rows (which collapse to the single shared schema file).
 			out[kind] = derivePlanCreates(feature, nil, entities, ad)
-		default:
-			// transport and any future kinds are out of the vertical slice.
+		case "transport":
+			out[kind] = deriveTransportPlan(feature, hasOperations, ad)
 		}
 	}
 	return out
@@ -440,6 +445,49 @@ func deriveApplicationPlan(feature string, hasOperations bool, ad adapterForPlan
 			continue
 		}
 		out.Creates = append(out.Creates, planEntry{Path: path.Join(fc.SourceRoot, p), Sources: []string{"section/operations"}})
+	}
+	return out
+}
+
+// deriveTransportPlan emits the wire-exposure files a transport adapter
+// produces for a feature that declares operations: the feature's own route
+// table plus the shared spec/router the project exposes.
+//
+// Transport previously had no branch at all — the switch fell through with
+// "out of the vertical slice" — while openapi-rest shipped as a bundled
+// transport adapter and two presets filled the slot. A filled slot that
+// derives nothing is indistinguishable from an unfilled one.
+func deriveTransportPlan(feature string, hasOperations bool, ad adapterForPlan) derivedPlan {
+	var out derivedPlan
+	if !hasOperations {
+		return out
+	}
+	fc := ad.FileConventions
+	for _, t := range []struct{ label, tmpl, source string }{
+		{"feature-routes", fc.Paths.FeatureRoutes, "section/routes"},
+		{"routes", fc.Paths.Routes, "section/routes"},
+	} {
+		if t.tmpl == "" {
+			out.Undecidable = append(out.Undecidable,
+				fmt.Sprintf("no file-conventions.paths.%s template; %s rows must be authored by hand", t.label, t.label))
+			continue
+		}
+		p, err := expandTemplate(t.tmpl, feature, "", "", fc.Naming)
+		if err != nil {
+			out.Undecidable = append(out.Undecidable, err.Error())
+			continue
+		}
+		full := path.Join(fc.SourceRoot, p)
+		dup := false
+		for _, e := range out.Creates {
+			if e.Path == full {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out.Creates = append(out.Creates, planEntry{Path: full, Sources: []string{t.source}})
+		}
 	}
 	return out
 }
@@ -529,9 +577,9 @@ func runScaffoldPlan(cmd *cobra.Command, args []string) error {
 		comps = append(comps, name)
 	}
 
-	adapterPath := firstAdapterFile(cfg.AdaptersPath())
-	if adapterPath == "" {
-		return fmt.Errorf("no adapter found under %s", cfg.AdaptersPath())
+	adapterPath, err := soleAdapterFile(cfg)
+	if err != nil {
+		return err
 	}
 	adData, err := os.ReadFile(adapterPath)
 	if err != nil {

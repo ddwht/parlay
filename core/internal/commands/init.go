@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -145,10 +146,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// prototype-framework is deliberately NOT written. It is deprecated in
+	// favour of .parlay/adapter-set.yaml (removal in v0.3), and writing it here
+	// meant every freshly-initialized project immediately emitted
+	// prototype-framework-deprecated — while `parlay onboard` explicitly
+	// instructs the opposite. The chosen adapter is recorded by the adapter file
+	// copied into .parlay/adapters/ and, when a preset is selected, by
+	// adapter-set.yaml.
 	cfg := &config.ProjectConfig{
-		AIAgent:            agent,
-		SDDFramework:       sdd,
-		PrototypeFramework: fw.Display,
+		AIAgent:      agent,
+		SDDFramework: sdd,
 	}
 
 	// Operation: create-directory ".parlay/"
@@ -323,6 +330,34 @@ func offerPresetSelection(cmd *cobra.Command) error {
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Files written\n  %s — preset %s\n", dest, chosen)
+
+	// Copy every adapter the preset pins. Writing the topology without the
+	// adapters it references produced a project that could not build: each
+	// resolver either errored on the missing file or silently fell back to
+	// whichever adapter happened to exist.
+	var as struct {
+		Targets map[string]struct {
+			Adapter string `yaml:"adapter"`
+		} `yaml:"targets"`
+	}
+	if err := yaml.Unmarshal(content, &as); err != nil {
+		return fmt.Errorf("parse preset %s: %w", chosen, err)
+	}
+	seen := map[string]bool{}
+	var slugs []string
+	for _, t := range as.Targets {
+		if t.Adapter != "" && !seen[t.Adapter] {
+			seen[t.Adapter] = true
+			slugs = append(slugs, t.Adapter)
+		}
+	}
+	sort.Strings(slugs)
+	for _, slug := range slugs {
+		if copyBundledAdapter(slug) == "" {
+			return fmt.Errorf("preset %s pins adapter %q, which could not be installed", chosen, slug)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "  .parlay/adapters/%s.adapter.yaml\n", slug)
+	}
 	return nil
 }
 

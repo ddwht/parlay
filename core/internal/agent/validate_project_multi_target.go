@@ -97,11 +97,14 @@ func ValidateProjectMultiTarget(mode ValidationMode, rootPath string) []Validati
 	// (deepest layer wins), so a step two backend slots both list is not an
 	// error — but a project that fills, say, both a transport and an
 	// application slot deserves to be told which steps have contested ownership
-	// rather than silently tie-broken. Fires for nobody today (the bundled
-	// stacks fill at most one backend slot per step); it is the guard that
-	// makes a future multi-backend project legible. Curating a disjoint
-	// transport/application split is deferred until a real transport project
-	// exists to validate it against.
+	// rather than silently tie-broken. It DOES fire on the shipped
+	// react-nest-prisma / angular-nest-prisma presets, which fill transport and
+	// application simultaneously while openapi-rest and nestjs-application list
+	// the same validate-input/authorize/return-* steps. Ownership still resolves
+	// (deepest layer wins), so this warns rather than blocks; curating a
+	// disjoint transport/application split needs a real transport project to
+	// validate the split against, which is why the warning names the contest
+	// instead of guessing the answer.
 	stepClaims := map[string][]string{}
 	for kind, content := range backendAdapters {
 		var shape struct {
