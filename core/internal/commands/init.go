@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
 	"github.com/ddwht/parlay/core/internal/embedded"
@@ -367,6 +368,18 @@ func copyBundledAdapter(adapterSlug string) string {
 	}
 
 	dstPath := filepath.Join(adaptersDir, adapterSlug+".adapter.yaml")
+	// Validate before installing. init used to write an adapter into a new
+	// project with no validation at all, so a malformed bundled adapter would
+	// only surface later as a confusing build failure in someone else's
+	// project. A bundled adapter failing here is a parlay bug, not a user
+	// error, which is why it refuses to install rather than warning.
+	if errs := agent.ValidateAdapter(agent.ModeBuild, dstPath, data); len(errs) > 0 {
+		for _, e := range errs {
+			if e.Severity == agent.SeverityError {
+				return ""
+			}
+		}
+	}
 	if err := os.WriteFile(dstPath, data, 0644); err != nil {
 		return ""
 	}

@@ -19,99 +19,11 @@ package agent
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/parser"
-	"gopkg.in/yaml.v3"
 )
 
-// deepAdapter is the parsed adapter structure for vocabulary validation.
-// Maps surface vocabulary terms (shows/actions/flows) to framework widgets.
-//
-// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
-//
-// The ComponentVocabulary and Tokens fields are populated when the adapter
-// declares the corresponding optional sections. Layout validation (and,
-// looking forward, page-layout buildfile region validation) consult these
-// to enforce vocabulary and token rules.
-type deepAdapter struct {
-	Shows               map[string]interface{}   `yaml:"shows"`
-	Actions             map[string]interface{}   `yaml:"actions"`
-	Flows               map[string]interface{}   `yaml:"flows"`
-	ComponentVocabulary *deepComponentVocabulary `yaml:"componentVocabulary,omitempty"`
-	Tokens              *deepAdapterTokens       `yaml:"tokens,omitempty"`
-	// Vocabulary is a minimal local mirror of the top-level `vocabulary:`
-	// block — just enough fields for CheckVocabularyBlockParity to compare
-	// against ComponentVocabulary/Tokens. This is deliberately NOT the full
-	// Vocabulary/ComponentSpec/LayoutContainerSpec shape studio/pkg/vocabulary
-	// owns — importing that package from core would cross a module boundary
-	// this consolidation doesn't take on. See vocabulary.schema.md's
-	// "Cross-block parity check" section.
-	Vocabulary *deepVocabularyBlock `yaml:"vocabulary,omitempty"`
-}
-
-// deepComponentVocabulary mirrors the adapter file's componentVocabulary
-// block for validation lookups. Field names match the YAML schema.
-type deepComponentVocabulary struct {
-	Name       string                    `yaml:"name"`
-	Components []deepVocabularyComponent `yaml:"components"`
-}
-
-type deepVocabularyComponent struct {
-	Type            string                   `yaml:"type"`
-	Category        string                   `yaml:"category"`
-	Variants        []string                 `yaml:"variants,omitempty"`
-	Properties      []deepVocabularyProperty `yaml:"properties,omitempty"`
-	AllowedChildren []string                 `yaml:"allowed-children,omitempty"`
-}
-
-type deepVocabularyProperty struct {
-	Name       string   `yaml:"name"`
-	Type       string   `yaml:"type"`
-	EnumValues []string `yaml:"enum-values,omitempty"`
-	ChildTypes []string `yaml:"child-types,omitempty"`
-	Required   bool     `yaml:"required"`
-}
-
-type deepAdapterTokens struct {
-	Modes      []string              `yaml:"modes"`
-	Spacing    []deepSpacingToken    `yaml:"spacing,omitempty"`
-	Color      []deepColorToken      `yaml:"color,omitempty"`
-	Typography []deepTypographyToken `yaml:"typography,omitempty"`
-}
-
-type deepSpacingToken struct {
-	Name     string `yaml:"name"`
-	Order    int    `yaml:"order"`
-	EmitForm string `yaml:"emit-form"`
-}
-
-type deepColorToken struct {
-	Name      string   `yaml:"name"`
-	Tone      string   `yaml:"tone,omitempty"`
-	EmitForms []string `yaml:"emit-forms"`
-}
-
-type deepTypographyToken struct {
-	Name     string `yaml:"name"`
-	UseSite  string `yaml:"use-site"`
-	EmitForm string `yaml:"emit-form"`
-}
-
-// deepVocabularyBlock is a minimal local mirror of the adapter's top-level
-// `vocabulary:` block — see the Vocabulary field comment on deepAdapter for
-// why this isn't studio/pkg/vocabulary.Vocabulary itself. Only the fields
-// CheckVocabularyBlockParity compares are represented.
-type deepVocabularyBlock struct {
-	Components    []deepVocabularyBlockComponent `yaml:"components"`
-	SpacingTokens []string                       `yaml:"spacing_tokens"`
-	ColorTokens   []string                       `yaml:"color_tokens"`
-}
-
-type deepVocabularyBlockComponent struct {
-	Name string `yaml:"name"`
-}
 
 // SupportedLayoutSchemaVersion is the layout schema version this Core
 // build understands. Layouts with a different (non-zero) schema_version
@@ -121,31 +33,6 @@ type deepVocabularyBlockComponent struct {
 //
 // parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
 const SupportedLayoutSchemaVersion = 1
-
-// Adapter is the exported alias for the parsed adapter shape that layout
-// validation and precheck operate against. It is a type alias (not a new
-// type) so any value produced by LoadAdapterFile is directly usable
-// wherever the package already expects *deepAdapter, and so callers
-// outside this package (CLI wiring, view-page, lock-page) can hold and
-// pass one without needing an unexported type.
-type Adapter = deepAdapter
-
-// LoadAdapterFile reads and parses an adapter YAML file for callers
-// outside this package that need to run layout validation or precheck —
-// e.g. the CLI wiring in commands/validate.go and the view-page/lock-page
-// precheck gate. Mirrors the read+unmarshal shape validateAdapterVocabulary
-// already uses internally for buildfile-deep validation.
-func LoadAdapterFile(path string) (*Adapter, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read adapter file %s: %w", path, err)
-	}
-	var a deepAdapter
-	if err := yaml.Unmarshal(data, &a); err != nil {
-		return nil, fmt.Errorf("parse adapter file %s: %w", path, err)
-	}
-	return &a, nil
-}
 
 // Verdict is the closed-shape result of a single LayoutPrecheck call.
 // On success, Code is "ok" and ALL OTHER FIELDS ARE EMPTY. On failure,

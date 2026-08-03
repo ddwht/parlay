@@ -551,7 +551,7 @@ func spansMultipleFeatures(values map[string][]recordSite) bool {
 // notes.
 //
 // Absence is not an error — adapter.schema.md says so outright, and five of
-// the seven bundled adapters declare no paths block at all. What absence
+// the seven bundled adapters declare no paths.store template. What absence
 // means here is narrower and worth stating: the project has no mechanism to
 // carry domain state across a feature boundary, so a cross-feature assertion
 // is unsatisfiable for a reason nobody can fix by writing better code.

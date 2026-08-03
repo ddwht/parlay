@@ -1,6 +1,7 @@
 name: angular-material
 framework: "Angular + Material"
 version: "1.0"
+kind: presentation
 
 shows:
   data-value:

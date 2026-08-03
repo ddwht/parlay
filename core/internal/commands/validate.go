@@ -9,7 +9,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"path/filepath"
@@ -198,11 +197,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// warning — was therefore unenforceable.
 		validator = validateTestcasesAdapter
 	case "adapter":
-		// Adapter files had no validate type at all before Section 10's
-		// toolchain block. A validator nobody can call is the pattern this
-		// consolidation found five separate instances of, so the type and
-		// the rules land together.
-		validator = validateAdapterFile
+		// The complete adapter validator — every section of adapter.schema.md,
+		// kind-conditional. This used to check ONLY the toolchain block, which
+		// meant an adapter with no name, no kind, no shows and no
+		// file-conventions reported OK: the false green that made
+		// agent-authored adapters converge on something broken.
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateAdapter)
 	case "capabilities":
 		// The entity cross-reference needs the resolved root's domain model, so
 		// the entity names are gathered here and closed over. Resolution failure
@@ -732,37 +732,6 @@ func outputValidate(cmd *cobra.Command, path string, errors []agent.ValidationEr
 		}
 	}
 	return NewExitCodeError(1)
-}
-
-// validateAdapterFile checks an adapter file's toolchain block against
-// adapter.schema.md Section 10. The rest of the adapter is validated at
-// registration; this is the part that publishes a contract to third parties
-// and therefore has to be enforced rather than described.
-func validateAdapterFile(path string, content []byte) error {
-	var doc struct {
-		FileConventions struct {
-			SourceRoot string `yaml:"source-root"`
-		} `yaml:"file-conventions"`
-		Toolchain *agent.Toolchain `yaml:"toolchain"`
-	}
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return fmt.Errorf("adapter YAML parse error: %w", err)
-	}
-	var msgs []string
-	for _, e := range agent.ValidateToolchain(doc.Toolchain, doc.FileConventions.SourceRoot) {
-		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Code, e.Message))
-	}
-
-	// The cross-block parity check used to run here. It compared
-	// componentVocabulary:/tokens: against the adapter's vocabulary: block, and
-	// it went with that block: with only one structured vocabulary left there is
-	// no second side to drift from, so the check could only ever return "either
-	// block absent, nothing to compare".
-
-	if len(msgs) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
 }
 
 // validateInfrastructureDeepAdapter bridges ValidateInfrastructureDeep's

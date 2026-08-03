@@ -252,7 +252,7 @@ func TestStoreRowIsDerivedFromTheDeclaredTemplate(t *testing.T) {
 	}
 }
 
-// Five of the seven bundled adapters declare no paths block at all, and most
+// Five of the seven bundled adapters declare no paths.store template, and most
 // frameworks have no shared runtime to hold state between two user actions.
 // Deriving a store for them would be parlay asserting framework knowledge
 // that adapters exist to hold — so absence produces no row and no complaint.

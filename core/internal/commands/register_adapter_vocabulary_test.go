@@ -11,14 +11,57 @@ package commands
 // per-mode-emit-form coverage rule, and the per-process parse cache.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ddwht/parlay/core/internal/agent"
 )
 
+// completeVocabularyYAML emits shows/actions/flows covering the full surface
+// vocabulary, generated from the closed sets themselves so it can never drift
+// from what the validator requires.
+func completeVocabularyYAML() string {
+	var b strings.Builder
+	for _, sec := range []struct {
+		name  string
+		vocab map[string]bool
+	}{{"shows", agent.ClosedSetShows}, {"actions", agent.ClosedSetActions}, {"flows", agent.ClosedSetFlows}} {
+		var terms []string
+		for t := range sec.vocab {
+			terms = append(terms, t)
+		}
+		sort.Strings(terms)
+		fmt.Fprintf(&b, "%s:\n", sec.name)
+		for _, t := range terms {
+			fmt.Fprintf(&b, "  %s:\n    widget: Placeholder\n", t)
+		}
+	}
+	return b.String()
+}
+
+const completeFileConventionsYAML = `file-conventions:
+  source-root: cmd/
+  component-pattern: one-file-per-component
+  naming: kebab-case
+  entry-point: main.go
+`
+
+// writeAdapter completes the fixture into a valid presentation adapter before
+// writing it. These fixtures exercise the componentVocabulary and tokens
+// sections; they carried empty `shows: {}` stubs and a source-root-only
+// file-conventions, which only ever validated because adapter validation was
+// incomplete. Completing them here keeps each fixture focused on the section
+// under test without asserting a shape the validator rejects.
 func writeAdapter(t *testing.T, body string) string {
 	t.Helper()
+	body = strings.Replace(body, "shows: {}\nactions: {}\nflows: {}\n", completeVocabularyYAML(), 1)
+	body = strings.Replace(body, "file-conventions:\n  source-root: cmd/\n", completeFileConventionsYAML, 1)
+	body = strings.Replace(body, "file-conventions: {source-root: cmd/}\n", completeFileConventionsYAML, 1)
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "adapter.yaml")
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
@@ -124,7 +167,7 @@ componentVocabulary:
 	if err == nil {
 		t.Fatalf("expected bare vocabulary name to fail parse")
 	}
-	if !strings.Contains(err.Error(), "vocabulary name must include @<version>") {
+	if !strings.Contains(err.Error(), "adapter-component-vocabulary-invalid") || !strings.Contains(err.Error(), "@<version>") {
 		t.Fatalf("expected error about vocabulary name versioning; got %v", err)
 	}
 }
@@ -153,7 +196,7 @@ componentVocabulary:
 	if err == nil {
 		t.Fatalf("expected property type `object` to fail")
 	}
-	if !strings.Contains(err.Error(), "type `object` is not allowed") {
+	if !strings.Contains(err.Error(), "adapter-component-vocabulary-invalid") || !strings.Contains(err.Error(), `"object"`) {
 		t.Fatalf("expected closed-set error; got %v", err)
 	}
 }
@@ -183,7 +226,7 @@ componentVocabulary:
 	if err == nil {
 		t.Fatalf("expected universal-field redeclaration to fail parse")
 	}
-	if !strings.Contains(err.Error(), "universal container fields") {
+	if !strings.Contains(err.Error(), "adapter-component-vocabulary-invalid") || !strings.Contains(err.Error(), "universal container field") {
 		t.Fatalf("expected universal-field error; got %v", err)
 	}
 }
@@ -205,7 +248,7 @@ tokens:
 	if err == nil {
 		t.Fatalf("expected empty mode list to fail parse")
 	}
-	if !strings.Contains(err.Error(), "at least one mode") {
+	if !strings.Contains(err.Error(), "adapter-tokens-invalid") || !strings.Contains(err.Error(), "modes") {
 		t.Fatalf("expected at-least-one-mode error; got %v", err)
 	}
 }

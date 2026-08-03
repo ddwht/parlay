@@ -1,6 +1,7 @@
 name: go-cli
 framework: "Go CLI"
 version: "2.0"
+kind: presentation
 
 shows:
   data-value:

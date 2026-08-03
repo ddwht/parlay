@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -92,53 +93,10 @@ type adapterTypographyToken struct {
 	EmitForm string `yaml:"emit-form"`
 }
 
-// closedPropertyTypes is the closed type set for componentVocabulary property
-// declarations. Anything outside this set fails parse.
-var closedPropertyTypes = map[string]bool{
-	"string":          true,
-	"token-reference": true,
-	"enum":            true,
-	"boolean":         true,
-	"int":             true,
-	"child-list":      true,
-}
 
-// closedComponentCategories is the closed category set for componentVocabulary
-// components.
-var closedComponentCategories = map[string]bool{
-	"container":  true,
-	"leaf":       true,
-	"data-shape": true,
-}
 
-// closedColorTones is the closed tone set for color tokens. Shared with the
-// domain model's enum-tone metadata.
-var closedColorTones = map[string]bool{
-	"":        true, // tone is optional
-	"neutral": true,
-	"info":    true,
-	"warning": true,
-	"danger":  true,
-	"success": true,
-}
 
-// closedTypographyUseSites is the closed use-site set for typography tokens.
-var closedTypographyUseSites = map[string]bool{
-	"heading-page":    true,
-	"heading-section": true,
-	"body":            true,
-	"caption":         true,
-}
 
-// universalContainerFields is the fixed set of fields owned by the layout
-// schema. Adapters MUST NOT re-declare these inside componentVocabulary
-// component entries.
-var universalContainerFields = map[string]bool{
-	"direction": true,
-	"gap":       true,
-	"padding":   true,
-	"alignment": true,
-}
 
 // adapterCache is a per-process cache of parsed adapter files keyed by
 // absolute path. It exists so that subsequent commands within a single CLI
@@ -180,7 +138,7 @@ func parseAdapterFileCached(path string) (*adapterFile, error) {
 	if err := yaml.Unmarshal(data, &adapter); err != nil {
 		return nil, fmt.Errorf("parse adapter: %w", err)
 	}
-	if err := validateAdapterDeclarations(&adapter); err != nil {
+	if err := validateAdapterDeclarations(abs, data); err != nil {
 		return nil, err
 	}
 
@@ -209,103 +167,31 @@ func adapterCacheResetForTest() {
 	adapterCacheParseCount = 0
 }
 
-// validateAdapterDeclarations runs the registration-time validation passes
-// for the optional componentVocabulary and tokens sections. Returns the
-// first error encountered; callers surface this to the user.
-func validateAdapterDeclarations(adapter *adapterFile) error {
-	if adapter.Name == "" {
-		return fmt.Errorf("adapter file missing 'name' field")
-	}
-
-	if adapter.ComponentVocabulary != nil {
-		if err := validateComponentVocabulary(adapter.ComponentVocabulary); err != nil {
-			return err
+// validateAdapterDeclarations runs the complete adapter validation
+// (agent.ValidateAdapter — every section of adapter.schema.md, kind-conditional)
+// at registration time.
+//
+// It used to check only `name` plus the optional componentVocabulary and tokens
+// blocks, and returned on the FIRST error. Since no bundled adapter declares
+// either optional block, registration effectively validated nothing but a
+// non-empty name — a backend adapter with a malformed `supports:` or a
+// presentation adapter missing half its widget vocabulary registered cleanly.
+// Reporting every finding at once matters here: an author (human or agent)
+// otherwise needs one round-trip per defect.
+func validateAdapterDeclarations(path string, content []byte) error {
+	var msgs []string
+	for _, o := range agent.ValidateAdapter(agent.ModeBuild, path, content) {
+		if o.Severity == agent.SeverityError {
+			msgs = append(msgs, fmt.Sprintf("  [%s] %s", o.Code, o.Message))
 		}
 	}
-
-	if adapter.Tokens != nil {
-		if err := validateAdapterTokens(adapter.Tokens); err != nil {
-			return err
-		}
+	if len(msgs) == 0 {
+		return nil
 	}
-
-	return nil
+	return fmt.Errorf("adapter failed validation:\n%s", strings.Join(msgs, "\n"))
 }
 
-func validateComponentVocabulary(v *adapterComponentVocabulary) error {
-	// Vocabulary name must include @<version>. Bare names are rejected.
-	if v.Name == "" {
-		return fmt.Errorf("componentVocabulary: vocabulary name must include @<version> (e.g., clarity@17); got empty name")
-	}
-	if !strings.Contains(v.Name, "@") {
-		return fmt.Errorf("componentVocabulary: vocabulary name must include @<version> (e.g., clarity@17); got %q", v.Name)
-	}
 
-	for _, comp := range v.Components {
-		if comp.Type == "" {
-			return fmt.Errorf("componentVocabulary: component is missing required 'type' field")
-		}
-		if comp.Category != "" && !closedComponentCategories[comp.Category] {
-			return fmt.Errorf("componentVocabulary: component %q has category %q outside the closed set {container, leaf, data-shape}", comp.Type, comp.Category)
-		}
-		// Property type closed-set + universal-field redeclaration check.
-		for _, prop := range comp.Properties {
-			if universalContainerFields[prop.Name] {
-				return fmt.Errorf("componentVocabulary: component %q re-declares universal container field %q — universal container fields {direction, gap, padding, alignment} live in the layout schema and MUST NOT appear inside componentVocabulary entries", comp.Type, prop.Name)
-			}
-			if prop.Type == "" {
-				return fmt.Errorf("componentVocabulary: component %q property %q is missing required 'type' field", comp.Type, prop.Name)
-			}
-			if !closedPropertyTypes[prop.Type] {
-				return fmt.Errorf("componentVocabulary: component %q property %q declares type `%s` is not allowed — must be one of {string, token-reference, enum, boolean, int, child-list}", comp.Type, prop.Name, prop.Type)
-			}
-		}
-	}
-	return nil
-}
-
-func validateAdapterTokens(t *adapterTokens) error {
-	// Every adapter declaring tokens: must declare at least one mode.
-	if len(t.Modes) == 0 {
-		return fmt.Errorf("tokens: adapter must declare at least one mode (typically `modes: [light]`); got empty mode list")
-	}
-	declaredModes := map[string]bool{}
-	for _, m := range t.Modes {
-		if strings.TrimSpace(m) == "" {
-			return fmt.Errorf("tokens: mode entry must be a non-empty string")
-		}
-		declaredModes[m] = true
-	}
-
-	// Color tokens: every declared mode must be covered by an emit-form.
-	for _, c := range t.Color {
-		if !closedColorTones[c.Tone] {
-			return fmt.Errorf("tokens.color: token %q has tone %q outside the closed set {neutral, info, warning, danger, success}", c.Name, c.Tone)
-		}
-		seenModes := map[string]bool{}
-		for _, ef := range c.EmitForms {
-			// emit-forms entries are of the form "mode:<value>".
-			parts := strings.SplitN(ef, ":", 2)
-			if len(parts) > 0 && parts[0] != "" {
-				seenModes[parts[0]] = true
-			}
-		}
-		for m := range declaredModes {
-			if !seenModes[m] {
-				return fmt.Errorf("tokens.color: token %q is missing an emit-form for declared mode %q", c.Name, m)
-			}
-		}
-	}
-
-	// Typography tokens: use-site must be in the closed set.
-	for _, ty := range t.Typography {
-		if !closedTypographyUseSites[ty.UseSite] {
-			return fmt.Errorf("tokens.typography: token %q has use-site %q outside the closed set {heading-page, heading-section, body, caption}", ty.Name, ty.UseSite)
-		}
-	}
-
-	return nil
-}
 
 func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	cfg, err := mustContext(cmd)

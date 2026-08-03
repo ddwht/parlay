@@ -1,6 +1,7 @@
 name: react-antd
 framework: "React + Ant Design"
 version: "1.0"
+kind: presentation
 
 shows:
   data-value:
@@ -343,6 +344,21 @@ file-conventions:
   component-pattern: feature-modules
   naming: PascalCase
   entry-point: "src/App.tsx"
+  # paths: is what makes plan: derivable — scaffold-plan expands these into
+  # plan.creates rows. Without them this adapter derived nothing at all, which
+  # left the react-nest-prisma preset's UI target with an empty plan. All
+  # templates are relative to source-root above.
+  paths:
+    component: "features/{feature}/{Name}.tsx"
+    test: "features/{feature}/{Name}.test.tsx"
+    model: "types/{entity}.ts"
+    service: "features/{feature}/{feature}.service.ts"
+    types: "features/{feature}/{feature}.types.ts"
+    feature-routes: "features/{feature}/{feature}.routes.tsx"
+    routes: "routes.tsx"
+  # packages: is the shared-code directory map — where reusable code lives, as
+  # opposed to per-artifact templates above. `parlay simplify` resolves an
+  # extracted helper's destination from it.
   packages:
     components: "src/components/"
     features: "src/features/"
