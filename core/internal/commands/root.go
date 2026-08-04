@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
+	"github.com/ddwht/parlay/core/internal/feedback"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // annotationSkipResolution is the cobra.Command.Annotations key used to
@@ -77,7 +80,81 @@ func SetVersion(version, commit string) {
 }
 
 func Execute() error {
-	return rootCmd.Execute()
+	started := time.Now()
+	err := rootCmd.Execute()
+
+	// Bracketing the whole invocation here rather than in a
+	// PersistentPostRun: a command that fails in PreRun never reaches
+	// PostRun, and a run that could not resolve its root is exactly the
+	// kind of failure this log exists to capture.
+	if feedback.IsEnabled() {
+		feedback.Record(feedback.KindInvocation, invokedCommandPath(), map[string]any{
+			"args":        os.Args[1:],
+			"exit":        invocationExitCode(err),
+			"duration_ms": time.Since(started).Milliseconds(),
+			"error":       errorText(err),
+		})
+		feedback.Stop()
+	}
+	return err
+}
+
+// startFeedback opens the log when the project or the environment asks for
+// it. Never fails a command: a project that cannot write its log still runs.
+func startFeedback(rootPath string) {
+	cfg, err := loadProjectConfigForFeedback(rootPath)
+	configValue := false
+	if err == nil && cfg != nil {
+		configValue = cfg.Feedback
+	}
+	feedback.Start(rootPath, feedback.Enabled(configValue, os.Getenv), os.Getenv(feedback.RunEnvVar))
+}
+
+func loadProjectConfigForFeedback(rootPath string) (*config.ProjectConfig, error) {
+	data, err := os.ReadFile(filepath.Join(rootPath, config.ParlayDir, config.ConfigFile))
+	if err != nil {
+		return nil, err
+	}
+	var cfg config.ProjectConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// invokedCommandPath is the command actually run ("validate", "internal
+// diff"), recovered from the arguments rather than from cobra, which has
+// already returned by the time Execute records.
+func invokedCommandPath() string {
+	var parts []string
+	for _, a := range os.Args[1:] {
+		if strings.HasPrefix(a, "-") {
+			break
+		}
+		parts = append(parts, a)
+		if len(parts) == 2 {
+			break
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func invocationExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *ExitCodeError
+	if errors.As(err, &exitErr) {
+		return exitErr.Code
+	}
+	return 1
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // persistentPreRun runs before every subcommand's RunE. It resolves the
@@ -398,6 +475,12 @@ func finishResolution(cmd *cobra.Command, res *config.ResolutionResult, idx *con
 		fmt.Fprintf(cmd.ErrOrStderr(), "resolved root: %s (source: %s)\n",
 			res.ActiveRoot.Path, res.Source)
 	}
+
+	// Feedback mode, opened as early as the root is known and closed by
+	// Execute. Reading the config here rather than in Start keeps the
+	// feedback package free of any dependency on config, which is what
+	// lets the agent-facing record command reuse it unchanged.
+	startFeedback(res.ActiveRoot.Path)
 
 	// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
 	// Use the studio-detection-aware constructor so every command

@@ -30,6 +30,14 @@ type ProjectConfig struct {
 	//
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 	NoStudio bool `yaml:"no_studio,omitempty"`
+
+	// Feedback mirrors the parlay.feedback key in .parlay/config.yaml:
+	// when true, every invocation appends a structured record of what it
+	// did to .parlay/feedback/<date>.jsonl. Off by default, local-only,
+	// and overridable per-run in both directions by PARLAY_FEEDBACK.
+	//
+	// parlay-feature: parlay-tool/feedback-mode
+	Feedback bool `yaml:"feedback,omitempty"`
 }
 
 const (

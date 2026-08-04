@@ -17,6 +17,8 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 
 <!-- parlay:expand-decision-protocol -->
 
+<!-- parlay:expand-feedback -->
+
 ## Steps
 
 1. **Read feature files**:

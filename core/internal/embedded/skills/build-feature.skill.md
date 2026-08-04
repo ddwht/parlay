@@ -27,6 +27,8 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
 
 <!-- parlay:expand-decision-protocol -->
 
+<!-- parlay:expand-feedback -->
+
 ## Steps
 
 1. **Load schemas** — Read these files before generating:

@@ -111,6 +111,30 @@ const activeRootExpansion = "## Active root\n\n" +
 // of the four co-equal spec artifacts. Skills that need to name the set
 // drop this marker in rather than re-deriving the definition in their
 // own words each time they mention it.
+// feedbackMarker expands to the agent's half of the feedback contract.
+//
+// One source for the same reason the decision protocol has one: the event
+// kinds and the flag shape are a wire format the log reader matches on, and
+// a hand-copied version of it in each skill would drift into several
+// dialects of the same record.
+const feedbackMarker = "<!-- parlay:expand-feedback -->"
+
+const feedbackExpansion = "## Recording what happened (feedback mode)\n\n" +
+	"When feedback mode is on, this project keeps a local record of what actually happened during a run, so the toolkit can be improved from evidence rather than from recollection. It is **off by default**; when it is off every command below is a silent no-op, so you may call them unconditionally and must not branch on whether it is enabled.\n\n" +
+	"The CLI already records its own half — every invocation, its exit code, its duration, and every diagnostic any validator produced. **Do not re-report those.** Record only what the CLI cannot see, which is what you did and why:\n\n" +
+	"```\n" +
+	"parlay internal feedback-record --kind <kind> --skill <this-skill> --data key=value\n" +
+	"```\n\n" +
+	"| Kind | Record when |\n" +
+	"|---|---|\n" +
+	"| `phase` | You enter or leave a pipeline phase. `--data phase=build --data at=start`. |\n" +
+	"| `decision` | You raised a `parlay-decision` block, and again when it resolves. Include `kind=`, and on resolution the chosen `option=`. The CLI never sees these. |\n" +
+	"| `retry` | **The important one.** You re-attempted something after a rejection: authored a shape, had it refused, and tried a different one. Include `after=<the error code>` and `changed=<what you did differently>`. |\n" +
+	"| `improvised` | You proceeded without a rule you needed — invented a path, guessed a convention, weakened an assertion you could not satisfy. Include `needed=<what was missing>`. |\n" +
+	"| `note` | Anything else worth a future reader knowing. Use sparingly; a log full of notes means a kind is missing. |\n\n" +
+	"**`retry` and `improvised` are the two the log exists for.** A validator that teaches by rejection looks exactly like one that teaches by documentation unless the retries are counted, and an agent that guessed a convention leaves no other trace at all — the run passes, and the guess is discovered later as an inconsistency nobody can date. Recording them is not an admission of failure; it is the only way the gap that forced them gets closed.\n\n" +
+	"**Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. That is what lets a retry be tied to the diagnostic that caused it. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for."
+
 const coEqualArtifactsMarker = "<!-- parlay:expand-co-equal-artifacts -->"
 
 const coEqualArtifactsExpansion = "the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another"
@@ -125,6 +149,7 @@ func expandMarkers(content []byte) []byte {
 	content = bytes.ReplaceAll(content, []byte(activeRootMarker), []byte(activeRootExpansion))
 	content = bytes.ReplaceAll(content, []byte(decisionProtocolMarker), []byte(decisionProtocolExpansion))
 	content = bytes.ReplaceAll(content, []byte(coEqualArtifactsMarker), []byte(coEqualArtifactsExpansion))
+	content = bytes.ReplaceAll(content, []byte(feedbackMarker), []byte(feedbackExpansion))
 	return content
 }
 

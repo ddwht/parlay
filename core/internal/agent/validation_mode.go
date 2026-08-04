@@ -9,6 +9,8 @@
 
 package agent
 
+import "github.com/ddwht/parlay/core/internal/feedback"
+
 // ValidationMode is the closed enum {authoring, build}.
 type ValidationMode string
 
@@ -197,10 +199,21 @@ func RuleSeverity(code string, mode ValidationMode) Severity {
 // NewOutcome builds a ValidationOutcome with severity resolved from the rule
 // table for the given mode.
 func NewOutcome(mode ValidationMode, code, message string) ValidationOutcome {
-	return ValidationOutcome{
+	out := ValidationOutcome{
 		Mode:     mode,
 		Code:     code,
 		Severity: RuleSeverity(code, mode),
 		Message:  message,
 	}
+	// Recorded at construction rather than at each emit site, which is a
+	// deliberate trade. Construction is one place and cannot be forgotten
+	// when a validator is added; the emit sites are a dozen and adding the
+	// thirteenth without instrumenting it is exactly how coverage rots.
+	//
+	// The cost is that this records outcomes PRODUCED, not outcomes
+	// surfaced — a warning that a caller filters out still appears here.
+	// That is the honest word for it, and for the question the log is read
+	// to answer ("which rules actually fire") it is also the better one.
+	feedback.Diagnostic(string(mode), code, message)
+	return out
 }

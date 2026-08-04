@@ -77,6 +77,8 @@ Concretely:
 
 <!-- parlay:expand-decision-protocol -->
 
+<!-- parlay:expand-feedback -->
+
 ## Steps
 
 1. **Load schemas** — Read these before generating:

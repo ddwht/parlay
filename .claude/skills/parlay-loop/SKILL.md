@@ -13,6 +13,18 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
 - `--non-interactive` (optional): Run unattended — take the declared default on advancement decisions, and abort on decisions that have no safe default. See **Non-interactive mode**. Interactive is the default; the flag never makes a run quieter than this, only less attended.
 
+## Correlating the run (feedback mode)
+
+Before the first phase, mint one correlation id and export it for the whole run:
+
+```
+export PARLAY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-{feature}"
+```
+
+Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally: when feedback mode is off the variable is simply unread, and a driver that sets it only when enabled has to check, which is one more thing to get wrong.
+
+You are the only participant that can do this. A pipeline run is the unit worth correlating — one feature, one loop, a dozen CLI calls — and nothing downstream knows where it started.
+
 ## Subcommands
 
 The pipeline is the default. Four operations sit alongside it rather than inside it — they are short, they need the user, and none of them belongs at a phase boundary. The driver runs them in its own context:
