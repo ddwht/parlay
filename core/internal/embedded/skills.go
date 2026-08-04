@@ -74,7 +74,7 @@ const decisionProtocolExpansion = "## Asking the user\n\n" +
 	"This skill runs as a **phase module** — normally inside a parlay-loop subagent, where no interactive tool exists. A question asked there is written into a transcript nobody reads, and you then answer it yourself; that is not a confirmation, it is a decision made on the user's behalf. So do not prompt. **Stop and return a decision request** as your final output. The driver prompts and resumes you with the chosen `id`, with your context intact, so you continue exactly where you stopped.\n\n" +
 	"````\n" +
 	"```yaml parlay-decision\n" +
-	"kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity\n" +
+	"kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity | impasse\n" +
 	"phase: <the phase you are in>\n" +
 	"question: \"<the one question, in the user's terms>\"\n" +
 	"context: |\n" +
@@ -89,11 +89,14 @@ const decisionProtocolExpansion = "## Asking the user\n\n" +
 	"````\n\n" +
 	"**The `default:` field.** It names the one option id a driver running `--non-interactive` may take without asking. It exists so an unattended run has a defined answer rather than an inferred one, and it must be an id from your own `options:` list.\n\n" +
 	"Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.\n\n" +
-	"The other three kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:\n\n" +
+	"The other four kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:\n\n" +
 	"- `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.\n" +
 	"- `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.\n" +
-	"- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.\n\n" +
-	"So: when you raise one of those three, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.\n\n" +
+	"- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.\n" +
+	"- `impasse` — the pipeline cannot express what the spec asks for, and the offered way forward hands the work to a person permanently. Accepting that is a scope reduction nobody can consent to on the user's behalf.\n\n" +
+	"So: when you raise one of those four, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.\n\n" +
+
+	"**`impasse` vs `ambiguity`.** An ambiguity has two readings and you cannot pick between them; an impasse has none — the pipeline has no way to express what the spec asks for, whichever reading you take. They are separate kinds because their resolutions differ in kind: an ambiguity is settled by the user choosing a reading, an impasse by the user agreeing that this part of the system will be written by hand, declared as a unit, and never generated. Filing an impasse as an ambiguity offers the user a choice between readings that all fail.\n\n" +
 	"Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.\n\n" +
 	"Two things not to do: never narrow the options to spare the user a question, and never resolve an ambiguity by taking the reading that is cheapest to implement. Both turn a decision the user should own into one you made quietly."
 

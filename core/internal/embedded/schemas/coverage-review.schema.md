@@ -34,7 +34,7 @@ exemptions:
 | `buildfile_hash` | Yes | SHA-256 hash over the canonical-form serialization of `buildfile.yaml`. |
 | `testcases_hash` | Yes | SHA-256 hash over the canonical-form serialization of `testcases.yaml`. |
 | `approved_suites` | Yes | List of suite ids the reviewer has approved. Every required suite must appear or be exempted. |
-| `exemptions` | No | List of `{ suite, item, reason }` entries documenting why a required term has no covering case. |
+| `exemptions` | No | List of `{ suite, item, reason }` entries documenting why a required term has no covering case. `item` is the **covered term** — an operation id, an error code, whatever `source_refs:` names — never the suite id. The gate keys on the term, so a suite-keyed entry can never discharge anything. |
 
 ## Versioning
 
@@ -56,6 +56,12 @@ Hashes are computed over a canonical-form serialization (sorted map keys, normal
 | `coverage-review-uncovered` | A canonical-form-required term (declared error, declared operation) lacks both a covering testcase and an explicit exemption. |
 
 The review is recorded by `parlay review-coverage <feature>`.
+
+## Recording exemptions
+
+Interactively, declining a suite prompts for a reason and records one exemption **per term that suite covered** (its `source_refs:`), because that is what the gate consults. A legacy v1 suite carries no `source_refs:` and falls back to being keyed on its own name — the only term available.
+
+Non-interactively, `--exempt <suite>:<item>=<reason>` pre-records one, and is repeatable. A suite whose every covered term is exempted this way is not prompted for; a suite with only *some* terms exempted still is, since the rest remain undecided. Parsing splits on the first `=` and the first `:` before it, so a reason may contain either character — `report-suite:@f/operation:submit=covered by the engine: see ADR-4` records the item as `@f/operation:submit` and keeps the reason whole.
 
 ## Backward compatibility
 

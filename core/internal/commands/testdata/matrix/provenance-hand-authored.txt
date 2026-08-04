@@ -1,6 +1,5 @@
-# fixture: provenance-undeclared
-# property: snapshot with a version but no per-file provenance — control for the above
-# removes the input of: verify-generated, verify-generated --strict
+# fixture: provenance-hand-authored
+# property: hand-edited file a unit declares — change is reported, never graded
 
 === check-composition
 verdict: satisfied
@@ -58,35 +57,36 @@ exit: 0
 }
 
 === verify-generated
-verdict: indeterminate
+verdict: satisfied
 exit: 0
 {
   "feature": "expense-list",
   "has_hashes": true,
   "schema_version": 2,
-  "unknown": [
+  "hand_authored": [
     {
       "path": "<project>/src/list.go",
-      "component": "list-comp"
+      "component": "list-comp",
+      "changed": true
     }
   ]
 }
 
 === verify-generated --strict
-verdict: indeterminate
-exit: 1
+verdict: satisfied
+exit: 0
 {
   "feature": "expense-list",
   "has_hashes": true,
   "schema_version": 2,
-  "unknown": [
+  "hand_authored": [
     {
       "path": "<project>/src/list.go",
-      "component": "list-comp"
+      "component": "list-comp",
+      "changed": true
     }
   ]
 }
---strict: 0 adopted, 1 of unknown provenance, 0 differing from the last recorded emission
 
 === check-coverage
 verdict: satisfied

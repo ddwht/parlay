@@ -314,3 +314,32 @@ func TestComputeFeaturePhase_EmptySlug(t *testing.T) {
 		t.Fatalf("empty slug: want %q, got %q", PhaseIntents, got)
 	}
 }
+
+// A unit is not on the ladder at all. It has intents.md and nothing else
+// the phases measure, so walking the rungs pins it at "intents" forever
+// and reports a permanent non-problem.
+func TestComputeFeaturePhase_HandAuthoredUnitIsOffTheLadder(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeIntents(t, root, "geometry-engine")
+	if err := os.WriteFile(filepath.Join(dir, config.AuthoredFile),
+		[]byte("schema_version: 1\nunit: geometry-engine\nsummary: s\nsources: [\"src/**\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "geometry-engine"); got != PhaseHandAuthored {
+		t.Errorf("want %q, got %q", PhaseHandAuthored, got)
+	}
+}
+
+// And the declaration is what decides — the same directory without it is
+// an ordinary feature sitting at the first rung.
+func TestComputeFeaturePhase_WithoutDeclarationIsAnOrdinaryFeature(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	writeIntents(t, root, "geometry-engine")
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "geometry-engine"); got != PhaseIntents {
+		t.Errorf("want %q, got %q", PhaseIntents, got)
+	}
+}

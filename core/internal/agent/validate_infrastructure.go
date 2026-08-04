@@ -154,6 +154,22 @@ func lintPortability(fragments []parser.InfraFragment) []PortabilityWarning {
 	var warnings []PortabilityWarning
 
 	for _, frag := range fragments {
+		// A fragment that has justified its specificity is not linted.
+		//
+		// The lint warns rather than forbids because specificity is
+		// sometimes correct — "no package outside internal/sdk may import
+		// the upstream SDK" is not improvable by being made vaguer. Once
+		// refinements promote into this file that case stops being rare,
+		// and a warning that fires forever on every promoted fragment is
+		// worse than none: people learn to scroll past the category, and
+		// the accidental specificity the lint exists to catch scrolls past
+		// with it.
+		//
+		// The justification must be non-empty. A bare marker would be a
+		// mute switch; a justification is a claim a reviewer can dispute.
+		if strings.TrimSpace(frag.DeliberatelySpecific) != "" {
+			continue
+		}
 		warnings = append(warnings, lintField(frag.Name, "Affects", frag.Affects)...)
 		warnings = append(warnings, lintField(frag.Name, "Behavior", frag.Behavior)...)
 	}

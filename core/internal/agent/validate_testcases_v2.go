@@ -146,7 +146,13 @@ type testcasesV2Shape struct {
 }
 
 type suiteV2Shape struct {
-	Name       string                 `yaml:"name"`
+	Name string `yaml:"name"`
+	// File is where this suite's generated code goes — the plan row
+	// scaffold-plan derived from file-conventions.paths.test. Optional on
+	// read so every testcases.yaml written before the field existed keeps
+	// loading; required on generate, which is the build phase's job to
+	// satisfy and generate-code's to refuse without.
+	File       string                 `yaml:"file,omitempty"`
 	Kind       string                 `yaml:"kind,omitempty"` // v2 only
 	Component  string                 `yaml:"component,omitempty"`
 	Operation  string                 `yaml:"operation,omitempty"` // v2 operation suites
@@ -202,6 +208,20 @@ func ValidateTestcasesV2(mode ValidationMode, path string, content []byte, canon
 		if len(suite.SourceRefs) == 0 {
 			outcomes = append(outcomes, NewOutcome(mode, "testcases-source-refs-missing",
 				fmt.Sprintf("%s: v2 suite %q declares no source_refs (every v2 suite must cite at least one)", path, suite.Name)))
+		}
+
+		// And a v2 suite must say where its code goes. Checked on v2 only:
+		// every legacy v1 suite predates the field, and erroring on those
+		// would fail every project that has not rebuilt yet over a fact
+		// they could not have recorded.
+		//
+		// Warning rather than error while the field lands, for the reason
+		// buildfile.schema.md gives about `models:` — every testcases.yaml
+		// in existence was written without it, so erroring would fail them
+		// all at once. The severity states the direction of travel.
+		if strings.TrimSpace(suite.File) == "" {
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-file-missing",
+				fmt.Sprintf("%s: v2 suite %q declares no file: — generate-code would have to invent a path, which is how two components' tests end up in two places; rebuild with `parlay build-feature` to populate it from the plan", path, suite.Name)))
 		}
 
 		if SuiteKind(kind) == SuiteKindOperation {

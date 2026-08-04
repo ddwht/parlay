@@ -313,3 +313,48 @@ operations:
 		t.Fatalf("an empty output shape was cross-referenced; got %+v", outcomes)
 	}
 }
+
+// source: is what the reverse traceability walk routes on. Without it,
+// "which artifact owns this change" can only be answered by name
+// similarity, which both misses renames and blesses contradictions.
+func TestCapabilities_OperationWithoutSourceIsReported(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: tasks
+operations:
+  - id: task.create
+    kind: command
+    subject:
+      entity: Task
+    steps:
+      - type: validate-input
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "capabilities.yaml", content, nil)
+	if !hasOutcomeCode(outcomes, "capabilities-source-missing") {
+		t.Errorf("expected capabilities-source-missing, got %v", codesOf(outcomes))
+	}
+	// Tolerated absent on read: every capabilities.yaml predates the
+	// field, so erroring would fail all of them at once.
+	for _, o := range outcomes {
+		if o.Code == "capabilities-source-missing" && o.Severity != SeverityWarning {
+			t.Errorf("severity = %q, want warning in both modes", o.Severity)
+		}
+	}
+}
+
+func TestCapabilities_OperationWithSourceIsClean(t *testing.T) {
+	content := []byte(`schema_version: 1
+feature: tasks
+operations:
+  - id: task.create
+    source: "@tasks/capture-a-task"
+    kind: command
+    subject:
+      entity: Task
+    steps:
+      - type: validate-input
+`)
+	outcomes := ValidateCapabilities(ModeBuild, "capabilities.yaml", content, nil)
+	if hasOutcomeCode(outcomes, "capabilities-source-missing") {
+		t.Errorf("an operation declaring source: must not be reported: %v", codesOf(outcomes))
+	}
+}

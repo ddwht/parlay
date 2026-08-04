@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,7 +45,8 @@ type Baseline struct {
 // BaselineSchemaVersion is the current baseline format version.
 //
 //	1 — adds Domain and AdapterVersion to HashedSources.
-const BaselineSchemaVersion = 1
+//	2 — adds Authored to HashedSources.
+const BaselineSchemaVersion = 2
 
 // IntentHash stores hashes of individual intent fields for granular drift detection.
 type IntentHash struct {
@@ -111,6 +113,30 @@ type HashedSources struct {
 	// backfills it.
 	Domain         string `yaml:"domain,omitempty"`
 	AdapterVersion string `yaml:"adapter-version,omitempty"`
+
+	// Authored maps a hand-authored unit's qualified id to an aggregate
+	// hash over its whole declared file set.
+	//
+	// Project-scoped, alongside Domain and AdapterVersion, and for the same
+	// reason: a unit is not a per-feature file, so a change to it dirties
+	// every feature that reads it. This deliberately does NOT model which
+	// features those are. The plan that introduced units left the choice
+	// open between declaring the edge in authored.yaml and declaring it in
+	// the consumer; the answer taken here is that neither is needed yet,
+	// because the codebase already had a shape for exactly this problem —
+	// domain-model.yaml is shared by every feature, is tracked with one
+	// hash, and dirties all of them when it moves. Over-approximating in
+	// that direction is safe (a spurious rebuild), and the alternative
+	// under-approximates when the edge is wrong or stale (a silent stale
+	// fixture, which is the bug this whole mechanism exists to catch).
+	//
+	// A precise per-consumer edge is a real refinement, and lands with
+	// per-component baseline scoping rather than ahead of it.
+	//
+	// Same "missing means unknown, not drifted" rule as Domain: a
+	// pre-v2 baseline has no entry, and comparing against one would
+	// report every existing project as drifted on upgrade.
+	Authored map[string]string `yaml:"authored,omitempty"`
 }
 
 type driftItem struct {
@@ -232,6 +258,13 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 			baseline.Sources.AdapterVersion = hash
 		}
 	}
+	// Hand-authored units, tracked exactly like the two above: shared,
+	// whole-artifact, advisory. Recorded even for a feature that consumes
+	// no unit, because "which features consume it" is deliberately not
+	// modelled — see HashedSources.Authored.
+	if unitHashes := authoredUnitHashes(cfg); len(unitHashes) > 0 {
+		baseline.Sources.Authored = unitHashes
+	}
 
 	return baseline, nil
 }
@@ -345,6 +378,32 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 			if current, ok := hashWholeFile(s.path); ok && current != s.storedHash {
 				output.SharedSourcesChanged = append(output.SharedSourcesChanged, s.name)
 			}
+		}
+
+		// Hand-authored units. This is the comparison the whole of Part A
+		// is for: two commits to a hand-written engine invalidated fixture
+		// numbers in two dependent buildfiles, and nothing anywhere
+		// reported it, because the engine's files were not merely
+		// untracked — no ingestion path existed that could return them.
+		//
+		// Iterating the STORED map, not the current one: a unit that
+		// appeared since the baseline was written has no stored hash to
+		// compare against, and calling that drift would flag every project
+		// the moment it declared its first unit. A unit that has since been
+		// removed is caught below.
+		if len(baseline.Sources.Authored) > 0 {
+			current := authoredUnitHashes(cfg)
+			for unit, storedHash := range baseline.Sources.Authored {
+				currentHash, stillPresent := current[unit]
+				if !stillPresent {
+					output.SharedSourcesChanged = append(output.SharedSourcesChanged, "unit:"+unit+" (removed)")
+					continue
+				}
+				if currentHash != storedHash {
+					output.SharedSourcesChanged = append(output.SharedSourcesChanged, "unit:"+unit)
+				}
+			}
+			sort.Strings(output.SharedSourcesChanged)
 		}
 	}
 

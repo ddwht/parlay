@@ -176,6 +176,7 @@ source-signatures:
   infrastructure: <content-hash of spec/intents/<feature>/infrastructure.md>
   domain: <content-hash of the project domain-model.yaml>
   layout: <content-hash of spec/intents/<feature>/<page>.layout.yaml>
+  authored: <aggregate hash over every hand-authored unit's declared files>
   adapter-version: <content-hash or version string of the adapter file>
 ```
 
@@ -205,7 +206,7 @@ Every `bindings:` rule and every `targets.<kind>.operations[]` entry references 
 | `buildfile-components-double-declared` | Top-level `components:` (legacy) AND `targets.presentation.components:` are both populated. |
 | `buildfile-models-deprecated` (warning) | Top-level `models:` is non-empty AND the project has a resolvable `domain-model.yaml`. Warning, not error — see "`models:` is deprecated" for why, and for why the domain-model condition matters. |
 | `buildfile-routes-ambiguous` | Top-level `routes:` (legacy) collide with both `targets.presentation` (client-side) and `targets.transport` (HTTP exposure); designer must disambiguate. |
-| `codegen-wrote-outside-plan` | A file tracked in `.code-hashes.yaml` is declared by no `plan.creates`, `plan.modifies`, or cross-cutting `target-files` / `target-creates`. Emitted by `parlay internal check-write-set`, which audits after the fact — parlay does not perform codegen's writes and cannot intercept them. Two categories are exempt and reported as such: test files (identified by their `parlay-artifact: test` marker; emitted by the test-generation step, not the plan) and project scaffold (files with no `component` attribution, which no feature's plan can declare). |
+| `codegen-wrote-outside-plan` | A file tracked in `.code-hashes.yaml` is declared by no `plan.creates`, `plan.modifies`, or cross-cutting `target-files` / `target-creates`. Emitted by `parlay internal check-write-set`, which audits after the fact — parlay does not perform codegen's writes and cannot intercept them. Three categories are exempt and reported as such, broken down by reason in the `exempt_by_reason` field: test files (identified by their `parlay-artifact: test` marker; emitted by the test-generation step, not the plan), project scaffold (files with no `component` attribution, which no feature's plan can declare), and hand-authored unit files (`provenance: hand-authored` in `.code-hashes.yaml` — codegen must never write them, so no plan can declare them, and the finding would accuse the tool of a write it did not perform). A fourth admission, files inside a mutating toolchain tool's declared write-set, is authorized by the tool contract rather than exempt from the plan. |
 
 ### Presentation-only projects
 
@@ -408,7 +409,12 @@ The `source-signatures:` section records a **content-based** signature for every
 | `infrastructure` | When infrastructure.md exists | Content hash of `spec/intents/<feature>/infrastructure.md` at build time |
 | `domain` | When domain-model.yaml exists | Content hash of the project domain-model.yaml at build time |
 | `layout` | When the feature has a layout-bearing page | Content hash of the page's layout file at build time |
+| `authored` | When the project declares at least one hand-authored unit | Aggregate hash over every unit's declared file set (see `authored.schema.md`) at build time |
 | `adapter-version` | Yes | Content hash or version string of the adapter file at build time |
+
+The field order in this table is the emission order `parlay internal scaffold-signatures` writes, so a regenerated block diffs against a hand-written one as changed hashes rather than as a reordering nobody can read. Adding a field here means adding it to `signatureFieldOrder` in the same change.
+
+**Why `authored` is one field and not one per unit.** A unit is a boundary, not a file list — six sources or sixty, the question a consuming buildfile asks is "has the engine changed". Per-unit signature fields would invite a buildfile to depend on one unit while ignoring another, which is a dependency edge this schema deliberately does not model: a changed unit dirties every feature, exactly as a changed `domain-model.yaml` does. Over-approximating costs a rebuild; under-approximating costs a green build over stale fixtures, which is the failure this field exists to catch.
 
 **Why `capabilities` and `infrastructure` were added.** The freshness gate's job is to catch every source artifact that could change buildfile content out from under a stale build. Before this revision, `source-signatures:` covered `surface`/`domain`/`layout` but not `capabilities.yaml` or `infrastructure.md` — even though both feed the multi-target `operations:` block and `cross-cutting:` entries respectively (see "Section: Multi-target operations and targets blocks" and the Cross-cutting section above). A capabilities or infrastructure edit with no matching surface/domain/layout change previously left the freshness gate silent about a buildfile that no longer reflected its own declared operations or cross-cutting entries. Both are now first-class signature inputs, present whenever the corresponding artifact exists.
 

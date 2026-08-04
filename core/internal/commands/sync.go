@@ -41,6 +41,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 	slug := parser.FeatureSlug(args[0])
 	featurePath := cfg.FeaturePath(slug)
 
+	if err := refuseOnUnit(cfg, slug,
+		"sync reconciles intents against dialogs, and a unit has no dialogs to reconcile against"); err != nil {
+		return err
+	}
+
 	// Operation: read-file intents.md, parse using intent-schema
 	intentsPath := filepath.Join(featurePath, "intents.md")
 	intents, err := parser.ParseIntentsFile(intentsPath)

@@ -17,6 +17,7 @@ feature: <feature-slug>
 
 operations:
   - id: <feature-local id, e.g., task.create>
+    source: <comma-separated @feature/intent-slug references>
     kind: <command | query>
     subject:
       entity: <EntityName from domain-model>
@@ -43,6 +44,7 @@ operations:
 | `feature` | Yes | Feature slug; must match the directory name. |
 | `operations` | Yes | List of capability operations. May be empty for presentation-only features. |
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
+| `operations[].source` | Required on generate, tolerated absent on read | Comma-separated `@feature/intent-slug` traceability references — the same shape `surface.yaml`'s `fragments[].source` uses. See "Why `source:` exists" below. |
 | `operations[].kind` | Yes | One of the values in `operation-kinds.schema.md`. |
 | `operations[].subject` | Yes | The primary entity the operation acts on. |
 | `operations[].input` | No | Input contract; absent for parameterless queries. `input.type` names an ad-hoc input DTO — see "The `input.type` namespace" below. |
@@ -50,6 +52,16 @@ operations:
 | `operations[].errors` | No | Errors the operation may emit. Every entry must come from the `errors.schema.md` closed set. |
 | `operations[].policies` | No | Policies the operation enforces. Every entry must come from the `policies.schema.md` closed set. |
 | `operations[].steps` | Yes | Ordered list of steps. Each step's `type:` must come from the `steps.schema.md` closed set. |
+
+## Why `source:` exists
+
+Every other artifact records where its content came from. `surface.yaml` fragments carry `source:`, `infrastructure.md` fragments carry `Source:`, and buildfile cross-cutting entries carry one too. `capabilities.yaml` was alone in having none, and the asymmetry was invisible for as long as traceability was only ever walked **forwards** — from intent, to artifact, to buildfile, to test.
+
+The reverse walk is what needs it. Given a change described in a person's words — "the approval step should also notify the requester" — something has to answer *which artifact owns that*. For a surface change the fragment's `source:` answers it. For a backend change there was nothing to answer with, so a backend refinement could not be routed to the operation it belongs to, and the only remaining options were to guess by name-similarity or to re-derive the whole artifact from intents. The first blesses contradictions; the second discards a reviewed document to change one line of it.
+
+**Required on generate, tolerated absent on read.** Every `capabilities.yaml` in existence was written before the field, and erroring on read would fail all of them at once over a fact none could have recorded — the same reasoning `buildfile-models-deprecated` and `testcases-file-missing` follow. `/parlay-create-artifacts` and the migration commands populate it going forward; a file without it still loads, and the reverse walk degrades to asking rather than failing.
+
+`source:` is traceability, not derivation. It records which intent an operation came from. It does not license the build phase to read intents — the buildfile remains the executable contract, and this field travels into it as data like any other.
 
 ## The `input.type` namespace
 
@@ -72,6 +84,7 @@ The capabilities validator enforces:
 | `capabilities-duplicate-operation-id` | Two operations within one capabilities.yaml share the same id. |
 | `capabilities-stub-unfilled` | An operation declares `kind: unknown` (the migrate-domain-operations stub kind). Build mode fails until the kind is set explicitly. |
 | `capabilities-subject-missing` | An operation declares no `subject.entity`. Required for every operation — the downstream wiring is derived from it. |
+| `capabilities-source-missing` (warning) | An operation declares no `source:`, so nothing records which intent it came from and a change described in prose cannot be routed to it. Warning in both modes: the field is required on generate but tolerated absent on read, since every capabilities.yaml predates it. |
 | `capabilities-entity-undeclared` | `subject.entity` or `output.entity` names an entity that `domain-model.yaml` does not declare **and no feature's contribution proposes**. Requires a resolvable domain model: with none, the cross-reference is skipped rather than failing every operation, since a project that has not authored a domain model yet is a normal state. |
 | `capabilities-entity-pending` (warning) | The referenced entity is not in the root model yet, but a feature's `spec/intents/<feature>/domain-model.yaml` contribution proposes it. The finding names the proposing feature. This case used to be indistinguishable from a typo — both graded as errors — so a feature referencing an entity a sibling was about to introduce had to ship a placeholder. Accept the proposing contribution and the reference resolves. |
 | `buildfile-operation-ref-unnormalized` | A downstream buildfile references an operation by bare local id rather than the `@<feature>/operation:<id>` form. |

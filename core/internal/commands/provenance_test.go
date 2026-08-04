@@ -42,7 +42,7 @@ func TestSaveBuildStateDoesNotBlessAnUndeclaredChange(t *testing.T) {
 	writeMarkedFile(t, file, "my-feature", "widget", "func Widget() {}")
 
 	// 1. Codegen writes the file and declares it.
-	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil)
+	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func Widget() { /* HAND-EDITED */ }
 	}
 
 	// 3. A later run saves without declaring this file.
-	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg), first)
+	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg), first, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestReEmissionWithDifferentBytesIsNotAHandEdit(t *testing.T) {
 	file := filepath.Join(sourceRoot, "widget.go")
 	writeMarkedFile(t, file, "my-feature", "widget", "func Widget() { return 1 }")
 
-	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil)
+	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func Widget() { const answer = 1; return answer }
 		t.Fatal(err)
 	}
 
-	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), first)
+	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), first, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,12 +188,12 @@ func TestUnchangedUndeclaredFileKeepsItsEarlierVerdict(t *testing.T) {
 	file := filepath.Join(sourceRoot, "widget.go")
 	writeMarkedFile(t, file, "my-feature", "widget", "func Widget() {}")
 
-	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil)
+	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, file), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A later run touches nothing and declares nothing.
-	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg), first)
+	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg), first, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestNoManifestMeansUnknownNotGenerated(t *testing.T) {
 		t.Fatalf("absent manifest should read as nil, got %v / %q", decl, path)
 	}
 
-	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, decl, nil)
+	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, decl, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestManifestPathsAreNormalized(t *testing.T) {
 		t.Fatalf("comments and blanks must not become paths: %v", decl.Paths)
 	}
 
-	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, decl, nil)
+	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, decl, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,4 +278,71 @@ func saveProjectCodeHashesForTest(cfg *config.Context, h *CodeHashes) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+// A partial regeneration with no emission manifest is not a degraded save,
+// it is a wrong one: the run touched a handful of files and would mark
+// every tracked file in the project unknown, after which --strict fails on
+// all of them.
+func TestPartialSaveWithoutManifestIsRefused(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+
+	saveBuildStatePartial = true
+	t.Cleanup(func() { saveBuildStatePartial = false })
+
+	if err := requireEmittedForPartial(cfg, nil); err == nil {
+		t.Fatal("expected --partial with no manifest to be refused")
+	}
+	// With a manifest — even an empty one, meaning "this run wrote
+	// nothing" — the save is well-defined and proceeds.
+	if err := requireEmittedForPartial(cfg, &emissionDeclaration{Paths: map[string]bool{}}); err != nil {
+		t.Errorf("a partial save with a manifest must proceed, got %v", err)
+	}
+}
+
+// And a whole-project save without one still only warns: it degrades
+// visibly rather than being wrong, and refusing would break the existing
+// contract for callers that never had a manifest.
+func TestWholeProjectSaveWithoutManifestStillProceeds(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	if err := requireEmittedForPartial(cfg, nil); err != nil {
+		t.Errorf("a non-partial save must not be refused, got %v", err)
+	}
+}
+
+// The property the --partial guard protects: a file this run did not touch
+// keeps the verdict it already had, rather than being re-decided. That is
+// what makes a scoped re-baseline safe at all.
+func TestPartialSaveCarriesUntouchedVerdictsForward(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	sourceRoot := filepath.Join(dir, "cmd", "my-feature")
+
+	touched := filepath.Join(sourceRoot, "widget.go")
+	untouched := filepath.Join(sourceRoot, "other.go")
+	writeMarkedFile(t, touched, "my-feature", "widget", "func Widget() {}")
+	writeMarkedFile(t, untouched, "my-feature", "other", "func Other() {}")
+
+	first, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, touched, untouched), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A refine-shaped run: rewrite one file, declare only that one.
+	if err := os.WriteFile(touched, []byte("// parlay-feature: my-feature\n// parlay-component: widget\nfunc Widget() { return 2 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, declare(t, cfg, touched), first, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := second.Files[touched].Provenance; got != ProvenanceGenerated {
+		t.Errorf("the rewritten file = %q, want generated", got)
+	}
+	if got := second.Files[untouched].Provenance; got != ProvenanceGenerated {
+		t.Errorf("the untouched file = %q, want its earlier verdict carried forward — a partial run must not re-decide files it never saw", got)
+	}
 }

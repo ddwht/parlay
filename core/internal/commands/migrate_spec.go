@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -103,6 +104,12 @@ func walkSurfaceMDFiles(root string) ([]string, error) {
 			return err
 		}
 		if info.IsDir() {
+			// Never descend into a unit. Migration rewrites spec artifacts
+			// into their newer shape, which for a unit means editing files
+			// that describe hand-written code the tool does not own.
+			if config.IsAuthoredUnit(path) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if filepath.Base(path) == "surface.md" {

@@ -19,6 +19,13 @@ type InfraFragment struct {
 	Caching            string
 	BackwardCompatible string
 	Notes              []string
+	// DeliberatelySpecific carries a one-line justification for naming a
+	// specific thing, and suppresses the portability lint for this
+	// fragment. The justification is the mechanism, not decoration: an
+	// empty marker is not honoured, because the point is to put a claim on
+	// the record that a reviewer can disagree with. Nobody can disagree
+	// with a warning that was never read.
+	DeliberatelySpecific string
 }
 
 func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
@@ -65,6 +72,8 @@ func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
 		} else if strings.HasPrefix(line, "**Caching**:") {
 			current.Caching = extractField(line, "**Caching**:")
 			currentList = nil
+		} else if strings.HasPrefix(line, "**Deliberately-Specific**:") {
+			current.DeliberatelySpecific = extractField(line, "**Deliberately-Specific**:")
 		} else if strings.HasPrefix(line, "**Backward-Compatible**:") {
 			current.BackwardCompatible = extractField(line, "**Backward-Compatible**:")
 			currentList = nil

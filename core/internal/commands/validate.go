@@ -44,6 +44,7 @@ var validateTypes = []string{
 	"intent", "dialog", "surface", "buildfile", "blueprint", "yaml",
 	"infrastructure", "domain-model", "adapter", "adapter-set",
 	"capabilities", "coverage-review", "testcases", "page", "layout",
+	"authored",
 }
 
 func validateTypeList() string { return strings.Join(validateTypes, ", ") }
@@ -225,6 +226,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// coverage-review validation is hash-aware and needs full inputs;
 		// surface a minimal YAML-shape check here.
 		validator = agent.ValidateYAML
+	// parlay-feature: parlay-tool/hand-authored-units
+	// parlay-component: authored-unit-validation
+	case "authored":
+		// Structural pass only — glob resolution against the filesystem is
+		// a question about a project, not a file, and belongs with the
+		// tracking pass that holds the emitted manifest.
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateAuthoredUnit)
 	default:
 		return fmt.Errorf("unknown type %q — supported: %s", validateType, validateTypeList())
 	}

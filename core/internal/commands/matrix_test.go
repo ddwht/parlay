@@ -276,6 +276,32 @@ func matrixFixtures() []matrixFixture {
 			cannotCheck: []string{"verify-generated", "verify-generated --strict"},
 		},
 		{
+			name:     "provenance-hand-authored",
+			property: "hand-edited file a unit declares — change is reported, never graded",
+			build: func(t *testing.T) *config.Context {
+				dir := setupTestDir(t)
+				featureWithIntents(t, dir, "expense-list")
+				writeFixtureFile(t, dir, ".parlay/build/expense-list/buildfile.yaml",
+					composingBuildfile("expense-list", "seed", "submitted"))
+				buildProvenanceSnapshot(t, dir, provenanceSnapshot{
+					schemaVersion: CodeHashesSchemaVersion,
+					provenance:    ProvenanceHandAuthored,
+					// The same edit that makes provenance-handedit fail
+					// --strict. The only difference between the two
+					// fixtures is the declared provenance, which is the
+					// whole claim: who wrote a file decides whether its
+					// changing is a problem.
+					handEditAfter: true,
+				})
+				return testContext(t)
+			},
+			// No cannotCheck entry, unlike every sibling provenance row.
+			// Those fixtures remove the input verify-generated needs; this
+			// one supplies it in full. The surface can check this fixture,
+			// does, and answers clean — which is the correct answer, not a
+			// gap in one. That asymmetry is the fixture's whole point.
+		},
+		{
 			name:     "domain-model-invalid",
 			property: "domain model with a dangling ref and an out-of-set type — error severity",
 			build: func(t *testing.T) *config.Context {

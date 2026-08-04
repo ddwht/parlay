@@ -40,6 +40,10 @@ This skill reads ONLY from these locations:
 
 This isolation rule is the load-bearing test for whether the buildfile is doing its job. If a code generator can produce a working, test-passing prototype using only buildfile + adapter, the buildfile is correct.
 
+**When the buildfile is not enough, report what is missing — and offer the way out.** The rule turns "make it pass" into "report what is missing", which is the most valuable behaviour this skill has: a gap named against the buildfile is fixable upstream, where a gap papered over with a guess is not. Keep reporting it.
+
+But a report is a dead end if the gap is one no buildfile could close. Some things cannot be generated from a specification at all — a numerical kernel, a codec, a solver — and enriching the buildfile schema will not change that. When you conclude the gap is of that kind rather than a buildfile that is merely thin, raise `kind: impasse` (see **Asking the user**) offering the hand-authored unit described in `authored.schema.md`, pre-filled with the components you could not write and the paths you would have written them to. On acceptance the work becomes a declared unit: written by a person, tracked by parlay, and fenced off from this skill by step 11.4. Omit `default:` — accepting a unit is a permanent scope reduction and no flag authorizes it unattended.
+
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
@@ -148,6 +152,16 @@ Concretely:
 
     Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
 
+11.4. **Load the hand-authored denylist** — Read `.parlay/build/_project/authored-files.yaml`. It lists every file a hand-authored unit declares: code a person wrote, which this skill must never write, modify, delete or merge into. An absent file means the project declares no units; that is a normal state, not an error.
+
+   **Read it from `.parlay/build/`, never from `spec/intents/`.** The declarations live at `spec/intents/<unit>/authored.yaml`, and `spec/intents/**` is off-limits here — that isolation is the load-bearing test for whether the buildfile is doing its job, and a filename carve-out would make it negotiable. `parlay internal save-build-state` projects the resolved file list into the build tree for exactly this reason, the same way capabilities are compiled into the buildfile rather than read from the spec.
+
+   Build an in-memory **denylist** from every `sources:` and `tests:` path in that file. The denylist is checked **before every write, in every step below**, and it **outranks the plan allowlist and both exempt classes**. A path in the denylist is refused even when a plan row names it, even when it carries a `parlay-section:` marker, and even when it is a test file.
+
+   That ranking is the whole point of loading this before the allowlist rather than auditing afterwards. The two exempt classes in 11.5 are marker-bearing categories with no path bound — a test file "at the location the framework expects", a section file "where file-conventions dictate". Those are precisely the writes that would land inside a unit: a unit's own test directory is where the framework expects tests to go. The post-hoc write-set audit exempts both categories by design, so a write that leaked through it would be reported as authorized. Refusing at the write is the only placement that catches it.
+
+   On a refusal: do not write the file, do not silently skip it either. Stop and report `unit-write-refused` naming the path and the owning unit, exactly as you would report anything else the buildfile failed to authorize. A unit's code changing is a person's decision, and a codegen run that wanted to change it has found a real disagreement between the buildfile and the declaration — surface it rather than resolving it.
+
 11.5. **Lock the plan as the file-write allowlist** — Build an in-memory set of permitted paths from `plan.creates ∪ plan.modifies ∪ plan.deletes` across all loaded buildfiles. **For a multi-target (adapter-set) buildfile the plan rows are nested under `plan.targets.<kind>.creates` / `.modifies` / `.deletes` — union every filled target's rows into the same allowlist.** Every subsequent write or delete in steps 12–14.7 MUST resolve to a path in this set, **plus the two exempt classes below**. Refuse any write to a path that is neither in the plan nor exempt — the buildfile didn't authorize it. Refuse any skip of a `plan` path that the diff doesn't classify as stable. Violations are bugs — STOP and surface the offending entry.
 
    **Exempt classes (authorized by this skill, not by the buildfile).** `build-feature` emits `plan:` rows for component implementation files and cross-cutting targets only. It emits none for the two categories this skill separately *requires* you to write, so a literal reading of the allowlist forbids exactly the files steps 14 and 15 mandate. Both are therefore exempt:
@@ -155,7 +169,7 @@ Concretely:
    1. **Section-derived project files** — the models/types, routes/entry-point, shell, guard, error-boundary and state-provider files generated in step 14 from `blueprint` + merged `sections`. Each is identified by its `parlay-section:` marker, not by a plan row.
    2. **Test files** — the per-component spec files generated in step 15, identified by `parlay-artifact: test`.
 
-   Exempt does not mean unbounded: a write still has to be one of these two marker-bearing categories, at the path the adapter's `file-conventions` dictate. Anything else remains a violation. Record every exempt write in the run summary so the set stays auditable — if a file is being written repeatedly under an exemption, that is a signal `build-feature` should be emitting a plan row for it instead.
+   Exempt does not mean unbounded: a write still has to be one of these two marker-bearing categories, at the path the adapter's `file-conventions` dictate. Anything else remains a violation. **Neither exemption reaches into the hand-authored denylist from step 11.4** — that check runs first and wins. Record every exempt write in the run summary so the set stays auditable — if a file is being written repeatedly under an exemption, that is a signal `build-feature` should be emitting a plan row for it instead.
 
    **Cross-feature dependency graph (project-pass mode).** When multiple buildfiles are loaded, build the cross-feature dependency graph in this same step: every `plan.modifies` path that matches another feature's `plan.creates` path adds an edge from the modifying feature to the creating feature. Validate the graph is acyclic; on cycle, surface `plan-create-modify-cycle` and stop without writing any files. The construction is mechanical — same algorithm `parlay validate --project` uses — and it catches the same authoring mistakes the validator would catch upstream.
 
@@ -294,7 +308,9 @@ Concretely:
 
    For each route in the merged route table that references a page:
 
-   1. **Find the target file**: search the source tree for the file implementing the page component, using the page name from the buildfile route and the adapter's `file-conventions.naming` and `component-pattern`. If the file has a `parlay-section:` marker, it is Parlay-owned — skip (step 14 already handles it). If the file is not found, skip (new page — step 14 creates it).
+   1. **Find the target file**: search the source tree for the file implementing the page component, using the page name from the buildfile route and the adapter's `file-conventions.naming` and `component-pattern`. If the file has a `parlay-section:` marker, it is Parlay-owned — skip (step 14 already handles it). If the file is not found, skip (new page — step 14 creates it). **If the file is in the step 11.4 denylist, refuse and report `unit-write-refused`** — do not skip silently.
+
+      This step is the largest single risk to a unit, and the reason the denylist exists as a pre-write check rather than an audit. Its whole premise is "an existing source file that is not Parlay-generated", which is the exact description of every file in a hand-authored unit — a unit's sources carry no marker, by definition and on purpose. Tier 2's intelligent merge then reads such a file and rewrites it in place. Nothing else in this skill comes closer to editing code a person owns.
 
    2. **Read the file**: read the full content of the target file.
 
@@ -391,7 +407,14 @@ Concretely:
 
    Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay internal diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
-15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. Tests live at the location the framework expects (e.g., `*_test.go` next to the source for Go).
+15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field.
+
+    **The suite's `file:` is where its code goes.** `build-feature` set it from the plan row that `scaffold-plan` derived from the adapter's `file-conventions.paths.test` template, so the path is already decided, already in the plan allowlist, and already consistent with every other component's tests. Write there.
+
+    Do **not** infer a location from framework habit ("`*_test.go` next to the source"). That instruction used to live here, and it was the downstream half of a question step 9 of `build-feature` never answered: a convention this step invents is invisible to the adapter, invisible to the plan, and differs from whatever the next run infers. If a suite has no `file:`, that is a stale testcases.yaml — say so and stop, rather than restoring the guess.
+    - **A suite citing a hand-authored unit's test is not generated.** Its `file:` names a test a person maintains; the denylist from step 11.4 covers that path and writing it would overwrite their suite with a generated one. Report it as covered-by-citation in the run summary.
+    - **Check the step 11.4 denylist before every test file you write.** "Where the framework expects" is next to the source, and for a unit's source that is inside the unit's own test directory — a path the unit declares in `tests:` and a person already maintains. The test-file exemption in 11.5 does not authorize it. Refuse with `unit-write-refused` rather than overwriting someone's test suite with a generated one.
+    - **A suite whose invariant a unit already satisfies should not exist.** If `testcases.yaml` still carries one, that is a build-phase problem, not something to fix by writing the file elsewhere — report it and leave the suite ungenerated.
     - **Record each file as you write it:** append its path to `.parlay/build/_project/.emitted`, one path per line, immediately after writing it. Test files are generated files and are recorded like any other. Step 17 explains what the manifest is for and what goes wrong without it.
 
 15.5. **Run post-emit toolchain tools** — Run `parlay internal toolchain-plan @{feature} --phase code --stage post-emit`. Same availability / `required` / `fallback` handling as step 11.9. This step sits deliberately **before** step 16 so step 16's test run is the `preserves: [testcases]` enforcement.

@@ -120,6 +120,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 		storedBaseline.SchemaVersion,
 		testContext(t).DomainModelPath(),
 		autoDiscoverAdapter(testContext(t), filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")),
+		authoredUnitHashes(testContext(t)),
 	)
 
 	buildfilePath := filepath.Join(testContext(t).BuildPath(slug), "buildfile.yaml")

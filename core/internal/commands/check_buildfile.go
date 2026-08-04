@@ -61,6 +61,20 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 	}
 
 	if _, err := os.Stat(bfPath); err != nil {
+		// A unit has no buildfile and never will — nothing builds it, which
+		// is the point. The generic message below is worse than silence
+		// here: it tells the caller to run build-feature, and build-feature
+		// on a unit is precisely the thing that must not happen.
+		if config.IsAuthoredUnit(cfg.FeaturePath(slug)) {
+			output.Issues = append(output.Issues, checkBuildfileIssue{
+				Severity: "info",
+				Code:     "buildfile-not-applicable",
+				Message:  fmt.Sprintf("%s is a hand-authored unit; it has no buildfile because nothing generates its code", slug),
+				Context:  cfg.FeaturePath(slug),
+				Fix:      "no action — declare the unit's sources in authored.yaml, which is already done",
+			})
+			return emitCheckBuildfileOutput(cmd, output)
+		}
 		output.Issues = append(output.Issues, checkBuildfileIssue{
 			Severity: "error",
 			Code:     "buildfile-not-found",

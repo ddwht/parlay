@@ -13,6 +13,7 @@ framework: <test framework — e.g., Cypress, Playwright, Jest + Testing Library
 
 suites:
   - name: <suite name>
+    file: <path this suite's code is written to — the plan row scaffold-plan derived>
     component: <component-name from buildfile>
     fixture: <fixture-name from buildfile>
     intent: <@feature/intent-slug — the intent this suite validates>
@@ -130,6 +131,7 @@ framework: <test framework name>
 suites:
   - kind: presentation
     name: <suite id>
+    file: <path this suite's code is written to>
     component: <component reference into buildfile.components>
     source_refs:
       - "@<feature>/<surface-fragment>"
@@ -205,6 +207,31 @@ The discriminator is a `verify: state` step *after* the crossing. That is checka
 | `composition-cardinality-unresolvable` | A `one-to-one` relationship could not be joined to the field that realises it — either nothing on the child entity targets the parent, or several fields do. A **note**: guessing which field implements the relationship would let the check fail a correct model. Add `relationship: <name>` to the intended field to settle it. |
 | `composition-flow-unsatisfiable` | A `scope: flow` suite asserts on domain state after crossing from one feature's route into another's, and the project has no shared runtime that could carry the write across. An **error** when the adapter declares `file-conventions.paths.store` and a participating feature's plan does not wire it; a **note** when the adapter declares no store at all, since the framework may simply have no shared runtime and no better code would satisfy the assertion. |
 
+### Where a suite's code goes: `file:`
+
+Every suite declares `file:` — the path its generated test code is written to.
+
+```yaml
+suites:
+  - kind: presentation
+    name: expense-list-renders
+    file: src/components/expense-list.spec.ts
+```
+
+The value is **not** decided when authoring testcases.yaml. `parlay internal scaffold-plan` expands the adapter's `file-conventions.paths.test` template once per component and emits the result as a `plan.creates` row; `file:` is that row. This makes three things true at once that were previously independent guesses: the path obeys the project's adapter, the path is inside the plan allowlist codegen enforces, and every component's tests land in the same place.
+
+**Why the field exists.** `build-feature` said "one test suite per component" and named no location. `generate-code` then had to write the file anyway, and its instruction was "tests live at the location the framework expects" — a convention it invented at emission time, invisible to the adapter and to the plan, and not necessarily the same convention the next run would infer. A question left open at the step that owns it does not stay open; it is answered downstream by whoever reaches it first, with less context than the step that should have decided it.
+
+**Prefer `file:` over a new `kind:`.** The suite `kind:` set is closed at `{presentation, operation}`, and a suite whose code lives in a hand-authored unit is not a third kind of suite — it is an ordinary suite whose file someone else maintains.
+
+#### Citing a hand-authored test
+
+When a `file:` names a path inside a hand-authored unit's declared `tests:` globs, the suite is **cited, not generated**. Codegen refuses to write there (see `authored.schema.md`'s write fence), and the suite records that the invariant is covered by a test a person maintains.
+
+The build phase should not emit such a suite at all when the unit's `satisfies:` already lists the invariant — a generated suite for an invariant a unit covers is either a duplicate or, because it cannot see the unit's internals, a vacuous one that asserts nothing and passes forever. Replacing a vacuous suite with a declared external test is the point of the mechanism.
+
+Freshness of a cited test rides the existing hash machinery rather than a new one: `coverage-review.yaml` already pins `buildfile_hash` and `testcases_hash` and goes stale when either moves, and a unit's aggregate hash is already a `source-signatures:` input (`authored`), so an edit to the cited test invalidates the consuming buildfile through the same gate that catches any other source change. "The external test changed, re-review" therefore falls out of mechanisms that already exist, with nothing new to keep in sync.
+
 ### Coverage walker
 
 For every canonical operation declared in the feature's `capabilities.yaml`, at least one `kind: operation` suite must reference it. The walker fires `testcases-operation-uncovered` for each missing operation. Coverage is computed against the `@<feature>/operation:<id>` normalized form.
@@ -221,6 +248,7 @@ Legacy v1 suites without explicit `kind:` load as `kind: presentation` and auto-
 |---|---|
 | `testcases-operation-uncovered` | A canonical operation has no covering `kind: operation` suite. |
 | `testcases-source-refs-missing` | A new v2 suite lacks `source_refs:`. |
+| `testcases-file-missing` (warning) | A v2 suite lacks `file:`, so nothing has decided where its code goes and codegen would invent a path. Warning in both modes while the field lands — every testcases.yaml predates it. Rebuild to populate it from the plan. |
 | `testcases-source-refs-missing-legacy` (warning) | A legacy v1 suite was loaded as v2 presentation; auto-populated source_refs would be approximate. |
 | `testcases-suite-kind-unknown` | A suite declares `kind:` outside `{presentation, operation}`. |
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |

@@ -27,6 +27,14 @@ const (
 	PhaseArtifacts FeaturePhase = "artifacts"
 	PhaseBuild     FeaturePhase = "build"
 	PhaseDone      FeaturePhase = "done"
+
+	// PhaseHandAuthored is not a rung on the ladder above — it is the
+	// statement that the ladder does not apply. A hand-authored unit has
+	// intents.md and nothing else the phases measure, so walking the
+	// ladder pins it at "intents" forever and reports a unit that will
+	// never progress as a feature stuck at the first step. Reporting a
+	// permanent non-problem is how a status line stops being read.
+	PhaseHandAuthored FeaturePhase = "hand-authored"
 )
 
 // ComputeFeaturePhase returns the furthest pipeline phase whose required
@@ -62,6 +70,12 @@ func ComputeFeaturePhase(rootCtx *config.Context, featureSlug string) FeaturePha
 // featurePath argument from its public API) can route through the same
 // shared logic without re-deriving them through a *config.Context.
 func computeFeaturePhaseAtPaths(featurePath, buildPath string) FeaturePhase {
+	// Checked first: a unit carries intents.md exactly as a feature does,
+	// so every rung below would otherwise read it as an ordinary feature
+	// that has merely not got very far.
+	if config.IsAuthoredUnit(featurePath) {
+		return PhaseHandAuthored
+	}
 	// done — buildfile present (and everything below). The engineering
 	// spec under spec/handoff/<feature>/specification.md is intentionally
 	// NOT consulted; build is the terminal tracked phase.

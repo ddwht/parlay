@@ -12,6 +12,7 @@ from somewhere other than the start.
 - `/parlay-doctor` — Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations
 - `/parlay-loop` — Walk a feature end-to-end through the parlay design pipeline
 - `/parlay-onboard` — Onboard existing codebase and draft adapter
+- `/parlay-refine` — Parlay: Make a small, precise change to an existing feature — spec, code, tests and baselines together
 
 The pipeline phases (intents, dialogs, artifacts, build, code) are not commands.
 Their instructions live in .parlay/modules/, and the loop's phase subagents read

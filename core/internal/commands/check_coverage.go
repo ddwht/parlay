@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -56,6 +57,15 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	}
 	slug := parser.FeatureSlug(args[0])
 	featurePath := cfg.FeaturePath(slug)
+
+	// A unit answers a different coverage question, so it must not be run
+	// through the intent-to-dialog walk below. That walk hard-errors on a
+	// missing dialogs.md — a file a unit never has — which made
+	// check-coverage fail outright on every unit rather than report
+	// anything about it.
+	if config.IsAuthoredUnit(featurePath) {
+		return runCheckCoverageForUnit(cmd, featurePath, slug)
+	}
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
@@ -107,6 +117,61 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	}
 
 	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	return nil
+}
+
+// unitCoverageOutput is what check-coverage reports for a hand-authored
+// unit. A separate shape rather than coverageOutput with empty lists: the
+// feature shape's fields answer "does every intent reach a dialog, and
+// every component a test", and a unit answers neither. Emitting it with
+// `covered: []` would read as a unit that covers nothing.
+type unitCoverageOutput struct {
+	Unit string `json:"unit"`
+	Kind string `json:"kind"`
+	// Satisfies is the invariants the unit's own tests already cover, so a
+	// consuming feature can cite them instead of generating a suite that
+	// re-tests code parlay did not write.
+	Satisfies []string `json:"satisfies"`
+	// Tests is empty when the unit declares no test globs. A unit with no
+	// tests can satisfy no invariant by test, only by inspection — worth
+	// saying plainly, because `satisfies:` entries backed by nothing are
+	// how a vacuous suite gets replaced by a vacuous claim.
+	Tests []string `json:"tests"`
+	Note  string   `json:"note"`
+}
+
+func runCheckCoverageForUnit(cmd *cobra.Command, featurePath, slug string) error {
+	content, err := os.ReadFile(filepath.Join(featurePath, config.AuthoredFile))
+	if err != nil {
+		return fmt.Errorf("%s: cannot read unit declaration: %w", slug, err)
+	}
+	unit, err := agent.ParseAuthoredUnit(content)
+	if err != nil {
+		return fmt.Errorf("%s: %w", slug, err)
+	}
+
+	out := unitCoverageOutput{
+		Unit:      slug,
+		Kind:      KindHandAuthored,
+		Satisfies: unit.Satisfies,
+		Tests:     unit.Tests,
+		Note:      "hand-authored unit: coverage is the invariants its own tests satisfy, not intent-to-dialog matching",
+	}
+	if out.Satisfies == nil {
+		out.Satisfies = []string{}
+	}
+	if out.Tests == nil {
+		out.Tests = []string{}
+	}
+	if len(out.Tests) == 0 && len(out.Satisfies) > 0 {
+		out.Note = "hand-authored unit declares satisfied invariants but no tests: each `satisfies` entry is backed by inspection, not by a suite"
+	}
+
+	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return err
 	}

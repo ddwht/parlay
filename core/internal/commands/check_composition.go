@@ -84,7 +84,17 @@ type compositionOutput struct {
 	// Features so a caller can see when the two disagree: a coherent verdict
 	// over a subset is not a coherent verdict over the project, and the
 	// previous single-level walk returned exactly that with nothing to
-	// indicate it. Compare against `parlay status`.
+	// indicate it. Compare against `parlay status`, whose feature count is
+	// deliberately the same number — it lists hand-authored units beneath
+	// its features but does not add them in.
+	//
+	// Units are absent here for the same reason, and their absence is
+	// correct rather than an omission to repair: the canonical enumeration
+	// returns features, a unit produces no buildfile and therefore no
+	// fixture records, and there is no coherence question to ask about it.
+	// Before units were classified, one appeared here as a permanent
+	// composition-feature-unbuilt note — a by-design fact reported forever
+	// as a coverage gap, which is how a notes list stops being read.
 	Examined int                  `json:"features_examined"`
 	Records  int                  `json:"fixture_records"`
 	Findings []compositionFinding `json:"findings"`

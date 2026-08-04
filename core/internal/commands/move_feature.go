@@ -132,7 +132,17 @@ func runMoveFeature(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), "Feature moved:")
 	fmt.Fprintf(cmd.OutOrStdout(), "  Before: @%s (%s/)\n", identifier, sourcePath)
 	fmt.Fprintf(cmd.OutOrStdout(), "  After:  @%s (%s/)\n", destIdentifier, destPath)
-	fmt.Fprintln(cmd.OutOrStdout(), "All three trees updated in lockstep. Git history preserved via `git mv`.")
+	// A unit legitimately occupies two trees, not three — it has no
+	// handoff. The move loop above already handles that (a tree with no
+	// source directory is skipped), so only the summary line needed to
+	// learn the class: claiming three trees moved when two did is the kind
+	// of small lie that sends someone looking for a directory that should
+	// not exist.
+	if cls == config.DirClassAuthored {
+		fmt.Fprintln(cmd.OutOrStdout(), "Intents and build trees updated in lockstep. A hand-authored unit has no handoff tree. Git history preserved via `git mv`.")
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "All three trees updated in lockstep. Git history preserved via `git mv`.")
+	}
 
 	return nil
 }

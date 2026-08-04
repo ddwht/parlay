@@ -73,6 +73,13 @@ type writeSetOutput struct {
 	// rather than silently dropped: a check that quietly excuses a third of what
 	// it examines should say so, or the "checked" number overstates its reach.
 	Exempt int `json:"exempt"`
+	// ExemptByReason splits that count by why. The reasons were always
+	// computed — exemptFromPlan has returned one per file since it was
+	// written — and then thrown away at the call site, leaving a bare
+	// number that says a third of the tree was excused without saying on
+	// what grounds. "40 exempt" and "40 exempt, all hand-authored" are
+	// very different reports, and only one of them is checkable.
+	ExemptByReason map[string]int `json:"exempt_by_reason,omitempty"`
 	// Skipped explains a non-failure that produced no comparison, so an
 	// all-clear cannot be confused with "there was nothing to compare".
 	Skipped string `json:"skipped,omitempty"`
@@ -132,12 +139,12 @@ func runCheckWriteSet(cmd *cobra.Command, args []string) error {
 		if declared[normalizeWriteSetPath(p)] {
 			continue
 		}
-		if reason := exemptFromPlan(cfg, p, hashes.Files[p].Component); reason != "" {
-			out.Exempt++
+		if reason := exemptFromPlan(cfg, p, hashes.Files[p]); reason != "" {
+			out.recordExempt(reason)
 			continue
 		}
 		if withinAnyRegion(normalizeWriteSetPath(p), writeSetRegions) {
-			out.Exempt++
+			out.recordExempt(exemptToolchainWriteSet)
 			continue
 		}
 		out.OK = false
@@ -385,11 +392,22 @@ func emitWriteSetJSON(cmd *cobra.Command, out *writeSetOutput) error {
 //     app shell, routing, auth guards, shared fixtures. They are project-level
 //     emissions that no feature's plan can declare, because no feature owns them.
 //
-// What remains after both is the set the plan: allowlist is actually about —
-// component-attributed implementation files.
-func exemptFromPlan(cfg *config.Context, relPath, component string) string {
-	if component == "" {
-		return "project scaffold: no component attribution, so no feature plan can declare it"
+//  3. Hand-authored units. A file a unit declares is one codegen must never
+//     write, so no plan can legitimately declare it — and the finding this
+//     check would otherwise raise says the opposite of the truth, accusing
+//     the tool of writing outside its plan when the tool did not write the
+//     file at all. Keyed on declared provenance rather than on a path
+//     region: the declaration is the fact, and a region test would only be
+//     re-deriving it from paths less reliably.
+//
+// What remains after all three is the set the plan: allowlist is actually
+// about — component-attributed implementation files.
+func exemptFromPlan(cfg *config.Context, relPath string, entry CodeHashEntry) string {
+	if entry.Provenance == ProvenanceHandAuthored {
+		return exemptHandAuthored
+	}
+	if entry.Component == "" {
+		return exemptProjectScaffold
 	}
 	data, err := os.ReadFile(filepath.Join(cfg.Root.Path, relPath))
 	if err != nil {
@@ -398,7 +416,26 @@ func exemptFromPlan(cfg *config.Context, relPath, component string) string {
 		return ""
 	}
 	if strings.Contains(string(data), "parlay-artifact: test") {
-		return "test file: emitted by the test-generation step, not by the plan"
+		return exemptTestFile
 	}
 	return ""
+}
+
+// Exemption reasons. Short, stable keys rather than the prose sentences
+// this function used to return: they are now map keys in the JSON output,
+// where a caller wants to compare counts across runs, and a full sentence
+// makes a poor key.
+const (
+	exemptProjectScaffold   = "project-scaffold"
+	exemptTestFile          = "test-file"
+	exemptHandAuthored      = "hand-authored"
+	exemptToolchainWriteSet = "toolchain-write-set"
+)
+
+func (o *writeSetOutput) recordExempt(reason string) {
+	o.Exempt++
+	if o.ExemptByReason == nil {
+		o.ExemptByReason = map[string]int{}
+	}
+	o.ExemptByReason[reason]++
 }

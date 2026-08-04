@@ -133,6 +133,22 @@ func ValidateCapabilities(mode ValidationMode, path string, content []byte, decl
 			continue
 		}
 
+		// source: is required on generate and tolerated absent on read, so
+		// this is a warning in both modes rather than an error. Every
+		// capabilities.yaml predates the field; erroring would fail all of
+		// them at once over a fact none could have recorded, which is the
+		// same shape as buildfile-models-deprecated.
+		//
+		// Reported at all because the reverse traceability walk is the one
+		// thing that cannot degrade gracefully in silence: without a
+		// source, "which artifact owns this change" has to be answered by
+		// name similarity, which both misses renames and blesses
+		// contradictions.
+		if strings.TrimSpace(op.Source) == "" {
+			outcomes = append(outcomes, NewOutcome(mode, "capabilities-source-missing",
+				fmt.Sprintf("%s: operation %q declares no source: — nothing records which intent it came from, so a change described in prose cannot be routed to it", path, op.ID)))
+		}
+
 		// subject: is Required. It was marked so in the field reference and
 		// enforced nowhere, so an operation with no subject validated cleanly and
 		// then had nothing for build-feature to wire against.

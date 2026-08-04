@@ -23,7 +23,7 @@ Before starting, run `parlay internal check-readiness --stage build-feature @{fe
 
 ````
 ```yaml parlay-decision
-kind: phase-boundary        # phase-boundary | failure | ambiguity
+kind: phase-boundary        # phase-boundary | failure | ambiguity | impasse
 phase: build
 question: "Build phase complete. Advance to code generation?"
 context: |
@@ -41,7 +41,7 @@ resume: "Re-enter with decision: <id>. Both files are written."
 ```
 ````
 
-Raise one for: the phase boundary; a readiness error (`kind: failure`); and any point where the spec supports two materially different component decompositions and you cannot choose from the spec alone (`kind: ambiguity`).
+Raise one for: the phase boundary; a readiness error (`kind: failure`); any point where the spec supports two materially different component decompositions and you cannot choose from the spec alone (`kind: ambiguity`); and any capability the adapters cannot express at all — an operation whose `kind:`, step, policy or error no filled backend adapter supports, or a term outside the closed vocabulary that no rewording resolves (`kind: impasse`, offering the hand-authored unit).
 
 ## Hard rules
 

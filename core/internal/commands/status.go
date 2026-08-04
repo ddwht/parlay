@@ -70,7 +70,15 @@ func init() {
 type featureEntry struct {
 	ID    string       `json:"id"`
 	Phase FeaturePhase `json:"phase"`
+	// Kind distinguishes a hand-authored unit from an ordinary feature.
+	// Additive and omitempty, so no schema_version bump: a reader that
+	// does not know the field sees exactly what it saw before, and a
+	// feature — the overwhelming majority — carries no kind at all.
+	Kind string `json:"kind,omitempty"`
 }
+
+// KindHandAuthored is the only non-default value of featureEntry.Kind.
+const KindHandAuthored = "hand-authored"
 
 type rootSection struct {
 	Path              string          `json:"path"`
@@ -183,14 +191,18 @@ func runStatusHuman(cmd *cobra.Command, pctx *config.Context) error {
 // table with the Phase column appended. Empty features render as the
 // `(none)` line.
 func renderFeaturesHuman(cmd *cobra.Command, pctx *config.Context, features []string) {
-	if len(features) == 0 {
+	entries := featureEntriesFor(pctx, features)
+	if len(entries) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "features: (none)\n")
 		return
 	}
+	// The count stays the FEATURE count. Units are listed underneath but
+	// not added in: "features: 12" meaning nine features and three units
+	// would be wrong in the one number people read fastest.
 	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(features))
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	for _, f := range features {
-		fmt.Fprintf(w, "  - %s\t%s\n", f, ComputeFeaturePhase(pctx, f))
+	for _, e := range entries {
+		fmt.Fprintf(w, "  - %s\t%s\n", e.ID, e.Phase)
 	}
 	w.Flush()
 }
@@ -233,8 +245,8 @@ func renderChildHuman(cmd *cobra.Command, name, path string, childCtx *config.Co
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(childFeatures))
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	for _, f := range childFeatures {
-		fmt.Fprintf(w, "  - %s\t%s\n", f, ComputeFeaturePhase(childCtx, f))
+	for _, e := range featureEntriesFor(childCtx, childFeatures) {
+		fmt.Fprintf(w, "  - %s\t%s\n", e.ID, e.Phase)
 	}
 	w.Flush()
 	renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()))
@@ -275,12 +287,7 @@ func buildStatusEnvelope(pctx *config.Context) statusEnvelope {
 			if unavailable != nil {
 				entry.Unavailable = unavailable.Error()
 			} else {
-				for _, f := range childFeatures {
-					entry.Features = append(entry.Features, featureEntry{
-						ID:    f,
-						Phase: ComputeFeaturePhase(childCtx, f),
-					})
-				}
+				entry.Features = featureEntriesFor(childCtx, childFeatures)
 				if orphans := scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()); orphans != nil {
 					entry.OrphanedBuildDirs = orphans
 				}
@@ -306,12 +313,7 @@ func buildRootSection(pctx *config.Context) rootSection {
 		r.Source = string(pctx.Resolution.Source)
 	}
 	features, _ := scanFeaturesAtTolerant(pctx.IntentsRoot())
-	for _, f := range features {
-		r.Features = append(r.Features, featureEntry{
-			ID:    f,
-			Phase: ComputeFeaturePhase(pctx, f),
-		})
-	}
+	r.Features = featureEntriesFor(pctx, features)
 	if orphans := scanOrphanedBuildDirs(pctx.IntentsRoot(), pctx.BuildRoot()); orphans != nil {
 		r.OrphanedBuildDirs = orphans
 	}
@@ -405,6 +407,41 @@ func scanFeaturesAt(intentsRoot string) ([]string, error) {
 // spec/intents/ tree as zero features (no error). This preserves the
 // pre-existing bare-parent behaviour of `parlay status` for the active
 // root.
+// featureEntriesFor builds one root's entry list: its features, then its
+// hand-authored units.
+//
+// Units are listed rather than filtered out because status is the command
+// people run to ask what is in a project, and a unit is a substantial part
+// of one — block-printing's geometry engine is ~2,700 lines. Omitting them
+// would make status agree with the pre-unit world by simply not mentioning
+// the code that motivated units in the first place.
+func featureEntriesFor(ctx *config.Context, features []string) []featureEntry {
+	entries := []featureEntry{}
+	for _, f := range features {
+		entries = append(entries, featureEntry{ID: f, Phase: ComputeFeaturePhase(ctx, f)})
+	}
+	units, _ := scanUnitsAtTolerant(ctx.IntentsRoot())
+	for _, u := range units {
+		entries = append(entries, featureEntry{
+			ID:    u,
+			Phase: PhaseHandAuthored,
+			Kind:  KindHandAuthored,
+		})
+	}
+	return entries
+}
+
+// scanUnitsAtTolerant is scanFeaturesAtTolerant's counterpart for units.
+func scanUnitsAtTolerant(intentsRoot string) ([]string, error) {
+	if _, err := os.Stat(intentsRoot); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return config.ScanUnitTree(intentsRoot)
+}
+
 func scanFeaturesAtTolerant(intentsRoot string) ([]string, error) {
 	if _, err := os.Stat(intentsRoot); err != nil {
 		if os.IsNotExist(err) {

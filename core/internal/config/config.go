@@ -44,6 +44,14 @@ const (
 	IntentsDir    = "intents"
 	HandoffDir    = "handoff"
 	PagesDir      = "pages"
+
+	// AuthoredFile is the declaration that marks a directory under
+	// spec/intents/ as a hand-authored unit rather than a feature: code
+	// parlay must never write, declared so that parlay can still track,
+	// hash and depend on it. Its presence is the sole classification
+	// signal — a unit also carries intents.md, so keying on that would
+	// be indistinguishable from a feature.
+	AuthoredFile = "authored.yaml"
 )
 
 // loadProjectConfigAt reads a ProjectConfig from a specific filesystem
@@ -92,18 +100,27 @@ const (
 	DirClassFeature    DirClass = 1
 	DirClassInitiative DirClass = 2
 	DirClassDeferred   DirClass = 3
+	DirClassAuthored   DirClass = 4
 )
 
 // ClassifyDir examines a directory and returns its classification.
-// Feature: contains intents.md directly. Initiative: contains direct-child
-// subdirectories with intents.md (checks only direct children, never recurses).
-// Deferred: matches neither rule. Returns an error for hybrid directories
-// (both intents.md and child dirs with intents.md).
+// Authored: contains authored.yaml — a hand-authored unit, checked before
+// the feature rule because a unit carries intents.md too and would
+// otherwise classify as a feature. Feature: contains intents.md directly.
+// Initiative: contains direct-child subdirectories with intents.md (checks
+// only direct children, never recurses). Deferred: matches none of the
+// above. Returns an error for hybrid directories (both intents.md and
+// child dirs with intents.md) — a unit is not exempt from that rule, since
+// a unit with feature children is as malformed as a feature with them.
 func ClassifyDir(path string) (DirClass, error) {
 	isFeature := hasIntentsMd(path)
+	isAuthored := hasAuthoredYaml(path)
 
 	children, err := os.ReadDir(path)
 	if err != nil {
+		if isAuthored {
+			return DirClassAuthored, nil
+		}
 		if isFeature {
 			return DirClassFeature, nil
 		}
@@ -123,6 +140,12 @@ func ClassifyDir(path string) (DirClass, error) {
 
 	if isFeature && hasChildFeatures {
 		return 0, fmt.Errorf("hybrid directory at %s: contains intents.md (feature) and subdirectories with intents.md (initiative) — a directory cannot be both", path)
+	}
+	if isAuthored && hasChildFeatures {
+		return 0, fmt.Errorf("hybrid directory at %s: contains authored.yaml (hand-authored unit) and subdirectories with intents.md (initiative) — a unit owns no features; move the declaration down to the unit's own directory", path)
+	}
+	if isAuthored {
+		return DirClassAuthored, nil
 	}
 	if isFeature {
 		return DirClassFeature, nil
@@ -183,20 +206,33 @@ func slugifyDirName(name string) string {
 // the time this was noticed (every real caller already went through
 // (*Context).AllFeatures()), so they were removed rather than fixed.
 func ScanFeatureTree(treeRoot string) ([]string, error) {
-	return scanFeatureTree(treeRoot)
+	features, _, err := scanTree(treeRoot)
+	return features, err
 }
 
-func scanFeatureTree(treeRoot string) ([]string, error) {
+// ScanUnitTree walks the given tree root and returns qualified
+// hand-authored unit identifiers — the DirClassAuthored counterpart of
+// ScanFeatureTree, sharing its single traversal so the two enumerations
+// can never disagree about what the tree contains.
+func ScanUnitTree(treeRoot string) ([]string, error) {
+	_, units, err := scanTree(treeRoot)
+	return units, err
+}
+
+// scanTree is the one walk behind both enumerations. Splitting it into a
+// feature walk and a unit walk would reintroduce the divergence the
+// classification rules exist to prevent: the two would drift on hybrid
+// handling, slug uniqueness and initiative nesting independently.
+func scanTree(treeRoot string) (features []string, units []string, err error) {
 	entries, err := os.ReadDir(treeRoot)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read %s: %w", treeRoot, err)
+		return nil, nil, fmt.Errorf("cannot read %s: %w", treeRoot, err)
 	}
 
 	if err := CheckSlugUniqueness(treeRoot); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var result []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -206,15 +242,17 @@ func scanFeatureTree(treeRoot string) ([]string, error) {
 
 		cls, err := ClassifyDir(topPath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		switch cls {
 		case DirClassFeature:
-			result = append(result, topSlug)
+			features = append(features, topSlug)
+		case DirClassAuthored:
+			units = append(units, topSlug)
 		case DirClassInitiative:
 			if err := CheckSlugUniqueness(topPath); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			children, childErr := os.ReadDir(topPath)
 			if childErr != nil {
@@ -227,21 +265,38 @@ func scanFeatureTree(treeRoot string) ([]string, error) {
 				childPath := filepath.Join(topPath, child.Name())
 				childCls, childClsErr := ClassifyDir(childPath)
 				if childClsErr != nil {
-					return nil, childClsErr
+					return nil, nil, childClsErr
 				}
-				if childCls == DirClassFeature {
-					result = append(result, topSlug+"/"+child.Name())
-				}
-				if childCls == DirClassInitiative {
-					return nil, fmt.Errorf("sub-initiative at %s: contains subdirectories with intents.md at depth 2, violating the flat-hierarchy rule — initiatives can only be direct children of %s", childPath, treeRoot)
+				switch childCls {
+				case DirClassFeature:
+					features = append(features, topSlug+"/"+child.Name())
+				case DirClassAuthored:
+					units = append(units, topSlug+"/"+child.Name())
+				case DirClassInitiative:
+					return nil, nil, fmt.Errorf("sub-initiative at %s: contains subdirectories with intents.md at depth 2, violating the flat-hierarchy rule — initiatives can only be direct children of %s", childPath, treeRoot)
+				case DirClassDeferred:
+					// valid, silently skipped in enumeration
+				default:
+					return nil, nil, unhandledDirClass(childCls, childPath)
 				}
 			}
 		case DirClassDeferred:
 			// valid, silently skipped in enumeration
+		default:
+			return nil, nil, unhandledDirClass(cls, topPath)
 		}
 	}
 
-	return result, nil
+	return features, units, nil
+}
+
+// unhandledDirClass turns the silent-drop failure mode into a loud one.
+// Both switches above used to have no default arm, so a DirClass added
+// without extending them would have quietly vanished from every
+// enumeration — the tree would simply stop containing those directories,
+// with no error anywhere to explain it.
+func unhandledDirClass(cls DirClass, path string) error {
+	return fmt.Errorf("unhandled directory classification %d at %s: a DirClass was added without extending scanTree — every enumeration is now silently missing these directories", cls, path)
 }
 
 func hasIntentsMd(dir string) bool {
@@ -256,4 +311,19 @@ func hasIntentsMd(dir string) bool {
 // to check directory classification without the full traversal.
 func HasIntentsMd(dir string) bool {
 	return hasIntentsMd(dir)
+}
+
+func hasAuthoredYaml(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, AuthoredFile))
+	return err == nil
+}
+
+// IsAuthoredUnit reports whether a directory carries the hand-authored
+// unit declaration. The exported single-directory check, for commands
+// that must branch on the class of one identifier rather than enumerate
+// the tree — several of them (repair, status, check-coverage) treat a
+// missing dialogs.md or handoff twin as a defect, which for a unit is
+// the normal and correct state.
+func IsAuthoredUnit(dir string) bool {
+	return hasAuthoredYaml(dir)
 }

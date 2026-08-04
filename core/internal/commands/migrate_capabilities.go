@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -264,6 +265,12 @@ func walkInfraFiles(root string) ([]string, error) {
 			return err
 		}
 		if info.IsDir() {
+			// See walkSurfaceMDFiles: a unit is skipped whole, not
+			// filtered file-by-file, so nothing inside it can be reached
+			// by a rewrite pass at all.
+			if config.IsAuthoredUnit(path) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if filepath.Base(path) == "infrastructure.md" {

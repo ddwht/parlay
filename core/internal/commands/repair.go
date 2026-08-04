@@ -182,7 +182,23 @@ func detectMismatches(intentsRoot string, roots []string) ([]mismatch, error) {
 
 	var mismatches []mismatch
 	for _, relPath := range intentsDirs {
-		for _, root := range roots[1:] {
+		// A hand-authored unit has no handoff twin, by design. The handoff
+		// tree carries engineering specifications for code about to be
+		// written; a unit's code is already written, by a person, and there
+		// is nothing to hand off. Without this, repair reports
+		// missing-directory for every unit and then "fixes" it by creating
+		// a directory that must stay empty forever — a repair that
+		// manufactures the defect it will report again next run.
+		//
+		// Indexing roots[1] for the handoff tree follows the same
+		// convention the stale-buildfile check below uses for roots[2]:
+		// threeTreeRoots always returns [intents, handoff, build].
+		isUnit := config.IsAuthoredUnit(filepath.Join(intentsRoot, relPath))
+
+		for i, root := range roots[1:] {
+			if isUnit && i == 0 {
+				continue
+			}
 			fullPath := filepath.Join(root, relPath)
 			if _, statErr := os.Stat(fullPath); os.IsNotExist(statErr) {
 				mismatches = append(mismatches, mismatch{
@@ -199,18 +215,34 @@ func detectMismatches(intentsRoot string, roots []string) ([]mismatch, error) {
 		}
 	}
 
-	for _, root := range roots[1:] {
+	for i, root := range roots[1:] {
+		isHandoffRoot := i == 0
 		otherDirs, _ := listFeatureDirs(root)
 		for _, relPath := range otherDirs {
 			intentsPath := filepath.Join(intentsRoot, relPath)
-			if _, statErr := os.Stat(intentsPath); os.IsNotExist(statErr) {
+			_, statErr := os.Stat(intentsPath)
+			orphaned := os.IsNotExist(statErr)
+
+			// A handoff directory belonging to a unit is orphaned even
+			// though its intents twin exists — the twin is a unit, and a
+			// unit owns no handoff. This is the state a feature converted
+			// into a unit is left in, which is the migration path units
+			// were introduced for, so it has to be reported rather than
+			// silently tolerated.
+			convertedToUnit := isHandoffRoot && statErr == nil && config.IsAuthoredUnit(intentsPath)
+
+			if orphaned || convertedToUnit {
 				fullPath := filepath.Join(root, relPath)
+				why := fmt.Sprintf("no source in %s", intentsRoot)
+				if convertedToUnit {
+					why = fmt.Sprintf("%s is a hand-authored unit, which produces no engineering handoff", relPath)
+				}
 				mismatches = append(mismatches, mismatch{
 					Category: "extra-directory",
 					OldPath:  fullPath,
 					Tree:     root,
 					Paths: []string{
-						fmt.Sprintf("%s (%d files, no source in %s)", fullPath, countFiles(fullPath), intentsRoot),
+						fmt.Sprintf("%s (%d files, %s)", fullPath, countFiles(fullPath), why),
 					},
 					Detail: fmt.Sprintf("Delete %s", fullPath),
 				})

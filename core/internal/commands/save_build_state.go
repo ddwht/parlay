@@ -36,6 +36,7 @@ var (
 	saveBuildStateSourceRoot string
 	saveBuildStateEmitted    string
 	saveBuildStateStrict     bool
+	saveBuildStatePartial    bool
 )
 
 // DefaultEmittedManifest is where codegen declares what it wrote.
@@ -62,6 +63,30 @@ func init() {
 		"Path to the newline-delimited manifest of files this run wrote (default .parlay/build/_project/.emitted when present)")
 	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateStrict, "strict", false,
 		"Fail instead of recording when a generated file was changed outside codegen")
+	saveBuildStateCmd.Flags().BoolVar(&saveBuildStatePartial, "partial", false,
+		"This run regenerated only part of the project (e.g. `parlay refine`); makes --emitted mandatory")
+}
+
+// requireEmittedForPartial refuses a partial save with no emission manifest.
+//
+// A whole-project run without a manifest degrades: every entry becomes
+// unknown, verify-generated can say nothing, and the warning above says so
+// loudly. A PARTIAL run without one does something worse than degrade — it
+// is affirmatively wrong. The manifest is what tells the classifier which
+// files this run wrote; with it, the files a partial run did not touch keep
+// the verdict they already had, because an unchanged file with no emission
+// carries its previous entry forward. Without it, a run that rewrote three
+// files marks every tracked file in the project as unknown, and `--strict`
+// then fails on all of them.
+//
+// So the flag does not add a capability, it removes a way to be silently
+// wrong — which is the only thing a partial caller could want here.
+func requireEmittedForPartial(cfg *config.Context, emitted *emissionDeclaration) error {
+	if !saveBuildStatePartial || emitted != nil {
+		return nil
+	}
+	return fmt.Errorf("--partial requires --emitted: a partial regeneration with no manifest would mark every tracked file in the project as unknown on the strength of a run that touched a handful, and --strict would then fail on all of them. Have the run append each file it wrote to %s",
+		filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest))
 }
 
 func runSaveBuildState(cmd *cobra.Command, args []string) error {
@@ -225,11 +250,27 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	if err != nil {
 		return nil, err
 	}
+	if err := requireEmittedForPartial(cfg, emitted); err != nil {
+		return nil, err
+	}
 	previous, _ := loadProjectCodeHashes(cfg)
 
-	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, emitted, previous)
+	// The unit declarations, resolved to concrete files. Read from
+	// spec/intents/ here — which the CLI may do and codegen may not — and
+	// projected into .parlay/ below so codegen can honour them without
+	// reading the spec tree.
+	authored, projection, err := resolveAuthoredUnits(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	hashes, _, err := buildCodeHashesWithProvenance(cfg, "", sourceRoot, emitted, previous, authored)
 	if err != nil {
 		return nil, fmt.Errorf("compute project code hashes: %w", err)
+	}
+
+	if err := writeAuthoredProjection(cfg, projection); err != nil {
+		return nil, err
 	}
 
 	if emitted == nil {
@@ -237,9 +278,24 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 		// unknown, verify-generated can say nothing about hand-edits, and a
 		// silent degradation here would look exactly like the feature
 		// working.
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"[WARN] no --emitted manifest: provenance is unknown for all %d tracked file(s), so verify-generated cannot distinguish a regeneration from a hand-edit. Have generate-code append each file it writes to %s.\n",
-			len(hashes.Files), filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest))
+		//
+		// Hand-authored files are excluded from the count: their provenance
+		// comes from a declaration, not from the emission manifest, so they
+		// are not among the files this warning is about. Counting them made
+		// a project whose only tracked file was a unit's read "provenance
+		// is unknown for all 1 tracked file(s)" about the one file whose
+		// provenance was certain.
+		unknownCount := 0
+		for _, entry := range hashes.Files {
+			if entry.Provenance != ProvenanceHandAuthored {
+				unknownCount++
+			}
+		}
+		if unknownCount > 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"[WARN] no --emitted manifest: provenance is unknown for %d tracked file(s), so verify-generated cannot distinguish a regeneration from a hand-edit. Have generate-code append each file it writes to %s.\n",
+				unknownCount, filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest))
+		}
 	}
 
 	// Adoption is recorded and surfaced, not prevented. save-build-state runs
@@ -251,6 +307,13 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	// overwrite", not "prevented". --strict exists for CI.
 	var adopted []string
 	for path, entry := range hashes.Files {
+		if entry.Provenance == ProvenanceHandAuthored {
+			// Never adopted. Adoption means "codegen's output changed and
+			// codegen did not do it" — a unit file has no codegen output to
+			// diverge from, so reporting one here would warn the author
+			// that editing their own declared code was an irregularity.
+			continue
+		}
 		if entry.Provenance == ProvenanceAdopted {
 			adopted = append(adopted, path)
 		}

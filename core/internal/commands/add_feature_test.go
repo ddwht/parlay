@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 )
 
@@ -212,5 +213,91 @@ func TestAddFeatureWithInitiative_SameSlugDifferentInitiative(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("same slug in different initiative should succeed, got: %v", err)
+	}
+}
+
+// withAuthoredFlags sets the --authored flag globals for one test and
+// restores them afterwards. They are package-level cobra bindings, so a
+// test that forgets to reset them leaks into every later test in the file.
+func withAuthoredFlags(t *testing.T, sources, tests []string, summary string) {
+	t.Helper()
+	authoredFlag, authoredSourcesFlag, authoredTestsFlag, authoredSummaryFlag = true, sources, tests, summary
+	t.Cleanup(func() {
+		authoredFlag, authoredSourcesFlag, authoredTestsFlag, authoredSummaryFlag = false, nil, nil, ""
+	})
+}
+
+// A unit occupies two trees, not three, and the tree-parity detector must
+// be satisfied by that — this is the assertion tying --authored to the
+// rule repair and status enforce, rather than to a list of paths.
+func TestAddFeature_AuthoredLeavesNoRepairMismatch(t *testing.T) {
+	dir := setupTestDir(t)
+	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
+	os.MkdirAll(filepath.Join(dir, "src", "codec"), 0755)
+	os.WriteFile(filepath.Join(dir, "src", "codec", "decode.go"), []byte("package codec\n"), 0644)
+	withAuthoredFlags(t, []string{"src/codec/**"}, nil, "hand-rolled codec")
+
+	if err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"codec", "core"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testContext(t)
+	if _, err := os.Stat(filepath.Join(cfg.FeaturePath("codec-core"), config.AuthoredFile)); err != nil {
+		t.Errorf("authored.yaml not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.FeaturePath("codec-core"), "dialogs.md")); err == nil {
+		t.Error("a unit must not get a dialogs.md — nothing authors dialog turns for code that already exists")
+	}
+	if _, err := os.Stat(cfg.HandoffPath("codec-core")); err == nil {
+		t.Error("a unit must not get a handoff directory")
+	}
+	if _, err := os.Stat(cfg.BuildPath("codec-core")); err != nil {
+		t.Errorf("a unit still needs its build directory (hashes, coverage): %v", err)
+	}
+
+	mismatches, err := detectMismatches(cfg.IntentsRoot(), threeTreeRoots(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mismatches) != 0 {
+		t.Errorf("a newly declared unit should need no repair, got %d: %+v", len(mismatches), mismatches)
+	}
+}
+
+// The declaration this writes must survive its own validator. A scaffold
+// that emits something the next command rejects is worse than no scaffold.
+func TestAddFeature_AuthoredWritesAValidDeclaration(t *testing.T) {
+	dir := setupTestDir(t)
+	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
+	os.MkdirAll(filepath.Join(dir, "src", "codec"), 0755)
+	withAuthoredFlags(t, []string{"src/codec/**"}, []string{"tests/codec/**"}, "hand-rolled codec")
+
+	if err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"codec", "core"}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(testContext(t).FeaturePath("codec-core"), config.AuthoredFile)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcomes := agent.ValidateAuthoredUnit(agent.ModeAuthoring, path, content); len(outcomes) != 0 {
+		t.Errorf("scaffolded declaration does not validate: %+v", outcomes)
+	}
+}
+
+// A unit owning no files declares nothing, so the flag combination that
+// would produce one is refused before anything is written.
+func TestAddFeature_AuthoredRequiresSources(t *testing.T) {
+	setupTestDir(t)
+	os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0755)
+	withAuthoredFlags(t, nil, nil, "")
+
+	err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"codec", "core"})
+	if err == nil {
+		t.Fatal("expected --authored with no --sources to be refused")
+	}
+	if _, statErr := os.Stat(testContext(t).FeaturePath("codec-core")); statErr == nil {
+		t.Error("the refusal must happen before any directory is created")
 	}
 }

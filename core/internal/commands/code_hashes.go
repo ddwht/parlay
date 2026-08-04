@@ -35,7 +35,15 @@ type CodeHashes struct {
 
 // CodeHashesSchemaVersion is the current on-disk version. Bumped when the
 // meaning of an existing field changes, not when a field is added.
-const CodeHashesSchemaVersion = 1
+//
+// v2 adds ProvenanceHandAuthored, which changes the DOMAIN of an existing
+// field rather than adding a new one — and with it the meaning of the whole
+// file. A v1 snapshot's set of tracked paths is exactly "what carried a
+// generation marker"; a v2 snapshot's is that union the declared unit files,
+// which no marker scan would ever have returned. A v1 reader handed a v2
+// file would see hand-authored entries with an unrecognized provenance and
+// bucket them as unknown, which --strict fails on.
+const CodeHashesSchemaVersion = 2
 
 // Provenance values. The zero value is deliberately not "generated": reading
 // an unknown file as generated is exactly the silent blessing this field
@@ -45,6 +53,11 @@ const (
 	ProvenanceGenerated = "generated"
 	ProvenanceAdopted   = "adopted"
 	ProvenanceUnknown   = "" // no declaration covers this file
+	// ProvenanceHandAuthored is code a unit declares and parlay must never
+	// write. It is not a weaker "generated" — it is the opposite claim.
+	// For every other provenance, a file changing since the last snapshot
+	// is a signal; for this one, changing is what the file is for.
+	ProvenanceHandAuthored = "hand-authored"
 )
 
 // CodeHashEntry pairs a generated file's owning component with the content
@@ -171,7 +184,7 @@ func hashFileContent(path string) (string, error) {
 // writing. cfg is currently unused inside this helper but accepted to keep
 // the signature consistent with the surrounding migration.
 func buildCodeHashes(cfg *config.Context, slug, sourceRoot string) (*CodeHashes, int, error) {
-	return buildCodeHashesWithProvenance(cfg, slug, sourceRoot, nil, nil)
+	return buildCodeHashesWithProvenance(cfg, slug, sourceRoot, nil, nil, nil)
 }
 
 // emissionDeclaration is what codegen said it wrote this run. A nil
@@ -200,7 +213,13 @@ type emissionDeclaration struct {
 //	                             something changed this file and it was not
 //	                             codegen. This is the silent-clobber case.
 //	no declaration at all      → unknown, for every entry.
-func buildCodeHashesWithProvenance(cfg *config.Context, slug, sourceRoot string, emitted *emissionDeclaration, previous *CodeHashes) (*CodeHashes, int, error) {
+//
+// The hand-authored row sits ahead of all of them and is not in that table
+// at all, because it does not answer the same question. The rows above ask
+// "who last wrote this generated file"; a unit file has no such history to
+// reconstruct — a person wrote it, the declaration says so, and no amount
+// of hash comparison could either confirm or contradict that.
+func buildCodeHashesWithProvenance(cfg *config.Context, slug, sourceRoot string, emitted *emissionDeclaration, previous *CodeHashes, authored *authoredDeclaration) (*CodeHashes, int, error) {
 	_ = cfg
 	markers, err := parser.ScanGenerated(sourceRoot)
 	if err != nil {
@@ -230,6 +249,18 @@ func buildCodeHashesWithProvenance(cfg *config.Context, slug, sourceRoot string,
 		entry := CodeHashEntry{Component: marker.Component, Hash: hash}
 
 		switch {
+		case authoredOwner(authored, marker.Path) != "":
+			// Leading case, ahead of the emission check. A marked file
+			// inside a declared unit is a contradiction the tool must
+			// state, not silently resolve — see the overlap error raised
+			// below, which fires when codegen also claims to have written
+			// it. Reaching here without that claim means the marker is
+			// stale (the file was generated once, then adopted into a
+			// unit), and the declaration wins: it is the more recent
+			// statement of intent.
+			entry.Provenance = ProvenanceHandAuthored
+			entry.Component = authoredOwner(authored, marker.Path)
+
 		case emitted == nil:
 			// Nothing declared. Unknown rather than generated — see the
 			// Provenance constants for why the zero value must not read as
@@ -259,7 +290,63 @@ func buildCodeHashesWithProvenance(cfg *config.Context, slug, sourceRoot string,
 		hashes.Files[marker.Path] = entry
 	}
 
+	// The second ingestion path. Everything above came from
+	// parser.ScanGenerated, whose admission gate is the generation marker —
+	// so by construction it returned no hand-authored file, because a
+	// hand-authored file carries no marker and must never be given one.
+	// These entries exist only because a unit declared them.
+	if err := ingestAuthoredFiles(hashes, emitted, authored); err != nil {
+		return nil, 0, err
+	}
+
 	return hashes, skipped, nil
+}
+
+// ingestAuthoredFiles adds every declared unit file to the snapshot.
+//
+// Runs after the marker loop so the overlap check sees the full emission
+// picture: a path that codegen declared it wrote AND a unit declares it
+// owns is refused rather than resolved, because both statements are
+// authoritative and they contradict each other. Guessing which one is
+// stale would either bless a tool write into protected code or discard a
+// real emission record, and there is no evidence on disk to choose with.
+func ingestAuthoredFiles(hashes *CodeHashes, emitted *emissionDeclaration, authored *authoredDeclaration) error {
+	if !authored.hasUnits() {
+		return nil
+	}
+
+	paths := make([]string, 0, len(authored.Owner))
+	for p := range authored.Owner {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		unit := authored.Owner[path]
+		if emitted != nil && emitted.Paths[normalizeWriteSetPath(path)] {
+			return fmt.Errorf("authored-glob-overlaps-generated: %s is declared emitted by codegen and also claimed by hand-authored unit %q — codegen must never write into a unit; narrow the unit's globs or remove the file from the emission manifest", path, unit)
+		}
+		hash, err := hashFileContent(path)
+		if err != nil {
+			return fmt.Errorf("hash failed for hand-authored %s (unit %s): %w", path, unit, err)
+		}
+		hashes.Files[path] = CodeHashEntry{
+			Component:  unit,
+			Hash:       hash,
+			Provenance: ProvenanceHandAuthored,
+			// No EmittedAt: nothing emitted it. Leaving the field empty is
+			// the honest record, and it is what distinguishes a unit file
+			// from a generated one whose emission time simply predates
+			// provenance tracking.
+		}
+	}
+	return nil
+}
+
+// authoredOwner is the nil-tolerant lookup the classification switch uses.
+func authoredOwner(authored *authoredDeclaration, path string) string {
+	unit, _ := authored.ownerOf(path)
+	return unit
 }
 
 // previousEntry looks a path up in an earlier snapshot, tolerating a nil one.

@@ -27,7 +27,7 @@ Stop and return this as your final output whenever you need the user:
 
 ````
 ```yaml parlay-decision
-kind: phase-boundary        # phase-boundary | override | ambiguity
+kind: phase-boundary        # phase-boundary | override | ambiguity | impasse
 phase: dialogs
 question: "Dialogs phase complete. Advance to artifacts?"
 context: |
@@ -45,7 +45,7 @@ resume: "Re-enter with decision: <id>. dialogs.md is written."
 ```
 ````
 
-Raise one for: each phase boundary; the artifact-set recommendation and its override menu; any ambiguity in an intent you cannot resolve from the spec itself (unclear Goal, contradictory Constraints, missing Context for a branch); and before modifying `intents.md` or `dialogs.md` beyond what the user already asked for.
+Raise one for: each phase boundary; the artifact-set recommendation and its override menu; any ambiguity in an intent you cannot resolve from the spec itself (unclear Goal, contradictory Constraints, missing Context for a branch); before modifying `intents.md` or `dialogs.md` beyond what the user already asked for; and any intent no artifact set can express — where the choice is not between surface and infrastructure but that neither describes it (`kind: impasse`, offering the hand-authored unit).
 
 Leave the filesystem coherent before you stop — a decision is a pause, not a half-write.
 

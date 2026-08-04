@@ -90,7 +90,7 @@ func TestWriteSet_UndeclaredComponentFileIsReported(t *testing.T) {
 	if declared["src/app/sneaked-in.ts"] {
 		t.Fatal("fixture is wrong: the undeclared path appears in the declared set")
 	}
-	if reason := exemptFromPlan(cfg, "src/app/sneaked-in.ts", "thing"); reason != "" {
+	if reason := exemptFromPlan(cfg, "src/app/sneaked-in.ts", CodeHashEntry{Component: "thing"}); reason != "" {
 		t.Fatalf("an ordinary component file must not be exempt, got %q", reason)
 	}
 }
@@ -108,7 +108,7 @@ func TestWriteSet_TestMarkerFileIsExempt(t *testing.T) {
 	if err := os.WriteFile(full, []byte("// parlay-artifact: test\ndescribe('x', () => {})\n"), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	reason := exemptFromPlan(cfg, specPath, "thing")
+	reason := exemptFromPlan(cfg, specPath, CodeHashEntry{Component: "thing"})
 	if reason == "" {
 		t.Fatal("a file carrying `parlay-artifact: test` must be exempt from the plan allowlist")
 	}
@@ -129,7 +129,7 @@ func TestWriteSet_SpecSuffixWithoutMarkerIsNotExempt(t *testing.T) {
 	if err := os.WriteFile(full, []byte("describe('x', () => {})\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if reason := exemptFromPlan(cfg, specPath, "thing"); reason != "" {
+	if reason := exemptFromPlan(cfg, specPath, CodeHashEntry{Component: "thing"}); reason != "" {
 		t.Errorf("exemption must key on the marker, not the .spec.ts suffix; got %q", reason)
 	}
 }
@@ -138,12 +138,49 @@ func TestWriteSet_SpecSuffixWithoutMarkerIsNotExempt(t *testing.T) {
 // declare it.
 func TestWriteSet_UnattributedScaffoldIsExempt(t *testing.T) {
 	cfg := writeSetFixture(t, wsBuildfile, "files: {}\n")
-	reason := exemptFromPlan(cfg, "src/app/app.config.ts", "")
+	reason := exemptFromPlan(cfg, "src/app/app.config.ts", CodeHashEntry{Component: ""})
 	if reason == "" {
 		t.Fatal("a file with no component attribution must be exempt")
 	}
 	if !strings.Contains(reason, "scaffold") {
 		t.Errorf("exemption reason should name the scaffold rule, got %q", reason)
+	}
+}
+
+// Exemption 3: a file a unit declares. The finding this suppresses would say
+// the opposite of the truth — codegen-wrote-outside-plan accuses the tool of
+// writing a file it is forbidden to write and did not write.
+func TestWriteSet_HandAuthoredFileIsExempt(t *testing.T) {
+	cfg := writeSetFixture(t, wsBuildfile, "files: {}\n")
+	// Component is populated and the file carries no test marker, so both
+	// existing exemptions decline it. Only the provenance excuses it.
+	entry := CodeHashEntry{Component: "geometry-engine", Provenance: ProvenanceHandAuthored}
+	reason := exemptFromPlan(cfg, "App/Sources/Core/mesh.swift", entry)
+	if reason != exemptHandAuthored {
+		t.Errorf("reason = %q, want %q", reason, exemptHandAuthored)
+	}
+
+	// And the same path with an ordinary provenance is still a violation —
+	// the exemption must come from the declaration, not from the path.
+	entry.Provenance = ProvenanceGenerated
+	if reason := exemptFromPlan(cfg, "App/Sources/Core/mesh.swift", entry); reason != "" {
+		t.Errorf("a generated file at the same path must not be exempt, got %q", reason)
+	}
+}
+
+// The bare count said a third of the tree was excused without saying on what
+// grounds, while the reason was computed and dropped one line later.
+func TestWriteSet_ExemptionsAreBrokenDownByReason(t *testing.T) {
+	out := &writeSetOutput{}
+	out.recordExempt(exemptHandAuthored)
+	out.recordExempt(exemptHandAuthored)
+	out.recordExempt(exemptTestFile)
+
+	if out.Exempt != 3 {
+		t.Errorf("Exempt = %d, want 3", out.Exempt)
+	}
+	if out.ExemptByReason[exemptHandAuthored] != 2 || out.ExemptByReason[exemptTestFile] != 1 {
+		t.Errorf("ExemptByReason = %v, want 2 hand-authored and 1 test-file", out.ExemptByReason)
 	}
 }
 

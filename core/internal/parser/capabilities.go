@@ -27,7 +27,18 @@ type Capabilities struct {
 // validator rejects anything outside the corresponding closed-vocabulary
 // schema.
 type CapabilityOperation struct {
-	ID       string            `yaml:"id"`
+	ID string `yaml:"id"`
+	// Source is comma-separated @feature/intent-slug traceability refs —
+	// the same shape surface fragments carry. Optional on read: every
+	// capabilities.yaml written before the field exists without it, and
+	// refusing to load those would fail every project at once over a fact
+	// none of them could have recorded.
+	//
+	// It exists for the REVERSE walk. Forwards — intent to artifact to
+	// buildfile to test — never needed it. Asking "which artifact owns
+	// this change" does, and without it a backend refinement had nothing
+	// to route on but name similarity.
+	Source   string            `yaml:"source,omitempty"`
 	Kind     string            `yaml:"kind"`
 	Subject  CapabilitySubject `yaml:"subject"`
 	Input    *CapabilityIO     `yaml:"input,omitempty"`

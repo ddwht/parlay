@@ -478,3 +478,73 @@ func TestFoldRenamePairs_DifferentTreesNotPaired(t *testing.T) {
 		t.Errorf("got %d, want 2 — cross-tree pairs must not fold", len(got))
 	}
 }
+
+// A unit gets a build directory but no handoff twin. Before this, repair
+// reported missing-directory for the handoff and then "fixed" it by
+// creating a directory that must stay empty forever — manufacturing the
+// defect it would report again on the next run.
+func TestDetectMismatches_UnitHasNoHandoffTwin(t *testing.T) {
+	intentsRoot, handoffRoot, buildRoot := setupThreeTreeDirs(t)
+	unitDir := filepath.Join(intentsRoot, "geometry-engine")
+	os.MkdirAll(unitDir, 0755)
+	os.WriteFile(filepath.Join(unitDir, "intents.md"), []byte("# Engine"), 0644)
+	os.WriteFile(filepath.Join(unitDir, config.AuthoredFile),
+		[]byte("schema_version: 1\nunit: geometry-engine\nsummary: s\nsources: [\"src/**\"]\n"), 0644)
+
+	mismatches, err := detectMismatches(intentsRoot, []string{intentsRoot, handoffRoot, buildRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var handoff, build int
+	for _, m := range mismatches {
+		if m.Category != "missing-directory" {
+			continue
+		}
+		if strings.HasPrefix(m.NewPath, handoffRoot) {
+			handoff++
+		}
+		if strings.HasPrefix(m.NewPath, buildRoot) {
+			build++
+		}
+	}
+	if handoff != 0 {
+		t.Errorf("a unit must not be reported as missing a handoff directory, got %d", handoff)
+	}
+	// The build directory is still expected — a unit carries hashes and
+	// coverage there, it just produces no engineering handoff.
+	if build != 1 {
+		t.Errorf("expected the unit's build directory to be reported missing, got %d", build)
+	}
+}
+
+// The migration path units exist for: a feature converted into a unit
+// leaves its handoff directory behind, and the intents twin still exists,
+// so the ordinary orphan rule cannot see it.
+func TestDetectMismatches_HandoffLeftBehindByConversionToUnit(t *testing.T) {
+	intentsRoot, handoffRoot, buildRoot := setupThreeTreeDirs(t)
+	unitDir := filepath.Join(intentsRoot, "geometry-engine")
+	os.MkdirAll(unitDir, 0755)
+	os.WriteFile(filepath.Join(unitDir, "intents.md"), []byte("# Engine"), 0644)
+	os.WriteFile(filepath.Join(unitDir, config.AuthoredFile),
+		[]byte("schema_version: 1\nunit: geometry-engine\nsummary: s\nsources: [\"src/**\"]\n"), 0644)
+	// The leftover from when it was a feature.
+	staleHandoff := filepath.Join(handoffRoot, "geometry-engine")
+	os.MkdirAll(staleHandoff, 0755)
+	os.WriteFile(filepath.Join(staleHandoff, "specification.md"), []byte("# old"), 0644)
+
+	mismatches, err := detectMismatches(intentsRoot, []string{intentsRoot, handoffRoot, buildRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, m := range mismatches {
+		if m.Category == "extra-directory" && m.OldPath == staleHandoff {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a handoff directory belonging to a unit must be reported as extra; got %+v", mismatches)
+	}
+}

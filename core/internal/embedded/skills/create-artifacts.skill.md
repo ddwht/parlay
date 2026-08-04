@@ -69,6 +69,21 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
    - New entities or vocabulary → **add domain-model**
    - Surface intents with blueprint-derived backend implications → **surface + the implied backend artifact** (explain why)
    - Any ambiguous intents → **raise the decision** (step 4) rather than picking the reading that is easiest to build
+   - **No subset fits** → this is not an artifact-set question. See step 3.5.
+
+3.5. **When no artifact set fits: offer the hand-authored unit** — Sometimes an intent is not surface, not operation-shaped, and not architectural prose. It describes a computation: a geometry kernel, a codec, a solver, a parser. The four artifacts can describe what such a thing is *for* and what must hold of it, but none of them can express *it*, and every subset you could pick would be a container you fill with prose that generates nothing.
+
+   Do not resolve this by picking the closest artifact. That is the same failure the ambiguity rule forbids one step up, and it costs more here: the designer gets a `capabilities.yaml` full of operations no adapter supports, or an `infrastructure.md` of specificity warnings, and the pipeline carries the fiction forward until codegen reports it cannot write the thing.
+
+   Raise `kind: impasse` instead, offering to declare the work a **hand-authored unit** — code a person writes, which the pipeline never generates but does track, hash and depend on. See `authored.schema.md`. Pre-fill from what you already know:
+
+   - `context:` — which intents no artifact set expresses, and *why* each resists: the operation whose `kind:` is outside the closed vocabulary, the invariant no assertion vocabulary can state, the term the domain model has no shape for. Name them. "This looks hard to generate" is not a finding the designer can act on.
+   - `options:` — at minimum `declare-unit` (scope it: which intents move into the unit, and which stay as ordinary artifacts — a unit rarely swallows a whole feature), and `keep-trying` with a note on what would have to change for the pipeline to express it. Add `explain` when you are not certain the intent resists expression at all.
+   - **No `default:`.** Accepting a unit is a permanent scope reduction — that code will never be generated, by design — and no flag authorizes taking it unattended. Under `--non-interactive` the driver aborts with exit 11.
+
+   On `declare-unit`, run `parlay add-feature "<name>" --authored --sources "<glob>" --summary "<one line>"`, then tell the designer to write the code and re-run `parlay validate --type authored`. The unit's `satisfies:` is where its invariants go, so the build phase stops generating suites for them.
+
+   **Only when it genuinely does not fit.** A unit is the right answer for a computation nobody should generate; it is the wrong answer for an intent you have not read carefully, and offering it as an escape from a hard artifact decision trades a solvable problem for a permanent one.
 
 4. **Raise the decision** — Return an `override` decision request (see **Asking the user**) carrying:
    - `context:` — the recommended artifact subset, and a per-intent breakdown naming which intent maps to which artifact(s) and what signal drove each classification. The reasoning is the point; a bare verdict gives the designer nothing to override *with*.
@@ -82,6 +97,7 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 5. **Create the artifacts**:
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.md or surface.yaml, validate)
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
+     - **Set `source:` on every operation** to the `@{feature}/{intent-slug}` refs it came from, the same way a surface fragment carries one. This is the only record of which intent an operation implements, and it is what lets a later change described in prose be routed to the operation that owns it. An operation without it can be found only by name similarity, which misses renames and matches things that merely sound alike.
    - **If infrastructure**: guide the designer to author `infrastructure.md` — show the fragment format, the field set (Name, Source intent, Affects, Behavior, Invariants), and a worked example drawn from the matching architectural category (boundary, probe, allowlist, dependency pin)
    - **If domain-model**: write what this feature needs into the **feature's own** `spec/intents/{feature}/domain-model.yaml` — a *contribution*. Do **not** edit the project's root `domain-model.yaml` from a feature phase.
      - The contribution uses the same schema as the root model and holds **only what this feature proposes** — the new entities, the new fields on existing entities, the new enum values, the new relationships. It is not a copy of the root with edits.

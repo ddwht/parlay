@@ -585,6 +585,15 @@ func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
 		// their stack has no bundled adapter and there is no codebase to
 		// derive one from.
 		"create-adapter": true,
+		// refine is user-typed by definition: its only argument is the change
+		// in the user's own words, so there is no caller but a person and
+		// nothing for a driver to pass. It earns a menu entry rather than
+		// being a phase module because it is not a phase — it is the tracked
+		// replacement for prompting an agent directly, which is what people
+		// already do for small changes to an app that exists. A module the
+		// loop invokes would not compete with that; only something you can
+		// type instead does.
+		"refine": true,
 	}
 
 	got := map[string]bool{}

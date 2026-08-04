@@ -23,7 +23,7 @@ Read `.parlay/modules/generate-code.md` for the emission rules, the strict-isola
 
 ````
 ```yaml parlay-decision
-kind: overwrite             # overwrite | failure | ambiguity
+kind: overwrite             # overwrite | failure | ambiguity | impasse
 phase: code
 question: "3 generated files changed since they were last generated. Overwrite?"
 context: |
@@ -43,7 +43,7 @@ resume: "Re-enter with decision: <id>. No files written yet."
 ```
 ````
 
-Raise one for: **every** generated file whose content differs from the recorded hash of what was last emitted — whether its component is stable or dirty; a failing test suite (`kind: failure`, with the failures in `context:`); and any point where the buildfile admits two materially different emissions.
+Raise one for: **every** generated file whose content differs from the recorded hash of what was last emitted — whether its component is stable or dirty; a failing test suite (`kind: failure`, with the failures in `context:`); any point where the buildfile admits two materially different emissions; and anything the buildfile asks for that you cannot write — the "report what is missing" outcome, raised as `kind: impasse` offering the hand-authored unit rather than left as prose in a report nobody acts on.
 
 The dirty/stable distinction does not tell you whether a human edited a file. Under functional determinism a regenerated file legitimately differs byte-for-byte from the last one, so the hash alone cannot separate churn from a hand-edit — compare against the emission provenance recorded beside the hash, and when that is inconclusive, ask. Scoping the check to stable components inverts it: it fires when nothing is at risk and stands down exactly when a hand-edit is most likely.
 

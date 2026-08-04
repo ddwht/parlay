@@ -60,6 +60,28 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 		Issues:  []readinessIssue{},
 	}
 
+	// Every stage below asks the same underlying question: is this feature
+	// ready for the NEXT pipeline phase. A unit has no next phase — no
+	// dialogs to author, no surface to create, no buildfile to build — so
+	// each stage reported an error, ready:false and exit 1 about work that
+	// must never happen. A permanent hard failure on a correctly-declared
+	// unit would make check-readiness unusable in any project holding one.
+	if config.IsAuthoredUnit(featurePath) {
+		output.Ready = true
+		output.Issues = append(output.Issues, readinessIssue{
+			Severity: "info",
+			Code:     "hand-authored-unit",
+			Message:  fmt.Sprintf("%s is a hand-authored unit; the %s stage does not apply to it", slug, readinessStage),
+			Fix:      "no action — a unit's code is written by a person, so there is no phase to be ready for",
+		})
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
+		return nil
+	}
+
 	switch readinessStage {
 	case "create-surface":
 		output.Issues = checkCreateSurfaceReadiness(featurePath)

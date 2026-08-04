@@ -29,6 +29,15 @@ func runCreateDialogs(cmd *cobra.Command, args []string) error {
 	slug := parser.FeatureSlug(args[0])
 	featurePath := cfg.FeaturePath(slug)
 
+	// Checked before anything is read, because the failure mode here is a
+	// WRITE: without this, create-dialogs authors a dialogs.md inside the
+	// unit's own directory, and the unit then looks like a feature that
+	// merely has not reached the artifacts phase.
+	if err := refuseOnUnit(cfg, slug,
+		"a unit describes code that already exists, so there are no dialog turns to author for it"); err != nil {
+		return err
+	}
+
 	// Operation: read-file intents.md, parse using intent-schema
 	intentsPath := filepath.Join(featurePath, "intents.md")
 	intents, err := parser.ParseIntentsFile(intentsPath)

@@ -41,7 +41,7 @@ func TestSignaturesOmitAbsentArtifacts(t *testing.T) {
 		"intents.md": "# i",
 		"dialogs.md": "# d",
 	})
-	sigs, err := computeSourceSignatures(fd, root, adapter)
+	sigs, err := computeSourceSignatures(fd, root, adapter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestSignaturesOmitAbsentArtifacts(t *testing.T) {
 // stale.
 func TestSignaturesAreContentBased(t *testing.T) {
 	fd, root, adapter := sigFixture(t, map[string]string{"intents.md": "# i"})
-	first, err := computeSourceSignatures(fd, root, adapter)
+	first, err := computeSourceSignatures(fd, root, adapter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSignaturesAreContentBased(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fd, "intents.md"), []byte("# i"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	second, err := computeSourceSignatures(fd, root, adapter)
+	second, err := computeSourceSignatures(fd, root, adapter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSignaturesAreContentBased(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fd, "intents.md"), []byte("# i changed"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	third, _ := computeSourceSignatures(fd, root, adapter)
+	third, _ := computeSourceSignatures(fd, root, adapter, nil)
 	if first["intents"] == third["intents"] {
 		t.Fatal("signature did not change when the content did")
 	}
@@ -96,9 +96,9 @@ func TestSurfaceYAMLPreferredOverMarkdown(t *testing.T) {
 		"surface.md":   "legacy",
 		"surface.yaml": "pages: []",
 	})
-	sigs, _ := computeSourceSignatures(fd, root, adapter)
+	sigs, _ := computeSourceSignatures(fd, root, adapter, nil)
 	yamlOnly, _, _ := sigFixture(t, map[string]string{"intents.md": "# i", "surface.yaml": "pages: []"})
-	ySigs, _ := computeSourceSignatures(yamlOnly, root, adapter)
+	ySigs, _ := computeSourceSignatures(yamlOnly, root, adapter, nil)
 	if sigs["surface"] != ySigs["surface"] {
 		t.Fatal("surface signature came from surface.md while surface.yaml exists")
 	}
@@ -235,7 +235,71 @@ func TestSignatureFieldOrderMatchesSchema(t *testing.T) {
 // that invalidated everything.
 func TestMissingAdapterIsAnError(t *testing.T) {
 	fd, root, _ := sigFixture(t, map[string]string{"intents.md": "# i"})
-	if _, err := computeSourceSignatures(fd, root, ""); err == nil {
+	if _, err := computeSourceSignatures(fd, root, "", nil); err == nil {
 		t.Fatal("expected an error when no adapter could be found")
+	}
+}
+
+// The block-printing failure, reduced: two commits to a hand-written
+// geometry engine invalidated fixture numbers in two dependent buildfiles,
+// and nothing reported it. The engine's files carried no generation marker,
+// so no ingestion path could return them and no hash could move.
+//
+// source-signatures is the mechanism that actually blocks — check-drift and
+// diff are advisory by explicit design — so this asserts at the gate.
+func TestEngineChangeMovesTheFeatureSignature(t *testing.T) {
+	fd, root, adapter := sigFixture(t, map[string]string{"intents.md": "# i"})
+
+	units := map[string]string{"geometry-engine": "sha256:aaa"}
+	before, err := computeSourceSignatures(fd, root, adapter, units)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before["authored"] == "" {
+		t.Fatal("a project with a unit must carry an authored signature")
+	}
+
+	// The engine changes. Nothing about the feature's own spec moved.
+	units["geometry-engine"] = "sha256:bbb"
+	after, err := computeSourceSignatures(fd, root, adapter, units)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after["authored"] == before["authored"] {
+		t.Error("an engine change must move the consuming feature's signature, or the build stays green over stale fixtures")
+	}
+	for _, unchanged := range []string{"intents", "adapter-version"} {
+		if after[unchanged] != before[unchanged] {
+			t.Errorf("%s moved, but only the unit changed", unchanged)
+		}
+	}
+}
+
+// A project with no units records no authored signature at all. Recording
+// one would make every existing buildfile stale on upgrade, which is the
+// failure mode the "when <artifact> exists" rule exists to prevent.
+func TestNoUnitsMeansNoAuthoredSignature(t *testing.T) {
+	fd, root, adapter := sigFixture(t, map[string]string{"intents.md": "# i"})
+	sigs, err := computeSourceSignatures(fd, root, adapter, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := sigs["authored"]; present {
+		t.Error("a project with no units must not carry an authored signature")
+	}
+}
+
+// Map iteration order must not reach the signature: an unstable value here
+// would rewrite the block on every run and fire the gate at random.
+func TestAuthoredSignatureIsOrderIndependent(t *testing.T) {
+	a := combineUnitHashes(map[string]string{"engine": "sha256:1", "codec": "sha256:2"})
+	b := combineUnitHashes(map[string]string{"codec": "sha256:2", "engine": "sha256:1"})
+	if a != b {
+		t.Errorf("signature depends on map order: %s vs %s", a, b)
+	}
+	// And two different unit sets must not collide once concatenated.
+	c := combineUnitHashes(map[string]string{"engine": "sha256:1sha256:2", "codec": ""})
+	if a == c {
+		t.Error("unit ids and hashes must be delimited, not concatenated")
 	}
 }

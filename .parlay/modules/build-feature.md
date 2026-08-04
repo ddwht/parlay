@@ -38,7 +38,7 @@ This skill runs as a **phase module** — normally inside a parlay-loop subagent
 
 ````
 ```yaml parlay-decision
-kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity
+kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity | impasse
 phase: <the phase you are in>
 question: "<the one question, in the user's terms>"
 context: |
@@ -56,13 +56,16 @@ resume: "Re-enter with decision: <id>. <what is written so far>"
 
 Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.
 
-The other three kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
+The other four kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
 
 - `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.
 - `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.
 - `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.
+- `impasse` — the pipeline cannot express what the spec asks for, and the offered way forward hands the work to a person permanently. Accepting that is a scope reduction nobody can consent to on the user's behalf.
 
-So: when you raise one of those three, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
+So: when you raise one of those four, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
+
+**`impasse` vs `ambiguity`.** An ambiguity has two readings and you cannot pick between them; an impasse has none — the pipeline has no way to express what the spec asks for, whichever reading you take. They are separate kinds because their resolutions differ in kind: an ambiguity is settled by the user choosing a reading, an impasse by the user agreeing that this part of the system will be written by hand, declared as a unit, and never generated. Filing an impasse as an ambiguity offers the user a choice between readings that all fail.
 
 Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
 
@@ -282,6 +285,9 @@ Two things not to do: never narrow the options to spare the user a question, and
 
 9. **Generate testcases.yaml** at `.parlay/build/{feature}/testcases.yaml` (tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering):
    - One test suite per component
+   - **Set `file:` on each suite to the path the plan already derived for it.** `parlay internal scaffold-plan` expands the adapter's `file-conventions.paths.test` template for every component and emits the resulting path as a `plan.creates` row. That row is where the suite's code goes. Read it; do not decide a location here and do not leave the question open — an unanswered path question does not disappear, it gets answered further downstream by whoever hits it first, and `generate-code` hitting it has no adapter conventions in view and invents one. Two components' tests then land in two different places in the same project.
+   - If the adapter declares no `file-conventions.paths.test` template, `scaffold-plan` reports it as undecidable. That is the signal to fix the adapter, not to guess a path here.
+   - **Skip a suite whose invariant a hand-authored unit already satisfies.** Run `parlay internal check-coverage @{unit}` for each declared unit, or read the unit's `satisfies:` list directly. An invariant listed there is covered by a test a person maintains; generating a second suite for it produces either a duplicate or — more often, because the generated suite cannot see the unit's internals — a vacuous one that asserts nothing and passes forever. Record the citation on the suite that would have covered it rather than emitting the suite.
    - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
    - Use the intent's **Verify** bullets as the basis for test assertions
    - Cover: rendering, element presence, visibility conditions, actions, state transitions
@@ -350,6 +356,10 @@ When the project has a `.parlay/adapter-set.yaml` with more than the presentatio
 ### Pre-codegen support gate
 
 Before any AI invocation, run `parlay internal check-supports @{feature}`. The CLI checks every operation term by **union coverage** — a term passes if at least one filled backend adapter supports it — plus the per-adapter shape/vocabulary check. It emits structured JSON and exits non-zero on any failure. Skill MUST stop on non-zero — surface the `issues[]` array to the designer with the relevant `adapter-supports-missing-<kind|step|policy|error>` codes; do NOT proceed to emit the buildfile. Union coverage means each adapter need only support its own layer's terms (nest owns `validate-input`/`return-*`, prisma owns `create-one`/`read-many`); a term fails only when **no** backend layer owns it. The check is mechanical: signature comparison only, no AI invocation. Presentation-only projects (no `.parlay/adapter-set.yaml` with non-presentation slots) get `ready: true` automatically.
+
+**When the gap is not fixable by rewording, offer the unit.** `adapter-supports-missing-*` has two very different causes and surfacing both as the same wall helps nobody. Sometimes the operation is expressible and the adapter is simply thin — the fix is to extend the adapter, and saying so is the right answer. Sometimes the operation is not expressible in the closed vocabulary at all: a numerical solve, a codec, a geometry transform. Rewording that into `create-one` and `read-many` produces an operation that validates and describes nothing.
+
+For the second case, raise `kind: impasse` offering the hand-authored unit (`authored.schema.md`), pre-filled with the operations that resist expression, the invariants you would otherwise have generated suites for, and the paths the plan would have written. On acceptance, `parlay add-feature "<name>" --authored --sources "<glob>"`. No `default:` — see the decision protocol. Without this the signal dead-ends: `check-supports` stops the build and the designer is left with a code and no way forward that the pipeline recognizes.
 
 ### Legacy normalization
 

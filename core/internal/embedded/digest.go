@@ -10,7 +10,7 @@ import (
 
 // The schema digest.
 //
-// The 24 schemas are ~269 KB — roughly 67k tokens if a phase loaded them all.
+// The schema corpus is ~277 KB — roughly 69k tokens if a phase loaded it all.
 // The project convention is to load them on demand and not carry them across
 // commands, which is right for authoring but leaves every phase paying to
 // re-read whichever files it needs, once per phase-group, on every run.
@@ -22,8 +22,11 @@ import (
 // build phase paid that independently. What they needed was not the prose but
 // one specific thing from it: which diagnostics exist and when each fires.
 //
-// So the digest extracts exactly that — 48 codes across 24 schemas, in 9 KB
-// instead of 263. It is mechanically derived, never
+// So the digest extracts exactly that — every documented code, across every
+// schema, in a fraction of the size. The counts that used to sit in this
+// comment (48 codes, 24 schemas) were wrong within two releases and stayed
+// wrong; the rendered digest states its own current totals in its header,
+// which is the only place they can be right. It is mechanically derived, never
 // hand-maintained — a hand-written cheat sheet would be one more artifact to
 // drift from the schemas it summarizes, which is the failure this whole
 // consolidation is about.

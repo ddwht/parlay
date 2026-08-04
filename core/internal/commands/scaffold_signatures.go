@@ -59,7 +59,7 @@ type signatureSource struct {
 // feature's signature block. A source that does not exist is skipped, per
 // the schema's "when <artifact> exists" column — recording a hash for an
 // absent file would make the gate fail forever.
-func featureSignatureSources(featureDir, projectRoot string) []signatureSource {
+func featureSignatureSources(featureDir, projectRoot string, hasUnits bool) []signatureSource {
 	surface := filepath.Join(featureDir, "surface.yaml")
 	if !fileExistsAt(surface) {
 		surface = filepath.Join(featureDir, "surface.md")
@@ -82,6 +82,17 @@ func featureSignatureSources(featureDir, projectRoot string) []signatureSource {
 	// page's layout invalidates the buildfile that consumed it.
 	if layouts, _ := filepath.Glob(filepath.Join(featureDir, "*.layout.yaml")); len(layouts) > 0 {
 		out = append(out, signatureSource{"layout", ""}) // path filled by caller
+	}
+	// Hand-authored units, hashed collectively for the same reason layouts
+	// are: one field per artifact kind, not one per file.
+	//
+	// This is the entry that makes a unit's code block a stale build. The
+	// advisory hashes in .baseline.yaml report a changed unit but stop
+	// nothing; source-signatures is the gate generate-code actually
+	// refuses on. A hand-written engine whose behaviour moved under a
+	// feature's fixtures is exactly the case where refusing is right.
+	if hasUnits {
+		out = append(out, signatureSource{"authored", ""}) // aggregate, filled by caller
 	}
 	return out
 }
@@ -114,9 +125,13 @@ func combinedHash(paths []string) (string, error) {
 }
 
 // computeSourceSignatures builds the signature map for one feature.
-func computeSourceSignatures(featureDir, projectRoot, adapterPath string) (map[string]string, error) {
+func computeSourceSignatures(featureDir, projectRoot, adapterPath string, unitHashes map[string]string) (map[string]string, error) {
 	sigs := map[string]string{}
-	for _, s := range featureSignatureSources(featureDir, projectRoot) {
+	for _, s := range featureSignatureSources(featureDir, projectRoot, len(unitHashes) > 0) {
+		if s.field == "authored" {
+			sigs["authored"] = combineUnitHashes(unitHashes)
+			continue
+		}
 		if s.field == "layout" {
 			layouts, err := filepath.Glob(filepath.Join(featureDir, "*.layout.yaml"))
 			if err != nil {
@@ -235,7 +250,28 @@ func findTopLevelBlock(lines []string, key string) (int, int) {
 // rather than a reordering nobody can read.
 var signatureFieldOrder = []string{
 	"intents", "dialogs", "surface", "capabilities",
-	"infrastructure", "domain", "layout", "adapter-version",
+	"infrastructure", "domain", "layout", "authored", "adapter-version",
+}
+
+// combineUnitHashes folds every unit's aggregate hash into one signature
+// value. Sorted by unit id so the result depends on the set, not on map
+// iteration order — an unstable value here would rewrite the buildfile's
+// signature block on every run and make the gate fire at random.
+func combineUnitHashes(unitHashes map[string]string) string {
+	units := make([]string, 0, len(unitHashes))
+	for u := range unitHashes {
+		units = append(units, u)
+	}
+	sort.Strings(units)
+
+	h := sha256.New()
+	for _, u := range units {
+		h.Write([]byte(u))
+		h.Write([]byte{0})
+		h.Write([]byte(unitHashes[u]))
+		h.Write([]byte{0})
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 type scaffoldSignaturesOutput struct {
@@ -265,7 +301,7 @@ func runScaffoldSignatures(cmd *cobra.Command, args []string) error {
 		adapterPath = presentationAdapterFile(cfg)
 	}
 
-	sigs, err := computeSourceSignatures(featureDir, cfg.RepoRoot(), adapterPath)
+	sigs, err := computeSourceSignatures(featureDir, cfg.RepoRoot(), adapterPath, authoredUnitHashes(cfg))
 	if err != nil {
 		return err
 	}

@@ -79,6 +79,88 @@ func TestClassifyDir_DeferredWithReadme(t *testing.T) {
 	}
 }
 
+func TestClassifyDir_Authored(t *testing.T) {
+	setupConfigTestDir(t)
+	dir := filepath.Join(SpecDir, IntentsDir, "geometry-engine")
+	os.MkdirAll(dir, 0755)
+	// A unit carries intents.md exactly like a feature does — the
+	// declaration is the only thing that tells them apart, so this case
+	// is the one that fails if the authored probe is ordered after the
+	// isFeature branch rather than before it.
+	os.WriteFile(filepath.Join(dir, "intents.md"), []byte("# Engine\n"), 0644)
+	os.WriteFile(filepath.Join(dir, AuthoredFile), []byte("unit: geometry-engine\n"), 0644)
+
+	cls, err := ClassifyDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cls != DirClassAuthored {
+		t.Errorf("expected DirClassAuthored, got %d", cls)
+	}
+}
+
+func TestClassifyDir_AuthoredWithChildFeaturesIsHybrid(t *testing.T) {
+	setupConfigTestDir(t)
+	dir := filepath.Join(SpecDir, IntentsDir, "confused")
+	childDir := filepath.Join(dir, "child-feature")
+	os.MkdirAll(childDir, 0755)
+	os.WriteFile(filepath.Join(dir, AuthoredFile), []byte("unit: confused\n"), 0644)
+	os.WriteFile(filepath.Join(childDir, "intents.md"), []byte("# Child\n"), 0644)
+
+	if _, err := ClassifyDir(dir); err == nil {
+		t.Error("expected hybrid error for a unit declaration above child features, got nil")
+	}
+}
+
+func TestScanTree_SeparatesUnitsFromFeatures(t *testing.T) {
+	dir := setupConfigTestDir(t)
+	root := filepath.Join(dir, SpecDir, IntentsDir)
+
+	writeFeature := func(path string) {
+		os.MkdirAll(path, 0755)
+		os.WriteFile(filepath.Join(path, "intents.md"), []byte("# F\n"), 0644)
+	}
+	writeUnit := func(path string) {
+		writeFeature(path)
+		os.WriteFile(filepath.Join(path, AuthoredFile), []byte("unit: u\n"), 0644)
+	}
+
+	writeFeature(filepath.Join(root, "checkout"))
+	writeUnit(filepath.Join(root, "geometry-engine"))
+	writeFeature(filepath.Join(root, "auth-overhaul", "login"))
+	writeUnit(filepath.Join(root, "auth-overhaul", "crypto-core"))
+
+	features, err := ScanFeatureTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, err := ScanUnitTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertSet := func(label string, got, want []string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: got %v, want %v", label, got, want)
+		}
+		seen := map[string]bool{}
+		for _, g := range got {
+			seen[g] = true
+		}
+		for _, w := range want {
+			if !seen[w] {
+				t.Errorf("%s: missing %q (got %v)", label, w, got)
+			}
+		}
+	}
+
+	// A unit must not appear as a feature at either depth: every
+	// AllFeatures caller assumes a buildfile and a handoff twin exist.
+	assertSet("features", features, []string{"checkout", "auth-overhaul/login"})
+	assertSet("units", units, []string{"geometry-engine", "auth-overhaul/crypto-core"})
+}
+
 func TestClassifyDir_HybridError(t *testing.T) {
 	setupConfigTestDir(t)
 	dir := filepath.Join(SpecDir, IntentsDir, "hybrid")

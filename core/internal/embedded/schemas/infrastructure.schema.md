@@ -52,6 +52,7 @@ Four representative architectural categories are worked through in the examples 
 | Caching | No | `**Caching**:` abstract caching strategy. Values: `on-first-access`, `none`, `per-process`, or a custom description. |
 | Backward-Compatible | No | `**Backward-Compatible**:` `yes` or `no`. Whether existing callers must continue working without changes. |
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines. Additional constraints, design decisions, edge cases. |
+| Deliberately-Specific | No | `**Deliberately-Specific**:` followed by one line of justification. Suppresses the portability lint for this fragment. See "Promoted fragments and deliberate specificity" below. |
 
 ## Constraints
 
@@ -60,6 +61,24 @@ Four representative architectural categories are worked through in the examples 
 - Fragments MAY reference domain concepts from the intents (e.g., "feature", "initiative", "intents.md", "qualified identifier") because these are part of the problem domain, not the framework. The line is: domain vocabulary is allowed; implementation vocabulary is not.
 - Concrete `target-files:`, `target-pattern:`, and `introduces:` values do **not** belong in infrastructure.md. They are generated at build-feature time by the adapter bridge (see Buildfile mapping below).
 - Fragment names must be unique within the feature's infrastructure.md.
+
+## Promotion: where a refinement lands
+
+`infrastructure.md` is the promotion target for implementation-shaped refinements — a change stated in a person's words that is real, is architectural, and belongs in the spec rather than only in the code.
+
+The alternative is what happens without it: someone prompts an agent directly, the change lands in code, and the spec never learns about it. Every subsequent drift check compares generated output against a specification that no longer describes what the system does, and the divergence is invisible because nothing recorded that it happened. Promotion is how a change becomes part of the design rather than an undocumented local edit.
+
+A promoted fragment is an ordinary fragment. It carries the same required fields, and in particular it carries a **resolvable `Source:`** — but the source of a promoted fragment is a person's request, not a pre-existing intent. Cite the intent the refinement modifies when there is one; when the refinement introduces a concern no intent covers, the promotion has surfaced a gap in the intents, and the honest move is to say so rather than to invent a citation that resolves.
+
+### Promoted fragments and deliberate specificity
+
+The portability lint warns when `Affects` or `Behavior` contains implementation vocabulary — function names, file paths with language extensions, language keywords. It **warns rather than forbids**, which is deliberate: specificity is allowed here, because some architectural constraints are genuinely about a named thing. "No package outside `internal/sdk` may import the upstream SDK" is not improvable by being made vaguer.
+
+Promotion makes that case common rather than rare, and a warning that fires on every promoted fragment forever is worse than no warning: people learn to scroll past the category, and the *accidental* specificity the lint exists to catch scrolls past with it.
+
+So a fragment may declare `**Deliberately-Specific**:` with a one-line justification, which suppresses the lint for that fragment. The justification is the point — it is not a mute switch, it is a claim on the record that this fragment names a specific thing because the constraint is about that thing. A reviewer can disagree with it; nobody can disagree with a warning that was never read.
+
+Do not add it to silence a fragment that could have been phrased in domain terms. That trades a warning you would have fixed for a permanent one you have promised not to.
 
 ## Worked examples
 
@@ -138,13 +157,15 @@ The same infrastructure.md combined with a different adapter produces different 
 
 ## Validation
 
-When an infrastructure file is loaded, the tool verifies:
-- Every fragment has a unique `## ` name
-- Every fragment has an `Affects` field (error: `missing-affects`)
-- Every fragment has a `Behavior` field (error: `missing-behavior`)
-- Every fragment has a `Source` reference (error: `missing-source`)
-- Source references point to existing intents (when `--deep` validation is enabled)
-- If `Backward-Compatible` is present, its value is `yes` or `no`
+When an infrastructure file is loaded, the tool verifies that every fragment has a unique `## ` name, that the three required fields are present, that `Source` references point to existing intents (when `--deep` validation is enabled), and that `Backward-Compatible`, if present, is `yes` or `no`.
+
+| Code | When it fires |
+|---|---|
+| `missing-affects` | A fragment has no `**Affects**:` field. |
+| `missing-behavior` | A fragment has no `**Behavior**:` field. |
+| `missing-source` | A fragment has no `**Source**:` reference, so nothing records which intent it came from and a change described in prose cannot be routed to it. |
+
+These three were documented as prose bullets rather than as a table for as long as this schema existed, which made them invisible to the conformance check that asserts every documented code is actually emitted — the check reads tables only. All three were emitted the whole time; the documentation simply could not be verified against the implementation. A code in a bullet list is a promise nothing holds you to.
 
 The schema is **advisory** with respect to operation-shaped content: no validator rule rejects a fragment in `infrastructure.md` simply because it looks operation-shaped. The `migrate-capabilities` command is the only enforcement path and is opt-in; running it moves operation-shaped fragments into `capabilities.yaml` while leaving architectural prose in place. Authors who keep operation-shaped fragments in `infrastructure.md` accept that the migrator will move them on the next opt-in run.
 

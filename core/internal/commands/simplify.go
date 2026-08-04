@@ -54,15 +54,36 @@ func runSimplify(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	var generatedPaths []string
-	for _, m := range markers {
-		generatedPaths = append(generatedPaths, m.Path)
-	}
-
 	// Resolve the shared-helper destination from the adapter rather than
 	// assuming one. mustContext failing is not fatal here — simplify can run
 	// against a bare source tree, and sharedHelperDestination falls back to it.
 	cfg, _ := mustContext(cmd)
+
+	// Hand-authored files are already excluded by construction — the scan
+	// above admits a file on its generation marker, which a unit's sources
+	// do not carry. The filter is for the one case that defeats that: a
+	// feature converted into a unit leaves its old markers on disk, and
+	// simplify would then propose extracting a helper OUT of code parlay
+	// is forbidden to write.
+	var authored *authoredDeclaration
+	if cfg != nil {
+		authored, _, _ = resolveAuthoredUnits(cfg)
+	}
+	var generatedPaths []string
+	skippedUnitFiles := 0
+	for _, m := range markers {
+		if _, owned := authored.ownerOf(m.Path); owned {
+			skippedUnitFiles++
+			continue
+		}
+		generatedPaths = append(generatedPaths, m.Path)
+	}
+	if skippedUnitFiles > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[note] skipped %d marked file(s) claimed by a hand-authored unit — a stale marker does not make a unit's code extractable.\n",
+			skippedUnitFiles)
+	}
+
 	groups, err := findDuplicateFunctions(generatedPaths, sharedHelperDestination(cfg, sourceRoot))
 	if err != nil {
 		return fmt.Errorf("scanning for duplicates: %w", err)

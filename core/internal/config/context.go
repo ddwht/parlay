@@ -175,6 +175,17 @@ func (c *Context) AllFeatures() ([]string, error) {
 	return ScanFeatureTree(c.IntentsRoot())
 }
 
+// AllUnits enumerates every qualified hand-authored unit identifier under
+// the active root's spec/intents/ tree. Deliberately a sibling of
+// AllFeatures rather than a kind field on its result: AllFeatures returns
+// bare slugs and has a dozen callers that assume every entry has a
+// buildfile, a handoff directory and a phase. Widening it to include
+// units would hand each of those callers a value that breaks those
+// assumptions with nothing in the type to warn them.
+func (c *Context) AllUnits() ([]string, error) {
+	return ScanUnitTree(c.IntentsRoot())
+}
+
 // LoadProjectConfig reads <activeRoot>/.parlay/config.yaml into a
 // ProjectConfig struct. Returns the underlying os.ReadFile / yaml
 // errors when the file is missing or malformed. The active-root-aware

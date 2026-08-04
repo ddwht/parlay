@@ -333,3 +333,63 @@ func assertSetsAgree(t *testing.T, label string, code, schema map[string]bool) {
 		}
 	}
 }
+
+// A suite that says nothing about where its code goes leaves the decision
+// to whoever writes the file, and generate-code — the step that reaches it
+// — has no adapter conventions in view. Two components' tests then land in
+// two different places in the same project.
+func TestTestcasesV2_SuiteWithoutFileIsReported(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - kind: presentation
+    name: expense-list-renders
+    component: expense-list
+    source_refs:
+      - "@expenses/expense-list"
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	if !hasOutcomeCode(outcomes, "testcases-file-missing") {
+		t.Errorf("expected testcases-file-missing, got %v", codesOf(outcomes))
+	}
+	// A warning, not an error: every testcases.yaml predates the field, so
+	// erroring would fail every project at once over a fact none of them
+	// could have recorded.
+	for _, o := range outcomes {
+		if o.Code == "testcases-file-missing" && o.Severity != SeverityWarning {
+			t.Errorf("severity = %q, want warning while the field lands", o.Severity)
+		}
+	}
+}
+
+func TestTestcasesV2_SuiteWithFileIsClean(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - kind: presentation
+    name: expense-list-renders
+    file: src/components/expense-list.spec.ts
+    component: expense-list
+    source_refs:
+      - "@expenses/expense-list"
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	if hasOutcomeCode(outcomes, "testcases-file-missing") {
+		t.Errorf("a suite declaring file: must not be reported: %v", codesOf(outcomes))
+	}
+}
+
+// Legacy v1 suites predate the field entirely and are exempt — they exit
+// the loop at the discriminator check before file: is examined.
+func TestTestcasesV2_LegacySuiteIsNotAskedForFile(t *testing.T) {
+	content := []byte(`feature: expenses
+suites:
+  - name: expense-list-renders
+    component: expense-list
+    intent: "@expenses/see-my-reports"
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	if hasOutcomeCode(outcomes, "testcases-file-missing") {
+		t.Errorf("a legacy v1 suite must not be asked for file:, got %v", codesOf(outcomes))
+	}
+}

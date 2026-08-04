@@ -35,6 +35,11 @@ func init() {
 type verifyFileEntry struct {
 	Path      string `json:"path"`
 	Component string `json:"component"`
+	// Changed is set only on hand-authored entries, where a differing hash
+	// is information rather than a verdict. Every other bucket expresses
+	// change by which list the entry landed in, so the field would be
+	// redundant there — and omitempty keeps it out of their JSON.
+	Changed bool `json:"changed,omitempty"`
 }
 
 type verifyOutput struct {
@@ -56,6 +61,15 @@ type verifyOutput struct {
 	// Stable so a pre-provenance snapshot cannot read as a clean bill of
 	// health it never established.
 	Unknown []verifyFileEntry `json:"unknown,omitempty"`
+	// HandAuthored holds files a unit declares. They are reported, never
+	// graded. This command's question is "is every recorded file safe to
+	// overwrite", and for a unit file the question does not apply: parlay
+	// must never overwrite it, so there is nothing for an answer to
+	// authorize. Each entry carries Changed so the report still says what
+	// happened — a changed unit file is the drift signal that invalidates
+	// dependent fixtures, which is useful precisely because it is not a
+	// failure here.
+	HandAuthored []verifyFileEntry `json:"hand_authored,omitempty"`
 }
 
 // classify places a file into the right bucket.
@@ -81,6 +95,19 @@ type verifyOutput struct {
 // itself; folding those into Unknown would discard a fact to express a
 // doubt about a different one.
 func (o *verifyOutput) classify(entry CodeHashEntry, fileEntry verifyFileEntry, currentHash string) {
+	// Ahead of the hash comparison, deliberately. Modified means "possible
+	// hand-edit, stop" — a verdict that only makes sense for a file parlay
+	// might overwrite. For a hand-authored file a hand-edit is not a
+	// possibility to flag, it is what the file is; routing it through
+	// Modified would make the normal state of every unit file a --strict
+	// failure. Gated on v2 because that is the first version whose writer
+	// could have produced this value; a v0 or v1 snapshot carrying it got
+	// it some way no writer sanctioned.
+	if entry.Provenance == ProvenanceHandAuthored && o.SchemaVersion >= 2 {
+		fileEntry.Changed = currentHash != entry.Hash
+		o.HandAuthored = append(o.HandAuthored, fileEntry)
+		return
+	}
 	if currentHash != entry.Hash {
 		o.Modified = append(o.Modified, fileEntry)
 		return
@@ -226,6 +253,13 @@ func computeVerifyOutput(cfg *config.Context, slug string) (*verifyOutput, error
 // generate-code.skill.md tells the agent that a modified file must not be
 // silently overwritten and that the user chooses. --strict is that same rule
 // for the caller that has no user to ask.
+//
+// HandAuthored is absent from the failure condition, and that is not an
+// oversight to be tidied up later. --strict asks whether every recorded file
+// is safe to overwrite; a unit file is one parlay must never overwrite, so
+// the question has no answer that could gate anything. Including it would
+// fail CI on every project the moment someone edited their own code, which
+// is the outcome declaring a unit exists to prevent.
 func emitVerifyJSON(cmd *cobra.Command, output *verifyOutput) error {
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
