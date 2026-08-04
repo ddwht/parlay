@@ -334,7 +334,20 @@ func envMap() map[string]string {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlag, "root", "", "Operate against the named child root (overrides cwd walk-up)")
-	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Print resolution and resource-load details to stderr")
+	// "and resource-load details" was in this string for as long as the
+	// flag existed, and nothing ever produced one: config.ResourceLoad is
+	// declared and never constructed. Help text is a promise the tool has
+	// to keep, and the reader of an overpromise has no way to tell whether
+	// the missing half failed or was never there.
+	//
+	// Reworded rather than implemented, deliberately. Resource-load
+	// provenance answers "which root did this come from", which is only
+	// meaningful in a multi-root project and would record one constant
+	// value in every other — that is a decision about whether multi-root
+	// wants topology diagnostics, not something to settle by widening a
+	// debug flag. If it earns a reporting surface later, this text can
+	// grow back.
+	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Print root resolution details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&ambiguityAsSignalFlag, "ambiguity-as-signal", false, "Emit a structured JSON envelope on stderr and exit non-zero on ambiguity (used by skill wrappers)")
 
 	rootCmd.AddCommand(initCmd)
