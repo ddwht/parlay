@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/feedback"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -450,6 +451,24 @@ func ApplyBuildfileSeverity(errs []ValidationError) []ValidationError {
 		if errs[i].Severity == "" {
 			errs[i].Severity = string(RuleSeverity(errs[i].Code, ModeBuild))
 		}
+		// The deep-validation findings' one recording point.
+		//
+		// ValidationError is a different type on a different path from
+		// ValidationOutcome, and nothing recorded it — so the entire deep
+		// surface (buildfile cross-references, plan integrity, structured
+		// domain-model checks) was invisible to a log whose stated purpose
+		// is "which rules actually fire". An investigator handed that log
+		// would conclude those rules never fire.
+		//
+		// Codes and severity only. Message, Context and Fix all carry user
+		// content: Context is almost always a filesystem path, and ~15 Fix
+		// sites interpolate entity or feature names.
+		feedback.Record(feedback.FindingData{
+			Code:     errs[i].Code,
+			Mode:     string(ModeBuild),
+			Severity: errs[i].Severity,
+			Site:     feedback.CallerSite(1),
+		})
 	}
 	return errs
 }

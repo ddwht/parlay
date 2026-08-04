@@ -6,11 +6,17 @@
 // one place, the enablement check stays in one place, and a skill running
 // in a project with the mode off does nothing rather than creating a log
 // nobody asked for.
+//
+// Every flag here is a closed enum or a value the CLI hashes on receipt.
+// The previous shape took `--data key=value`, which let an agent put a
+// sentence in the log — and the skill instruction explicitly asked for
+// one ("changed=<what you did differently>"). An open payload cannot be
+// made safe by asking nicely, so the payload is closed instead and the two
+// prose fields became vocabularies.
 
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -20,10 +26,45 @@ import (
 )
 
 var (
-	feedbackRecordKind    string
-	feedbackRecordCommand string
-	feedbackRecordRun     string
-	feedbackRecordData    []string
+	feedbackRecordKind     string
+	feedbackRecordSkill    string
+	feedbackRecordRun      string
+	feedbackRecordPhase    string
+	feedbackRecordArtifact string
+	feedbackRecordCode     string
+	feedbackRecordChanged  string
+	feedbackRecordNeeded   string
+	feedbackRecordDecision string
+	feedbackRecordOption   string
+	feedbackRecordSubject  string
+)
+
+// The closed vocabularies. Each `other` is deliberate: its frequency in
+// the log is itself the signal that the set needs another member, which is
+// the same reasoning KindNote follows.
+var (
+	agentKinds = []string{
+		feedback.KindPhase, feedback.KindDecision, feedback.KindRetry,
+		feedback.KindImprovised, feedback.KindNote,
+	}
+	changedValues = []string{
+		"added-field", "removed-field", "changed-shape", "changed-version",
+		"changed-artifact", "reordered", "other",
+	}
+	neededValues = []string{
+		"schema-rule", "path-convention", "naming-convention",
+		"adapter-capability", "example", "decision", "other",
+	}
+	phaseValues = []string{
+		"intents", "dialogs", "artifacts", "build", "code",
+	}
+	artifactValues = []string{
+		"intents", "dialogs", "surface", "capabilities", "infrastructure",
+		"domain-model", "buildfile", "testcases", "authored", "layout", "page",
+	}
+	decisionValues = []string{
+		"phase-boundary", "override", "overwrite", "failure", "ambiguity", "impasse",
+	}
 )
 
 var feedbackRecordCmd = &cobra.Command{
@@ -34,43 +75,43 @@ var feedbackRecordCmd = &cobra.Command{
 }
 
 func init() {
-	feedbackRecordCmd.Flags().StringVar(&feedbackRecordKind, "kind", "",
-		"Event kind: "+strings.Join(agentEventKinds(), ", "))
+	f := feedbackRecordCmd.Flags()
+	f.StringVar(&feedbackRecordKind, "kind", "", "Event kind: "+strings.Join(agentKinds, " | "))
 	feedbackRecordCmd.MarkFlagRequired("kind")
-	feedbackRecordCmd.Flags().StringVar(&feedbackRecordCommand, "skill", "",
-		"The skill or phase emitting the event")
-	feedbackRecordCmd.Flags().StringVar(&feedbackRecordRun, "run", "",
-		"Override the correlation id; normally unnecessary because "+feedback.RunEnvVar+" is inherited from the environment")
-	feedbackRecordCmd.Flags().StringArrayVar(&feedbackRecordData, "data", nil,
-		"key=value payload entry; repeatable")
-}
-
-// agentEventKinds is the subset a skill may emit. The CLI-owned kinds are
-// excluded deliberately: an agent claiming to have run an invocation, or
-// produced a diagnostic, would put a fact in the log that nothing observed.
-func agentEventKinds() []string {
-	return []string{
-		feedback.KindPhase,
-		feedback.KindDecision,
-		feedback.KindRetry,
-		feedback.KindImprovised,
-		feedback.KindNote,
-	}
+	f.StringVar(&feedbackRecordSkill, "skill", "", "The skill or phase module emitting the event")
+	f.StringVar(&feedbackRecordRun, "run", "",
+		"Override the correlation id; normally unnecessary because "+feedback.RunEnvVar+" is inherited")
+	f.StringVar(&feedbackRecordPhase, "phase", "", "Pipeline phase: "+strings.Join(phaseValues, " | "))
+	f.StringVar(&feedbackRecordArtifact, "artifact", "", "Artifact kind: "+strings.Join(artifactValues, " | "))
+	f.StringVar(&feedbackRecordCode, "code", "", "For retry: the parlay error code that caused it")
+	f.StringVar(&feedbackRecordChanged, "changed", "", "For retry, what you did differently: "+strings.Join(changedValues, " | "))
+	f.StringVar(&feedbackRecordNeeded, "needed", "", "For improvised, what was missing: "+strings.Join(neededValues, " | "))
+	f.StringVar(&feedbackRecordDecision, "decision", "", "For decision: "+strings.Join(decisionValues, " | "))
+	f.StringVar(&feedbackRecordOption, "option", "", "For decision: the option id chosen")
+	f.StringVar(&feedbackRecordSubject, "subject", "",
+		"Feature, unit or operation this concerns. Recorded as a per-project hash, never in plaintext")
 }
 
 func runFeedbackRecord(cmd *cobra.Command, args []string) error {
-	allowed := map[string]bool{}
-	for _, k := range agentEventKinds() {
-		allowed[k] = true
+	if err := requireOneOf("--kind", feedbackRecordKind, agentKinds); err != nil {
+		return fmt.Errorf("%w. The finding, tally and session kinds are CLI-owned: an agent asserting one would record a fact nothing observed", err)
 	}
-	if !allowed[feedbackRecordKind] {
-		return fmt.Errorf("unknown --kind %q — an agent may emit: %s. The invocation and diagnostic kinds are CLI-owned, because an agent asserting one would record a fact nothing observed",
-			feedbackRecordKind, strings.Join(agentEventKinds(), ", "))
-	}
-
-	data, err := parseDataPairs(feedbackRecordData)
-	if err != nil {
-		return err
+	for _, check := range []struct {
+		flag, value string
+		allowed     []string
+	}{
+		{"--phase", feedbackRecordPhase, phaseValues},
+		{"--artifact", feedbackRecordArtifact, artifactValues},
+		{"--changed", feedbackRecordChanged, changedValues},
+		{"--needed", feedbackRecordNeeded, neededValues},
+		{"--decision", feedbackRecordDecision, decisionValues},
+	} {
+		if check.value == "" {
+			continue
+		}
+		if err := requireOneOf(check.flag, check.value, check.allowed); err != nil {
+			return err
+		}
 	}
 
 	// An explicit --run overrides the inherited one. Rarely needed: the
@@ -82,89 +123,75 @@ func runFeedbackRecord(cmd *cobra.Command, args []string) error {
 	}
 
 	if !feedback.IsEnabled() {
-		// Silent no-op, not an error. A skill instruction that fails in
+		// Silent no-op, not an error. A skill instruction that failed in
 		// every project with the mode off would be removed from the skill
 		// within a week, and the instrumentation with it.
 		return nil
 	}
 
-	feedback.Record(feedbackRecordKind, feedbackRecordCommand, data)
+	feedback.Record(feedback.AgentData{
+		Kind:     feedbackRecordKind,
+		Skill:    feedbackRecordSkill,
+		Phase:    feedbackRecordPhase,
+		Artifact: feedbackRecordArtifact,
+		Code:     feedbackRecordCode,
+		Changed:  feedbackRecordChanged,
+		Needed:   feedbackRecordNeeded,
+		Decision: feedbackRecordDecision,
+		Option:   feedbackRecordOption,
+		// Hashed here, on receipt. The agent passes plaintext because
+		// asking an LLM to hash means it gets it wrong sometimes and,
+		// worse, means the plaintext sat in a command line that a shell
+		// history keeps.
+		Subject: feedback.Hash(feedbackRecordSubject),
+	})
 	return nil
 }
 
-// parseDataPairs turns repeated key=value flags into the event payload.
-//
-// Splits on the FIRST "=", so a value may contain more of them — the
-// values here are free text ("rejected: capabilities-unknown-term=widget"),
-// and splitting on the last would truncate exactly the detail worth
-// recording. Same rule as review-coverage's --exempt.
-func parseDataPairs(pairs []string) (map[string]any, error) {
-	if len(pairs) == 0 {
-		return nil, nil
-	}
-	out := make(map[string]any, len(pairs))
-	for _, p := range pairs {
-		i := strings.Index(p, "=")
-		if i <= 0 {
-			return nil, fmt.Errorf("--data %q: expected key=value", p)
-		}
-		key := strings.TrimSpace(p[:i])
-		val := p[i+1:]
-		if key == "" {
-			return nil, fmt.Errorf("--data %q: empty key", p)
-		}
-		// A JSON value is kept as JSON so counts stay numbers and lists
-		// stay lists; anything else is a plain string.
-		var parsed any
-		if err := json.Unmarshal([]byte(val), &parsed); err == nil {
-			out[key] = parsed
-		} else {
-			out[key] = val
+// requireOneOf is the closed-vocabulary check every enum flag runs.
+func requireOneOf(flag, value string, allowed []string) error {
+	for _, a := range allowed {
+		if value == a {
+			return nil
 		}
 	}
-	return out, nil
+	return fmt.Errorf("unknown %s %q — allowed: %s", flag, value, strings.Join(allowed, " | "))
 }
 
-// feedbackStatusCmd answers "is this on, and where is it writing" without
-// making anyone read the config to find out.
+// feedbackStatusCmd answers "is this on, what does it collect, and where
+// does it write" without making anyone read the config or the source.
 var feedbackStatusCmd = &cobra.Command{
 	Use:   "feedback-status",
-	Short: "Report whether feedback mode is on for this project and where it writes",
+	Short: "Report whether feedback mode is on, what it collects, and where it writes",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := mustContext(cmd)
 		if err != nil {
 			return err
 		}
-		enabled := feedback.IsEnabled()
-		fmt.Fprintf(cmd.OutOrStdout(), "feedback: %s\n", onOff(enabled))
-		if enabled {
-			fmt.Fprintf(cmd.OutOrStdout(), "log:      %s\n",
-				strings.Join([]string{cfg.Root.Path, ".parlay", feedback.Dir, "<date>.jsonl"}, "/"))
-			// Reports the INHERITED id, and says so when there isn't one.
-			// An earlier version printed feedback.RunID() unconditionally,
-			// which meant this command minted an id and handed back the id
-			// of the asking — every event correlated against it then joined
-			// a run consisting of one status call.
-			if inherited := os.Getenv(feedback.RunEnvVar); inherited != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "run:      %s (inherited from %s)\n", inherited, feedback.RunEnvVar)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"run:      (none — this invocation is standalone; set %s to correlate a pipeline run)\n",
-					feedback.RunEnvVar)
-			}
+		out := cmd.OutOrStdout()
+		if !feedback.IsEnabled() {
+			fmt.Fprintf(out, "feedback: off\n")
+			fmt.Fprintf(out,
+				"Turn on for this project with `feedback: true` in .parlay/config.yaml, or for one run with %s=1.\n",
+				feedback.EnvVar)
 			return nil
 		}
-		fmt.Fprintf(cmd.OutOrStdout(),
-			"Turn on for this project with `feedback: true` in .parlay/config.yaml, or for one run with %s=1.\n",
-			feedback.EnvVar)
+
+		fmt.Fprintf(out, "feedback: on\n")
+		// The real file, not a placeholder. An earlier version printed a
+		// literal "<date>", which is unusable by someone being asked to
+		// find and send the log.
+		fmt.Fprintf(out, "log:      %s\n", feedback.LogPath(cfg.Root.Path))
+		if inherited := os.Getenv(feedback.RunEnvVar); inherited != "" {
+			fmt.Fprintf(out, "run:      %s (inherited from %s)\n", inherited, feedback.RunEnvVar)
+		} else {
+			fmt.Fprintf(out, "run:      (none — standalone; set %s to correlate a pipeline run)\n", feedback.RunEnvVar)
+		}
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Collected: parlay's own error codes, phase and command names, coarse timings,")
+		fmt.Fprintln(out, "           and salted hashes of feature names. No file paths, no message text,")
+		fmt.Fprintln(out, "           no content from your spec files. Safe to send as-is.")
 		return nil
 	},
-}
-
-func onOff(b bool) string {
-	if b {
-		return "on"
-	}
-	return "off"
 }

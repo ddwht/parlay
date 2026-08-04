@@ -18,10 +18,12 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 Before the first phase, mint one correlation id and export it for the whole run:
 
 ```
-export PARLAY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-{feature}"
+export PARLAY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 ```
 
 Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally: when feedback mode is off the variable is simply unread, and a driver that sets it only when enabled has to check, which is one more thing to get wrong.
+
+**Do not put the feature name in it.** The id lands on every line of a log written to be sent upstream to the maintainers. The CLI hashes it before writing, so a feature name would not survive anyway — but building the id out of something that needs hashing invites someone to read the value back expecting it to mean something. A timestamp and the shell's PID identify a run without describing it.
 
 You are the only participant that can do this. A pipeline run is the unit worth correlating — one feature, one loop, a dozen CLI calls — and nothing downstream knows where it started.
 

@@ -17,6 +17,7 @@ import (
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
 	"github.com/ddwht/parlay/core/internal/embedded"
+	"github.com/ddwht/parlay/core/internal/feedback"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -170,6 +171,12 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Retroactive containment for projects that enabled feedback mode
+	// before the log directory was gitignored. Cheap, idempotent, and it
+	// has to happen on upgrade because those projects already have a
+	// directory that init will never revisit.
+	feedback.EnsureContained(rootPath)
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Upgraded to parlay %s:\n", appVersion)
 	// The schema and module counts are files actually rewritten, not files
 	// considered: a re-run over unchanged sources reports zero because the
@@ -193,6 +200,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if result.SchemaCount == 0 && result.ModuleCount == 0 && result.SkillCount == 0 && result.PruneCount == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "  already up to date — nothing rewritten")
 	}
+
+	// After the summary, not inside it: this is a separate concern from
+	// what the upgrade rewrote, and interleaving it with the counts made
+	// both harder to read.
+	warnLegacyFeedbackLogs(cmd, rootPath)
 
 	// parlay-feature: parlay-tool/multi-adapter
 	// parlay-component: adapter-kind-field-opt-in-prompt
@@ -341,4 +353,29 @@ func injectKindPresentation(content []byte) []byte {
 		}
 	}
 	return []byte("kind: presentation\n" + string(content))
+}
+
+// warnLegacyFeedbackLogs tells a user about feedback logs written before
+// the sanitising redesign, and does not delete them.
+//
+// Those logs contain what the old capture recorded: argv with absolute
+// paths, full error strings, and validator messages that interpolate
+// paths and quote spec content. They can never be exported — the bundle
+// enforces a version floor — but they are sitting in the project, and a
+// user who was told the mode was safe deserves to hear that the rules
+// changed under them.
+//
+// Parlay does not remove them. They are the user's file, nobody asked for
+// them to be touched, and a delete cannot be undone. The notice names the
+// command that does it.
+func warnLegacyFeedbackLogs(cmd *cobra.Command, rootPath string) {
+	n := CountLegacyFeedbackLogs(rootPath)
+	if n == 0 {
+		return
+	}
+	out := cmd.ErrOrStderr()
+	fmt.Fprintf(out, "\n[NOTICE] %d feedback log file(s) predate the current format.\n", n)
+	fmt.Fprintf(out, "         They may contain file paths and content from your project, and are\n")
+	fmt.Fprintf(out, "         never included in `parlay feedback-export`. Remove them with\n")
+	fmt.Fprintf(out, "         `parlay feedback-prune --legacy`.\n\n")
 }

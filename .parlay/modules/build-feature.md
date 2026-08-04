@@ -73,25 +73,29 @@ Two things not to do: never narrow the options to spare the user a question, and
 
 ## Recording what happened (feedback mode)
 
-When feedback mode is on, this project keeps a local record of what actually happened during a run, so the toolkit can be improved from evidence rather than from recollection. It is **off by default**; when it is off every command below is a silent no-op, so you may call them unconditionally and must not branch on whether it is enabled.
+When feedback mode is on, this project records what actually happened during a run so the toolkit can be improved from evidence rather than recollection. It is **off by default**; when it is off every command below is a silent no-op, so call them unconditionally and never branch on whether it is enabled.
 
-The CLI already records its own half — every invocation, its exit code, its duration, and every diagnostic any validator produced. **Do not re-report those.** Record only what the CLI cannot see, which is what you did and why:
+**The log is written to be sent.** A user turns this on, reproduces a problem, and forwards the file to whoever maintains the toolkit. So nothing you pass can be free text: every flag below takes a value from a closed vocabulary, and anything else is replaced with `redacted` before it reaches the file. Do not try to describe a situation in words — pick the closest vocabulary value and, if none fits, use `other`. How often `other` shows up is itself the signal that a vocabulary needs a new member.
+
+The CLI already records its own half: every command's outcome and duration, and every diagnostic any validator produced. **Do not re-report those.** Record only what the CLI cannot see — what you did and why:
 
 ```
-parlay internal feedback-record --kind <kind> --skill <this-skill> --data key=value
+parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [--artifact A] [...]
 ```
 
-| Kind | Record when |
-|---|---|
-| `phase` | You enter or leave a pipeline phase. `--data phase=build --data at=start`. |
-| `decision` | You raised a `parlay-decision` block, and again when it resolves. Include `kind=`, and on resolution the chosen `option=`. The CLI never sees these. |
-| `retry` | **The important one.** You re-attempted something after a rejection: authored a shape, had it refused, and tried a different one. Include `after=<the error code>` and `changed=<what you did differently>`. |
-| `improvised` | You proceeded without a rule you needed — invented a path, guessed a convention, weakened an assertion you could not satisfy. Include `needed=<what was missing>`. |
-| `note` | Anything else worth a future reader knowing. Use sparingly; a log full of notes means a kind is missing. |
+| Kind | Record when | Flags |
+|---|---|---|
+| `phase` | You enter or leave a pipeline phase | `--phase intents\|dialogs\|artifacts\|build\|code` |
+| `decision` | You raised a `parlay-decision` block, and again when it resolves. The CLI never sees these | `--decision <kind>` and, on resolution, `--option <id>` |
+| `retry` | **The important one.** You authored something, had it refused, and tried a different shape | `--code <the error code>` and `--changed added-field\|removed-field\|changed-shape\|changed-version\|changed-artifact\|reordered\|other` |
+| `improvised` | You proceeded without a rule you needed — invented a path, guessed a convention, weakened an assertion | `--needed schema-rule\|path-convention\|naming-convention\|adapter-capability\|example\|decision\|other` |
+| `note` | Anything else worth a future reader knowing. Use sparingly | — |
 
-**`retry` and `improvised` are the two the log exists for.** A validator that teaches by rejection looks exactly like one that teaches by documentation unless the retries are counted, and an agent that guessed a convention leaves no other trace at all — the run passes, and the guess is discovered later as an inconsistency nobody can date. Recording them is not an admission of failure; it is the only way the gap that forced them gets closed.
+`--subject` optionally names the feature, unit or operation concerned. Pass it in **plaintext**; the CLI hashes it on receipt with a per-project salt. Never hash it yourself.
 
-**Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. That is what lets a retry be tied to the diagnostic that caused it. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for.
+**`retry` and `improvised` are the two the log exists for.** A validator that teaches by rejection looks exactly like one that teaches by documentation unless the retries are counted, and an agent that guessed a convention leaves no other trace at all — the run passes, and the guess surfaces later as an inconsistency nobody can date. Recording them is not an admission of failure; it is the only way the gap that forced them gets closed.
+
+**Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. The CLI hashes it before writing, so the value never appears in the log. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for.
 
 ## Steps
 

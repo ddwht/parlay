@@ -214,6 +214,17 @@ func NewOutcome(mode ValidationMode, code, message string) ValidationOutcome {
 	// surfaced — a warning that a caller filters out still appears here.
 	// That is the honest word for it, and for the question the log is read
 	// to answer ("which rules actually fire") it is also the better one.
-	feedback.Diagnostic(string(mode), code, message)
+	//
+	// `message` is deliberately NOT passed. It is rendered from a template
+	// this repo already owns, so the only new information in it is the
+	// interpolated values — paths, operation ids, entity names, and in a
+	// few places verbatim prose out of the user's spec. The code plus the
+	// emitting symbol answer the same question without any of that.
+	feedback.Record(feedback.FindingData{
+		Code:     code,
+		Mode:     string(mode),
+		Severity: string(out.Severity),
+		Site:     feedback.CallerSite(1),
+	})
 	return out
 }

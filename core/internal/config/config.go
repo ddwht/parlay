@@ -32,9 +32,16 @@ type ProjectConfig struct {
 	NoStudio bool `yaml:"no_studio,omitempty"`
 
 	// Feedback mirrors the parlay.feedback key in .parlay/config.yaml:
-	// when true, every invocation appends a structured record of what it
-	// did to .parlay/feedback/<date>.jsonl. Off by default, local-only,
-	// and overridable per-run in both directions by PARLAY_FEEDBACK.
+	// when true, findings and per-run tallies are appended to
+	// .parlay/feedback/<date>.jsonl. Off by default, and overridable
+	// per-run in both directions by PARLAY_FEEDBACK.
+	//
+	// Recorded locally and never transmitted — parlay has no network path
+	// — but written to be SENT: a user reproduces a problem and forwards
+	// the bundle from `parlay feedback-export`. That is why capture is
+	// sanitised rather than the export being filtered. An earlier revision
+	// of this comment said "local-only", which was true of the mechanism
+	// and misleading about the intent.
 	//
 	// parlay-feature: parlay-tool/feedback-mode
 	Feedback bool `yaml:"feedback,omitempty"`

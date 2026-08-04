@@ -39,11 +39,12 @@ not part of the stable CLI surface.`,
 // init has configured its flags.
 func registerInternalCommands() {
 	internalCmd.AddCommand(
-		// Feedback mode — opt-in, local-only instrumentation. The record
-		// command is how a skill contributes the events no CLI call can
-		// observe; both are no-ops when the mode is off.
+		// Feedback mode — opt-in instrumentation, recorded locally and sent
+		// only when the user chooses to. This is how a skill contributes
+		// the events no CLI call can observe; it is a no-op when the mode
+		// is off. Its siblings — status, export, prune — are people-facing
+		// and registered at the top level in root.go.
 		feedbackRecordCmd,
-		feedbackStatusCmd,
 		// Probes — read project state, emit JSON, change nothing.
 		parseCmd,
 		diffCmd,

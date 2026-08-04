@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/deployer"
+	"github.com/ddwht/parlay/core/internal/embedded"
 	"github.com/ddwht/parlay/core/internal/feedback"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -87,16 +90,52 @@ func Execute() error {
 	// PersistentPostRun: a command that fails in PreRun never reaches
 	// PostRun, and a run that could not resolve its root is exactly the
 	// kind of failure this log exists to capture.
-	if feedback.IsEnabled() {
-		feedback.Record(feedback.KindInvocation, invokedCommandPath(), map[string]any{
-			"args":        os.Args[1:],
-			"exit":        invocationExitCode(err),
-			"duration_ms": time.Since(started).Milliseconds(),
-			"error":       errorText(err),
-		})
-		feedback.Stop()
+	//
+	// A tally, not the argv-and-error-text record this used to write.
+	// os.Args carries absolute paths and any free-text flag value — a
+	// `review-coverage --exempt "<reason>"` landed in the log verbatim —
+	// and err.Error() is the channel through which every YAML parse error,
+	// which quotes the offending source fragment, reached disk. Neither
+	// answers a question the code and exit status do not.
+	if isFeedbackOwnCommand(invokedCommandPath) {
+		// The feedback commands do not tally themselves. They are not work
+		// the pipeline did, and counting them inflates the denominator with
+		// calls that only exist because the mode is on — so enabling the
+		// mode would change the rate it is meant to measure.
+		feedback.Discard()
+	} else {
+		feedback.Stop(invokedCommandPath, exitLabel(err), time.Since(started))
 	}
 	return err
+}
+
+// isFeedbackOwnCommand reports whether this invocation is one of feedback
+// mode's own commands.
+func isFeedbackOwnCommand(path string) bool {
+	return strings.Contains(path, "feedback-")
+}
+
+// invokedCommandPath is set by persistentPreRun from cobra's own
+// CommandPath.
+//
+// It replaces a hand-rolled parse of os.Args that walked arguments until
+// the first "-", which already misread `parlay --root x validate` as the
+// root command. Cobra knows exactly which command it dispatched; there was
+// never a reason to guess.
+var invokedCommandPath string
+
+// exitLabel coarsens the exit status into a safe token. The exact code
+// matters only when parlay chose it deliberately; everything else is
+// "failed".
+func exitLabel(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	var exitErr *ExitCodeError
+	if errors.As(err, &exitErr) {
+		return fmt.Sprintf("exit-%d", exitErr.Code)
+	}
+	return "failed"
 }
 
 // startFeedback opens the log when the project or the environment asks for
@@ -108,6 +147,79 @@ func startFeedback(rootPath string) {
 		configValue = cfg.Feedback
 	}
 	feedback.Start(rootPath, feedback.Enabled(configValue, os.Getenv), os.Getenv(feedback.RunEnvVar))
+
+	// The session header is owed by whichever process created today's
+	// file. Built here rather than inside the recorder because describing
+	// a project means knowing about roots, adapters and the feature tree,
+	// and the feedback package stays a leaf with no project knowledge —
+	// which is also what lets its AST guard reason about it.
+	if feedback.NeedsSession() {
+		feedback.Record(describeSession(rootPath))
+	}
+}
+
+// describeSession summarizes the shape of the project — never its content.
+//
+// Everything here is either parlay's own vocabulary, a bucketed count, or
+// a hash. A custom adapter's name is hashed because an adapter someone
+// wrote themselves is often named after the product; the bundled ones are
+// parlay's own names and are recorded plainly, which is what makes
+// "failures correlate with adapter X" answerable at all.
+func describeSession(rootPath string) feedback.SessionData {
+	version := appVersion
+	if version == "" || version == "dev" {
+		// Whether a report came from a released binary or a working tree
+		// is the first thing triage needs and costs nothing to record.
+		version = "dev"
+	}
+
+	features := 0
+	if names, err := config.ScanFeatureTree(filepath.Join(rootPath, config.SpecDir, config.IntentsDir)); err == nil {
+		features = len(names)
+	}
+
+	multiRoot := "false"
+	if _, err := os.Stat(filepath.Join(rootPath, config.ParlayDir, "roots.yaml")); err == nil {
+		multiRoot = "true"
+	}
+
+	return feedback.SessionData{
+		Version:     version,
+		OS:          runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		MultiRoot:   multiRoot,
+		Features:    feedback.Bucket(features),
+		Adapters:    describeAdapters(rootPath),
+		Interactive: "true",
+	}
+}
+
+// describeAdapters names bundled adapters and hashes custom ones.
+func describeAdapters(rootPath string) string {
+	entries, err := os.ReadDir(filepath.Join(rootPath, config.ParlayDir, config.AdaptersDir))
+	if err != nil {
+		return ""
+	}
+	bundled := map[string]bool{}
+	if names, nerr := embedded.AdapterNames(); nerr == nil {
+		for _, n := range names {
+			bundled[strings.TrimSuffix(n, ".adapter.yaml")] = true
+		}
+	}
+	var out []string
+	for _, e := range entries {
+		name := strings.TrimSuffix(e.Name(), ".adapter.yaml")
+		if e.IsDir() || name == e.Name() {
+			continue
+		}
+		if bundled[name] {
+			out = append(out, name)
+		} else {
+			out = append(out, "custom-"+feedback.Hash(name))
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
 }
 
 func loadProjectConfigForFeedback(rootPath string) (*config.ProjectConfig, error) {
@@ -122,41 +234,6 @@ func loadProjectConfigForFeedback(rootPath string) (*config.ProjectConfig, error
 	return &cfg, nil
 }
 
-// invokedCommandPath is the command actually run ("validate", "internal
-// diff"), recovered from the arguments rather than from cobra, which has
-// already returned by the time Execute records.
-func invokedCommandPath() string {
-	var parts []string
-	for _, a := range os.Args[1:] {
-		if strings.HasPrefix(a, "-") {
-			break
-		}
-		parts = append(parts, a)
-		if len(parts) == 2 {
-			break
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-func invocationExitCode(err error) int {
-	if err == nil {
-		return 0
-	}
-	var exitErr *ExitCodeError
-	if errors.As(err, &exitErr) {
-		return exitErr.Code
-	}
-	return 1
-}
-
-func errorText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 // persistentPreRun runs before every subcommand's RunE. It resolves the
 // active root via cwd walk-up (or PARLAY_ROOT), validates the parent
 // pointer for child roots, runs the forbidden-directory check, and
@@ -167,6 +244,11 @@ func errorText(err error) string {
 // process — used by `init` (which creates the first .parlay/) and
 // `version` (which doesn't depend on any root state).
 func persistentPreRun(cmd *cobra.Command, args []string) error {
+	// Cobra's own answer, captured before anything can fail. Recorded even
+	// for commands that skip resolution, so a `version` or `init` run is
+	// still attributable if the mode happens to be on from a parent run.
+	invokedCommandPath = strings.TrimPrefix(cmd.CommandPath(), "parlay ")
+
 	if cmd.Annotations[annotationSkipResolution] == "true" {
 		return nil
 	}
@@ -349,6 +431,14 @@ func init() {
 	// grow back.
 	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Print root resolution details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&ambiguityAsSignalFlag, "ambiguity-as-signal", false, "Emit a structured JSON envelope on stderr and exit non-zero on ambiguity (used by skill wrappers)")
+
+	// Feedback mode's people-facing commands. A person turns the mode on,
+	// reproduces a problem, exports the bundle and sends it — none of that
+	// is a step an agent takes on their behalf, so none of it belongs
+	// under `internal`.
+	rootCmd.AddCommand(feedbackStatusCmd)
+	rootCmd.AddCommand(feedbackExportCmd)
+	rootCmd.AddCommand(feedbackPruneCmd)
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(addFeatureCmd)
