@@ -150,13 +150,22 @@ func runReviewCoverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "  approve %q? [Y/n] ", s.Name)
-		line, _ := reader.ReadString('\n')
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			return errNoReviewerPresent(slug, s.Name)
+		}
 		line = strings.TrimSpace(strings.ToLower(line))
 		if line == "" || line == "y" || line == "yes" {
 			approved = append(approved, s.Name)
 		} else {
 			fmt.Fprint(cmd.OutOrStdout(), "    reason for exempting (free text): ")
-			reason, _ := reader.ReadString('\n')
+			reason, reasonErr := reader.ReadString('\n')
+			if reasonErr != nil {
+				return errNoReviewerPresent(slug, s.Name)
+			}
+			if strings.TrimSpace(reason) == "" {
+				return fmt.Errorf("coverage-review-unjustified-exemption: declining suite %q recorded no reason. An exemption without one cannot be reviewed by anyone later — re-run and give a reason, or pass --exempt %s:<item>=<reason>", s.Name, s.Name)
+			}
 			exemptions = append(exemptions, exemptionsForSuite(s.Name, s.SourceRefs, strings.TrimSpace(reason))...)
 		}
 	}
@@ -249,4 +258,33 @@ func suiteFullyExempted(suiteName string, sourceRefs []string, exempted map[stri
 		}
 	}
 	return true
+}
+
+// errNoReviewerPresent is returned when stdin ends before the reviewer
+// answered.
+//
+// This used to be an approval. `line, _ := reader.ReadString('\n')`
+// discarded the error, EOF returned an empty string, and the `[Y/n]`
+// convention reads empty as yes — so a run with no terminal approved every
+// suite and wrote a coverage-review.yaml stamped with a real person's
+// username and `review_method: cli`. It attributed to them a review that
+// never happened, and check-review-gate then let codegen proceed.
+//
+// That is strictly worse than not running at all: with no file, the gate
+// fails correctly with coverage-review-missing. Silence is not consent —
+// the same rule the decision protocol states for phase modules, which
+// cannot prompt either.
+//
+// There is deliberately no --approve-all. A flag that approves every suite
+// without a reviewer is the same forgery with a nicer name; the artifact's
+// entire purpose is to record that a person looked. Non-interactive callers
+// have --exempt for terms that genuinely have no covering case, and an
+// agent that reaches this should raise a decision so the driver can ask.
+func errNoReviewerPresent(feature, suite string) error {
+	return fmt.Errorf("coverage-review-no-reviewer: stdin ended while asking about suite %q, so nobody approved anything and no review was written.\n"+
+		"  coverage-review.yaml records that a PERSON approved these suites; it cannot be produced without one.\n"+
+		"  - interactively: run `parlay review-coverage @%s` in a terminal\n"+
+		"  - unattended: pass `--exempt <suite>:<item>=<reason>` for terms that have no covering case\n"+
+		"  - from a phase module: raise a decision and let the driver ask",
+		suite, feature)
 }

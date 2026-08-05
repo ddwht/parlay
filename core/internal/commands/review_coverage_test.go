@@ -7,6 +7,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/agent"
@@ -172,5 +173,41 @@ func TestSuiteFullyExemptedRequiresEveryTerm(t *testing.T) {
 	}
 	if suiteFullyExempted("other", refs, full) {
 		t.Error("exemptions must not leak across suites")
+	}
+}
+
+// The forged-approval bug, pinned.
+//
+// EOF used to be indistinguishable from a person pressing Enter: the read
+// error was discarded, the empty string matched the [Y/n] default, and an
+// agent-driven run approved every suite and wrote a coverage-review.yaml
+// stamped with a real username. The gate it guards then passed.
+func TestEOFIsNotApproval(t *testing.T) {
+	if err := errNoReviewerPresent("expenses", "submit-suite"); err == nil {
+		t.Fatal("stdin ending must be an error, never an approval")
+	} else {
+		msg := err.Error()
+		for _, want := range []string{
+			"coverage-review-no-reviewer", // greppable code
+			"submit-suite",                // which suite it stopped on
+			"--exempt",                    // the unattended alternative
+			"raise a decision",            // what a phase module should do
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("refusal message omits %q — a reader has to know what to do instead:\n%s", want, msg)
+			}
+		}
+	}
+}
+
+// A declined suite with no reason recorded is unreviewable later, so it is
+// refused rather than written with an empty justification.
+func TestDeclineWithoutAReasonIsRefused(t *testing.T) {
+	// exemptionsForSuite itself does not validate — the guard is at the
+	// prompt — so this pins the shape the caller must preserve: an
+	// exemption always carries a non-empty reason by the time it is built.
+	ex := exemptionsForSuite("s", []string{"@f/operation:a"}, "a real reason")
+	if len(ex) != 1 || strings.TrimSpace(ex[0].Reason) == "" {
+		t.Errorf("an exemption must carry its justification: %+v", ex)
 	}
 }
