@@ -42,15 +42,24 @@ nothing that resolves one. That asymmetry is the problem being fixed.
 alongside.
 
 This is not a stylistic preference, it is what makes the rest of the chain
-work unchanged. `parlay internal diff @{feature}` compares current sources
-against the recorded baseline and reports which components are dirty. If the
-artifact is amended first, `diff` already reports exactly the components the
-change affects — the regeneration scope falls out for free, with **no change
-to `diff` at all**.
+work unchanged. `parlay internal diff` compares current sources against the
+recorded baseline and reports which components are dirty. Amending first means
+the diff already describes the change, so the regeneration scope falls out of a
+mechanism that exists — with **no change to `diff` itself**.
 
 Regenerate-first has no vocabulary anywhere in this codebase. There is no way
 to ask "what would this change affect" before it is written down, because
 every scoping mechanism in the toolkit is a comparison against a baseline.
+
+**What amend-first does NOT settle is which diff to run.** An earlier version
+of this skill claimed the scope fell out "for free" and hard-coded
+`diff @{feature}` at step 5. That holds only while the amendment stays inside
+the feature's own directory, and an amendment can land in the blueprint, the
+project domain model or an adapter — at which point the feature-scoped diff is
+the wrong query and answers `stable` about files it never looked at.
+
+So amend-first buys one thing precisely: after step 4 you *know* where the
+change landed, which is the input step 5 needs. Use it there.
 
 ## Steps
 
@@ -108,8 +117,37 @@ every scoping mechanism in the toolkit is a comparison against a baseline.
    agreement before writing. These are designer-authored documents; editing one
    beyond what was asked for is the thing the designer brief already forbids.
 
-5. **Scope** — Run `parlay internal diff @{feature}`. Because step 4 already
-   landed, this reports the right component subset with no special handling.
+5. **Scope — the amendment decides how far to look, not the feature name.**
+
+   Look at where step 4 actually wrote:
+
+   - **Inside `spec/intents/{feature}/`** → `parlay internal diff @{feature}`.
+   - **Anywhere else** — `.parlay/blueprint.yaml`, the project `domain-model.yaml`,
+     an adapter, `.parlay/adapter-set.yaml` → **`parlay internal diff`** with no
+     feature argument. The project diff is the only one that carries
+     `sections.blueprint`, and it is what `generate-code` step 14 keys its
+     blueprint-derived regeneration off.
+
+   **Why this is not a formality.** The per-feature diff hashes exactly three
+   buildfile sections — `models`, `routes`, `fixtures`. It has no blueprint key
+   at all, so a blueprint change does not read as `changed` there; it is
+   *absent*, and every rule that depends on it silently never fires.
+
+   The failure this prevents, observed in a real run: a request to adjust a
+   footer. The footer is a `chrome` region of a shell that declares
+   `wraps: all`, so the amendment landed in the blueprint and its blast radius
+   was every route in the app. `diff @{feature}` reported `routes: stable`,
+   nothing was regenerated, and the run reported success with the visual defect
+   still on screen.
+
+   **A small request is not evidence of a small change.** Chrome, shells,
+   navigation, guards and domain vocabulary are all things a person describes
+   in one sentence and all things that live above the feature. You cannot know
+   the scope before amending — which is exactly why this step reads the
+   amendment rather than the argument you were given.
+
+   When the project diff is the right one, say so in the report: the user asked
+   about one feature and is about to see other features regenerate.
 
 6. **Regenerate** — Preserve stable, regenerate dirty, exactly as `generate-code`
    does. Append every file written to `.parlay/build/_project/.emitted`, one
