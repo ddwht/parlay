@@ -506,3 +506,31 @@ func hasParagraphMentioning(doc string, needles ...string) bool {
 	}
 	return false
 }
+
+// TestSkillDescriptionsDoNotSelfPrefix keeps the "Parlay: " prefix owned by
+// exactly one layer.
+//
+// Every deployer templates `description: "Parlay: %s"` (claude.go:53,
+// cursor.go:45), so a source description that carries the prefix itself
+// deploys as "Parlay: Parlay: …". Two skills drifted into that — one of them
+// shipped that way — and nothing noticed, because the doubling is only
+// visible in the deployed file and only in a menu nobody diffs.
+//
+// The rule is one line of frontmatter, which is exactly the kind of
+// convention that survives only if something checks it.
+func TestSkillDescriptionsDoNotSelfPrefix(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	if len(skills) == 0 {
+		t.Fatal("no skills read — the loader has drifted from this test")
+	}
+	for _, s := range skills {
+		if strings.HasPrefix(s.Description, "Parlay: ") {
+			t.Errorf("skill %s describes itself as %q — the deployers add the "+
+				"\"Parlay: \" prefix, so this deploys doubled. Drop it from the frontmatter.",
+				s.Name, s.Description)
+		}
+	}
+}

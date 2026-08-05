@@ -1,6 +1,6 @@
 ---
 name: refine
-description: "Parlay: Make a small, precise change to an existing feature — spec, code, tests and baselines together"
+description: "Make a small, precise change to an existing feature — spec, code, tests and baselines together"
 ---
 
 # Refine

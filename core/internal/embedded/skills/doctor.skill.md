@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: "Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations"
+description: "Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations"
 ---
 
 # Doctor

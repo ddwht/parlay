@@ -1,6 +1,6 @@
 ---
 name: parlay-refine
-description: "Parlay: Parlay: Make a small, precise change to an existing feature — spec, code, tests and baselines together"
+description: "Parlay: Make a small, precise change to an existing feature — spec, code, tests and baselines together"
 ---
 
 # Refine

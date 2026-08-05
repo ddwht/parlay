@@ -1,6 +1,6 @@
 ---
 name: parlay-doctor
-description: "Parlay: Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations"
+description: "Parlay: Diagnose and repair project state — coverage, drift, tree consistency, and pending migrations"
 ---
 
 # Doctor
