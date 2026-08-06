@@ -45,42 +45,16 @@ Who resolves it depends on where you are running. If you own the user interactio
 
 ## Asking the user
 
-This skill runs as a **phase module** — normally inside a parlay-loop subagent, where no interactive tool exists. A question asked there is written into a transcript nobody reads, and you then answer it yourself; that is not a confirmation, it is a decision made on the user's behalf. So do not prompt. **Stop and return a decision request** as your final output. The driver prompts and resumes you with the chosen `id`, with your context intact, so you continue exactly where you stopped.
+**You own the interaction — prompt directly.** This skill is invoked by a
+person typing `/parlay-refine`, not by the loop driver, so `AskUserQuestion`
+works here and there is no decision request to round-trip. An earlier version
+carried the phase-module decision protocol, which opens by telling you that no
+interactive tool exists and to return a `parlay-decision` block instead. That is
+the right rule for a phase running inside a subagent and the wrong one here: it
+would have you emit YAML at a driver that is not listening while the person who
+asked for the change waits.
 
-````
-```yaml parlay-decision
-kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity | impasse
-phase: <the phase you are in>
-question: "<the one question, in the user's terms>"
-context: |
-  <what you found, and what is already on disk>
-options:
-  - id: <slug>
-    label: "<what the user picks>"
-    detail: "<the consequence, when it isn't obvious>"
-default: <id>               # advancement kinds ONLY — see below
-resume: "Re-enter with decision: <id>. <what is written so far>"
-```
-````
-
-**The `default:` field.** It names the one option id a driver running `--non-interactive` may take without asking. It exists so an unattended run has a defined answer rather than an inferred one, and it must be an id from your own `options:` list.
-
-Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.
-
-The other four kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
-
-- `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.
-- `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.
-- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.
-- `impasse` — the pipeline cannot express what the spec asks for, and the offered way forward hands the work to a person permanently. Accepting that is a scope reduction nobody can consent to on the user's behalf.
-
-So: when you raise one of those four, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
-
-**`impasse` vs `ambiguity`.** An ambiguity has two readings and you cannot pick between them; an impasse has none — the pipeline has no way to express what the spec asks for, whichever reading you take. They are separate kinds because their resolutions differ in kind: an ambiguity is settled by the user choosing a reading, an impasse by the user agreeing that this part of the system will be written by hand, declared as a unit, and never generated. Filing an impasse as an ambiguity offers the user a choice between readings that all fail.
-
-Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
-
-Two things not to do: never narrow the options to spare the user a question, and never resolve an ambiguity by taking the reading that is cheapest to implement. Both turn a decision the user should own into one you made quietly.
+The gates below are real questions. Ask them.
 
 ## The one invariant: amend first
 
@@ -134,6 +108,60 @@ change landed, which is the input step 5 needs. Use it there.
 
    Report which artifact you chose and why, before amending it.
 
+2.5. **Is this a refinement at all? — stop and push back if not.**
+
+   Run this before step 3 and before anything is written. Step 2 is where you
+   learn the answer: an artifact that owns the change either exists or it does
+   not, and if it does not, the request is not a refinement.
+
+   **Adding one intent to a feature that already exists is refine's job**,
+   provided the new intent attaches to what is already there — a second way to
+   trigger something the feature already does, a case the existing intents did
+   not cover, a constraint that turned out to need its own goal. That is a
+   refinement of a feature, and handing it to the loop would restate four
+   phases to add one block.
+
+   Push back when the ask is a **new feature** rather than an addition to one:
+
+   - **It needs several intents, not one.** A cluster of new goals arriving
+     together is a feature, whatever the request was called.
+   - **Step 2 found no owning artifact and no feature it attaches to.** Not
+     "no exact intent" — no feature. A new intent still has to belong
+     somewhere.
+   - **It introduces a new user goal rather than extending one.** "Export as
+     STL as well" extends; "add a project library with its own browsing,
+     search and deletion" does not.
+   - **It would need its own dialogs conversation designed from scratch**,
+     rather than turns added to an existing one.
+   - **It introduces domain vocabulary the model has no shape for** — a new
+     entity, a new relationship. One new enum value is an addition; a new
+     entity with its own lifecycle is a feature.
+
+   When one holds: **do not amend, and do not offer to.** Say plainly which
+   signal fired, and recommend `/parlay-loop {feature}` — or
+   `/parlay-loop {feature} --from intents` when the feature exists and is
+   gaining a cluster of new goals.
+
+   Then ask whether to hand off, and default to yes in your recommendation. The
+   user may know something you do not — a feature that exists but is worded so
+   the reverse lookup missed it, a cluster that is genuinely one goal expressed
+   awkwardly — so this is a question, not a refusal.
+
+   But do not resolve it by proceeding. A feature's worth of intents spliced in
+   here gets one pass of a chain designed for one change: the artifact-set
+   decision is never raised, the dialogs are never designed as a conversation,
+   and the coverage walk sees suites for goals nobody talked through. It arrives
+   in the spec looking finished and is not, and nothing downstream can tell the
+   difference.
+
+   **Size is not the signal, and neither is "is it new".** "Add a keyboard
+   shortcut for export" is one sentence and a new intent, and it belongs here —
+   it hangs off an export intent that already exists. "Add a project library"
+   is four words and belongs to the loop, because browsing, searching and
+   deleting are three goals that need a conversation of their own. Judge by
+   whether the ask attaches to a feature that exists, never by how much the
+   user typed or whether the word "new" appears.
+
 3. **Classify the altitude** — Two destinations:
    - **User-visible** → `intents.md`, `dialogs.md`, or `surface.yaml`. What
      someone sees, does, or is told.
@@ -162,6 +190,17 @@ change landed, which is the input step 5 needs. Use it there.
    **Decision-gate the amendment.** Show the exact before/after span and get
    agreement before writing. These are designer-authored documents; editing one
    beyond what was asked for is the thing the designer brief already forbids.
+
+   **Note whether you replaced a span or added one — the next steps differ.**
+
+   Replacing text in place is structurally inert: a reworded constraint, a
+   changed label, a tightened threshold. The set of components the buildfile
+   derives does not move, so steps 5–7 as written are correct.
+
+   **Adding** — a new intent block, a new dialog turn, a new surface fragment,
+   a new capability operation — is not inert. New spec elements imply new
+   components, new plan rows and new suites, none of which exist yet. Carry
+   that fact into step 5.5 and say which it was in your report.
 
 5. **Scope — the amendment decides how far to look, not the feature name.**
 
@@ -194,6 +233,27 @@ change landed, which is the input step 5 needs. Use it there.
 
    When the project diff is the right one, say so in the report: the user asked
    about one feature and is about to see other features regenerate.
+
+5.5. **Rebuild the buildfile — only if step 4 added something.**
+
+   If the amendment replaced a span, skip this: the buildfile still describes
+   the same components, and rebuilding it means re-running an AI phase over a
+   reviewed 700-line document to change nothing.
+
+   If the amendment **added** a spec element, the buildfile does not know about
+   it yet. Read `.parlay/modules/build-feature.md` and run the build phase for
+   this feature, then continue.
+
+   **Why this step has to exist.** Steps 6–7 regenerate code from the buildfile
+   and then re-stamp `source-signatures` so the freshness gate passes. Without
+   a rebuild, an added intent produces: the intent in `intents.md`, nothing in
+   the buildfile, no component, no test — and a green run, because the gate was
+   satisfied by re-stamping rather than by the buildfile actually being fresh.
+   The spec would document a capability that does not exist, and every check
+   would agree it was fine.
+
+   Re-running the build phase regenerates `testcases.yaml`, which is what makes
+   step 10's re-review necessary rather than merely tidy.
 
 6. **Regenerate** — Preserve stable, regenerate dirty, exactly as `generate-code`
    does. Append every file written to `.parlay/build/_project/.emitted`, one
@@ -245,8 +305,11 @@ change landed, which is the input step 5 needs. Use it there.
 
 - **Not a second codegen path.** Steps 6 and 7 are `generate-code`'s behaviour,
   invoked for a smaller scope. Divergence between them is a bug in this skill.
-- **Not for new features.** A change with no owning artifact is a new intent —
-  `/parlay-loop` owns that. Refine amends what exists.
+- **Not for new features.** Adding one intent to a feature that already exists
+  is refine's job; a cluster of new goals that needs its own conversation is
+  the loop's. Step 2.5 is the gate that decides which of the two you were
+  handed, and it turns on whether the ask attaches to an existing feature — not
+  on whether anything is being added.
 - **Not a way into a hand-authored unit.** A unit's code is written by a person
   and fenced off from codegen; a prose request to change one is a request to a
   person, not to this command. Refuse and say so.

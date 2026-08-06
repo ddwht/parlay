@@ -34,7 +34,18 @@ nothing that resolves one. That asymmetry is the problem being fixed.
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
-<!-- parlay:expand-decision-protocol -->
+## Asking the user
+
+**You own the interaction — prompt directly.** This skill is invoked by a
+person typing `/parlay-refine`, not by the loop driver, so `AskUserQuestion`
+works here and there is no decision request to round-trip. An earlier version
+carried the phase-module decision protocol, which opens by telling you that no
+interactive tool exists and to return a `parlay-decision` block instead. That is
+the right rule for a phase running inside a subagent and the wrong one here: it
+would have you emit YAML at a driver that is not listening while the person who
+asked for the change waits.
+
+The gates below are real questions. Ask them.
 
 ## The one invariant: amend first
 
@@ -88,6 +99,60 @@ change landed, which is the input step 5 needs. Use it there.
 
    Report which artifact you chose and why, before amending it.
 
+2.5. **Is this a refinement at all? — stop and push back if not.**
+
+   Run this before step 3 and before anything is written. Step 2 is where you
+   learn the answer: an artifact that owns the change either exists or it does
+   not, and if it does not, the request is not a refinement.
+
+   **Adding one intent to a feature that already exists is refine's job**,
+   provided the new intent attaches to what is already there — a second way to
+   trigger something the feature already does, a case the existing intents did
+   not cover, a constraint that turned out to need its own goal. That is a
+   refinement of a feature, and handing it to the loop would restate four
+   phases to add one block.
+
+   Push back when the ask is a **new feature** rather than an addition to one:
+
+   - **It needs several intents, not one.** A cluster of new goals arriving
+     together is a feature, whatever the request was called.
+   - **Step 2 found no owning artifact and no feature it attaches to.** Not
+     "no exact intent" — no feature. A new intent still has to belong
+     somewhere.
+   - **It introduces a new user goal rather than extending one.** "Export as
+     STL as well" extends; "add a project library with its own browsing,
+     search and deletion" does not.
+   - **It would need its own dialogs conversation designed from scratch**,
+     rather than turns added to an existing one.
+   - **It introduces domain vocabulary the model has no shape for** — a new
+     entity, a new relationship. One new enum value is an addition; a new
+     entity with its own lifecycle is a feature.
+
+   When one holds: **do not amend, and do not offer to.** Say plainly which
+   signal fired, and recommend `/parlay-loop {feature}` — or
+   `/parlay-loop {feature} --from intents` when the feature exists and is
+   gaining a cluster of new goals.
+
+   Then ask whether to hand off, and default to yes in your recommendation. The
+   user may know something you do not — a feature that exists but is worded so
+   the reverse lookup missed it, a cluster that is genuinely one goal expressed
+   awkwardly — so this is a question, not a refusal.
+
+   But do not resolve it by proceeding. A feature's worth of intents spliced in
+   here gets one pass of a chain designed for one change: the artifact-set
+   decision is never raised, the dialogs are never designed as a conversation,
+   and the coverage walk sees suites for goals nobody talked through. It arrives
+   in the spec looking finished and is not, and nothing downstream can tell the
+   difference.
+
+   **Size is not the signal, and neither is "is it new".** "Add a keyboard
+   shortcut for export" is one sentence and a new intent, and it belongs here —
+   it hangs off an export intent that already exists. "Add a project library"
+   is four words and belongs to the loop, because browsing, searching and
+   deleting are three goals that need a conversation of their own. Judge by
+   whether the ask attaches to a feature that exists, never by how much the
+   user typed or whether the word "new" appears.
+
 3. **Classify the altitude** — Two destinations:
    - **User-visible** → `intents.md`, `dialogs.md`, or `surface.yaml`. What
      someone sees, does, or is told.
@@ -116,6 +181,17 @@ change landed, which is the input step 5 needs. Use it there.
    **Decision-gate the amendment.** Show the exact before/after span and get
    agreement before writing. These are designer-authored documents; editing one
    beyond what was asked for is the thing the designer brief already forbids.
+
+   **Note whether you replaced a span or added one — the next steps differ.**
+
+   Replacing text in place is structurally inert: a reworded constraint, a
+   changed label, a tightened threshold. The set of components the buildfile
+   derives does not move, so steps 5–7 as written are correct.
+
+   **Adding** — a new intent block, a new dialog turn, a new surface fragment,
+   a new capability operation — is not inert. New spec elements imply new
+   components, new plan rows and new suites, none of which exist yet. Carry
+   that fact into step 5.5 and say which it was in your report.
 
 5. **Scope — the amendment decides how far to look, not the feature name.**
 
@@ -148,6 +224,27 @@ change landed, which is the input step 5 needs. Use it there.
 
    When the project diff is the right one, say so in the report: the user asked
    about one feature and is about to see other features regenerate.
+
+5.5. **Rebuild the buildfile — only if step 4 added something.**
+
+   If the amendment replaced a span, skip this: the buildfile still describes
+   the same components, and rebuilding it means re-running an AI phase over a
+   reviewed 700-line document to change nothing.
+
+   If the amendment **added** a spec element, the buildfile does not know about
+   it yet. Read `.parlay/modules/build-feature.md` and run the build phase for
+   this feature, then continue.
+
+   **Why this step has to exist.** Steps 6–7 regenerate code from the buildfile
+   and then re-stamp `source-signatures` so the freshness gate passes. Without
+   a rebuild, an added intent produces: the intent in `intents.md`, nothing in
+   the buildfile, no component, no test — and a green run, because the gate was
+   satisfied by re-stamping rather than by the buildfile actually being fresh.
+   The spec would document a capability that does not exist, and every check
+   would agree it was fine.
+
+   Re-running the build phase regenerates `testcases.yaml`, which is what makes
+   step 10's re-review necessary rather than merely tidy.
 
 6. **Regenerate** — Preserve stable, regenerate dirty, exactly as `generate-code`
    does. Append every file written to `.parlay/build/_project/.emitted`, one
@@ -199,8 +296,11 @@ change landed, which is the input step 5 needs. Use it there.
 
 - **Not a second codegen path.** Steps 6 and 7 are `generate-code`'s behaviour,
   invoked for a smaller scope. Divergence between them is a bug in this skill.
-- **Not for new features.** A change with no owning artifact is a new intent —
-  `/parlay-loop` owns that. Refine amends what exists.
+- **Not for new features.** Adding one intent to a feature that already exists
+  is refine's job; a cluster of new goals that needs its own conversation is
+  the loop's. Step 2.5 is the gate that decides which of the two you were
+  handed, and it turns on whether the ask attaches to an existing feature — not
+  on whether anything is being added.
 - **Not a way into a hand-authored unit.** A unit's code is written by a person
   and fenced off from codegen; a prose request to change one is a request to a
   person, not to this command. Refuse and say so.
