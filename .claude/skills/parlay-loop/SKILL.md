@@ -212,7 +212,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
     On decline, proceed as normal — the option is an offer, never a gate.
 
-    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-studio` was passed or `parlay.no_studio` is true in project config, and when the session is not interactive. `--non-interactive` skips it for the same reason, more bluntly: the offer opens a browser and blocks until a human closes it, so unattended it does not time out, it hangs.
+    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-editor` was passed or `parlay.no_editor` is true in project config, and when the session is not interactive. `--non-interactive` skips it for the same reason, more bluntly: the offer opens a browser and blocks until a human closes it, so unattended it does not time out, it hangs. The older `--no-studio` flag and `parlay.no_studio` key still work and mean the same thing — honour them wherever you would honour the current spelling.
 
 11.5. **Review the feature's domain-model contribution** (at the artifacts→build boundary, before the boundary question of step 10 is answered):
 

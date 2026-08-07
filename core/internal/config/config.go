@@ -22,13 +22,23 @@ type ProjectConfig struct {
 	SDDFramework       string `yaml:"sdd-framework"`
 	PrototypeFramework string `yaml:"prototype-framework"`
 
-	// NoStudio mirrors the parlay.no_studio key in
-	// .parlay/config.yaml: when true, the trio-command Studio prompt
-	// is suppressed for every invocation in this project, regardless
-	// of the --no-studio flag. The merge with the per-invocation
-	// flag is logical OR — either source suppresses the prompt.
+	// NoEditor mirrors the parlay.no_editor key in .parlay/config.yaml:
+	// when true, the offer to open the domain-model editor is suppressed
+	// for every invocation in this project, regardless of the --no-editor
+	// flag. The merge with the per-invocation flag is logical OR — either
+	// source suppresses the offer.
 	//
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+	NoEditor bool `yaml:"no_editor,omitempty"`
+
+	// NoStudio is the deprecated spelling of NoEditor, kept so that a
+	// project whose config predates the rename keeps working. "Studio"
+	// named a separate binary that no longer exists; the thing being
+	// suppressed is the in-process editor, so the key was renamed to say
+	// what it does. Read only through the OR in NoEditorEnabled — never
+	// consult this field directly.
+	//
+	// Deprecated: set parlay.no_editor instead.
 	NoStudio bool `yaml:"no_studio,omitempty"`
 
 	// Feedback mirrors the parlay.feedback key in .parlay/config.yaml:
@@ -45,6 +55,20 @@ type ProjectConfig struct {
 	//
 	// parlay-feature: parlay-tool/feedback-mode
 	Feedback bool `yaml:"feedback,omitempty"`
+}
+
+// NoEditorEnabled reports whether this project has opted out of the
+// open-editor offer, honouring both the current parlay.no_editor key and
+// the deprecated parlay.no_studio spelling. Either one suppresses it; a
+// project mid-rename with both keys set gets the same answer as one with
+// either. Callers must use this rather than reading the fields, so the
+// deprecated key cannot be forgotten at one call site and honoured at
+// another.
+func (c *ProjectConfig) NoEditorEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.NoEditor || c.NoStudio
 }
 
 const (

@@ -18,10 +18,9 @@ var createArtifactsCmdImpl = &cobra.Command{
 
 func init() {
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
-	// --no-studio: skip the Studio open-editor prompt at the end.
-	createArtifactsCmdImpl.Flags().BoolVar(
-		&noStudioFlag, "no-studio", false, noStudioFlagHelpText,
-	)
+	// --no-editor: skip the open-editor prompt at the end. Also binds the
+	// deprecated --no-studio spelling.
+	registerNoEditorFlags(createArtifactsCmdImpl)
 }
 
 // runCreateArtifactsHandler is the RunE for `parlay create-artifacts`.

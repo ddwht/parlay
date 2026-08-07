@@ -18,12 +18,10 @@ var createDomainModelCmdImpl = &cobra.Command{
 
 func init() {
 	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
-	// --no-studio: skip the Studio open-editor prompt at the end. The
-	// flag has no inverse --studio form; config-level disables can
-	// only be reverted by changing config.
-	createDomainModelCmdImpl.Flags().BoolVar(
-		&noStudioFlag, "no-studio", false, noStudioFlagHelpText,
-	)
+	// --no-editor: skip the open-editor prompt at the end. The flag has no
+	// inverse --editor form; config-level disables can only be reverted by
+	// changing config. Also binds the deprecated --no-studio spelling.
+	registerNoEditorFlags(createDomainModelCmdImpl)
 }
 
 // runCreateDomainModelHandler is the RunE for `parlay
@@ -58,12 +56,12 @@ func pickDomainModelPromptMode() DomainModelPromptMode {
 	return DomainModelPromptBrownfield
 }
 
-// loadProjectConfigNoStudio reads parlay.no_studio from the active
-// root's config.yaml. Returns false on any read error — a missing
-// or unreadable config is treated as "not opted out", same as if
-// the key were absent. The merge with the --no-studio flag is OR,
-// so a malformed config never silently changes the default.
-func loadProjectConfigNoStudio(pctx *config.Context) bool {
+// loadProjectConfigNoEditor reads the project-config opt-out from the
+// active root's config.yaml. Returns false on any read error — a missing
+// or unreadable config is treated as "not opted out", same as if the key
+// were absent. The merge with the --no-editor flag is OR, so a malformed
+// config never silently changes the default.
+func loadProjectConfigNoEditor(pctx *config.Context) bool {
 	if pctx == nil {
 		return false
 	}
@@ -71,5 +69,5 @@ func loadProjectConfigNoStudio(pctx *config.Context) bool {
 	if err != nil || cfg == nil {
 		return false
 	}
-	return cfg.NoStudio
+	return cfg.NoEditorEnabled()
 }
