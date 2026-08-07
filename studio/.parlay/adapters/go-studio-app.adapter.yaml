@@ -39,25 +39,30 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "studio/"
+  source-root: "internal/editor/"
   component-pattern: "internal-package-per-subsystem"
   naming: "snake_case"
-  entry-point: "studio/cmd/parlay-studio/main.go"
+  entry-point: "core/internal/commands/domain_edit.go"
 
 # --- Conventions ---
 conventions:
   package-layout:
     rule: |
       Top-level layout is fixed:
-        studio/cmd/parlay-studio/main.go         — entry point; wires the harness, registers handlers, blocks on signal
-        studio/internal/server/                  — chi router, middleware, JSON encoding, error envelopes
-        studio/internal/mcpclient/               — Figma MCP client wrapper (sole importer of github.com/modelcontextprotocol/go-sdk)
-        studio/internal/domain/                  — domain-model.yaml read/write, validation, change events
-        studio/internal/designloop/              — Design Loop coordinator (canonical layout <-> Figma round-trip)
-        studio/internal/ui/                      — embedded React+Vite bundle (//go:embed dist/*)
-        studio/internal/files/                   — atomic YAML I/O against Core artifact paths
+        core/internal/commands/domain_edit.go    — entry point; `parlay domain-edit` boots the harness in-process and mounts each tool
+        internal/editor/server/                  — chi router, middleware, JSON encoding, error envelopes, ToolRegistration
+        internal/editor/config/                  — 5-source config precedence, project-root resolution
+        internal/editor/domain/                  — domain-model.yaml read/write, ETag CAS, validation, contributions
+        internal/editor/ui/                      — embedded React+Vite bundle (//go:embed all:dist)
       No package outside this layout. Cross-package imports flow downward
-      (server -> domain/designloop/mcpclient/files); no upward imports.
+      (server -> domain); no upward imports. A new tool is a package with
+      Name() + Mount(chi.Router) added to the Tools slice — the harness never
+      imports the tool packages directly.
+
+      Three packages this layout used to name are absent because they were
+      never built: mcpclient (Figma MCP wrapper), designloop, and files.
+      Their features are still specified under studio/spec/intents/ and are
+      spec-only. Do not create them speculatively to satisfy this rule.
     applies-to: "all generated packages"
   step-to-method-mapping:
     rule: |
@@ -140,15 +145,24 @@ conventions:
     applies-to: "all _test.go files"
   embedding:
     rule: |
-      The React UI bundle is embedded via //go:embed in studio/internal/ui/embed.go.
-      The build pipeline runs `npm run build` in studio/internal/ui/ before
+      The React UI bundle is embedded via //go:embed in internal/editor/ui/embed.go.
+      The build pipeline runs `npm run build` in internal/editor/ui/ before
       `go build` so dist/ exists at compile time. The embed directive is the
       single integration point between the TS and Go halves of the binary.
-    applies-to: "studio/internal/ui/embed.go"
+      Both the Makefile's `build` target and .goreleaser.yaml's before-hooks
+      run that npm step; a pipeline that skips it embeds an empty directory
+      and every UI route answers the documented studio-ui-bundle-not-built
+      503. That is not hypothetical — it is what every release before v0.2.0
+      shipped.
+    applies-to: "internal/editor/ui/embed.go"
   go-module:
     rule: |
-      Studio is a separate Go module under studio/go.mod. It depends on the
-      official MCP SDK at an exact version (no caret/tilde). It does not
-      import core/internal/* — only future core/pkg/* once Core publishes a
-      stable surface (per architecture P1).
-    applies-to: "studio/go.mod"
+      There is one Go module at the repo root. The editor was a separate
+      module under studio/go.mod, which forced the no-core-import boundary
+      and reached Core's validator out of process; that module was absorbed
+      into the root module, so the boundary is gone and the import is direct.
+      Shared code lives in the module-root internal/ (importable from both
+      core/ and internal/editor/, importable from outside neither).
+
+      Any new dependency is pinned at an exact version (no caret/tilde).
+    applies-to: "go.mod"

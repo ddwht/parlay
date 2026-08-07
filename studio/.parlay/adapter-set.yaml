@@ -1,20 +1,26 @@
-# Parlay Studio adapter-set.
+# Adapter-set for the in-process editor (historically "Parlay Studio").
 # Two slots filled: presentation (React+Vite+Radix+Tailwind, embedded as the
-# UI bundle) and application (Go backend covering HTTP serving, domain editor,
-# design loop, MCP client, and YAML I/O).
-# transport and persistence slots are intentionally unfilled — Studio's HTTP
-# surface is small enough to live inside the application adapter, and Studio
-# has no database (file I/O is folded into application).
+# UI bundle) and application (Go backend covering HTTP serving, the domain
+# editor, and YAML I/O).
+# transport and persistence slots are intentionally unfilled — the HTTP
+# surface is small enough to live inside the application adapter, and there
+# is no database (file I/O is folded into application).
+#
+# The roots below moved when the separate parlay-studio module was absorbed
+# into the root module: the code that was studio/internal/* is now
+# internal/editor/*. This file kept naming the old paths for several releases
+# after the move, which meant every path template it fed pointed at a
+# directory that did not exist.
 
-name: parlay-studio
+name: parlay-editor
 
 targets:
   presentation:
     adapter: react-vite-radix-tailwind
-    root: studio/internal/ui
+    root: internal/editor/ui
   application:
     adapter: go-studio-app
-    root: studio
+    root: internal/editor
 
 links:
   - { from: presentation, relation: calls, to: application }

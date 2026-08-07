@@ -51,10 +51,10 @@ const (
 	// SourceDefault — the built-in default supplied by this package.
 	SourceDefault Source = "default"
 	// SourceUserFile — the user-scoped config file
-	// ($XDG_CONFIG_HOME/parlay-studio/config.yaml or ~/.config/...).
+	// ($XDG_CONFIG_HOME/parlay/config.yaml or ~/.config/parlay/config.yaml).
 	SourceUserFile Source = "user-file"
 	// SourceProjectFile — the project-scoped config file
-	// (<resolved-project-root>/.parlay-studio/config.yaml).
+	// (<resolved-project-root>/.parlay/config.yaml).
 	SourceProjectFile Source = "project-file"
 	// SourceEnv — a PARLAY_EDITOR_* environment variable.
 	SourceEnv Source = "env"

@@ -107,9 +107,11 @@ func pruneStaleCursorSkills(projectRoot string, wanted map[string]bool) error {
 			continue
 		}
 		slug := strings.TrimPrefix(name, prefix)
-		// Only prune slugs core owns. Another tool's skill living in the
-		// same directory (parlay-studio deploys parlay-design-loop here)
-		// must survive — see retiredCoreSkills.
+		// Only prune slugs core owns. A skill in this directory that core
+		// did not deploy must survive — see retiredCoreSkills. The case
+		// that motivated this was parlay-design-loop, installed here by
+		// the separate parlay-studio binary; that binary is gone, but the
+		// rule is not about it.
 		if !shouldPruneSkill(slug, wanted) {
 			continue
 		}

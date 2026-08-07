@@ -102,10 +102,12 @@ func writeBundleNotBuilt(w http.ResponseWriter) {
 	body := map[string]any{
 		"code":     UIBundleNotBuiltCode,
 		"severity": "error",
-		// The fix named `make ui` and `parlay-studio`. The first was aspirational
-		// — no such target existed, so the one actionable sentence in the
-		// envelope told the operator to run a command that would fail. The
-		// second named a binary that is now a retirement notice.
+		// The fix once named `make ui` and `parlay-studio`. The first was
+		// aspirational — no such target existed, so the one actionable
+		// sentence in the envelope told the operator to run a command that
+		// would fail. The second named a binary that has since been deleted.
+		// `make ui` is a real target now; parlay-studio is not a real
+		// anything, so the fix text names neither it nor a second binary.
 		"message": "the editor UI bundle has not been built; no index.html is embedded in this binary",
 		"fix":     "run `make ui` to build the bundle and rebuild parlay, or use the parlay CLI for this operation",
 	}

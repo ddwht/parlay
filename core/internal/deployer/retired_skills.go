@@ -8,9 +8,8 @@ import "github.com/ddwht/parlay/core/internal/embedded"
 // is either currently wanted or listed here.
 //
 // Why an explicit list rather than "delete anything parlay-prefixed that we
-// don't currently ship": the agent surface is shared. parlay-studio deploys
-// parlay-design-loop into the same .claude/skills/ directory, and other
-// tools may add their own parlay-prefixed skills. A blanket prune deletes
+// don't currently ship": the agent surface is shared. Any tool may add its
+// own parlay-prefixed skills to .claude/skills/. A blanket prune deletes
 // them — verified: after retiring five core skills, `parlay upgrade`
 // silently removed parlay-design-loop, which `parlay-studio init` had
 // installed moments earlier. The user's next design-loop invocation would
