@@ -1,6 +1,5 @@
 // parlay-extends: studio-support/domain-model-yaml-migration/domain-model-path-resolution
 // parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
-// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
 
 package config
 
@@ -32,45 +31,23 @@ type Context struct {
 	// Nil means "not yet loaded"; pass a fresh Context to re-read from
 	// disk. See parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence.
 	domainModelCache *DomainModelArtifact
-
-	// studioDetection is the per-process record of whether
-	// parlay-studio is on PATH and runnable, populated once during
-	// root resolution (resolver.go) and consulted by the trio-command
-	// hook surfaces and `parlay status`. Reads go through
-	// (*Context).StudioDetection in studio.go so the field stays
-	// unexported. See parlay-extends:
-	// studio-support/studio-cli-hooks/runtime-studio-detection.
-	studioDetection StudioDetection
 }
 
 // NewContext builds a Context from a ResolutionResult and an optional
 // roots index. Either may be nil during partial setup.
 //
-// The returned Context carries an empty StudioDetection — call
-// (*Context).SetStudioDetection from the cobra entry layer (or use
-// NewContextWithStudioDetection) to record the per-process result of
-// detectStudioFromOS. Keeping detection out of NewContext lets unit
-// tests construct a Context without invoking the live filesystem.
+// This is the only constructor. There used to be a second one,
+// NewContextWithStudioDetection, which the cobra entry layer called so
+// that every command handler carried a record of whether the separate
+// parlay-studio binary was on PATH. That binary is retired and the
+// editor it fronted is now in-process (see OpenDomainEditor), so the
+// record had nothing left to gate: what it actually did was make every
+// single parlay invocation shell out to a program that no longer exists.
 func NewContext(result *ResolutionResult, idx *RootsIndex) *Context {
 	c := &Context{Resolution: result, Index: idx}
 	if result != nil {
 		c.Root = result.ActiveRoot
 	}
-	return c
-}
-
-// NewContextWithStudioDetection is the production-side constructor used
-// by the cobra entry layer. It wraps NewContext and attaches the
-// freshly-detected StudioDetection so every command handler reads the
-// same record without having to re-detect.
-//
-// Tests that need a Studio-aware Context should construct a *Context
-// via NewContext and call SetStudioDetection with a hand-built record
-// — they should NOT route through this helper, which calls into the
-// live filesystem.
-func NewContextWithStudioDetection(result *ResolutionResult, idx *RootsIndex) *Context {
-	c := NewContext(result, idx)
-	c.SetStudioDetection(detectStudioFromOS())
 	return c
 }
 

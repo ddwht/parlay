@@ -28,32 +28,18 @@ func init() {
 // create-domain-model`. The actual extraction is the AI agent's
 // responsibility; invoked from a shell this command can only refuse.
 //
-// The Studio hook dispatch that used to follow the refusal is gone.
-// Its own comment claimed it "fires after the main work above completes
-// successfully" — but the main work was a printed notice, so the hook fired
-// on a run that had produced nothing, offering to open an editor on a domain
-// model that had not been created. Refusing and then running a
-// success-path side effect is the same confusion as refusing and exiting 0.
+// The open-editor prompt that used to follow the refusal is gone, and so is
+// the dispatcher behind it. Its own comment claimed it "fires after the main
+// work above completes successfully" — but the main work was a printed notice,
+// so it fired on a run that had produced nothing, offering to open an editor on
+// a domain model that had not been created.
 //
-// The hook belongs on the path where the model is actually written, which is
-// the agent's; when that lands it should call runStudioPromptForDomainModel
-// directly. The helper and its wording table are kept for that caller.
+// The offer now lives in the loop skill, which runs on the path where the model
+// is actually written. The CLI-side helpers, their wording table, and the
+// brownfield/greenfield mode enum went with the dispatcher — they had no caller
+// and described a handoff to a binary that no longer exists.
 func runCreateDomainModelHandler(cmd *cobra.Command, args []string) error {
 	return agentOnlyStub("create-domain-model", "`/parlay-loop domain-model`")(cmd, args)
-}
-
-// pickDomainModelPromptMode chooses the brownfield vs greenfield
-// wording. The actual signal is whether the AI skill that ran above
-// produced a populated model from extractable signals (brownfield)
-// or wrote an empty stub (greenfield). The CLI surface here cannot
-// see that decision directly — the agent is the one with the
-// signal — so we default to "brownfield" (the longer-standing case)
-// when invoked through the bare CLI. The agent invokes this command
-// with the appropriate mode set via a future flag or sentinel; for
-// now both wordings are functionally available via the wording
-// table.
-func pickDomainModelPromptMode() DomainModelPromptMode {
-	return DomainModelPromptBrownfield
 }
 
 // loadProjectConfigNoEditor reads the project-config opt-out from the

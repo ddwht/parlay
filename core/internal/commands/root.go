@@ -367,18 +367,6 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 
 }
 
-// emitStudioVersionWarningOnceFromCtx is a thin wrapper around
-// config.emitStudioVersionWarningOnce that pulls the StudioDetection
-// off the *Context. Defined here in package commands so tests of the
-// detection routine itself can call config.EmitStudioVersionWarningOnce
-// directly without dragging in cobra.
-func emitStudioVersionWarningOnceFromCtx(c *config.Context) {
-	if c == nil {
-		return
-	}
-	config.EmitStudioVersionWarningOnce(c.StudioDetection())
-}
-
 // mustContext extracts the resolved *config.Context from the command's
 // context.Context. Returns a clear error when none is set — usually
 // because the command's PreRunE was skipped (e.g. via the
@@ -585,18 +573,7 @@ func finishResolution(cmd *cobra.Command, res *config.ResolutionResult, idx *con
 	// lets the agent-facing record command reuse it unchanged.
 	startFeedback(res.ActiveRoot.Path)
 
-	// parlay-extends: studio-support/studio-cli-hooks/runtime-studio-detection
-	// Use the studio-detection-aware constructor so every command
-	// handler sees the per-process record of parlay-studio's
-	// availability without re-checking PATH or env. Detection is
-	// read-only — we never invoke Studio just to confirm.
-	pctx := config.NewContextWithStudioDetection(res, idx)
-	// One-line stderr warning at first successful detection when the
-	// reported Studio version is outside Core's expected range. The
-	// helper is sync.Once-guarded — every subsequent invocation in the
-	// same process is a no-op, so concurrent or repeated PreRun calls
-	// stay quiet.
-	emitStudioVersionWarningOnceFromCtx(pctx)
+	pctx := config.NewContext(res, idx)
 	cmd.SetContext(config.WithCtx(cmd.Context(), pctx))
 	return nil
 }

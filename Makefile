@@ -12,11 +12,14 @@ GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 # of the version a user runs.
 #
 # --match 'v*' is load-bearing, not decoration. A bare `git describe --tags`
-# picks the newest reachable tag of any shape, and the retired studio-v*
-# namespace still has the most recent ones — so it reported
-# "studio-v0.1.2-29-g<sha>" for a parlay build. Matching the release namespace
-# explicitly means the version cannot be borrowed from a namespace that no
-# longer names a product.
+# picks the newest reachable tag of any shape, and the studio-v* tags
+# (studio-v0.1.0 through studio-v0.1.2) are still in this repo — so it once
+# reported "studio-v0.1.2-29-g<sha>" for a parlay build. They are no longer the
+# most recent tags and so no longer win on their own, but they stay reachable
+# forever, and dropping the match would make correctness depend on nobody ever
+# cutting a tag outside the release namespace again. Matching the release
+# namespace explicitly means the version cannot be borrowed from a namespace
+# that no longer names a product.
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
@@ -52,14 +55,14 @@ $(UI_BUNDLE): $(UI_SRC)
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
 # faster and works in environments without a C toolchain.
 #
-# parlay-studio is a retirement notice, not a program — see
-# studio/cmd/parlay-studio/main.go. It is built for one release so that an
-# already-installed copy gets replaced by something that says where the
-# commands went, rather than continuing to boot a server from an old build.
-# Drop this line and that file together after that release.
+# One binary. The second line here built parlay-studio, a stub that printed a
+# retirement notice, for one release so an already-installed copy would be
+# replaced by something naming its successor. It never served that purpose:
+# .goreleaser.yaml has built only ./core/cmd/parlay since v0.2.0, so the notice
+# shipped to nobody and existed only in local builds. Removed along with the
+# stub and the PATH probe that looked for it.
 build: $(UI_BUNDLE)
 	CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o parlay ./core/cmd/parlay
-	CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o parlay-studio ./studio/cmd/parlay-studio
 
 # The lean build: no UI, and therefore no Node toolchain required. Everything
 # except `parlay domain-edit`'s browser surface is identical; that route answers
