@@ -60,6 +60,11 @@ fragments:
       region: main
       shows: message, status, code
       source: '@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model'
+      verify:
+        - '`domain-model.yaml` parses cleanly when authored by hand against the schema published in the project''s schemas directory — top-level `schema_version`, `enums`, `entities`, `relationships`, `operations`, with the field types, relationship cardinalities, and operation shape described in this intent''s Action'
+        - '`schema_version` mismatch produces a clear error pointing at the migration path, not a silent parse failure'
+        - A domain model with enums, entities, relationships, and operations all defined produces a deep-validation pass — every relationship endpoint resolves to an entity, every operation input names a field that exists, every enum value referenced by a field is declared
+        - Adding a new field type or enum value does not require editing any code outside the schema
     - actions: invoke
       name: extract-domain-model output surface (post-migration)
       notes:
@@ -72,6 +77,11 @@ fragments:
       region: main
       shows: message, status, code
       source: '@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml'
+      verify:
+        - '`parlay create-domain-model` on a project with feature intents produces a `domain-model.yaml` with the entities, enums, relationships, and operations described in those intents'
+        - '`parlay load-domain-model <path-to-yaml>` merges into the existing `domain-model.yaml`; conflicting entities trigger a designer disambiguation prompt'
+        - Loading a YAML with an unsupported `schema_version` fails with an actionable error pointing at the migration path
+        - The extracted YAML round-trips through `parlay extract` → `parlay load` (extract from project A, load into a fresh project B) and produces a structurally equivalent model in B
     - actions: select-one, provide-text
       name: load-domain-model conflict disambiguation prompt
       notes:
@@ -84,6 +94,11 @@ fragments:
       region: main
       shows: diff, data-table, message
       source: '@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml'
+      verify:
+        - '`parlay create-domain-model` on a project with feature intents produces a `domain-model.yaml` with the entities, enums, relationships, and operations described in those intents'
+        - '`parlay load-domain-model <path-to-yaml>` merges into the existing `domain-model.yaml`; conflicting entities trigger a designer disambiguation prompt'
+        - Loading a YAML with an unsupported `schema_version` fails with an actionable error pointing at the migration path
+        - The extracted YAML round-trips through `parlay extract` → `parlay load` (extract from project A, load into a fresh project B) and produces a structurally equivalent model in B
     - actions: invoke
       name: load-domain-model schema-version migration notice
       notes:
@@ -95,6 +110,11 @@ fragments:
       region: main
       shows: message, progress
       source: '@studio-support/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml'
+      verify:
+        - '`parlay create-domain-model` on a project with feature intents produces a `domain-model.yaml` with the entities, enums, relationships, and operations described in those intents'
+        - '`parlay load-domain-model <path-to-yaml>` merges into the existing `domain-model.yaml`; conflicting entities trigger a designer disambiguation prompt'
+        - Loading a YAML with an unsupported `schema_version` fails with an actionable error pointing at the migration path
+        - The extracted YAML round-trips through `parlay extract` → `parlay load` (extract from project A, load into a fresh project B) and produces a structurally equivalent model in B
     - actions: (none)
       name: domain-model.md deprecation header
       notes:
@@ -119,3 +139,8 @@ fragments:
       region: notes
       shows: message
       source: '@studio-support/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model, @studio-support/domain-model-yaml-migration/migrate-existing-domain-model-md-projects-to-yaml'
+      verify:
+        - '`domain-model.yaml` parses cleanly when authored by hand against the schema published in the project''s schemas directory — top-level `schema_version`, `enums`, `entities`, `relationships`, `operations`, with the field types, relationship cardinalities, and operation shape described in this intent''s Action'
+        - '`schema_version` mismatch produces a clear error pointing at the migration path, not a silent parse failure'
+        - A domain model with enums, entities, relationships, and operations all defined produces a deep-validation pass — every relationship endpoint resolves to an entity, every operation input names a field that exists, every enum value referenced by a field is declared
+        - Adding a new field type or enum value does not require editing any code outside the schema

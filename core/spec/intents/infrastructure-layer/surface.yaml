@@ -12,6 +12,13 @@ fragments:
       region: main
       shows: status, message
       source: '@infrastructure-layer/define-the-infrastructure-artifact'
+      verify:
+        - A feature with only `infrastructure.md` (no `surface.md`) passes check-readiness at the build-feature stage
+        - A feature with only `surface.md` (no `infrastructure.md`) continues to work exactly as before
+        - A feature with both `surface.md` and `infrastructure.md` is accepted by check-readiness
+        - A feature with neither `surface.md` nor `infrastructure.md` fails check-readiness with an error asking the designer to create at least one
+        - An `infrastructure.md` file that names a specific function, file path, or type signature fails validation with a warning about framework-specific content
+        - The same `infrastructure.md` combined with two different adapters (e.g., go-cli and a hypothetical python-cli) produces different `cross-cutting:` entries targeting each framework's conventions — the infrastructure file itself is identical
     - actions: invoke
       name: Infrastructure Validation Result
       notes:
@@ -25,6 +32,15 @@ fragments:
       region: main
       shows: status, message, data-list
       source: '@infrastructure-layer/define-the-infrastructure-schema'
+      verify:
+        - '`parlay validate --type infrastructure --json spec/intents/<feature>/infrastructure.md` passes for a well-formed file and returns structured errors for malformed fragments'
+        - A fragment missing `Behavior` fails validation
+        - A fragment missing `Affects` fails validation
+        - A fragment missing `Source` fails validation
+        - A fragment with Behavior containing `func classifyDir(path string)` triggers a portability warning
+        - A fragment with Affects containing `internal/config/config.go` triggers a portability warning
+        - A well-formed fragment with only framework-agnostic content passes validation cleanly
+        - The schema file exists at both `internal/embedded/schemas/infrastructure.schema.md` (source) and `.parlay/schemas/infrastructure.schema.md` (deployed) after `make sync-skills`
     - actions: invoke
       name: Build-Feature Infrastructure Report
       notes:
@@ -39,6 +55,15 @@ fragments:
       region: main
       shows: status, message, data-value
       source: '@infrastructure-layer/bridge-infrastructure-to-framework-specific-cross-cutting'
+      verify:
+        - Running `/parlay-build-feature` on a feature with only `infrastructure.md` produces a buildfile with `cross-cutting:` entries and no `components:`
+        - Running `/parlay-build-feature` on a feature with both `surface.md` and `infrastructure.md` produces a buildfile with both `components:` and `cross-cutting:` entries
+        - The generated `cross-cutting:` entries contain framework-specific content (function names, file paths, detection patterns) derived from the adapter and source tree — even though the infrastructure.md contained none
+        - Running `/parlay-build-feature` with the same `infrastructure.md` but a different adapter produces different `cross-cutting:` entries targeting the new framework's conventions
+        - '`parlay validate --type buildfile --deep` passes for the generated buildfile'
+        - '`parlay diff` includes `cross-cutting:` entries in its stable/dirty/removed output'
+        - Check-readiness passes for a feature with `infrastructure.md` but no `surface.md`
+        - When Affects cannot be resolved to any file in the source tree, build-feature asks the designer which files are affected rather than silently generating a broken entry
     - actions: select-one, invoke
       name: Cross-Cutting Merge Review
       notes:
@@ -55,3 +80,13 @@ fragments:
       region: main
       shows: status, message, diff, data-value, data-list
       source: '@infrastructure-layer/update-generate-code-to-process-infrastructure-sourced-entries'
+      verify:
+        - A buildfile with two `cross-cutting:` entries (one targeting a specific file, one with a `target-pattern:` matching three files) produces four Tier 2 intelligent merge diffs when generate-code runs
+        - Each diff is presented with the A/B/C review menu before being applied
+        - A `target-pattern:` matching zero files produces a warning, not an error
+        - A `target-files:` entry where the file doesn't exist AND the entry only modifies produces an error
+        - A `target-files:` entry where the file doesn't exist AND the entry has `introduces:` creates a new file
+        - Cross-cutting changes are tracked by `parlay diff` as stable/dirty/removed on subsequent runs
+        - After a successful end-to-end run, `parlay save-build-state` captures cross-cutting state
+        - 'A pure infrastructure feature completes the full pipeline: build-feature → generate-code → tests → save-build-state'
+        - Generate-code never reads `infrastructure.md` — it reads only the buildfile. The framework-agnostic-to-specific translation happened at build-feature time.

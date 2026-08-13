@@ -44,6 +44,7 @@ Then detect pending migrations by looking at what is on disk:
 | operation-shaped fragments in `infrastructure.md` | infrastructure → capabilities | `parlay migrate-capabilities` |
 | `domain-model.md` (not `.yaml`) | domain model → YAML | `parlay migrate-domain-model` |
 | a populated `operations:` block in `domain-model.yaml` | domain operations → per-feature capabilities | `parlay migrate-domain-operations` |
+| intents with **Verify** bullets whose sourcing operations/fragments lack `verify:` | verify bullets → contract artifacts | `parlay migrate-verify` (run `--dry-run` first; it prints the would-be routing) |
 
 ### 2. Enhance coverage findings with semantic matching
 

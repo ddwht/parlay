@@ -12,6 +12,11 @@ fragments:
       region: main
       shows: status, message
       source: '@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime'
+      verify:
+        - On a machine with `parlay-studio` on `PATH`, `parlay status` reports Studio as detected
+        - On a machine without `parlay-studio` on `PATH`, no Studio-related output appears anywhere in normal commands
+        - Setting `PARLAY_STUDIO=` (empty) suppresses detection even when the binary is on `PATH`
+        - A non-executable `parlay-studio` on `PATH` is treated as "not detected" rather than producing a permission error during normal commands
     - actions: ""
       name: Version-mismatch warning at first detection
       notes:
@@ -24,6 +29,11 @@ fragments:
       region: header
       shows: message
       source: '@studio-support/studio-cli-hooks/detect-parlay-studio-at-runtime'
+      verify:
+        - On a machine with `parlay-studio` on `PATH`, `parlay status` reports Studio as detected
+        - On a machine without `parlay-studio` on `PATH`, no Studio-related output appears anywhere in normal commands
+        - Setting `PARLAY_STUDIO=` (empty) suppresses detection even when the binary is on `PATH`
+        - A non-executable `parlay-studio` on `PATH` is treated as "not detected" rather than producing a permission error during normal commands
     - actions: confirm, dismiss, hand-off
       name: Studio prompt after parlay create-domain-model
       notes:
@@ -37,6 +47,19 @@ fragments:
       region: footer
       shows: message
       source: '@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points'
+      verify:
+        - Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+        - Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+        - Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+        - Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+        - Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+        - The same trio commands on a project without Studio detected do not show any prompt
+        - Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+        - Passing `--no-studio` to any trio command skips the prompt regardless of detection
+        - Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+        - Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+        - An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+        - 'A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary''s existence, so absence is a fail'
     - actions: confirm, dismiss, hand-off
       name: Studio prompt after parlay create-artifacts
       notes:
@@ -48,6 +71,19 @@ fragments:
       region: footer
       shows: message
       source: '@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points'
+      verify:
+        - Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+        - Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+        - Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+        - Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+        - Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+        - The same trio commands on a project without Studio detected do not show any prompt
+        - Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+        - Passing `--no-studio` to any trio command skips the prompt regardless of detection
+        - Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+        - Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+        - An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+        - 'A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary''s existence, so absence is a fail'
     - actions: confirm, dismiss, hand-off
       name: Studio prompt after parlay sync
       notes:
@@ -59,6 +95,19 @@ fragments:
       region: footer
       shows: message
       source: '@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points'
+      verify:
+        - Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+        - Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+        - Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+        - Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+        - Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+        - The same trio commands on a project without Studio detected do not show any prompt
+        - Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+        - Passing `--no-studio` to any trio command skips the prompt regardless of detection
+        - Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+        - Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+        - An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+        - 'A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary''s existence, so absence is a fail'
     - actions: select-toggle
       name: --no-studio flag opt-out
       notes:
@@ -71,6 +120,19 @@ fragments:
       region: toolbar
       shows: data-value
       source: '@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points'
+      verify:
+        - Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+        - Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+        - Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+        - Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+        - Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+        - The same trio commands on a project without Studio detected do not show any prompt
+        - Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+        - Passing `--no-studio` to any trio command skips the prompt regardless of detection
+        - Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+        - Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+        - An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+        - 'A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary''s existence, so absence is a fail'
     - actions: ""
       name: Studio launch failure error
       notes:
@@ -82,3 +144,16 @@ fragments:
       region: footer
       shows: status, message
       source: '@studio-support/studio-cli-hooks/prompt-to-open-studio-at-workflow-hand-off-points'
+      verify:
+        - Running `parlay create-domain-model` in **brownfield** mode (extractable signals or existing model) on a project with Studio detected ends with a one-line prompt offering the Domain Model Editor against the produced model; declining proceeds normally
+        - Running `parlay create-domain-model` in **greenfield** mode (no model, no extractable signals) on a project with Studio detected creates an empty stub and ends with a one-line "ready to author — open Studio?" prompt; declining leaves the empty stub on disk and proceeds normally
+        - Running `parlay create-artifacts` on a project with Studio detected ends with a one-line prompt offering Studio's artifact editor; declining proceeds normally
+        - Running `parlay sync` on a project with Studio detected ends with a one-line prompt offering Studio (e.g., to reconcile drift visually); declining proceeds normally
+        - Running `parlay add-feature` or `parlay lock-page` on a project with Studio detected does NOT prompt — these commands are deliberately excluded from the starter hook set
+        - The same trio commands on a project without Studio detected do not show any prompt
+        - Confirming any trio prompt invokes the corresponding `parlay-studio` subcommand against the same active root, with Core waiting for it to exit
+        - Passing `--no-studio` to any trio command skips the prompt regardless of detection
+        - Running any trio command in a non-TTY context (piped output, CI) skips the prompt regardless of detection
+        - Within a single Core process, declining the first hook does not suppress subsequent hooks — each hook fires independently and asks again
+        - An integration test exercises the actual `parlay-studio` subprocess invocation end-to-end when the binary is on `PATH` (verifying exit-code propagation, the failure-line wording, and the wait-and-resume contract). When the binary is absent — the world we are in until Studio ships — the test skips with a clear "parlay-studio not on PATH" message rather than passing trivially. The skipped count surfaces the still-pending Studio dependency in test output and flips to passing automatically once Studio is installed
+        - 'A contract test asserts that the installed `parlay-studio` binary honors each of the three Studio subcommand names that Core hard-codes (`domain-edit` for the create-domain-model hook, `artifacts-review` for the create-artifacts hook, `reconcile` for the sync hook), e.g., by invoking each with `--help` and checking for a non-error exit. The test is **fail-hard red, NOT skipped**, when `parlay-studio` is absent from `PATH` — the absence is itself a contract violation while Studio is still pending. The test is also red when the binary is present but any subcommand is unhonored. The test goes green only when `parlay-studio` is on `PATH` and all three subcommands respond non-error to `--help`. This louder signal is intentional: the subcommand-name table inside Core is the single source of truth today, and a yellow/skipped test would let the contract drift unobserved. Distinguishing this from the skip-until-binary integration test above is deliberate — that test cannot meaningfully run without the binary, so skip is correct; this contract test asserts a fact about the binary''s existence, so absence is a fail'

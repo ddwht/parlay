@@ -5,6 +5,13 @@ fragments:
     shows: data-list, empty-state
     actions: invoke, invoke-destructive, navigate-drill, select-one
     source: "@domain-model-editor-relationships/relationship-editing"
+    verify:
+      - A test creates `Customer` → `Order` with cardinality `one-to-many`, asserts the serialized YAML matches the schema's documented relationship shape, and asserts the pre-filled name `customer-orders` was offered
+      - A test asserts the endpoint pickers for a three-entity model offer exactly those three entities, and the cardinality dropdown exactly the four closed values
+      - A test creates a self-referential relationship `Employee` → `Employee` (`many-to-one`) and asserts it round-trips through save without warning or mangling
+      - A test creates a second relationship with an already-used name and asserts a field-level duplicate rejection
+      - A test renames entity `Order` to `Invoice` (MVP rename propagation) and asserts existing relationship endpoints follow while manually-set relationship names stay untouched
+      - A test deletes a relationship and asserts immediate success and its absence from the serialized file
     page: Domain Model Editor
     region: sidebar
     order: 30
@@ -17,6 +24,13 @@ fragments:
     shows: data-value, message
     actions: provide-text, select-one, invoke, invoke-destructive
     source: "@domain-model-editor-relationships/relationship-editing"
+    verify:
+      - A test creates `Customer` → `Order` with cardinality `one-to-many`, asserts the serialized YAML matches the schema's documented relationship shape, and asserts the pre-filled name `customer-orders` was offered
+      - A test asserts the endpoint pickers for a three-entity model offer exactly those three entities, and the cardinality dropdown exactly the four closed values
+      - A test creates a self-referential relationship `Employee` → `Employee` (`many-to-one`) and asserts it round-trips through save without warning or mangling
+      - A test creates a second relationship with an already-used name and asserts a field-level duplicate rejection
+      - A test renames entity `Order` to `Invoice` (MVP rename propagation) and asserts existing relationship endpoints follow while manually-set relationship names stay untouched
+      - A test deletes a relationship and asserts immediate success and its absence from the serialized file
     page: Domain Model Editor
     region: main
     order: 25
@@ -34,6 +48,14 @@ fragments:
     shows: data-chart
     actions: navigate-tab, select-one, navigate-drill, move, invoke
     source: "@domain-model-editor-relationships/er-diagram-view-with-draw-to-connect"
+    verify:
+      - A test renders a fixture model and asserts one node per entity with its fields listed and one edge per relationship labeled with name and cardinality markers
+      - A test renders the same fixture twice and asserts identical initial node positions (deterministic auto-layout)
+      - A test drags a connection from `Customer` to `Order`, cancels the pre-filled form, and asserts the in-memory draft is unchanged and the save bar stays clean
+      - A test drags a connection, commits the form with `one-to-many`, and asserts the new relationship appears as an edge, in the relationships panel, and in the serialized YAML after save
+      - A test edits an entity name in the node's side panel and asserts the node label, the entity list, and dependent relationship endpoints all update from the single draft mutation
+      - A test drags a node to a new position and asserts the draft stays clean and the position resets on reload
+      - A test asserts a `ref`-typed field renders inside its entity's node field list and produces no edge
     page: Domain Model Editor
     region: main
     order: 50
@@ -50,6 +72,11 @@ fragments:
     shows: data-list, message
     actions: acknowledge
     source: "@domain-model-editor-relationships/deprecated-operations-handling"
+    verify:
+      - A test loads a fixture with two `operations:` entries and asserts the notice panel renders both entries read-only with the migration command named
+      - A test loads a fixture with no `operations:` field and asserts no operations-related UI exists in the rendered editor
+      - A test loads a fixture with a populated `operations:` block, performs unrelated entity edits, saves, and asserts the block survives structurally unchanged
+      - A test asserts the notice contains no interactive controls other than dismissal/navigation — no add, edit, or delete affordances for the entries
     page: Domain Model Editor
     region: main
     order: 60

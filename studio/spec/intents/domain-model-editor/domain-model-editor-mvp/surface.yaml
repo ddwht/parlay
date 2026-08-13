@@ -5,6 +5,13 @@ fragments:
     shows: data-list, empty-state
     actions: invoke, invoke-destructive, navigate-drill, select-one
     source: "@domain-model-editor-mvp/entity-and-field-editing"
+    verify:
+      - 'A UI-level test creates an entity `Order` with fields `id: uuid required` and `status: <enum>` and asserts the resulting in-memory model matches the schema''s documented shape, including the auto-set `enum:` key'
+      - A test renames `Customer` to `Client` in a model where `Order.customer_id` is `ref → Customer` and a relationship names `Customer`, and asserts both the field target and the relationship endpoint now read `Client` with no intermediate dangling state
+      - A test attempts to delete `Customer` while `Order.customer_id` targets it and asserts the delete is blocked with a message naming `Order.customer_id`; after retyping the field to `string`, the delete succeeds
+      - A test asserts the type dropdown for a model with enums `OrderStatus` and `Priority` offers exactly the seven closed scalar types plus `ref` plus those two enum names
+      - A test creates a second entity named `Order` and asserts a field-level duplicate-name rejection before any save round-trip
+      - A test reorders fields within an entity, saves, and asserts the serialized YAML lists the fields in the new order
     page: Domain Model Editor
     region: sidebar
     order: 10
@@ -17,6 +24,13 @@ fragments:
     shows: data-list, empty-state
     actions: invoke, invoke-destructive, navigate-drill, select-one
     source: "@domain-model-editor-mvp/enum-editing"
+    verify:
+      - A test creates enum `OrderStatus` with values `pending` (label "Pending", tone `warning`) and `paid` (tone `success`), and asserts the serialized YAML matches the schema's documented shape with no empty-string keys for unset options
+      - A test renames `OrderStatus` to `Status` while `Order.status` references it and asserts the field's `type:` and `enum:` keys both read `Status` afterward
+      - A test attempts to delete a referenced enum and asserts the block message names the referencing fields; deleting an unreferenced enum succeeds
+      - A test attempts to name an enum `string` and asserts a field-level rejection naming the collision with the scalar type vocabulary
+      - A test adds a duplicate value `pending` to an enum and asserts a field-level rejection before save
+      - A test asserts the tone selector offers exactly the five closed tones plus none, each with a visual preview
     page: Domain Model Editor
     region: sidebar
     order: 20
@@ -28,6 +42,13 @@ fragments:
     shows: data-value, message
     actions: provide-text, provide-structured-input, select-one, select-toggle, reorder, invoke, invoke-destructive
     source: "@domain-model-editor-mvp/entity-and-field-editing"
+    verify:
+      - 'A UI-level test creates an entity `Order` with fields `id: uuid required` and `status: <enum>` and asserts the resulting in-memory model matches the schema''s documented shape, including the auto-set `enum:` key'
+      - A test renames `Customer` to `Client` in a model where `Order.customer_id` is `ref → Customer` and a relationship names `Customer`, and asserts both the field target and the relationship endpoint now read `Client` with no intermediate dangling state
+      - A test attempts to delete `Customer` while `Order.customer_id` targets it and asserts the delete is blocked with a message naming `Order.customer_id`; after retyping the field to `string`, the delete succeeds
+      - A test asserts the type dropdown for a model with enums `OrderStatus` and `Priority` offers exactly the seven closed scalar types plus `ref` plus those two enum names
+      - A test creates a second entity named `Order` and asserts a field-level duplicate-name rejection before any save round-trip
+      - A test reorders fields within an entity, saves, and asserts the serialized YAML lists the fields in the new order
     page: Domain Model Editor
     region: main
     order: 10
@@ -42,6 +63,13 @@ fragments:
     shows: data-value, status, message
     actions: provide-text, select-one, reorder, invoke, invoke-destructive
     source: "@domain-model-editor-mvp/enum-editing"
+    verify:
+      - A test creates enum `OrderStatus` with values `pending` (label "Pending", tone `warning`) and `paid` (tone `success`), and asserts the serialized YAML matches the schema's documented shape with no empty-string keys for unset options
+      - A test renames `OrderStatus` to `Status` while `Order.status` references it and asserts the field's `type:` and `enum:` keys both read `Status` afterward
+      - A test attempts to delete a referenced enum and asserts the block message names the referencing fields; deleting an unreferenced enum succeeds
+      - A test attempts to name an enum `string` and asserts a field-level rejection naming the collision with the scalar type vocabulary
+      - A test adds a duplicate value `pending` to an enum and asserts a field-level rejection before save
+      - A test asserts the tone selector offers exactly the five closed tones plus none, each with a visual preview
     page: Domain Model Editor
     region: main
     order: 20
@@ -55,6 +83,13 @@ fragments:
     shows: status, message
     actions: invoke
     source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    verify:
+      - A build-integration test builds the bundle, boots the harness with it embedded, fetches `/` and asserts the editor shell HTML is served (the 503 `studio-ui-bundle-not-built` envelope no longer occurs)
+      - A UI test edits a field, asserts the save bar shows dirty state, saves, and asserts the bar returns to clean with a last-saved timestamp
+      - A UI test receives a 409 on save and asserts the reload-and-reapply prompt appears, reload refetches the model with a fresh etag, and no second save fires without designer action
+      - A UI test receives a `validation-failed` envelope and asserts each `fields[]` entry renders at its form control, not only as a toast
+      - A UI test simulates connection refusal after a successful session and asserts the session-ended screen appears with the restart command
+      - A UI test navigates to an unknown route and asserts the shell renders (no browser-level 404), while a fetch to an unknown `/api/*` path still surfaces the harness's `not-found` envelope
     page: Domain Model Editor
     region: footer
     order: 10
@@ -67,6 +102,13 @@ fragments:
     shows: message
     actions: invoke, confirm, dismiss
     source: "@domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    verify:
+      - A subcommand test boots `domain-edit` with injected fakes and asserts the browser-open hook receives the bound URL suffixed with `/domain-model`, while the bare invocation's hook receives the root URL
+      - A test drives a `domain-edit` session, fires the Done control with a clean draft, and asserts the explicit-shutdown trigger fires, the process exits zero, and the session-ended screen was shown
+      - A UI test fires Done with a dirty draft and asserts a save-or-discard prompt appears, no shutdown fires until a choice is made, and choosing save persists the draft before the shutdown request
+      - A test with a short idle timeout starts a `domain-edit` session, sends no requests, and asserts the process exits zero after the timeout (the walk-away guard unblocks a waiting caller)
+      - A test injects a boot-step failure into a `domain-edit` invocation and asserts a non-zero exit before any browser open, matching the harness's boot failure rules
+      - A test performs an edit-and-save session and asserts the caller can detect the change by comparing the file content before invocation and after exit
     page: Domain Model Editor
     region: header
     order: 10
@@ -78,6 +120,13 @@ fragments:
     shows: message
     actions: confirm, dismiss
     source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    verify:
+      - A build-integration test builds the bundle, boots the harness with it embedded, fetches `/` and asserts the editor shell HTML is served (the 503 `studio-ui-bundle-not-built` envelope no longer occurs)
+      - A UI test edits a field, asserts the save bar shows dirty state, saves, and asserts the bar returns to clean with a last-saved timestamp
+      - A UI test receives a 409 on save and asserts the reload-and-reapply prompt appears, reload refetches the model with a fresh etag, and no second save fires without designer action
+      - A UI test receives a `validation-failed` envelope and asserts each `fields[]` entry renders at its form control, not only as a toast
+      - A UI test simulates connection refusal after a successful session and asserts the session-ended screen appears with the restart command
+      - A UI test navigates to an unknown route and asserts the shell renders (no browser-level 404), while a fetch to an unknown `/api/*` path still surfaces the harness's `not-found` envelope
     page: Domain Model Editor
     region: dialog
     order: 10
@@ -89,6 +138,13 @@ fragments:
     shows: message, status
     actions: acknowledge
     source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer"
+    verify:
+      - A build-integration test builds the bundle, boots the harness with it embedded, fetches `/` and asserts the editor shell HTML is served (the 503 `studio-ui-bundle-not-built` envelope no longer occurs)
+      - A UI test edits a field, asserts the save bar shows dirty state, saves, and asserts the bar returns to clean with a last-saved timestamp
+      - A UI test receives a 409 on save and asserts the reload-and-reapply prompt appears, reload refetches the model with a fresh etag, and no second save fires without designer action
+      - A UI test receives a `validation-failed` envelope and asserts each `fields[]` entry renders at its form control, not only as a toast
+      - A UI test simulates connection refusal after a successful session and asserts the session-ended screen appears with the restart command
+      - A UI test navigates to an unknown route and asserts the shell renders (no browser-level 404), while a fetch to an unknown `/api/*` path still surfaces the harness's `not-found` envelope
     page: Domain Model Editor
     region: main
     order: 30
@@ -99,6 +155,19 @@ fragments:
     shows: message, empty-state
     actions: acknowledge
     source: "@domain-model-editor-mvp/editor-ui-shell-as-the-first-embedded-ui-bundle-consumer, @domain-model-editor-mvp/blocking-domain-edit-invocation-for-agent-handoff"
+    verify:
+      - A build-integration test builds the bundle, boots the harness with it embedded, fetches `/` and asserts the editor shell HTML is served (the 503 `studio-ui-bundle-not-built` envelope no longer occurs)
+      - A UI test edits a field, asserts the save bar shows dirty state, saves, and asserts the bar returns to clean with a last-saved timestamp
+      - A UI test receives a 409 on save and asserts the reload-and-reapply prompt appears, reload refetches the model with a fresh etag, and no second save fires without designer action
+      - A UI test receives a `validation-failed` envelope and asserts each `fields[]` entry renders at its form control, not only as a toast
+      - A UI test simulates connection refusal after a successful session and asserts the session-ended screen appears with the restart command
+      - A UI test navigates to an unknown route and asserts the shell renders (no browser-level 404), while a fetch to an unknown `/api/*` path still surfaces the harness's `not-found` envelope
+      - A subcommand test boots `domain-edit` with injected fakes and asserts the browser-open hook receives the bound URL suffixed with `/domain-model`, while the bare invocation's hook receives the root URL
+      - A test drives a `domain-edit` session, fires the Done control with a clean draft, and asserts the explicit-shutdown trigger fires, the process exits zero, and the session-ended screen was shown
+      - A UI test fires Done with a dirty draft and asserts a save-or-discard prompt appears, no shutdown fires until a choice is made, and choosing save persists the draft before the shutdown request
+      - A test with a short idle timeout starts a `domain-edit` session, sends no requests, and asserts the process exits zero after the timeout (the walk-away guard unblocks a waiting caller)
+      - A test injects a boot-step failure into a `domain-edit` invocation and asserts a non-zero exit before any browser open, matching the harness's boot failure rules
+      - A test performs an edit-and-save session and asserts the caller can detect the change by comparing the file content before invocation and after exit
     page: Domain Model Editor
     region: main
     order: 40

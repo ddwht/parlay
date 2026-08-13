@@ -17,7 +17,8 @@ type Fragment struct {
 	Region  string
 	Order   int
 	Notes   []string
-	Feature string // populated during scanning, not from file
+	Verify  []string // acceptance criteria relocated from the owning intent
+	Feature string   // populated during scanning, not from file
 }
 
 // ParseSurfaceFile reads a surface artifact at the supplied path. When the

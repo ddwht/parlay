@@ -17,3 +17,13 @@ fragments:
       region: main
       shows: status, message, data-list, summary
       source: '@repair-project-state/repair-project-state'
+      verify:
+        - '`parlay repair` on a project already in lockstep exits with status 0 and reports "Project is in lockstep."'
+        - After `mv spec/intents/auth-overhaul spec/intents/auth-redesign`, `parlay repair` detects the rename, asks the designer to confirm, and on confirmation applies the corresponding rename across `spec/handoff/` and `.parlay/build/`
+        - After `mv spec/intents/password-reset spec/intents/auth-overhaul/password-reset`, `parlay repair` detects the feature move and applies the matching move across the other two trees on confirmation
+        - After two simultaneous external renames (`mv a x; mv b y` on initiative dirs), `parlay repair` presents both candidate pairings and asks the designer to disambiguate
+        - '`parlay repair --dry-run` reports detected mismatches and proposed repairs without applying changes, and without prompting'
+        - '`parlay repair --yes` auto-confirms unambiguous repairs but still pauses on ambiguous ones'
+        - A destructive proposal (e.g., "delete `spec/handoff/auth-overhaul/` (12 files)") defaults to "no" and requires an explicit `y` to proceed
+        - An unrecognized mismatch (no category applies) is reported clearly, left unresolved, and causes `parlay repair` to exit non-zero while still applying every repair the designer did confirm
+        - After `parlay repair` succeeds on all detected mismatches, a subsequent `parlay repair` reports "Project is in lockstep" with no further questions

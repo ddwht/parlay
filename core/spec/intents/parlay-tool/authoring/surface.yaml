@@ -11,6 +11,10 @@ fragments:
       region: main
       shows: status, message, data-list
       source: '@parlay-tool/authoring/author-intents'
+      verify:
+        - An intent with only Goal and Persona fields is valid
+        - An intent with all fields (Goal, Persona, Priority, Context, Action, Objects, Constraints, Verify, Questions) is valid
+        - Intents are separated by `---` and each starts with `## `
     - actions: select-one, invoke
       name: Dialog Generation Report
       notes:
@@ -25,6 +29,13 @@ fragments:
       region: main
       shows: status, message, summary, data-list
       source: '@parlay-tool/authoring/generate-dialogs-from-intents'
+      verify:
+        - Running scaffold-dialogs on a feature with 3 intents and no dialogs produces 3 complete dialog sections with triggers, happy paths, and branches — not 3 empty templates
+        - 'Each generated dialog has branches derived from the intent''s Constraints (e.g., a constraint about collision detection produces a "Branch: Scope collision" in the dialog)'
+        - Each generated dialog has branches derived from the intent's Verify items that describe edge cases
+        - If an intent's Goal is ambiguous, the agent asks the designer before generating (not after)
+        - Existing designer-authored dialogs are never overwritten — only updated via the update pass
+        - The generated dialogs are complete enough that a designer can review and approve them with minor edits
     - actions: select-one
       name: Dialog Update Proposals
       notes:
@@ -39,6 +50,11 @@ fragments:
       region: main
       shows: message, diff, data-value, status
       source: '@parlay-tool/authoring/update-dialogs-from-changed-intents'
+      verify:
+        - After adding a new Constraint about error handling, the agent generates a complete dialog branch showing the error flow — user action, system error message, suggested resolution
+        - After adding a new Verify edge case, the agent generates a complete branch (not just a stub)
+        - The designer can accept, reject, or modify each proposed update independently
+        - Running when nothing has changed reports "Dialogs are up to date"
     - actions: select-one, invoke
       name: Coverage Report
       notes:
@@ -54,3 +70,10 @@ fragments:
       region: main
       shows: summary, data-list, status, message
       source: '@parlay-tool/authoring/sync-intents-and-dialogs'
+      verify:
+        - Covered intents are correctly identified (structural + semantic matching)
+        - Uncovered intents are listed with an option to generate dialog templates
+        - Orphan dialogs (no matching intent) are identified and reported
+        - Intents modified since the last build are flagged with the specific fields that changed
+        - The agent reviews drifted intents against surface/buildfile/testcases and suggests updates
+        - Existing human-authored dialogs are never modified without permission

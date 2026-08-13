@@ -94,7 +94,11 @@ Tests should cover these categories (derived from buildfile):
 4. **Actions** — each action triggers its defined effect
 5. **State transitions** — entity state machines transition correctly
 6. **Navigation** — route changes work as defined
-7. **Edge cases** — derived from intent Verify and Questions (empty states, error conditions, boundary values)
+7. **Edge cases** — derived from acceptance criteria and intent Questions (empty states, error conditions, boundary values)
+
+## Where assertions come from
+
+Suite assertions derive from the contract artifacts' `verify:` fields — the operation's `verify:` in capabilities.yaml for operation suites, the fragment's `verify:` in surface.yaml for component suites. Intent **Verify** bullets are the fallback for entries that carry no `verify:` (artifacts predating the field; `parlay migrate-verify` relocates them). When both exist, `verify:` wins: it is the reviewed contract, and the intent bullets are its history.
 
 ## Determinism contract
 

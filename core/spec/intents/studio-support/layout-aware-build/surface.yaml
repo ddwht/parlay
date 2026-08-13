@@ -15,3 +15,10 @@ fragments:
       region: main
       shows: data-list, message
       source: '@studio-support/layout-aware-build/raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity'
+      verify:
+        - 'A page with one ambiguous binding triggers exactly one prompt; selecting `[1]` records the first candidate with `confidence: designer` and continues the build'
+        - Re-running build immediately after a prompt selection completes without re-prompting; the recorded choice is read from the buildfile
+        - Editing the layout to add a node that has its own ambiguity produces a fresh prompt for the new node only — the previously recorded choice is preserved
+        - Renaming the chosen domain operation (e.g., `processTask` → `processTaskItem`) invalidates the recorded choice and re-triggers the prompt with the updated candidate list
+        - Pressing `[q]` during a prompt aborts the build with a non-zero exit code and writes no partial buildfile
+        - A build with three ambiguous bindings on three different pages produces three prompts in `(page-path, node-path)` lexicographic order

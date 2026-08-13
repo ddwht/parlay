@@ -247,7 +247,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - If the adapter declares no `file-conventions.paths.test` template, `scaffold-plan` reports it as undecidable. That is the signal to fix the adapter, not to guess a path here.
    - **Skip a suite whose invariant a hand-authored unit already satisfies.** Run `parlay internal check-coverage @{unit}` for each declared unit, or read the unit's `satisfies:` list directly. An invariant listed there is covered by a test a person maintains; generating a second suite for it produces either a duplicate or — more often, because the generated suite cannot see the unit's internals — a vacuous one that asserts nothing and passes forever. Record the citation on the suite that would have covered it rather than emitting the suite.
    - Set `intent:` on each suite to `@{feature}/{intent-slug}` for traceability
-   - Use the intent's **Verify** bullets as the basis for test assertions
+   - **Derive test assertions from the contract artifacts' `verify:` fields first** — the operation's `verify:` in capabilities.yaml for operation suites, the fragment's `verify:` in surface.yaml for component suites. Fall back to the intent's **Verify** bullets only for entries carrying no `verify:` (artifacts predating the field; `parlay migrate-verify` relocates them). When both exist, `verify:` wins — it is the reviewed contract; the intent bullets are its history.
    - Cover: rendering, element presence, visibility conditions, actions, state transitions
    - Reference fixtures from the buildfile
    - Follow the testcases schema exactly

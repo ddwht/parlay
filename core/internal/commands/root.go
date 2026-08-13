@@ -463,6 +463,7 @@ func init() {
 	rootCmd.AddCommand(migrateSpecCmd)
 	rootCmd.AddCommand(migrateCapabilitiesCmd)
 	rootCmd.AddCommand(migrateDomainOperationsCmd)
+	rootCmd.AddCommand(migrateVerifyCmd)
 	rootCmd.AddCommand(reviewCoverageCmd)
 
 	// Multi-root commands.

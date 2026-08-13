@@ -14,6 +14,13 @@ fragments:
       region: main
       shows: message, data-list, data-value
       source: '@multi-adapter/bundled-adapter-set-presets'
+      verify:
+        - '`parlay init` lists exactly `react-antd-only`, `angular-clarity-only`, `react-nest-prisma`, `angular-nest-prisma`, and `custom` at v1 ship'
+        - Choosing `react-nest-prisma` produces a `.parlay/adapter-set.yaml` with all four kinds filled and four corresponding adapter files copied into `.parlay/adapters/`
+        - Choosing `react-antd-only` produces a `.parlay/adapter-set.yaml` with only the presentation slot filled and one adapter file
+        - A new project created from `react-nest-prisma` runs a feature end-to-end through `add-feature` → `build-feature` → `generate-code` in v1 CI without manual edits
+        - Choosing `custom` skips the preset copy and leaves the user to author `.parlay/adapter-set.yaml`
+        - A preset adapter-set referencing an adapter file the tool does not bundle fails the preset-completeness check at build time
     - actions: invoke
       name: Adapter Set Validation Failure
       notes:
@@ -27,6 +34,18 @@ fragments:
       region: main
       shows: status, message, code
       source: '@multi-adapter/adapter-kinds-and-adapter-set-topology, @multi-adapter/adapter-set-links-enforce-cross-kind-boundaries'
+      verify:
+        - 'An adapter file with `kind: persistence` validates; an adapter file with `kind: storage` fails with `adapter-kind-unknown`'
+        - 'An adapter set with `targets.presentation = {adapter: react-antd, root: apps/web}` and `targets.persistence = {adapter: prisma-postgres, root: apps/api}` validates when both files exist with matching kinds'
+        - An adapter set listing two different adapters under `targets.presentation` fails with `adapter-set-duplicate-kind`
+        - 'An adapter set referencing `targets.application = {adapter: nest-app}` while `nest-app.adapter.yaml` declares `kind: persistence` fails with `adapter-set-kind-mismatch` naming both `application` and `persistence`'
+        - 'An adapter file with no `kind:` field validates and is treated as `kind: presentation` — confirmed by it being acceptable in `targets.presentation`'
+        - An adapter set with only the `presentation` slot filled validates clean
+        - 'An adapter set with full four-kind topology and `links: [{from: presentation, relation: calls, to: transport}, {from: transport, relation: dispatches, to: application}, {from: application, relation: persists, to: persistence}]` validates a buildfile whose presentation actions call transport operations'
+        - A buildfile in the same project where a presentation component directly references a persistence repository fails with `adapter-set-link-violated` naming `presentation`, `persistence`, and the missing relation
+        - An adapter set without `links:` rejects any cross-kind edge with `adapter-set-link-missing`
+        - 'A `links:` entry naming `to: transport` in a project whose `targets.transport` is unfilled fails with `adapter-set-link-unfilled-slot`'
+        - A presentation-only adapter set generates a buildfile with no cross-kind edges and validates clean even with `links:` absent
     - actions: invoke
       name: Pre-Codegen Support Gate Failure
       notes:
@@ -40,6 +59,13 @@ fragments:
       region: main
       shows: status, message, code
       source: '@multi-adapter/adapter-supports-contract-gates-codegen-pre-ai'
+      verify:
+        - 'An application adapter declaring `supports.steps: [validate-input, create-one, return-one]` validates; declaring `supports.steps: [foo-bar]` fails with `adapter-supports-unknown-term`'
+        - A feature whose `capabilities.yaml` operation uses step `read-tree` against an application adapter that omits `read-tree` from `supports.steps` fails build with `adapter-supports-missing-step` naming the operation, the step, and the adapter
+        - The same project, after the operation is rewritten to use only supported steps, builds clean
+        - A feature using policy `transaction-required` against an adapter whose `supports.policies` omits it fails with `adapter-supports-missing-policy`
+        - A presentation-only project with no non-presentation adapters skips backend `supports` checks entirely (no `capabilities.yaml`, nothing to validate against)
+        - Pattern descriptions present in an adapter file but never matched by an operation cause no validation activity (they are AI prompt material, not contracts)
     - actions: invoke
       name: Capabilities Validation Output
       notes:
@@ -53,6 +79,13 @@ fragments:
       region: main
       shows: status, message, code
       source: '@multi-adapter/capabilities-yaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact, @multi-adapter/v1-closed-vocabularies-and-v2-deferrals'
+      verify:
+        - Each of the four closed-vocabulary schema files enumerates exactly the terms named above and no others at the moment v1 ships
+        - 'An adapter declaring `supports.steps: [validate-input, create-one, return-one]` validates against the v1 vocabulary; declaring `supports.steps: [telepathy]` fails with `adapter-supports-unknown-term` naming `telepathy` and the v1 step list'
+        - 'A `capabilities.yaml` operation with `kind: subscription` fails with `capabilities-unknown-term` and a fix message that names subscription as v2-deferred (not just "not in the list")'
+        - 'An operation declaring `policies: [transaction-required]` validates; declaring `policies: [eventual-consistency]` fails with `capabilities-unknown-term`'
+        - A schema-docs build that omits any v1 term from its closed-vocabulary tables fails the docs check that compares schema files to this intent's vocabulary list
+        - A simulated v2 extension PR that adds a new step term but ships zero adapters declaring support for it fails the schema-extension gate
     - actions: select-one, invoke
       name: Domain Operations Migration Prompt
       notes:
@@ -67,6 +100,14 @@ fragments:
       region: main
       shows: message, data-list, data-value
       source: '@multi-adapter/domain-model-yaml-operations-field-is-deprecated-in-favor-of-capabilities, @multi-adapter/migration-of-legacy-artifacts-to-the-new-shape'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
     - actions: invoke
       name: Spec Migration Report
       notes:
@@ -80,6 +121,14 @@ fragments:
       region: main
       shows: summary, message, data-list
       source: '@multi-adapter/surface-yaml-replaces-surface-md-as-the-closed-presentation-artifact-format, @multi-adapter/migration-of-legacy-artifacts-to-the-new-shape'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
     - actions: invoke
       name: Blueprint Validation Output
       notes:
@@ -93,6 +142,14 @@ fragments:
       region: main
       shows: status, message, code, data-value
       source: '@multi-adapter/blueprint-scope-override-precedence-and-strategy-selection'
+      verify:
+        - 'A blueprint setting `data.fetching: stale-while-revalidate` against a presentation adapter that supports it builds clean'
+        - The same setting against an adapter that does not declare support for `stale-while-revalidate` fails with `blueprint-strategy-unsupported`
+        - 'A blueprint setting `data.fetching: telepathy` (outside the closed set) fails with `blueprint-strategy-unknown`'
+        - A canonical error declared in `capabilities.yaml` with no mapping at adapter, adapter-set, or blueprint level fails with `error-no-mapping` naming the operation and the error
+        - A blueprint that declares an entry under `targets:` fails with `blueprint-topology-not-allowed`
+        - A project with no blueprint still validates and uses adapter defaults end-to-end
+        - An override at adapter-set level is ignored when blueprint sets the same key; the resolved-value report attributes the value to blueprint and not to adapter-set
     - actions: confirm, dismiss
       name: Buildfile Normalization Review
       notes:
@@ -107,6 +164,19 @@ fragments:
       region: main
       shows: diff, summary, message
       source: '@multi-adapter/legacy-buildfile-fields-stay-deprecate-or-repurpose, @multi-adapter/multi-target-buildfile-operations-targets-and-target-aware-plan'
+      verify:
+        - 'A legacy buildfile with top-level `components: {TaskCreateForm: ...}` and `adapter: react-antd` produces, after build-feature, `targets.presentation.components.TaskCreateForm: ...` and an `adapter-set` reference covering only the presentation target'
+        - A legacy buildfile with both top-level `components:` and `targets.presentation.components:` fails with `buildfile-components-double-declared`
+        - A legacy buildfile with non-empty `models:` warns in authoring mode and errors in build mode, with a fix message naming `domain-model.yaml`
+        - 'A legacy buildfile whose `routes: [{path: /tasks}]` collides with a transport target''s `path: /tasks` exposure fails with `buildfile-routes-ambiguous`'
+        - 'A buildfile with legacy `plan.creates: [...]` (no `plan.targets`) normalizes to `plan.targets.presentation.creates: [...]` for a presentation-only project'
+        - '`wiring.rules` and `bindings` survive build-feature normalization byte-equivalent (no rewriting of these sections)'
+        - A buildfile declaring `@task-list/operation:task.create` once under `operations:` and projecting it through presentation, transport, application, and persistence target sections validates clean
+        - 'The same buildfile with `errors: [validation-failed]` re-declared inside the application target fails with `buildfile-target-restates-canonical` naming the target and the field'
+        - A binding referencing an operation absent from the `operations:` block fails with `buildfile-binding-operation-missing`
+        - A target's `effect.operation` referencing an unknown operation fails with `buildfile-target-operation-missing`
+        - 'A buildfile with `plan.targets.presentation.creates: [TaskCreateForm.tsx]` and `plan.targets.persistence.modifies: [schema.prisma]` validates and routes plan rows to the correct target during codegen'
+        - Layout `wiring.rules` referencing `@task-list/operation:task.create` and a presentation target referencing the same key both resolve to the same canonical entry; renaming the canonical entry without updating both consumers is rejected
     - actions: select-one
       name: Routes Disambiguation Prompt
       notes:
@@ -120,6 +190,13 @@ fragments:
       region: dialog
       shows: message, data-list
       source: '@multi-adapter/legacy-buildfile-fields-stay-deprecate-or-repurpose'
+      verify:
+        - 'A legacy buildfile with top-level `components: {TaskCreateForm: ...}` and `adapter: react-antd` produces, after build-feature, `targets.presentation.components.TaskCreateForm: ...` and an `adapter-set` reference covering only the presentation target'
+        - A legacy buildfile with both top-level `components:` and `targets.presentation.components:` fails with `buildfile-components-double-declared`
+        - A legacy buildfile with non-empty `models:` warns in authoring mode and errors in build mode, with a fix message naming `domain-model.yaml`
+        - 'A legacy buildfile whose `routes: [{path: /tasks}]` collides with a transport target''s `path: /tasks` exposure fails with `buildfile-routes-ambiguous`'
+        - 'A buildfile with legacy `plan.creates: [...]` (no `plan.targets`) normalizes to `plan.targets.presentation.creates: [...]` for a presentation-only project'
+        - '`wiring.rules` and `bindings` survive build-feature normalization byte-equivalent (no rewriting of these sections)'
     - actions: invoke
       name: Testcases Validation Output
       notes:
@@ -175,6 +252,13 @@ fragments:
       region: main
       shows: progress, status, message, summary
       source: '@multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set'
+      verify:
+        - A generate-code run that attempts to read `spec/intents/<feature>/capabilities.yaml` fails with `codegen-spec-read-forbidden` and does not produce any output
+        - A generate-code run that reads `domain-model.yaml`, the buildfile, the testcases, and the source tree under each target's root succeeds and writes files in `persistence → application → transport → presentation` order
+        - Two independent regeneration runs of the same buildfile both pass the same testcase suite even though their source bytes differ
+        - An application-layer generation run after a persistence-layer regeneration includes the new persistence schema in its prompt context — verifiable by changing a persistence shape and observing application generation respond to it (or by trace inspection of the layer's prompt assembly)
+        - A generate-code run with a missing or stale `coverage-review.yaml` fails before any file is read for generation
+        - An attempt to read `apps/web/src/...` from a project whose presentation target's root is `apps/dashboard/src/...` fails with `codegen-input-out-of-scope`
     - actions: invoke
       name: Capabilities Migration Operations Extraction
       notes:
@@ -189,6 +273,14 @@ fragments:
       region: main
       shows: summary, status, message, data-list
       source: '@multi-adapter/migration-of-legacy-artifacts-to-the-new-shape'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
     - actions: invoke
       name: Pattern Fragment Migration Report
       notes:
@@ -204,6 +296,13 @@ fragments:
       region: main
       shows: data-list, code, message
       source: '@multi-adapter/pattern-fragment-decomposition-during-capabilities-migration'
+      verify:
+        - A fragment describing "router registry that lists registered handlers" classifies as registry-shaped and the report suggests "domain entity plus register/list/lookup operations"
+        - A fragment describing "validate text length, then trim whitespace, then enforce uniqueness" classifies as pipeline-shaped and the report suggests "command operation in capabilities"
+        - A fragment that the classifier cannot confidently route lands in "unrouted; designer review" with the fragment quoted verbatim — never silently dropped
+        - A fragment classified as "v2-deferred subscription" is preserved in the report, not in `capabilities.yaml`
+        - The migrator never writes to the suggested destination on its own — `capabilities.yaml`, `domain-model.yaml`, and `blueprint.yaml` are unchanged by this step regardless of the suggestions
+        - Re-running the migration on an unchanged `infrastructure.md` produces an identical report
     - actions: invoke
       name: Config Migration Result
       notes:
@@ -217,6 +316,14 @@ fragments:
       region: main
       shows: summary, status, message
       source: '@multi-adapter/migration-of-legacy-artifacts-to-the-new-shape'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
     - actions: invoke
       name: Domain-Model Validation Output
       notes:
@@ -230,6 +337,14 @@ fragments:
       region: main
       shows: status, message, code
       source: '@multi-adapter/domain-model-yaml-operations-field-is-deprecated-in-favor-of-capabilities, @multi-adapter/migration-of-legacy-artifacts-to-the-new-shape'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
     - actions: invoke
       name: Surface Validation Output
       notes:
@@ -255,6 +370,13 @@ fragments:
       region: main
       shows: status, message, code
       source: '@multi-adapter/multi-target-buildfile-operations-targets-and-target-aware-plan'
+      verify:
+        - A buildfile declaring `@task-list/operation:task.create` once under `operations:` and projecting it through presentation, transport, application, and persistence target sections validates clean
+        - 'The same buildfile with `errors: [validation-failed]` re-declared inside the application target fails with `buildfile-target-restates-canonical` naming the target and the field'
+        - A binding referencing an operation absent from the `operations:` block fails with `buildfile-binding-operation-missing`
+        - A target's `effect.operation` referencing an unknown operation fails with `buildfile-target-operation-missing`
+        - 'A buildfile with `plan.targets.presentation.creates: [TaskCreateForm.tsx]` and `plan.targets.persistence.modifies: [schema.prisma]` validates and routes plan rows to the correct target during codegen'
+        - Layout `wiring.rules` referencing `@task-list/operation:task.create` and a presentation target referencing the same key both resolve to the same canonical entry; renaming the canonical entry without updating both consumers is rejected
     - actions: confirm, dismiss, select-many
       name: Adapter Kind Field Opt-In Prompt
       notes:
@@ -270,3 +392,17 @@ fragments:
       region: main
       shows: message, data-list, data-value
       source: '@multi-adapter/migration-of-legacy-artifacts-to-the-new-shape, @multi-adapter/adapter-kinds-and-adapter-set-topology'
+      verify:
+        - 'An adapter file without `kind:` validates clean and is treated as `kind: presentation`; `parlay upgrade` offers to write the explicit field but does not require it'
+        - A project with `infrastructure.md` containing operation-shaped fragments produces, after `parlay migrate-capabilities`, a `capabilities.yaml` with closed-vocabulary operations and a migration report listing pattern-shaped fragments left for designer review
+        - A project with `surface.md` produces, after `parlay migrate-spec`, a `surface.yaml` byte-equivalent to running build-feature against the original markdown (same in-memory model in, same closed-schema YAML out)
+        - 'A project with `prototype-framework: react` produces, after `parlay migrate-config`, a `.parlay/adapter-set.yaml` with only the presentation slot filled and the relevant adapter'
+        - A project that has not run any migration step builds successfully under v1 with deprecation warnings
+        - Re-running any migration step on an already-migrated project produces no diff
+        - Removal of legacy fields is not attempted by this feature; the warnings continue to fire until a separate deprecation feature ships
+        - 'An adapter file with `kind: persistence` validates; an adapter file with `kind: storage` fails with `adapter-kind-unknown`'
+        - 'An adapter set with `targets.presentation = {adapter: react-antd, root: apps/web}` and `targets.persistence = {adapter: prisma-postgres, root: apps/api}` validates when both files exist with matching kinds'
+        - An adapter set listing two different adapters under `targets.presentation` fails with `adapter-set-duplicate-kind`
+        - 'An adapter set referencing `targets.application = {adapter: nest-app}` while `nest-app.adapter.yaml` declares `kind: persistence` fails with `adapter-set-kind-mismatch` naming both `application` and `persistence`'
+        - 'An adapter file with no `kind:` field validates and is treated as `kind: presentation` — confirmed by it being acceptable in `targets.presentation`'
+        - An adapter set with only the `presentation` slot filled validates clean

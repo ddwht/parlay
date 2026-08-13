@@ -16,3 +16,16 @@ fragments:
       region: main
       shows: status, message, data-value
       source: '@move-feature/move-a-feature-between-locations'
+      verify:
+        - '`parlay move-feature @password-reset --to auth-overhaul` relocates `spec/intents/password-reset/` to `spec/intents/auth-overhaul/password-reset/`, and the matching paths under `spec/handoff/` and `.parlay/build/`, all in lockstep; qualified-identifier lookups for `@auth-overhaul/password-reset` now resolve to the new paths on every tree'
+        - '`parlay move-feature @sso-setup --to auth-redesign` when `auth-redesign` does not exist creates the initiative directory on all three trees and moves the feature into it; output distinguishes "initiative auth-redesign created" from "feature sso-setup moved"'
+        - '`parlay move-feature @auth-overhaul/password-reset --out` moves the feature from `spec/intents/auth-overhaul/password-reset/` back to `spec/intents/password-reset/` (and corresponding paths on the other two trees)'
+        - '`parlay move-feature @auth-overhaul/password-reset --to billing` when `billing` already has a `password-reset` feature fails with a scope-collision error naming `spec/intents/billing/password-reset/`'
+        - In a git repository, `git log --follow` on any moved file under `spec/intents/`, `spec/handoff/`, or `.parlay/build/` traverses the move without losing history
+        - '`parlay move-feature @auth-overhaul/password-reset --to auth-overhaul` run when the feature already lives there succeeds and reports "no change"'
+        - '`parlay move-feature @nonexistent --to auth-overhaul` fails with an error naming the unresolved identifier'
+        - '`parlay move-feature @password-reset --to some-existing-orphan-feature-slug` fails with a top-level-namespace collision error'
+        - '`parlay move-feature @auth-overhaul --to other-initiative` when `auth-overhaul` is an initiative (not a feature) fails with an error explaining that only features can be moved; the designer is directed to `parlay rename-initiative` if they wanted to rename'
+        - '`parlay move-feature @password-reset --to auth-overhaul --out` fails with an argument-parsing error for mutually exclusive flags'
+        - Moving the only remaining feature out of `spec/intents/auth-overhaul/` leaves empty `spec/intents/auth-overhaul/`, `spec/handoff/auth-overhaul/`, and `.parlay/build/auth-overhaul/` directories on disk; subsequent `parlay add-feature --initiative auth-overhaul` reuses them without re-creating
+        - A mid-move filesystem failure (simulated by making `.parlay/build/` read-only mid-command) rolls back the already-renamed `spec/intents/` and `spec/handoff/` entries so the feature is fully back at its original qualified path on every tree

@@ -14,6 +14,14 @@ fragments:
       region: main
       shows: summary, data-list, empty-state
       source: '@helper-extraction/extract-duplicated-helpers-into-shared-packages'
+      verify:
+        - After generating code for `initiatives` (producing `isOrphanFeatureDir` in `add_feature.go`) and `move-feature` (producing the same function in `move_feature.go`), running `/parlay-simplify` detects the duplication and proposes extracting `isOrphanFeatureDir` into `internal/config/` (or the designer-approved location)
+        - The proposed diff removes the function from both generated files, adds it to the shared package, and updates the import statements in both files
+        - Declining the extraction leaves both files unchanged
+        - Running `/parlay-simplify` a second time after the extraction reports no duplicates
+        - User-owned files (no parlay markers) are never flagged for extraction, even if they contain functions with similar signatures
+        - Near-identical functions (same body structure, different error message strings) are detected and grouped together; the extraction uses the first-seen variant and the designer can pick which version to keep
+        - Each extraction is committed separately so git history tracks the move
     - actions: select-one, provide-text
       name: Extraction Proposal Review
       notes:
@@ -31,3 +39,11 @@ fragments:
       region: main
       shows: diff, message, data-value, status
       source: '@helper-extraction/extract-duplicated-helpers-into-shared-packages'
+      verify:
+        - After generating code for `initiatives` (producing `isOrphanFeatureDir` in `add_feature.go`) and `move-feature` (producing the same function in `move_feature.go`), running `/parlay-simplify` detects the duplication and proposes extracting `isOrphanFeatureDir` into `internal/config/` (or the designer-approved location)
+        - The proposed diff removes the function from both generated files, adds it to the shared package, and updates the import statements in both files
+        - Declining the extraction leaves both files unchanged
+        - Running `/parlay-simplify` a second time after the extraction reports no duplicates
+        - User-owned files (no parlay markers) are never flagged for extraction, even if they contain functions with similar signatures
+        - Near-identical functions (same body structure, different error message strings) are detected and grouped together; the extraction uses the first-seen variant and the designer can pick which version to keep
+        - Each extraction is committed separately so git history tracks the move

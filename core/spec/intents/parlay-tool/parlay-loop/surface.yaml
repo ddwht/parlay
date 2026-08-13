@@ -16,6 +16,15 @@ fragments:
       region: header
       shows: status, message
       source: '@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command, @parlay-tool/parlay-loop/resolve-features-inside-initiatives'
+      verify:
+        - Running `/parlay-loop my-feature` on a non-existent feature creates it via parlay-add-feature and then enters the intents phase.
+        - Running `/parlay-loop my-feature` on an existing feature enters the default phase (intents) for adding new intents to the existing feature.
+        - Running `/parlay-loop @my-initiative/my-feature` on a feature inside an initiative works the same as a top-level feature.
+        - The loop successfully completes all five phases end-to-end on a simple feature without the user invoking any other `/parlay-*` command manually.
+        - '`/parlay-loop upgrade-plan` resolves a top-level feature and drives only that feature.'
+        - '`/parlay-loop @auth-overhaul/login` resolves a feature inside the `auth-overhaul` initiative and drives only that feature.'
+        - Ambiguous feature names prompt the user to disambiguate.
+        - The loop never advances sibling features inside an initiative as a side effect of running on one feature.
     - actions: select-one
       name: Feature Disambiguation
       notes:
@@ -28,6 +37,17 @@ fragments:
       region: header
       shows: message, data-list
       source: '@parlay-tool/parlay-loop/adapt-between-new-and-existing-features, @parlay-tool/parlay-loop/resolve-features-inside-initiatives'
+      verify:
+        - '`/parlay-loop new-feature` with no matching feature asks the user to confirm creation and choose a location before invoking `parlay-add-feature`.'
+        - '`/parlay-loop login` when `login` exists both top-level and inside `auth-overhaul` asks the user to pick which one.'
+        - '`/parlay-loop existing-feature` finds it unambiguously (top-level or nested) and enters the intents phase without creating anything new.'
+        - In the intents phase on an existing feature, the user can both append new intents and edit existing ones in the same session — the agent doesn't require a mode switch.
+        - Declining the "create new feature" prompt exits the loop without creating any files.
+        - '`/parlay-loop existing-feature` with existing dialogs does not overwrite them at the dialogs phase.'
+        - '`/parlay-loop upgrade-plan` resolves a top-level feature and drives only that feature.'
+        - '`/parlay-loop @auth-overhaul/login` resolves a feature inside the `auth-overhaul` initiative and drives only that feature.'
+        - Ambiguous feature names prompt the user to disambiguate.
+        - The loop never advances sibling features inside an initiative as a side effect of running on one feature.
     - actions: select-one, confirm, dismiss
       name: New Feature Confirmation
       notes:
@@ -41,6 +61,13 @@ fragments:
       region: header
       shows: message
       source: '@parlay-tool/parlay-loop/adapt-between-new-and-existing-features'
+      verify:
+        - '`/parlay-loop new-feature` with no matching feature asks the user to confirm creation and choose a location before invoking `parlay-add-feature`.'
+        - '`/parlay-loop login` when `login` exists both top-level and inside `auth-overhaul` asks the user to pick which one.'
+        - '`/parlay-loop existing-feature` finds it unambiguously (top-level or nested) and enters the intents phase without creating anything new.'
+        - In the intents phase on an existing feature, the user can both append new intents and edit existing ones in the same session — the agent doesn't require a mode switch.
+        - Declining the "create new feature" prompt exits the loop without creating any files.
+        - '`/parlay-loop existing-feature` with existing dialogs does not overwrite them at the dialogs phase.'
     - actions: ""
       name: Phase Progress Announcement
       notes:
@@ -54,6 +81,24 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command, @parlay-tool/parlay-loop/start-from-a-specific-phase, @parlay-tool/parlay-loop/manage-context-across-phases-via-phase-group-sub-agents'
+      verify:
+        - Running `/parlay-loop my-feature` on a non-existent feature creates it via parlay-add-feature and then enters the intents phase.
+        - Running `/parlay-loop my-feature` on an existing feature enters the default phase (intents) for adding new intents to the existing feature.
+        - Running `/parlay-loop @my-initiative/my-feature` on a feature inside an initiative works the same as a top-level feature.
+        - The loop successfully completes all five phases end-to-end on a simple feature without the user invoking any other `/parlay-*` command manually.
+        - '`/parlay-loop my-feature --from artifacts` runs artifacts → build → code, skipping intents and dialogs.'
+        - '`/parlay-loop my-feature --from build` on a feature with no surface prompts the user and offers to start from `artifacts` instead.'
+        - '`/parlay-loop my-feature` on an existing feature with intents enters the intents phase in "add new intents" mode, not overwrite mode.'
+        - 'Supplying an invalid phase name returns an error listing the valid phases: `intents`, `dialogs`, `artifacts`, `build`, `code`.'
+        - The loop does not accept a `--to` or equivalent upper bound; passing one is rejected with a message pointing the user at the individual `/parlay-*` skill for single-phase runs.
+        - 'Running the loop end-to-end uses exactly three sub-agents in sequence: designer, build, code.'
+        - Inside the designer sub-agent, the dialogs phase can see the intents authored earlier in the same sub-agent without re-reading them from disk.
+        - '`/parlay-loop my-feature --from dialogs` starts the designer sub-agent with intents.md pre-loaded from disk and proceeds straight into dialogs.'
+        - '`/parlay-loop my-feature --from artifacts` starts the designer sub-agent with both intents.md and dialogs.md pre-loaded from disk and proceeds straight into artifacts.'
+        - Before the build and code sub-agents start, the loop announces the new sub-agent boundary to the user.
+        - After a sub-agent boundary, the next phase's skill operates correctly because all inputs are on disk.
+        - The outer loop's context does not grow linearly with the number of phases completed — it remains approximately constant across a full run.
+        - There is no flag or setting to disable phase-group separation — running all three groups in a single sub-agent is not a supported mode.
     - actions: select-one
       name: Phase Confirmation Prompt
       notes:
@@ -68,6 +113,18 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/parlay-loop/confirm-before-advancing-to-the-next-phase, @parlay-tool/parlay-loop/manage-context-across-phases-via-phase-group-sub-agents'
+      verify:
+        - Every phase transition shows a confirmation prompt naming the completed and next phase.
+        - Declining the prompt keeps the user in the current phase.
+        - Choosing "exit" ends the loop cleanly and prints a summary of what was completed.
+        - 'Running the loop end-to-end uses exactly three sub-agents in sequence: designer, build, code.'
+        - Inside the designer sub-agent, the dialogs phase can see the intents authored earlier in the same sub-agent without re-reading them from disk.
+        - '`/parlay-loop my-feature --from dialogs` starts the designer sub-agent with intents.md pre-loaded from disk and proceeds straight into dialogs.'
+        - '`/parlay-loop my-feature --from artifacts` starts the designer sub-agent with both intents.md and dialogs.md pre-loaded from disk and proceeds straight into artifacts.'
+        - Before the build and code sub-agents start, the loop announces the new sub-agent boundary to the user.
+        - After a sub-agent boundary, the next phase's skill operates correctly because all inputs are on disk.
+        - The outer loop's context does not grow linearly with the number of phases completed — it remains approximately constant across a full run.
+        - There is no flag or setting to disable phase-group separation — running all three groups in a single sub-agent is not a supported mode.
     - actions: select-one
       name: Gap Analysis Report
       notes:
@@ -109,6 +166,11 @@ fragments:
       region: main
       shows: status, message, code
       source: '@parlay-tool/parlay-loop/run-the-full-design-loop-from-one-command'
+      verify:
+        - Running `/parlay-loop my-feature` on a non-existent feature creates it via parlay-add-feature and then enters the intents phase.
+        - Running `/parlay-loop my-feature` on an existing feature enters the default phase (intents) for adding new intents to the existing feature.
+        - Running `/parlay-loop @my-initiative/my-feature` on a feature inside an initiative works the same as a top-level feature.
+        - The loop successfully completes all five phases end-to-end on a simple feature without the user invoking any other `/parlay-*` command manually.
     - actions: acknowledge
       name: Phase-Group Handoff (Fresh Session)
       notes:
@@ -124,6 +186,14 @@ fragments:
       region: main
       shows: message, code, status
       source: '@parlay-tool/parlay-loop/support-all-parlay-supported-agents'
+      verify:
+        - The agent adapter contract is extended with `SpawnSubAgent` and `InvokeSkill` primitives (names final during engineering handoff).
+        - The Claude Code adapter implements both primitives; the Generic CLI adapter either implements them or declares them unsupported (falling through to the fresh-session fallback).
+        - Running `/parlay-loop` on Claude Code runs end-to-end in a single user session with three sub-agents transparently.
+        - Running `/parlay-loop` on an adapter without sub-agent support completes end-to-end across three user sessions, with each phase-group boundary printing an explicit `/parlay-loop ... --from {next-phase}` hint the user copies into a fresh session.
+        - No `--resume` flag exists. Invoking `/parlay-loop {feature} --resume` returns an error explaining that resumption is done via `--from {phase}`.
+        - A newly added agent adapter that implements the full contract gets `/parlay-loop` support automatically, without code changes to the loop itself.
+        - If the adapter lacks a required primitive entirely (not even the fallback works), the loop reports which primitive is missing.
     - actions: ""
       name: Exit Summary
       notes:
@@ -137,6 +207,11 @@ fragments:
       region: footer
       shows: summary, data-list, message
       source: '@parlay-tool/parlay-loop/end-the-loop-cleanly'
+      verify:
+        - After the `code` phase completes successfully, the loop prints a single final summary (no extra confirmation) and exits.
+        - Choosing "exit" at the confirmation prompt between dialogs and artifacts prints a summary showing intents and dialogs as complete, plus `/parlay-loop {feature} --from artifacts` as the resume hint.
+        - If the user force-closes the session mid-phase, artifacts from completed phases remain on disk and re-invoking `/parlay-loop {feature} --from {phase}` picks up correctly.
+        - The loop never deletes any file under `spec/intents/` or `.parlay/build/` as part of an exit.
     - actions: ""
       name: Input Validation Feedback
       notes:
@@ -149,3 +224,16 @@ fragments:
       region: header
       shows: message, data-list
       source: '@parlay-tool/parlay-loop/start-from-a-specific-phase, @parlay-tool/parlay-loop/support-all-parlay-supported-agents'
+      verify:
+        - '`/parlay-loop my-feature --from artifacts` runs artifacts → build → code, skipping intents and dialogs.'
+        - '`/parlay-loop my-feature --from build` on a feature with no surface prompts the user and offers to start from `artifacts` instead.'
+        - '`/parlay-loop my-feature` on an existing feature with intents enters the intents phase in "add new intents" mode, not overwrite mode.'
+        - 'Supplying an invalid phase name returns an error listing the valid phases: `intents`, `dialogs`, `artifacts`, `build`, `code`.'
+        - The loop does not accept a `--to` or equivalent upper bound; passing one is rejected with a message pointing the user at the individual `/parlay-*` skill for single-phase runs.
+        - The agent adapter contract is extended with `SpawnSubAgent` and `InvokeSkill` primitives (names final during engineering handoff).
+        - The Claude Code adapter implements both primitives; the Generic CLI adapter either implements them or declares them unsupported (falling through to the fresh-session fallback).
+        - Running `/parlay-loop` on Claude Code runs end-to-end in a single user session with three sub-agents transparently.
+        - Running `/parlay-loop` on an adapter without sub-agent support completes end-to-end across three user sessions, with each phase-group boundary printing an explicit `/parlay-loop ... --from {next-phase}` hint the user copies into a fresh session.
+        - No `--resume` flag exists. Invoking `/parlay-loop {feature} --resume` returns an error explaining that resumption is done via `--from {phase}`.
+        - A newly added agent adapter that implements the full contract gets `/parlay-loop` support automatically, without code changes to the loop itself.
+        - If the adapter lacks a required primitive entirely (not even the fallback works), the loop reports which primitive is missing.

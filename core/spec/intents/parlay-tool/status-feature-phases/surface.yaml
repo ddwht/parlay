@@ -13,6 +13,14 @@ fragments:
       region: main
       shows: data-table, data-value
       source: '@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status'
+      verify:
+        - A feature with only `intents.md` reports phase `intents`.
+        - A feature with `intents.md` and `dialogs.md` reports phase `dialogs`.
+        - A feature with `intents.md`, `dialogs.md`, and either `surface.md` or `infrastructure.md` (or both) reports phase `artifacts`.
+        - A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.
+        - A feature whose intents, dialogs, artifacts, and buildfile all exist on disk reports phase `done`.
+        - Running `parlay status` against a bare-parent root (no features at parent, only child roots) prints the parent header with zero features, followed by each child root's header and its feature listing with the phase column populated.
+        - Running `parlay status` against a parent root with both parent-owned features and registered children prints the parent's features (with phase column) first, then each child root section in registration order.
     - actions: (none)
       name: Hierarchical parent-and-children listing
       notes:
@@ -26,6 +34,20 @@ fragments:
       region: main
       shows: data-tree, data-value, message
       source: '@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status, @parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots'
+      verify:
+        - A feature with only `intents.md` reports phase `intents`.
+        - A feature with `intents.md` and `dialogs.md` reports phase `dialogs`.
+        - A feature with `intents.md`, `dialogs.md`, and either `surface.md` or `infrastructure.md` (or both) reports phase `artifacts`.
+        - A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.
+        - A feature whose intents, dialogs, artifacts, and buildfile all exist on disk reports phase `done`.
+        - Running `parlay status` against a bare-parent root (no features at parent, only child roots) prints the parent header with zero features, followed by each child root's header and its feature listing with the phase column populated.
+        - Running `parlay status` against a parent root with both parent-owned features and registered children prints the parent's features (with phase column) first, then each child root section in registration order.
+        - Running `parlay status` from `/workspace/parlay-dev` (the parent root) prints the parent header, the parent's own features (with phase) — or zero parent features — followed by a `core` section with every core feature and its phase, then a `studio` section with every studio feature and its phase.
+        - Running `parlay status --root core` (or from inside `core/`) prints only `core` features with their phases. No `studio` features. No parent header.
+        - Running `parlay status --root studio` (or from inside `studio/`) prints only `studio` features with their phases. No `core` features.
+        - A feature that exists with the same name under both `core/` and `studio/` is listed once per root with each root's independently-computed phase value — they do not collide or get deduplicated.
+        - Phase values for `core/<feature>` are computed against `core/.parlay/build/<feature>/` (not the parent's `.parlay/build/`), confirming the helper is per-root.
+        - 'If `studio/spec/intents/` is deleted or made unreadable, `parlay status` from the parent still prints parent features and the `core` section, then a `studio` header followed by an inline `(unavailable: …)` diagnostic, with a zero exit code.'
     - actions: (none)
       name: Unavailable child root inline diagnostic
       notes:
@@ -37,6 +59,20 @@ fragments:
       region: main
       shows: message, status
       source: '@parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots, @parlay-tool/status-feature-phases/emit-machine-readable-status-with-json'
+      verify:
+        - Running `parlay status` from `/workspace/parlay-dev` (the parent root) prints the parent header, the parent's own features (with phase) — or zero parent features — followed by a `core` section with every core feature and its phase, then a `studio` section with every studio feature and its phase.
+        - Running `parlay status --root core` (or from inside `core/`) prints only `core` features with their phases. No `studio` features. No parent header.
+        - Running `parlay status --root studio` (or from inside `studio/`) prints only `studio` features with their phases. No `core` features.
+        - A feature that exists with the same name under both `core/` and `studio/` is listed once per root with each root's independently-computed phase value — they do not collide or get deduplicated.
+        - Phase values for `core/<feature>` are computed against `core/.parlay/build/<feature>/` (not the parent's `.parlay/build/`), confirming the helper is per-root.
+        - 'If `studio/spec/intents/` is deleted or made unreadable, `parlay status` from the parent still prints parent features and the `core` section, then a `studio` header followed by an inline `(unavailable: …)` diagnostic, with a zero exit code.'
+        - '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
+        - '`parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.'
+        - '`parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.'
+        - '`parlay status --json | jq .schema_version` returns `1`.'
+        - '`parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.'
+        - '`parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.'
+        - '`parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'
     - actions: (none)
       name: Machine-readable JSON output via `--json`
       notes:
@@ -55,6 +91,14 @@ fragments:
       region: main
       shows: code
       source: '@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json'
+      verify:
+        - '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
+        - '`parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.'
+        - '`parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.'
+        - '`parlay status --json | jq .schema_version` returns `1`.'
+        - '`parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.'
+        - '`parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.'
+        - '`parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'
     - actions: (none)
       name: Exit-code and stream discipline
       notes:
@@ -67,3 +111,17 @@ fragments:
       region: main
       shows: status
       source: '@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json, @parlay-tool/status-feature-phases/aggregate-status-across-parent-and-child-roots'
+      verify:
+        - '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
+        - '`parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.'
+        - '`parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.'
+        - '`parlay status --json | jq .schema_version` returns `1`.'
+        - '`parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.'
+        - '`parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.'
+        - '`parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'
+        - Running `parlay status` from `/workspace/parlay-dev` (the parent root) prints the parent header, the parent's own features (with phase) — or zero parent features — followed by a `core` section with every core feature and its phase, then a `studio` section with every studio feature and its phase.
+        - Running `parlay status --root core` (or from inside `core/`) prints only `core` features with their phases. No `studio` features. No parent header.
+        - Running `parlay status --root studio` (or from inside `studio/`) prints only `studio` features with their phases. No `core` features.
+        - A feature that exists with the same name under both `core/` and `studio/` is listed once per root with each root's independently-computed phase value — they do not collide or get deduplicated.
+        - Phase values for `core/<feature>` are computed against `core/.parlay/build/<feature>/` (not the parent's `.parlay/build/`), confirming the helper is per-root.
+        - 'If `studio/spec/intents/` is deleted or made unreadable, `parlay status` from the parent still prints parent features and the `core` section, then a `studio` header followed by an inline `(unavailable: …)` diagnostic, with a zero exit code.'

@@ -34,6 +34,10 @@ type surfaceYAMLFragment struct {
 	Region  string   `yaml:"region"`
 	Order   int      `yaml:"order,omitempty"`
 	Notes   []string `yaml:"notes,omitempty"`
+	// Verify mirrors CapabilityOperation.Verify: acceptance criteria
+	// relocated from the owning intent's **Verify** bullets, carried by the
+	// fragment when no operation covers that intent.
+	Verify []string `yaml:"verify,omitempty"`
 }
 
 // LoadSurfaceYAML reads surface.yaml at path and returns the same []Fragment
@@ -72,6 +76,7 @@ func LoadSurfaceYAMLBytes(path string, content []byte) ([]Fragment, error) {
 			Region:  f.Region,
 			Order:   f.Order,
 			Notes:   f.Notes,
+			Verify:  f.Verify,
 			Feature: feature,
 		})
 	}

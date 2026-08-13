@@ -5,6 +5,13 @@ fragments:
     shows: data-list, status, message, empty-state
     actions: select-one, navigate-drill, inspect
     source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    verify:
+      - A test loads a hand-edited fixture where a field's `enum:` names a deleted enum and asserts an `undeclared-entity-reference`-class finding renders inline at the field row and in the panel with an error style
+      - A test performs five rapid field edits and asserts one trailing validate call fires and its findings render (debounce collapses the burst)
+      - A test clicks a panel finding for `relationships.customer-orders.to` and asserts the relationships panel opens with that relationship highlighted
+      - A test loads a fixture with a populated deprecated `operations:` block and asserts a `domain-operations-deprecated` finding renders with warning styling, visually distinct from errors in the panel and the count indicator
+      - A test fixes the last error in a draft and asserts the count indicator flips to the explicit clean state after the trailing revalidation
+      - A test races two validate responses (older arriving after newer) and asserts the stale finding set is discarded
     page: Domain Model Editor
     region: sidebar
     order: 40
@@ -19,6 +26,13 @@ fragments:
     shows: status, message
     actions: inspect
     source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    verify:
+      - A test loads a hand-edited fixture where a field's `enum:` names a deleted enum and asserts an `undeclared-entity-reference`-class finding renders inline at the field row and in the panel with an error style
+      - A test performs five rapid field edits and asserts one trailing validate call fires and its findings render (debounce collapses the burst)
+      - A test clicks a panel finding for `relationships.customer-orders.to` and asserts the relationships panel opens with that relationship highlighted
+      - A test loads a fixture with a populated deprecated `operations:` block and asserts a `domain-operations-deprecated` finding renders with warning styling, visually distinct from errors in the panel and the count indicator
+      - A test fixes the last error in a draft and asserts the count indicator flips to the explicit clean state after the trailing revalidation
+      - A test races two validate responses (older arriving after newer) and asserts the stale finding set is discarded
     page: Domain Model Editor
     region: main
     order: 35
@@ -31,6 +45,13 @@ fragments:
     shows: status, message
     actions: navigate-drill
     source: "@domain-model-editor-validation/live-in-editor-validation-surfacing"
+    verify:
+      - A test loads a hand-edited fixture where a field's `enum:` names a deleted enum and asserts an `undeclared-entity-reference`-class finding renders inline at the field row and in the panel with an error style
+      - A test performs five rapid field edits and asserts one trailing validate call fires and its findings render (debounce collapses the burst)
+      - A test clicks a panel finding for `relationships.customer-orders.to` and asserts the relationships panel opens with that relationship highlighted
+      - A test loads a fixture with a populated deprecated `operations:` block and asserts a `domain-operations-deprecated` finding renders with warning styling, visually distinct from errors in the panel and the count indicator
+      - A test fixes the last error in a draft and asserts the count indicator flips to the explicit clean state after the trailing revalidation
+      - A test races two validate responses (older arriving after newer) and asserts the stale finding set is discarded
     page: Domain Model Editor
     region: header
     order: 20
@@ -43,6 +64,13 @@ fragments:
     shows: status, message
     actions: navigate-drill
     source: "@domain-model-editor-validation/save-gating-on-validation-findings"
+    verify:
+      - A test submits a save whose draft carries a `field-type-outside-closed-set` finding and asserts a `validation-failed` envelope with the finding listed and an unchanged on-disk file
+      - A test submits a save whose only finding is `domain-operations-deprecated` and asserts the save succeeds and the file is written
+      - A test loads a fixture with two errors and asserts the save bar is in the blocked state naming the count before any edit occurs
+      - A test fixes both errors and asserts the save bar transitions to the normal dirty/save state after the trailing revalidation, and the subsequent save succeeds
+      - A test submits an invalid draft with a stale etag and asserts the response is `validation-failed` (the gate), not `conflict` (the etag), and a follow-up with the draft fixed and the same stale etag then yields `conflict`
+      - A test attempts a save via direct API call (bypassing the UI) with an error-carrying draft and asserts the server-side gate rejects it identically
     page: Domain Model Editor
     region: footer
     order: 20

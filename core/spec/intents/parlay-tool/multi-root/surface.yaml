@@ -12,6 +12,16 @@ fragments:
       region: header
       shows: data-value, message
       source: '@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up'
+      verify:
+        - '`cd subproject/ && parlay sync` operates on `subproject/.parlay/` if it exists, else walks up to find the next ancestor (stopping at `.git`)'
+        - '`cd /tmp && parlay sync` errors with "no parlay root found" — does not walk past filesystem boundaries'
+        - '`cd repo/ && parlay sync` in a multi-root project where the repo root itself has no `.parlay/` but child roots exist below — the tool prompts (interactively) with the list of discovered roots and proceeds with the user''s selection; in a non-interactive run the same case errors'
+        - Disambiguation prompt is shown only once per invocation; the chosen root is recorded in verbose output but NOT persisted to disk
+        - '`PARLAY_ROOT=/abs/path/to/repo parlay sync` (from any cwd) operates on the named root and skips any disambiguation'
+        - '`PARLAY_ROOT=/nonexistent parlay sync` errors rather than silently walking up'
+        - '`parlay --verbose sync` prints the resolved root path and the resolution source (cwd walk-up, disambiguation prompt, `PARLAY_ROOT`, or `--root` flag) before doing any work'
+        - An existing single-root project at the repo root behaves identically before and after this feature ships
+        - A subfolder without its own `.parlay/` falls through to the repo-root `.parlay/` (sees only the repo-root root)
     - actions: select-one, dismiss
       name: Root Disambiguation Prompt
       notes:
@@ -24,6 +34,24 @@ fragments:
       region: main
       shows: message, data-list
       source: '@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up, @parlay-tool/multi-root/target-a-non-active-root-from-any-cwd'
+      verify:
+        - '`cd subproject/ && parlay sync` operates on `subproject/.parlay/` if it exists, else walks up to find the next ancestor (stopping at `.git`)'
+        - '`cd /tmp && parlay sync` errors with "no parlay root found" — does not walk past filesystem boundaries'
+        - '`cd repo/ && parlay sync` in a multi-root project where the repo root itself has no `.parlay/` but child roots exist below — the tool prompts (interactively) with the list of discovered roots and proceeds with the user''s selection; in a non-interactive run the same case errors'
+        - Disambiguation prompt is shown only once per invocation; the chosen root is recorded in verbose output but NOT persisted to disk
+        - '`PARLAY_ROOT=/abs/path/to/repo parlay sync` (from any cwd) operates on the named root and skips any disambiguation'
+        - '`PARLAY_ROOT=/nonexistent parlay sync` errors rather than silently walking up'
+        - '`parlay --verbose sync` prints the resolved root path and the resolution source (cwd walk-up, disambiguation prompt, `PARLAY_ROOT`, or `--root` flag) before doing any work'
+        - An existing single-root project at the repo root behaves identically before and after this feature ships
+        - A subfolder without its own `.parlay/` falls through to the repo-root `.parlay/` (sees only the repo-root root)
+        - '`parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is'
+        - '`parlay --root web sync` (no feature ref) operates on the `web` root'
+        - '`parlay sync unknown:@foo` errors with "unknown root ''unknown''; known roots: web, api"'
+        - '`parlay sync @foo` (no prefix) uses cwd walk-up — behavior identical to single-root projects'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature does not exist in the parent but exists in `apps/web` AND `apps/api` — prompts interactively with both candidates and proceeds with the user''s selection'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature exists in only one other root (`apps/web`) — proceeds automatically and prints "using root: web" before doing the work'
+        - 'The same ambiguous reference in a non-interactive run errors with "ambiguous: matches roots [web, api]; use prefix or --root"'
+        - Authoring an intent that references `web:@some-feature/some-intent` produces a validation error (cross-root references blocked at v1)
     - actions: ""
       name: No-Root-Found Error
       notes:
@@ -36,6 +64,16 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/discover-active-root-via-cwd-walk-up'
+      verify:
+        - '`cd subproject/ && parlay sync` operates on `subproject/.parlay/` if it exists, else walks up to find the next ancestor (stopping at `.git`)'
+        - '`cd /tmp && parlay sync` errors with "no parlay root found" — does not walk past filesystem boundaries'
+        - '`cd repo/ && parlay sync` in a multi-root project where the repo root itself has no `.parlay/` but child roots exist below — the tool prompts (interactively) with the list of discovered roots and proceeds with the user''s selection; in a non-interactive run the same case errors'
+        - Disambiguation prompt is shown only once per invocation; the chosen root is recorded in verbose output but NOT persisted to disk
+        - '`PARLAY_ROOT=/abs/path/to/repo parlay sync` (from any cwd) operates on the named root and skips any disambiguation'
+        - '`PARLAY_ROOT=/nonexistent parlay sync` errors rather than silently walking up'
+        - '`parlay --verbose sync` prints the resolved root path and the resolution source (cwd walk-up, disambiguation prompt, `PARLAY_ROOT`, or `--root` flag) before doing any work'
+        - An existing single-root project at the repo root behaves identically before and after this feature ships
+        - A subfolder without its own `.parlay/` falls through to the repo-root `.parlay/` (sees only the repo-root root)
     - actions: invoke
       name: Add-Child-Root Result
       notes:
@@ -48,6 +86,22 @@ fragments:
       region: main
       shows: status, message, data-list
       source: '@parlay-tool/multi-root/add-a-child-root-to-an-existing-project, @parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots'
+      verify:
+        - After `parlay add-root apps/web`, the directory `apps/web/.parlay/` exists with a config that references the parent root by relative path
+        - The parent root's `.parlay/roots.yaml` lists `apps/web` as a registered child
+        - '`cd apps/web && parlay sync` operates on the child root, not the parent'
+        - '`parlay add-root apps/web` (run twice) errors on the second invocation'
+        - Running `parlay add-root apps/web` from a directory that is itself not a parlay root errors with a clear message
+        - Deleting the parent's `.parlay/` and running any command in the child root produces the loud "parent root not found" error and refuses to fall through to a different ancestor
+        - '`parlay promote-root` run inside an orphaned child root makes it standalone (parent pointer removed, child becomes its own top-level root)'
+        - After `parlay add-root apps/web`, no separate `parlay upgrade` step is required for the agent to see the new root — the repo-level agent-rules file lists it on first agent invocation
+        - 'A parent root with empty `spec/intents/` and one or more child roots is fully functional: `parlay status` at the parent lists zero parent features and the registered children; `parlay sync`, `parlay create-domain-model --root web`, and other commands work normally against child roots; no command errors with "no features found" at the parent'
+        - After `parlay add-root apps/web`, the repo-level agent-rules file (`CLAUDE.md` or equivalent) includes `apps/web` in its multi-root section without manual intervention
+        - A skill invoked while the agent's cwd is `apps/web/` writes to `apps/web/.parlay/build/...`, not the repo-level `.parlay/build/...`
+        - '`parlay upgrade` run at the repo root refreshes the deployed agent surface once and updates schemas at the repo root only'
+        - Running `parlay upgrade` from inside a child root errors with "run upgrade from the repo-level root"
+        - User-authored sections of the agent-rules file survive `parlay upgrade`, `parlay add-root`, and `parlay remove-root` invocations
+        - The same multi-root behavior applies for Cursor (`.cursor/agents/`) and Generic CLI (`AGENT_INSTRUCTIONS.md`) — agent surface is always at the repo root, never inside a child
     - actions: inspect
       name: Resource Source Listing
       notes:
@@ -59,6 +113,15 @@ fragments:
       region: main
       shows: data-table
       source: '@parlay-tool/multi-root/inherit-resources-from-parent-root'
+      verify:
+        - A child root with no `.parlay/adapters/` directory uses adapters from the parent root
+        - A child root with `.parlay/adapters/react.adapter.yaml` uses its own version, not the parent's, when commands run inside the child
+        - '`parlay create-domain-model` run in a child root produces a `domain-model.md` scoped to the child''s intents only — does not include parent intents'
+        - A feature defined at the parent root does NOT appear in `parlay status` / feature listings run inside a child root, and a feature reference resolved inside a child does not match parent-root features
+        - A child root with a `.parlay/schemas/` directory produces a clear startup error
+        - A child root with a deployed-skills directory (e.g. `.claude/skills/parlay-*`) produces a clear startup error
+        - '`parlay --verbose build-feature` prints the resolution path of every loaded resource (which root provided it)'
+        - Deployed skills at `.claude/skills/parlay-*/SKILL.md` (repo root) work identically when invoked from any subfolder of any root
     - actions: ""
       name: Forbidden-Directory Error
       notes:
@@ -70,6 +133,21 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/inherit-resources-from-parent-root, @parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots'
+      verify:
+        - A child root with no `.parlay/adapters/` directory uses adapters from the parent root
+        - A child root with `.parlay/adapters/react.adapter.yaml` uses its own version, not the parent's, when commands run inside the child
+        - '`parlay create-domain-model` run in a child root produces a `domain-model.md` scoped to the child''s intents only — does not include parent intents'
+        - A feature defined at the parent root does NOT appear in `parlay status` / feature listings run inside a child root, and a feature reference resolved inside a child does not match parent-root features
+        - A child root with a `.parlay/schemas/` directory produces a clear startup error
+        - A child root with a deployed-skills directory (e.g. `.claude/skills/parlay-*`) produces a clear startup error
+        - '`parlay --verbose build-feature` prints the resolution path of every loaded resource (which root provided it)'
+        - Deployed skills at `.claude/skills/parlay-*/SKILL.md` (repo root) work identically when invoked from any subfolder of any root
+        - After `parlay add-root apps/web`, the repo-level agent-rules file (`CLAUDE.md` or equivalent) includes `apps/web` in its multi-root section without manual intervention
+        - A skill invoked while the agent's cwd is `apps/web/` writes to `apps/web/.parlay/build/...`, not the repo-level `.parlay/build/...`
+        - '`parlay upgrade` run at the repo root refreshes the deployed agent surface once and updates schemas at the repo root only'
+        - Running `parlay upgrade` from inside a child root errors with "run upgrade from the repo-level root"
+        - User-authored sections of the agent-rules file survive `parlay upgrade`, `parlay add-root`, and `parlay remove-root` invocations
+        - The same multi-root behavior applies for Cursor (`.cursor/agents/`) and Generic CLI (`AGENT_INSTRUCTIONS.md`) — agent surface is always at the repo root, never inside a child
     - actions: ""
       name: Cross-Root Targeting Announcement
       notes:
@@ -82,6 +160,15 @@ fragments:
       region: header
       shows: data-value, message
       source: '@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd'
+      verify:
+        - '`parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is'
+        - '`parlay --root web sync` (no feature ref) operates on the `web` root'
+        - '`parlay sync unknown:@foo` errors with "unknown root ''unknown''; known roots: web, api"'
+        - '`parlay sync @foo` (no prefix) uses cwd walk-up — behavior identical to single-root projects'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature does not exist in the parent but exists in `apps/web` AND `apps/api` — prompts interactively with both candidates and proceeds with the user''s selection'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature exists in only one other root (`apps/web`) — proceeds automatically and prints "using root: web" before doing the work'
+        - 'The same ambiguous reference in a non-interactive run errors with "ambiguous: matches roots [web, api]; use prefix or --root"'
+        - Authoring an intent that references `web:@some-feature/some-intent` produces a validation error (cross-root references blocked at v1)
     - actions: select-one, dismiss
       name: Ambiguous-Reference Disambiguation Prompt
       notes:
@@ -94,6 +181,15 @@ fragments:
       region: main
       shows: message, data-list
       source: '@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd'
+      verify:
+        - '`parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is'
+        - '`parlay --root web sync` (no feature ref) operates on the `web` root'
+        - '`parlay sync unknown:@foo` errors with "unknown root ''unknown''; known roots: web, api"'
+        - '`parlay sync @foo` (no prefix) uses cwd walk-up — behavior identical to single-root projects'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature does not exist in the parent but exists in `apps/web` AND `apps/api` — prompts interactively with both candidates and proceeds with the user''s selection'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature exists in only one other root (`apps/web`) — proceeds automatically and prints "using root: web" before doing the work'
+        - 'The same ambiguous reference in a non-interactive run errors with "ambiguous: matches roots [web, api]; use prefix or --root"'
+        - Authoring an intent that references `web:@some-feature/some-intent` produces a validation error (cross-root references blocked at v1)
     - actions: ""
       name: Cross-Root Reference Validation Error
       notes:
@@ -105,6 +201,15 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/target-a-non-active-root-from-any-cwd'
+      verify:
+        - '`parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is'
+        - '`parlay --root web sync` (no feature ref) operates on the `web` root'
+        - '`parlay sync unknown:@foo` errors with "unknown root ''unknown''; known roots: web, api"'
+        - '`parlay sync @foo` (no prefix) uses cwd walk-up — behavior identical to single-root projects'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature does not exist in the parent but exists in `apps/web` AND `apps/api` — prompts interactively with both candidates and proceeds with the user''s selection'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature exists in only one other root (`apps/web`) — proceeds automatically and prints "using root: web" before doing the work'
+        - 'The same ambiguous reference in a non-interactive run errors with "ambiguous: matches roots [web, api]; use prefix or --root"'
+        - Authoring an intent that references `web:@some-feature/some-intent` produces a validation error (cross-root references blocked at v1)
     - actions: invoke
       name: Upgrade Refresh Confirmation
       notes:
@@ -118,6 +223,13 @@ fragments:
       region: main
       shows: status, summary, data-list
       source: '@parlay-tool/multi-root/single-repo-level-agent-surface-drives-all-roots'
+      verify:
+        - After `parlay add-root apps/web`, the repo-level agent-rules file (`CLAUDE.md` or equivalent) includes `apps/web` in its multi-root section without manual intervention
+        - A skill invoked while the agent's cwd is `apps/web/` writes to `apps/web/.parlay/build/...`, not the repo-level `.parlay/build/...`
+        - '`parlay upgrade` run at the repo root refreshes the deployed agent surface once and updates schemas at the repo root only'
+        - Running `parlay upgrade` from inside a child root errors with "run upgrade from the repo-level root"
+        - User-authored sections of the agent-rules file survive `parlay upgrade`, `parlay add-root`, and `parlay remove-root` invocations
+        - The same multi-root behavior applies for Cursor (`.cursor/agents/`) and Generic CLI (`AGENT_INSTRUCTIONS.md`) — agent surface is always at the repo root, never inside a child
     - actions: inspect
       name: Status with Bare Parent
       notes:
@@ -130,6 +242,24 @@ fragments:
       region: main
       shows: data-tree, summary
       source: '@parlay-tool/multi-root/add-a-child-root-to-an-existing-project, @parlay-tool/multi-root/inherit-resources-from-parent-root'
+      verify:
+        - After `parlay add-root apps/web`, the directory `apps/web/.parlay/` exists with a config that references the parent root by relative path
+        - The parent root's `.parlay/roots.yaml` lists `apps/web` as a registered child
+        - '`cd apps/web && parlay sync` operates on the child root, not the parent'
+        - '`parlay add-root apps/web` (run twice) errors on the second invocation'
+        - Running `parlay add-root apps/web` from a directory that is itself not a parlay root errors with a clear message
+        - Deleting the parent's `.parlay/` and running any command in the child root produces the loud "parent root not found" error and refuses to fall through to a different ancestor
+        - '`parlay promote-root` run inside an orphaned child root makes it standalone (parent pointer removed, child becomes its own top-level root)'
+        - After `parlay add-root apps/web`, no separate `parlay upgrade` step is required for the agent to see the new root — the repo-level agent-rules file lists it on first agent invocation
+        - 'A parent root with empty `spec/intents/` and one or more child roots is fully functional: `parlay status` at the parent lists zero parent features and the registered children; `parlay sync`, `parlay create-domain-model --root web`, and other commands work normally against child roots; no command errors with "no features found" at the parent'
+        - A child root with no `.parlay/adapters/` directory uses adapters from the parent root
+        - A child root with `.parlay/adapters/react.adapter.yaml` uses its own version, not the parent's, when commands run inside the child
+        - '`parlay create-domain-model` run in a child root produces a `domain-model.md` scoped to the child''s intents only — does not include parent intents'
+        - A feature defined at the parent root does NOT appear in `parlay status` / feature listings run inside a child root, and a feature reference resolved inside a child does not match parent-root features
+        - A child root with a `.parlay/schemas/` directory produces a clear startup error
+        - A child root with a deployed-skills directory (e.g. `.claude/skills/parlay-*`) produces a clear startup error
+        - '`parlay --verbose build-feature` prints the resolution path of every loaded resource (which root provided it)'
+        - Deployed skills at `.claude/skills/parlay-*/SKILL.md` (repo root) work identically when invoked from any subfolder of any root
     - actions: select-one, dismiss
       name: Skill-Side Root Disambiguation Prompt
       notes:
@@ -143,6 +273,15 @@ fragments:
       region: main
       shows: message, data-list
       source: '@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project'
+      verify:
+        - '`parlay sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting'
+        - '`/parlay-build-feature @intent/A` invoked while agent cwd is the parent and the feature exists in two child roots — the skill surfaces an `AskUserQuestion` (or adapter equivalent) with the candidate roots, then re-invokes the CLI against the user''s choice'
+        - '`parlay sync web:@feat` works regardless of agent cwd'
+        - '`/parlay-create-domain-model --root web` works as a skill argument the same way it works as a CLI flag'
+        - A skill invoked while the user is in a feature-empty parent project (no parent-owned features in `spec/intents/`) does not show "no features found" — it shows the registered children and prompts for the target root if needed
+        - 'When a skill auto-resolves to a non-cwd root (e.g. single child match for a bare reference), the visible response begins with "operating on root: <name>"'
+        - Skill prompt text in `internal/embedded/skills/*.skill.md` contains no hardcoded `.parlay/` paths — every path reference is via the active-root resolver
+        - The same skill behavior is exercised on Claude Code, Cursor, and Generic CLI — no adapter-specific skill source
     - actions: ""
       name: Skill-Side Operating-Root Announcement
       notes:
@@ -154,6 +293,23 @@ fragments:
       region: header
       shows: data-value, message
       source: '@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project, @parlay-tool/multi-root/target-a-non-active-root-from-any-cwd'
+      verify:
+        - '`parlay sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting'
+        - '`/parlay-build-feature @intent/A` invoked while agent cwd is the parent and the feature exists in two child roots — the skill surfaces an `AskUserQuestion` (or adapter equivalent) with the candidate roots, then re-invokes the CLI against the user''s choice'
+        - '`parlay sync web:@feat` works regardless of agent cwd'
+        - '`/parlay-create-domain-model --root web` works as a skill argument the same way it works as a CLI flag'
+        - A skill invoked while the user is in a feature-empty parent project (no parent-owned features in `spec/intents/`) does not show "no features found" — it shows the registered children and prompts for the target root if needed
+        - 'When a skill auto-resolves to a non-cwd root (e.g. single child match for a bare reference), the visible response begins with "operating on root: <name>"'
+        - Skill prompt text in `internal/embedded/skills/*.skill.md` contains no hardcoded `.parlay/` paths — every path reference is via the active-root resolver
+        - The same skill behavior is exercised on Claude Code, Cursor, and Generic CLI — no adapter-specific skill source
+        - '`parlay sync web:@parlay-tool/multi-root` from any cwd operates on the `web` root, regardless of where the user is'
+        - '`parlay --root web sync` (no feature ref) operates on the `web` root'
+        - '`parlay sync unknown:@foo` errors with "unknown root ''unknown''; known roots: web, api"'
+        - '`parlay sync @foo` (no prefix) uses cwd walk-up — behavior identical to single-root projects'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature does not exist in the parent but exists in `apps/web` AND `apps/api` — prompts interactively with both candidates and proceeds with the user''s selection'
+        - '`parlay build-feature @intent/A` run from the parent root, when the feature exists in only one other root (`apps/web`) — proceeds automatically and prints "using root: web" before doing the work'
+        - 'The same ambiguous reference in a non-interactive run errors with "ambiguous: matches roots [web, api]; use prefix or --root"'
+        - Authoring an intent that references `web:@some-feature/some-intent` produces a validation error (cross-root references blocked at v1)
     - actions: confirm, dismiss
       name: Skill-Side Forbidden-Directory Guidance
       notes:
@@ -167,6 +323,23 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/skill-invocation-in-a-multi-root-project, @parlay-tool/multi-root/inherit-resources-from-parent-root'
+      verify:
+        - '`parlay sync @feat` invoked while agent cwd is `apps/web/` operates on the `web` child root, with no special prompting'
+        - '`/parlay-build-feature @intent/A` invoked while agent cwd is the parent and the feature exists in two child roots — the skill surfaces an `AskUserQuestion` (or adapter equivalent) with the candidate roots, then re-invokes the CLI against the user''s choice'
+        - '`parlay sync web:@feat` works regardless of agent cwd'
+        - '`/parlay-create-domain-model --root web` works as a skill argument the same way it works as a CLI flag'
+        - A skill invoked while the user is in a feature-empty parent project (no parent-owned features in `spec/intents/`) does not show "no features found" — it shows the registered children and prompts for the target root if needed
+        - 'When a skill auto-resolves to a non-cwd root (e.g. single child match for a bare reference), the visible response begins with "operating on root: <name>"'
+        - Skill prompt text in `internal/embedded/skills/*.skill.md` contains no hardcoded `.parlay/` paths — every path reference is via the active-root resolver
+        - The same skill behavior is exercised on Claude Code, Cursor, and Generic CLI — no adapter-specific skill source
+        - A child root with no `.parlay/adapters/` directory uses adapters from the parent root
+        - A child root with `.parlay/adapters/react.adapter.yaml` uses its own version, not the parent's, when commands run inside the child
+        - '`parlay create-domain-model` run in a child root produces a `domain-model.md` scoped to the child''s intents only — does not include parent intents'
+        - A feature defined at the parent root does NOT appear in `parlay status` / feature listings run inside a child root, and a feature reference resolved inside a child does not match parent-root features
+        - A child root with a `.parlay/schemas/` directory produces a clear startup error
+        - A child root with a deployed-skills directory (e.g. `.claude/skills/parlay-*`) produces a clear startup error
+        - '`parlay --verbose build-feature` prints the resolution path of every loaded resource (which root provided it)'
+        - Deployed skills at `.claude/skills/parlay-*/SKILL.md` (repo root) work identically when invoked from any subfolder of any root
     - actions: ""
       name: Agent-At-Child Config Error
       notes:
@@ -179,6 +352,15 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects'
+      verify:
+        - '`parlay upgrade` in a multi-root project where the parent has `config.yaml` with `ai-agent: Claude Code` redeploys both `.parlay/schemas/` and `.claude/skills/parlay-*/` — no silent skip'
+        - 'A child `config.yaml` containing `ai-agent: Cursor` produces a config-load error with the message "agent identity belongs at the parent root; remove `ai-agent` from `<child>/.parlay/config.yaml`"'
+        - A multi-root project where parent and child both declare `ai-agent` produces a config-load hard-error naming both file paths and pointing at `parlay repair`
+        - 'A multi-root project''s parent `config.yaml` with only `ai-agent` (no framework fields) and child configs with `sdd-framework` / `prototype-framework` / `parent: ..` passes validation'
+        - A child `config.yaml` that omits `sdd-framework` resolves to the parent's value when the parent declares it; produces a "no sdd-framework declared in child or parent" error otherwise
+        - A single-root project's `config.yaml` with all three fields continues to work unchanged
+        - '`parlay --verbose status` (or equivalent) prints `ai-agent: Claude Code (from /repo/.parlay/config.yaml)` and `sdd-framework: parlay-spec (from /repo/core/.parlay/config.yaml)` when both fields are declared at their natural levels; prints `(inherited from /repo/.parlay/config.yaml)` when the child inherits'
+        - Removing `ai-agent` from a parent `config.yaml` in a multi-root project causes the next `parlay upgrade` to error with "no agent identity declared at parent root" — never silently skip, never walk up
     - actions: ""
       name: Both-Have-Agent Config Error
       notes:
@@ -192,6 +374,15 @@ fragments:
       region: main
       shows: status, message, data-list
       source: '@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects'
+      verify:
+        - '`parlay upgrade` in a multi-root project where the parent has `config.yaml` with `ai-agent: Claude Code` redeploys both `.parlay/schemas/` and `.claude/skills/parlay-*/` — no silent skip'
+        - 'A child `config.yaml` containing `ai-agent: Cursor` produces a config-load error with the message "agent identity belongs at the parent root; remove `ai-agent` from `<child>/.parlay/config.yaml`"'
+        - A multi-root project where parent and child both declare `ai-agent` produces a config-load hard-error naming both file paths and pointing at `parlay repair`
+        - 'A multi-root project''s parent `config.yaml` with only `ai-agent` (no framework fields) and child configs with `sdd-framework` / `prototype-framework` / `parent: ..` passes validation'
+        - A child `config.yaml` that omits `sdd-framework` resolves to the parent's value when the parent declares it; produces a "no sdd-framework declared in child or parent" error otherwise
+        - A single-root project's `config.yaml` with all three fields continues to work unchanged
+        - '`parlay --verbose status` (or equivalent) prints `ai-agent: Claude Code (from /repo/.parlay/config.yaml)` and `sdd-framework: parlay-spec (from /repo/core/.parlay/config.yaml)` when both fields are declared at their natural levels; prints `(inherited from /repo/.parlay/config.yaml)` when the child inherits'
+        - Removing `ai-agent` from a parent `config.yaml` in a multi-root project causes the next `parlay upgrade` to error with "no agent identity declared at parent root" — never silently skip, never walk up
     - actions: ""
       name: Missing-Agent-On-Upgrade Error
       notes:
@@ -205,6 +396,21 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects, @parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology'
+      verify:
+        - '`parlay upgrade` in a multi-root project where the parent has `config.yaml` with `ai-agent: Claude Code` redeploys both `.parlay/schemas/` and `.claude/skills/parlay-*/` — no silent skip'
+        - 'A child `config.yaml` containing `ai-agent: Cursor` produces a config-load error with the message "agent identity belongs at the parent root; remove `ai-agent` from `<child>/.parlay/config.yaml`"'
+        - A multi-root project where parent and child both declare `ai-agent` produces a config-load hard-error naming both file paths and pointing at `parlay repair`
+        - 'A multi-root project''s parent `config.yaml` with only `ai-agent` (no framework fields) and child configs with `sdd-framework` / `prototype-framework` / `parent: ..` passes validation'
+        - A child `config.yaml` that omits `sdd-framework` resolves to the parent's value when the parent declares it; produces a "no sdd-framework declared in child or parent" error otherwise
+        - A single-root project's `config.yaml` with all three fields continues to work unchanged
+        - '`parlay --verbose status` (or equivalent) prints `ai-agent: Claude Code (from /repo/.parlay/config.yaml)` and `sdd-framework: parlay-spec (from /repo/core/.parlay/config.yaml)` when both fields are declared at their natural levels; prints `(inherited from /repo/.parlay/config.yaml)` when the child inherits'
+        - Removing `ai-agent` from a parent `config.yaml` in a multi-root project causes the next `parlay upgrade` to error with "no agent identity declared at parent root" — never silently skip, never walk up
+        - '`parlay upgrade` in a multi-root project where the parent has `roots.yaml` but no `config.yaml` errors with `bare-parent topology: <parent>/.parlay/config.yaml is missing — run \`parlay repair\` to create it` and exits non-zero. Nothing is deployed'
+        - '`parlay upgrade` in a correctly-configured multi-root project (parent has `config.yaml` with `ai-agent`) deploys both schemas and skills with no warnings'
+        - '`parlay upgrade` in a single-root project deploys both schemas and skills with no warnings'
+        - '`parlay upgrade` in a directory with neither `roots.yaml` nor `config.yaml` errors with the pre-existing "run parlay init first" message — distinct from the bare-parent message'
+        - After `parlay repair` migrates a bare-parent project, the next `parlay upgrade` runs cleanly
+        - The `parlay upgrade --help` text contains no reference to "bare-parent" as a supported state
     - actions: inspect
       name: Verbose Field-Resolution Listing
       notes:
@@ -217,6 +423,15 @@ fragments:
       region: main
       shows: data-table
       source: '@parlay-tool/multi-root/agent-identity-lives-at-the-parent-in-multi-root-projects'
+      verify:
+        - '`parlay upgrade` in a multi-root project where the parent has `config.yaml` with `ai-agent: Claude Code` redeploys both `.parlay/schemas/` and `.claude/skills/parlay-*/` — no silent skip'
+        - 'A child `config.yaml` containing `ai-agent: Cursor` produces a config-load error with the message "agent identity belongs at the parent root; remove `ai-agent` from `<child>/.parlay/config.yaml`"'
+        - A multi-root project where parent and child both declare `ai-agent` produces a config-load hard-error naming both file paths and pointing at `parlay repair`
+        - 'A multi-root project''s parent `config.yaml` with only `ai-agent` (no framework fields) and child configs with `sdd-framework` / `prototype-framework` / `parent: ..` passes validation'
+        - A child `config.yaml` that omits `sdd-framework` resolves to the parent's value when the parent declares it; produces a "no sdd-framework declared in child or parent" error otherwise
+        - A single-root project's `config.yaml` with all three fields continues to work unchanged
+        - '`parlay --verbose status` (or equivalent) prints `ai-agent: Claude Code (from /repo/.parlay/config.yaml)` and `sdd-framework: parlay-spec (from /repo/core/.parlay/config.yaml)` when both fields are declared at their natural levels; prints `(inherited from /repo/.parlay/config.yaml)` when the child inherits'
+        - Removing `ai-agent` from a parent `config.yaml` in a multi-root project causes the next `parlay upgrade` to error with "no agent identity declared at parent root" — never silently skip, never walk up
     - actions: provide-text, confirm
       name: Init Agent-Identity Prompt
       notes:
@@ -230,6 +445,14 @@ fragments:
       region: main
       shows: message, data-value
       source: '@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape'
+      verify:
+        - '`parlay init` in an empty directory followed by selecting Claude Code / parlay-spec / parlay-prototype produces one `.parlay/config.yaml` containing all three fields — single-root, no parent pointer'
+        - '`parlay init` at an empty repo, then `parlay add-root core` and `parlay add-root studio`, produces `.parlay/config.yaml` with `ai-agent: <chosen>` at the repo and `core/.parlay/config.yaml` / `studio/.parlay/config.yaml` each with `sdd-framework`, `prototype-framework`, `parent: ..`. None of the child configs contain `ai-agent`'
+        - '`parlay init` invoked through Claude Code pre-fills the `ai-agent` prompt with `Claude Code` and waits for the user to confirm — pressing Enter accepts; typing a different value overrides; init never proceeds without an explicit choice'
+        - '`parlay add-root <child>` invoked when the parent has no `ai-agent` yet refuses with "parent is missing ai-agent — run `parlay init` at the parent first"'
+        - '`parlay init` invoked at a child whose `parent: ..` resolves to a parent with `ai-agent` already set writes the child''s framework fields only — `ai-agent` is NOT written to the child'
+        - '`parlay init` re-run on a fully-configured multi-root project exits without modifying any `config.yaml` — pure idempotence'
+        - The topology validator (the same checks Intent A and "Detect and Migrate Legacy Topology Mismatches" rely on) passes against every freshly-initialized project, single-root or multi-root, with no manual cleanup
     - actions: ""
       name: Add-Root Refusal Without Parent Agent
       notes:
@@ -243,6 +466,14 @@ fragments:
       region: main
       shows: status, message, data-value
       source: '@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape'
+      verify:
+        - '`parlay init` in an empty directory followed by selecting Claude Code / parlay-spec / parlay-prototype produces one `.parlay/config.yaml` containing all three fields — single-root, no parent pointer'
+        - '`parlay init` at an empty repo, then `parlay add-root core` and `parlay add-root studio`, produces `.parlay/config.yaml` with `ai-agent: <chosen>` at the repo and `core/.parlay/config.yaml` / `studio/.parlay/config.yaml` each with `sdd-framework`, `prototype-framework`, `parent: ..`. None of the child configs contain `ai-agent`'
+        - '`parlay init` invoked through Claude Code pre-fills the `ai-agent` prompt with `Claude Code` and waits for the user to confirm — pressing Enter accepts; typing a different value overrides; init never proceeds without an explicit choice'
+        - '`parlay add-root <child>` invoked when the parent has no `ai-agent` yet refuses with "parent is missing ai-agent — run `parlay init` at the parent first"'
+        - '`parlay init` invoked at a child whose `parent: ..` resolves to a parent with `ai-agent` already set writes the child''s framework fields only — `ai-agent` is NOT written to the child'
+        - '`parlay init` re-run on a fully-configured multi-root project exits without modifying any `config.yaml` — pure idempotence'
+        - The topology validator (the same checks Intent A and "Detect and Migrate Legacy Topology Mismatches" rely on) passes against every freshly-initialized project, single-root or multi-root, with no manual cleanup
     - actions: provide-text, confirm
       name: Init Framework Default-Inheritance Prompt
       notes:
@@ -256,6 +487,14 @@ fragments:
       region: main
       shows: message, data-value
       source: '@parlay-tool/multi-root/parlay-init-writes-the-correct-topology-shape'
+      verify:
+        - '`parlay init` in an empty directory followed by selecting Claude Code / parlay-spec / parlay-prototype produces one `.parlay/config.yaml` containing all three fields — single-root, no parent pointer'
+        - '`parlay init` at an empty repo, then `parlay add-root core` and `parlay add-root studio`, produces `.parlay/config.yaml` with `ai-agent: <chosen>` at the repo and `core/.parlay/config.yaml` / `studio/.parlay/config.yaml` each with `sdd-framework`, `prototype-framework`, `parent: ..`. None of the child configs contain `ai-agent`'
+        - '`parlay init` invoked through Claude Code pre-fills the `ai-agent` prompt with `Claude Code` and waits for the user to confirm — pressing Enter accepts; typing a different value overrides; init never proceeds without an explicit choice'
+        - '`parlay add-root <child>` invoked when the parent has no `ai-agent` yet refuses with "parent is missing ai-agent — run `parlay init` at the parent first"'
+        - '`parlay init` invoked at a child whose `parent: ..` resolves to a parent with `ai-agent` already set writes the child''s framework fields only — `ai-agent` is NOT written to the child'
+        - '`parlay init` re-run on a fully-configured multi-root project exits without modifying any `config.yaml` — pure idempotence'
+        - The topology validator (the same checks Intent A and "Detect and Migrate Legacy Topology Mismatches" rely on) passes against every freshly-initialized project, single-root or multi-root, with no manual cleanup
     - actions: ""
       name: Status Topology Indicator
       notes:
@@ -269,6 +508,16 @@ fragments:
       region: main
       shows: status, summary
       source: '@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches'
+      verify:
+        - A multi-root project with a bare-parent (parent has `roots.yaml`, no `config.yaml`) is detected by `parlay repair`, which prompts for `ai-agent` and creates the parent's `config.yaml` after the user confirms
+        - 'A multi-root project where a child config has `ai-agent: Claude Code` is detected by `parlay repair`, which proposes removing it from the child and writing it to the parent (creating the parent config if needed) — only after the user confirms'
+        - 'A multi-root project where parent and child agree on `ai-agent: Claude Code` is detected by `parlay repair`, which proposes deleting the redundant child entry; the user confirms and repair completes'
+        - 'A multi-root project where parent says `ai-agent: Claude Code` and a child says `ai-agent: Cursor` is detected by `parlay repair`, which surfaces both values and asks the user which to keep — never picks silently'
+        - 'A single-root project where `config.yaml` is missing `ai-agent` is detected by both `parlay status` (`topology: needs repair`) and `parlay repair` (prompts for the value and writes it)'
+        - 'A single-root project with `ai-agent` / `sdd-framework` / `prototype-framework` together in one config reports `topology: ok` from `parlay status` and is NEVER flagged by `parlay repair`'
+        - 'A project with two simultaneous mismatches (e.g. agent-at-child AND a sibling child without sdd-framework) is walked one-at-a-time by `parlay repair`: fix the first, re-scan, surface the second, fix the second'
+        - '`parlay status` in a project with one mismatch prints a single `topology: needs repair (1 mismatch — run \`parlay repair\`)` line and no per-file detail'
+        - 'After `parlay repair` resolves all four mismatch types in the same project, `parlay status` reports `topology: ok` and `parlay repair` re-run reports no remaining work'
     - actions: confirm, dismiss, select-one
       name: Repair Per-Mismatch Prompt
       notes:
@@ -285,6 +534,16 @@ fragments:
       region: main
       shows: message, data-value, data-list, summary
       source: '@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches'
+      verify:
+        - A multi-root project with a bare-parent (parent has `roots.yaml`, no `config.yaml`) is detected by `parlay repair`, which prompts for `ai-agent` and creates the parent's `config.yaml` after the user confirms
+        - 'A multi-root project where a child config has `ai-agent: Claude Code` is detected by `parlay repair`, which proposes removing it from the child and writing it to the parent (creating the parent config if needed) — only after the user confirms'
+        - 'A multi-root project where parent and child agree on `ai-agent: Claude Code` is detected by `parlay repair`, which proposes deleting the redundant child entry; the user confirms and repair completes'
+        - 'A multi-root project where parent says `ai-agent: Claude Code` and a child says `ai-agent: Cursor` is detected by `parlay repair`, which surfaces both values and asks the user which to keep — never picks silently'
+        - 'A single-root project where `config.yaml` is missing `ai-agent` is detected by both `parlay status` (`topology: needs repair`) and `parlay repair` (prompts for the value and writes it)'
+        - 'A single-root project with `ai-agent` / `sdd-framework` / `prototype-framework` together in one config reports `topology: ok` from `parlay status` and is NEVER flagged by `parlay repair`'
+        - 'A project with two simultaneous mismatches (e.g. agent-at-child AND a sibling child without sdd-framework) is walked one-at-a-time by `parlay repair`: fix the first, re-scan, surface the second, fix the second'
+        - '`parlay status` in a project with one mismatch prints a single `topology: needs repair (1 mismatch — run \`parlay repair\`)` line and no per-file detail'
+        - 'After `parlay repair` resolves all four mismatch types in the same project, `parlay status` reports `topology: ok` and `parlay repair` re-run reports no remaining work'
     - actions: ""
       name: Repair-Clean Result
       notes:
@@ -296,6 +555,16 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/detect-and-migrate-legacy-topology-mismatches'
+      verify:
+        - A multi-root project with a bare-parent (parent has `roots.yaml`, no `config.yaml`) is detected by `parlay repair`, which prompts for `ai-agent` and creates the parent's `config.yaml` after the user confirms
+        - 'A multi-root project where a child config has `ai-agent: Claude Code` is detected by `parlay repair`, which proposes removing it from the child and writing it to the parent (creating the parent config if needed) — only after the user confirms'
+        - 'A multi-root project where parent and child agree on `ai-agent: Claude Code` is detected by `parlay repair`, which proposes deleting the redundant child entry; the user confirms and repair completes'
+        - 'A multi-root project where parent says `ai-agent: Claude Code` and a child says `ai-agent: Cursor` is detected by `parlay repair`, which surfaces both values and asks the user which to keep — never picks silently'
+        - 'A single-root project where `config.yaml` is missing `ai-agent` is detected by both `parlay status` (`topology: needs repair`) and `parlay repair` (prompts for the value and writes it)'
+        - 'A single-root project with `ai-agent` / `sdd-framework` / `prototype-framework` together in one config reports `topology: ok` from `parlay status` and is NEVER flagged by `parlay repair`'
+        - 'A project with two simultaneous mismatches (e.g. agent-at-child AND a sibling child without sdd-framework) is walked one-at-a-time by `parlay repair`: fix the first, re-scan, surface the second, fix the second'
+        - '`parlay status` in a project with one mismatch prints a single `topology: needs repair (1 mismatch — run \`parlay repair\`)` line and no per-file detail'
+        - 'After `parlay repair` resolves all four mismatch types in the same project, `parlay status` reports `topology: ok` and `parlay repair` re-run reports no remaining work'
     - actions: ""
       name: Bare-Parent Upgrade Error
       notes:
@@ -310,3 +579,10 @@ fragments:
       region: main
       shows: status, message
       source: '@parlay-tool/multi-root/parlay-upgrade-errors-on-bare-parent-topology'
+      verify:
+        - '`parlay upgrade` in a multi-root project where the parent has `roots.yaml` but no `config.yaml` errors with `bare-parent topology: <parent>/.parlay/config.yaml is missing — run \`parlay repair\` to create it` and exits non-zero. Nothing is deployed'
+        - '`parlay upgrade` in a correctly-configured multi-root project (parent has `config.yaml` with `ai-agent`) deploys both schemas and skills with no warnings'
+        - '`parlay upgrade` in a single-root project deploys both schemas and skills with no warnings'
+        - '`parlay upgrade` in a directory with neither `roots.yaml` nor `config.yaml` errors with the pre-existing "run parlay init first" message — distinct from the bare-parent message'
+        - After `parlay repair` migrates a bare-parent project, the next `parlay upgrade` runs cleanly
+        - The `parlay upgrade --help` text contains no reference to "bare-parent" as a supported state

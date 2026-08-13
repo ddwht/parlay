@@ -39,6 +39,15 @@ type CapabilityOperation struct {
 	// this change" does, and without it a backend refinement had nothing
 	// to route on but name similarity.
 	Source   string            `yaml:"source,omitempty"`
+	// Verify holds the operation's acceptance criteria — relocated from the
+	// owning intent's **Verify** bullets so testcase derivation reads them
+	// from the contract artifact instead of the narrative doc. Optional on
+	// read: operations predating the field carry none, and testcase
+	// generation falls back to the intent bullets for those.
+	Verify []string `yaml:"verify,omitempty"`
+	// Rationale is one line of provenance prose — the "why" beside the
+	// what. Never parsed or validated beyond being a string.
+	Rationale string           `yaml:"rationale,omitempty"`
 	Kind     string            `yaml:"kind"`
 	Subject  CapabilitySubject `yaml:"subject"`
 	Input    *CapabilityIO     `yaml:"input,omitempty"`

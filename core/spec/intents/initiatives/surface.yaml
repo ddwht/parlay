@@ -15,6 +15,13 @@ fragments:
       region: main
       shows: message, data-tree, data-list
       source: '@initiatives/group-features-under-an-initiative'
+      verify:
+        - A designer can create an initiative directory, place three or more feature directories inside it, and every per-feature command (`create-dialogs`, `create-surface`, `build-feature`, `generate-code`, `generate-enggspec`) continues to work using `@feature` for orphans and `@initiative/feature` for nested features
+        - '`config.FeaturePath("password-reset")` resolves to `spec/intents/password-reset/` when `password-reset` is an orphan, and `config.FeaturePath("auth-overhaul/password-reset")` resolves to `spec/intents/auth-overhaul/password-reset/` when `password-reset` is nested inside `auth-overhaul`; both forms return identical-shaped results to callers'
+        - Two features named `password-reset` in different initiatives (`spec/intents/auth-overhaul/password-reset/` and `spec/intents/billing/password-reset/`) coexist without error, and each resolves only via its own qualified identifier
+        - Listing `spec/intents/` shows a mix of initiative directories and orphan feature directories, and parlay can tell them apart structurally
+        - Creating a feature or initiative whose slug matches an existing entity in the same parent directory fails with a clear error naming the existing location; creating one whose slug matches something in a different parent succeeds
+        - A hybrid directory (contains both `intents.md` and subdirectories with `intents.md`) triggers a parlay error at detection time rather than silently picking one interpretation
     - actions: invoke
       name: Feature Creation Result
       notes:
@@ -29,6 +36,14 @@ fragments:
       region: main
       shows: status, message, data-value
       source: '@initiatives/create-a-feature-inside-an-initiative'
+      verify:
+        - '`parlay add-feature "password reset" --initiative "auth overhaul"` when the initiative does not exist creates both `spec/intents/auth-overhaul/` and `spec/intents/auth-overhaul/password-reset/` with `intents.md` and `dialogs.md`; the output reports "Initiative auth-overhaul created" and "Feature password-reset added"'
+        - '`parlay add-feature "sso setup" --initiative "auth overhaul"` run afterward creates only `spec/intents/auth-overhaul/sso-setup/`; the initiative is not re-created; the output reports only "Feature sso-setup added to initiative auth-overhaul"'
+        - '`parlay add-feature "password reset" --initiative "auth overhaul"` run a second time fails with an error referencing `spec/intents/auth-overhaul/password-reset/`'
+        - '`parlay add-feature "password reset" --initiative "billing"` succeeds even though a `password-reset` feature already exists inside `auth-overhaul`, because the collision rule is scope-based — the target scope is `spec/intents/billing/`, which does not yet contain `password-reset`'
+        - '`parlay add-feature "password reset"` (no `--initiative`) creates an orphan at `spec/intents/password-reset/` even when features named `password-reset` exist inside initiatives, because the target scope is the top level, which does not yet contain that slug'
+        - '`parlay add-feature "standalone thing"` (no `--initiative` flag) still creates an orphan at `spec/intents/standalone-thing/`'
+        - '`parlay add-feature "login" --initiative "password-reset"` fails with a top-level-namespace collision when `password-reset` already exists at the top level as an orphan feature (not an initiative)'
     - actions: invoke
       name: Empty Initiative Creation Result
       notes:
@@ -42,3 +57,10 @@ fragments:
       region: main
       shows: status, message, data-value
       source: '@initiatives/create-an-empty-initiative'
+      verify:
+        - '`parlay new-initiative "auth overhaul"` creates `spec/intents/auth-overhaul/` as an empty directory'
+        - '`parlay new-initiative "auth overhaul"` run a second time succeeds and reports the directory already exists'
+        - '`parlay add-feature "login" --initiative "auth overhaul"` after a `new-initiative` call creates `spec/intents/auth-overhaul/login/` inside the pre-existing empty initiative directory, and the matching parallel paths under `spec/handoff/` and `.parlay/build/`; the initiative is not re-created'
+        - '`parlay move-feature @password-reset --to auth-overhaul` after a `new-initiative` call succeeds without re-creating the initiative'
+        - '`parlay new-initiative "password-reset"` fails with a top-level collision error when `password-reset` already exists at the top level (either as an orphan feature or as another initiative)'
+        - '`parlay new-initiative "password-reset"` succeeds even when `password-reset` exists as a nested feature inside some initiative — that nested feature is in a different scope, so there is no collision'

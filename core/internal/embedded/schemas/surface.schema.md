@@ -42,6 +42,7 @@ Generation sources:
 | Region | No | `**Region**:` plain text region name |
 | Order | No | `**Order**:` integer |
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines |
+| Verify | No | YAML form (`fragments[].verify`) only: acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets, carried by the fragment when no capabilities operation covers that intent. Populated by `/parlay-create-artifacts` on generate and `parlay migrate-verify` for pre-existing artifacts; testcase derivation reads these first, intent bullets as fallback. |
 
 ---
 
