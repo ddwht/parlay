@@ -49,6 +49,10 @@ Three-zone layout — strict ownership:
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
 - **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 
+Ledger projects (`ledger: true` in .parlay/config.yaml) add one zone and change one rule:
+- **spec/intents/<feature>/amendments/** (designer-authored, append-only): NNN-<slug>.md — one file per change, written once and NEVER edited; a correction is a new amendment naming the old one in supersedes:. Compaction may move files to amendments/archive/, never delete them.
+- In these projects intents.md and dialogs.md are **frozen founding documents** after first build — do not modify them at all (not even with permission); change goes through an amendment via /parlay-refine, and check-drift reports frozen-doc edits as ledger_integrity violations.
+
 ## Multi-Root Layout
 
 This project has registered child roots. Each child has its own

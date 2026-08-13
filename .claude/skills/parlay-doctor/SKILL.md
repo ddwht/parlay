@@ -43,6 +43,9 @@ Gather state before proposing anything. None of these mutate:
 - `parlay internal check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
 - `parlay internal collect-questions @{feature}` — unresolved `Questions:` blocks
 - `parlay internal check-drift @{feature}` — sources changed since the last build
+- `parlay internal check-amendments @{feature}` — ledger projects only
+  (`.parlay/config.yaml` carries `ledger: true`): amendment ledger health and
+  the declared dirty set
 
 Then detect pending migrations by looking at what is on disk:
 
@@ -56,6 +59,13 @@ Then detect pending migrations by looking at what is on disk:
 | intents with **Verify** bullets whose sourcing operations/fragments lack `verify:` | verify bullets → contract artifacts | `parlay migrate-verify` (run `--dry-run` first; it prints the would-be routing) |
 
 ### 2. Enhance coverage findings with semantic matching
+
+**Ledger projects: run this analysis only for features not yet built.** After
+first build the founding docs freeze, an intent↔dialog gap in frozen
+documents is a historical fact rather than a repairable finding, and the
+sync that would "fix" it is exactly the write the freeze forbids. Coverage
+is a birth-time concern there; skip it for frozen features and say so in the
+report.
 
 `check-coverage` matches intents to dialogs on title and word overlap, so it
 reports false gaps. Before presenting anything:
@@ -78,6 +88,41 @@ If drifted intents exist, do not just report the hashes:
 - Note that a changed **shared** source (`domain-model.yaml`, the adapter)
   dirties every feature that reads it, not just the one you asked about.
   `check-drift` reports these under `shared_sources_changed`.
+
+### 3.5 Ledger findings (ledger projects only)
+
+In a `ledger: true` project, `check-drift` carries two extra fields and
+`check-amendments` adds a third dimension. Each finding has one right
+disposition:
+
+- **`unapplied_amendments`** — the ledger records a decision whose delta
+  never reached the contract artifacts. This is the highest-priority ledger
+  finding: the project's recorded history and its current contract disagree.
+  Route to `/parlay-refine` — its apply step is the only path that clears
+  the tail. Do not apply the delta ad hoc from doctor.
+- **`ledger_integrity`** — a frozen founding doc was edited, or a recorded
+  amendment was mutated or deleted. Present the specific findings and offer
+  exactly two repairs, both destructive-adjacent and both needing explicit
+  confirmation:
+  - **Restore** — `git checkout` the affected file(s) back to the recorded
+    state. The right answer almost always; history stays intact.
+  - **Bless and refreeze** — accept the edited state as the new frozen
+    text by re-running `parlay internal save-build-state` for the feature
+    after a full green test run. This rewrites what "frozen" means and is
+    only correct when the edit was itself a sanctioned correction (e.g. a
+    typo fix a human insists on keeping). Name the cost out loud before
+    doing it: the ledger no longer explains this change.
+- **Compaction advisor** — count the ledger. When a feature exceeds **8
+  amendments**, or `supersedes:` chains touch the same `affects:` ref more
+  than twice, recommend re-founding (advice only, never automatic):
+  1. Generate a fresh founding intent set from the current contract
+     artifacts — what the feature is NOW, stated once.
+  2. Decision-gate it with the designer, then replace intents.md/dialogs.md
+     with the approved text.
+  3. Move the existing ledger to `amendments/archive/` (retained, never
+     deleted) and start the sequence fresh.
+  4. Re-run the build phases and `save-build-state` so the baseline
+     refreezes on the new founding text.
 
 ### 4. Report, then offer
 

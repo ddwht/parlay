@@ -190,3 +190,38 @@ func TestMoveFeature_WrongType_Initiative(t *testing.T) {
 		t.Errorf("expected initiative error message, got: %v", err)
 	}
 }
+
+// A ledger feature's amendments/ directory is part of its spec tree and must
+// travel with the move — a ledger left behind reads as "this feature has no
+// history", which is the silent-loss shape the ledger model exists to
+// prevent. The move is a whole-directory rename, so this is pinned rather
+// than implemented; the test exists so a future per-file move cannot drop
+// the zone unnoticed.
+//
+// parlay-feature: parlay-tool/ledger-and-contract
+func TestMoveFeature_AmendmentsTravelWithTheFeature(t *testing.T) {
+	setupMoveTestProject(t)
+	createFeatureInTree(t, "billing")
+
+	amDir := filepath.Join(config.SpecDir, config.IntentsDir, "billing", "amendments")
+	os.MkdirAll(amDir, 0755)
+	amendment := "---\namendment: first\ndate: 2026-08-13\naffects: [\"@billing/operation:x\"]\n---\n## Change\na\n"
+	os.WriteFile(filepath.Join(amDir, "001-first.md"), []byte(amendment), 0644)
+
+	resetFlagsAfterTest(t, moveFeatureCmd.Flags())
+	moveToFlag = "revenue"
+	moveOutFlag = false
+
+	if err := runMoveFeature(testCommandWithContext(t, testContext(t)), []string{"@billing"}); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := filepath.Join(config.SpecDir, config.IntentsDir, "revenue", "billing", "amendments", "001-first.md")
+	data, err := os.ReadFile(moved)
+	if err != nil {
+		t.Fatalf("amendment did not travel with the feature: %v", err)
+	}
+	if string(data) != amendment {
+		t.Errorf("amendment content changed during the move")
+	}
+}

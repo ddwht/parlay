@@ -47,6 +47,25 @@ Who resolves it depends on where you are running. If you own the user interactio
    - Acceptance criteria (from intent constraints)
    - Format according to the configured SDD framework (e.g., GitHub SpecKit)
 
+   **Ledger projects** (`.parlay/config.yaml` carries `ledger: true`): this
+   document doubles as the ledger's **projection** — the always-derivable
+   "current state in prose" the compaction model depends on. Three changes:
+   - **The contract artifacts are the source of current truth**, not the
+     founding docs: where the list above says "from intents" or "from dialog
+     flows", read the frozen founding docs for the feature's original story,
+     then apply every amendment in `spec/intents/{feature}/amendments/` in
+     sequence order — an amendment's Change supersedes what it amends, and
+     `supersedes:` chains resolve to the latest entry. Acceptance criteria
+     come from the artifacts' `verify:` fields, which the apply step keeps
+     current.
+   - **Add a "History" section**: one line per amendment (`NNN <slug> —
+     <date> — <trigger>`), so a reader sees how the feature got its shape
+     without opening the ledger.
+   - **Stamp the header generated-and-regenerable**: this file is a
+     projection, never hand-edited, and regenerating it must always be safe.
+     Include the `last-applied-amendment` sequence it was generated at, so a
+     stale projection is detectable by eye.
+
 4. **Report** — Print the specification path and the SDD format used. Remind the user to review before handoff.
 
 ## Error Handling
