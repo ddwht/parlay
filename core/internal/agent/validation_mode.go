@@ -177,6 +177,22 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,
 	},
+	// An amendment without acceptance bullets is legitimate for renames
+	// and pure-prose changes — the field exists for behavior changes, and
+	// only the author knows which kind this is. A warning in both modes
+	// states the expectation without blocking the legitimate cases.
+	"amendment-missing-acceptance": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	// A gap in the sequence numbers is what an archived-then-compacted
+	// ledger legitimately looks like; a DUPLICATE sequence number is a
+	// collision and stays at the default error severity under its own
+	// code (amendment-out-of-sequence).
+	"amendment-sequence-gap": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 }
 
 // unknown-turn-form is deliberately absent from this table, so it is an

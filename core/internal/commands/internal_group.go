@@ -68,6 +68,7 @@ func registerInternalCommands() {
 		toolchainPlanCmd,
 		scaffoldSeedCmd,
 		checkCompositionCmd,
+		checkAmendmentsCmd,
 		domainImpactCmd,
 		schemaDigestCmd,
 		emissionGroupsCmd,

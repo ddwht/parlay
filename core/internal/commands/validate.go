@@ -163,6 +163,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateIntentsDeep)
 	case "dialog":
 		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateDialogsDeep)
+	// parlay-feature: parlay-tool/ledger-and-contract
+	// parlay-component: amendment-artifact
+	case "amendment":
+		// Single-file shape only; ledger-level checks (sequence, supersedes,
+		// affects resolution) live in `parlay internal check-amendments`.
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateAmendment)
 	case "surface":
 		validator = agent.ValidateSurface
 	case "buildfile":
