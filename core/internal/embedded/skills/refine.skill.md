@@ -125,6 +125,24 @@ step 2.5 is unchanged: an ask that is a new feature still goes to
 `/parlay-loop`, which authors founding docs for the NEW feature — birth is
 not what froze.
 
+**Scope your reading, not just your writes.** The amendment's `affects:`
+names the dirty entries before any hashing happens. Use it: at steps 5.5–6,
+load the dirty components and their immediate neighbors from the buildfile
+rather than the whole file — a 2,500-line buildfile read wholesale to change
+one component is where a refinement's cost actually goes. The stable entries
+are preserved verbatim by construction; you do not need them in context to
+leave them alone.
+
+**Test narrowing is an opt-in, not the ledger default.** `parlay internal
+affected-set @{feature}` answers "who could this change touch" — the feature
+plus every feature whose buildfile references it. Step 8 still runs the full
+suite: narrowing the interactive run to the affected set trades "never bless
+untested code" from per-run to per-backstop, and that trade is the
+project's to make, not this skill's. Narrow only when BOTH hold: the user
+has said so for this project, and an unconditional full-suite gate exists
+somewhere scheduled (CI, nightly). When you do narrow, say so in the step-11
+report — which mode ran is part of what was blessed.
+
 ## Steps
 
 1. **Resolve the feature** — If `feature` was given, use it. Otherwise infer it
