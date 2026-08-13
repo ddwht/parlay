@@ -771,6 +771,7 @@ func TestMatrix_SurfaceListCoversTheCheckCommands(t *testing.T) {
 		"check-supports":    "multi-target projects only; every fixture here is presentation-only",
 		"check-write-set":   "guards a codegen write set, which none of these fixtures has",
 		"check-review-gate": "gates the coverage-review artifact, which none of these fixtures has",
+		"check-amendments":  "validates the amendment ledger, which exists only in parlay.ledger projects; every fixture here is flag-off with no amendments/ directory",
 	}
 
 	entries, err := os.ReadDir(packageSourceDir(t))
