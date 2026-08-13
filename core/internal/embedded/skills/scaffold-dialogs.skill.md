@@ -31,7 +31,14 @@ Generate complete dialogs from authored intents, and update existing dialogs whe
    - The generated dialogs should be complete enough that the designer can review and approve with minor edits — not empty templates requiring rewriting
    - Run `parlay create-dialogs @{feature}` for the mechanical scaffolding, then enrich each template with full content
 
-4. **Update existing dialogs** — For intents that already have dialogs, compare each dialog against its current intent:
+4. **Update existing dialogs** — Skip this step entirely in a ledger project
+   (`.parlay/config.yaml` carries `ledger: true`): there, dialogs freeze at
+   feature birth as founding documents, intents cannot have changed underneath
+   them (check-drift enforces the freeze), and post-birth change is recorded
+   in the amendment ledger instead of re-synced into the transcript. This
+   skill's job in ledger mode is step 3 only, at birth. Otherwise — for
+   intents that already have dialogs, compare each dialog against its current
+   intent:
    - For new Constraints: generate a complete `#### Branch:` section with user turn, system response, and any sub-branches
    - For new Verify edge cases: generate a complete branch showing the edge case flow
    - For renamed intents: propose updating the dialog heading

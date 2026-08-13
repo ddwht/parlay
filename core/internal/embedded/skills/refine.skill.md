@@ -72,6 +72,59 @@ the wrong query and answers `stable` about files it never looked at.
 So amend-first buys one thing precisely: after step 4 you *know* where the
 change landed, which is the input step 5 needs. Use it there.
 
+## Ledger mode
+
+Read `.parlay/config.yaml` before step 3. If it carries `ledger: true`, this
+project runs the ledger-and-contract model and two things change about the
+steps below; if not, skip this section entirely — nothing else here applies.
+
+**The founding documents are frozen.** In a ledger project, `intents.md` and
+`dialogs.md` are the historical record of the feature's founding — never
+written again after first build. Do not splice them, do not re-sync dialogs
+to match a change, do not ask permission to edit them (the answer is
+structural, not personal). The contract artifacts — `surface.yaml`,
+`capabilities.yaml`, `infrastructure.md`, the domain model — are the current
+truth, and they are what step 4 amends. `check-drift` enforces this: an edit
+to a frozen doc surfaces as a `ledger_integrity` finding, not as drift.
+
+**The change is recorded before it is applied.** Insert this step between
+steps 3 and 4:
+
+3.5. **Record — append the amendment.** Write
+   `spec/intents/{feature}/amendments/NNN-{slug}.md` where NNN is one past
+   the highest existing sequence (001 for a first amendment):
+
+   - Frontmatter: `amendment:` (the slug, matching the filename),
+     `date:`, `trigger:` (what prompted this — name the asking feature as
+     `@feature` when the pressure is cross-feature), `affects:` (the
+     contract entries this changes, as `@{feature}/<kind>:<name>` refs with
+     kind one of `operation | surface | infrastructure | domain`), and
+     `supersedes:` (earlier amendment slugs this replaces, usually empty).
+   - Body: `## Change` (the delta, in prose — never a restatement of the
+     feature), `## Why` (the reasoning; this is the only place it gets
+     recorded), `## Acceptance` (criteria; step 4 lands them as `verify:`
+     entries on the affected artifact entries — omit only for renames and
+     pure-prose changes).
+
+   **Decision-gate the exact file content before writing** — same rule as
+   step 4's gate, and the two are one decision when convenient: show the
+   amendment and the artifact splice together. An amendment is written once
+   and never edited; a correction later is a new amendment naming this one
+   in `supersedes:`. After writing, run
+   `parlay internal check-amendments @{feature}` — it validates the ledger
+   and every `affects:` ref, and its `dirty_set` should agree with what
+   step 5's diff reports dirty. A disagreement means the amendment or the
+   splice is wrong; stop and reconcile rather than proceeding.
+
+Step 4 then applies the delta **to contract artifacts only** — the ledger
+branch of step 3's altitude table routes "user-visible" to `surface.yaml`
+(the narrative record already happened in 3.5). Steps 5–10 run unchanged;
+step 9's re-baseline records the new amendment as applied, which is what
+clears it from `check-drift`'s `unapplied_amendments`. The feature-gate in
+step 2.5 is unchanged: an ask that is a new feature still goes to
+`/parlay-loop`, which authors founding docs for the NEW feature — birth is
+not what froze.
+
 ## Steps
 
 1. **Resolve the feature** — If `feature` was given, use it. Otherwise infer it
