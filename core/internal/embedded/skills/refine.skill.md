@@ -347,13 +347,21 @@ report — which mode ran is part of what was blessed.
    `--strict` would then fail on all of them. With the manifest, files this run
    did not touch keep the verdict they already had.
 
-10. **Re-review coverage** — `parlay review-coverage @{feature}`.
+10. **Re-review coverage** — but ask the gate what actually needs it first:
+    `parlay internal check-review-gate @{feature}` reports `stale_suites` —
+    the approved suites whose testcases changed since the review. When the
+    review carries per-suite hashes, a one-suite refinement stales exactly
+    one suite, and the re-review walk is that suite, not all of them. Tell
+    the reviewer which suites they are re-approving and why those.
 
-    Not optional, and not tidiness. The refinement changed the buildfile, which
-    invalidates the hashes `coverage-review.yaml` pins, so the review gate exits
-    non-zero on the *next* codegen run — after this command has reported
-    success and everyone has moved on. Chaining it here is what keeps a refined
-    project in a state the next command can actually work from.
+    Then `parlay review-coverage @{feature}`. Not optional, and not
+    tidiness. The refinement changed the buildfile, which invalidates the
+    hashes `coverage-review.yaml` pins, so the review gate exits non-zero on
+    the *next* codegen run — after this command has reported success and
+    everyone has moved on. Chaining it here is what keeps a refined project
+    in a state the next command can actually work from. (A review predating
+    per-suite hashes stales whole-file; the first re-run writes the
+    per-suite form and the narrowing applies from then on.)
 
     Use `--exempt <suite>:<item>=<reason>` for terms that legitimately have no
     covering case.
