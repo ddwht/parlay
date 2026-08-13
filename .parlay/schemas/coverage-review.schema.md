@@ -16,6 +16,9 @@ reviewed_by: <reviewer identifier — email, login, or "cli">
 review_method: <cli | ide | api>
 buildfile_hash: <sha256 of buildfile.yaml canonical form>
 testcases_hash: <sha256 of testcases.yaml canonical form>
+suite_hashes:
+  <suite-id>: <sha256 of that suite's canonical form>
+  <suite-id>: <sha256 of that suite's canonical form>
 approved_suites:
   - <suite-id>
   - <suite-id>
@@ -32,7 +35,8 @@ exemptions:
 | `reviewed_by` | Yes | Reviewer identifier. |
 | `review_method` | Yes | `cli`, `ide`, or `api`. |
 | `buildfile_hash` | Yes | SHA-256 hash over the canonical-form serialization of `buildfile.yaml`. |
-| `testcases_hash` | Yes | SHA-256 hash over the canonical-form serialization of `testcases.yaml`. |
+| `testcases_hash` | Yes | SHA-256 hash over the canonical-form serialization of `testcases.yaml`. Whole-file fallback for reviews without `suite_hashes`. |
+| `suite_hashes` | No | Map of suite id (or name, when a suite has no id) to the SHA-256 hash of that suite's canonical form. Present in reviews written by current `parlay review-coverage`; its presence switches testcases staleness from whole-file to per-suite. Absent reviews fall back to `testcases_hash`. |
 | `approved_suites` | Yes | List of suite ids the reviewer has approved. Every required suite must appear or be exempted. |
 | `exemptions` | No | List of `{ suite, item, reason }` entries documenting why a required term has no covering case. `item` is the **covered term** — an operation id, an error code, whatever `source_refs:` names — never the suite id. The gate keys on the term, so a suite-keyed entry can never discharge anything. |
 
@@ -51,7 +55,8 @@ Hashes are computed over a canonical-form serialization (sorted map keys, normal
 | Code | When it fires |
 |---|---|
 | `coverage-review-missing` | The file does not exist. Codegen refuses to start. |
-| `coverage-review-stale` | `buildfile_hash` or `testcases_hash` differs from the current canonical-form hash. Names the drifted hash. |
+| `coverage-review-stale` | `buildfile_hash` differs from the current canonical-form hash, or — for a review without `suite_hashes` — `testcases_hash` differs. Names the drifted hash. |
+| `coverage-review-suite-stale` | A review with `suite_hashes` approved a suite whose canonical form has since changed. Fires per drifted suite, naming it, so only those need re-review; unchanged approved suites stay valid. |
 | `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
 | `coverage-review-uncovered` | A canonical-form-required term (declared error, declared operation) lacks both a covering testcase and an explicit exemption. |
 

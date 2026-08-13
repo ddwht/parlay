@@ -39,6 +39,11 @@ type reviewGateOutput struct {
 	Feature string            `json:"feature"`
 	Ready   bool              `json:"ready"`
 	Issues  []reviewGateIssue `json:"issues"`
+	// StaleSuites names the approved suites whose testcases changed since the
+	// review, so the caller can re-review only those instead of walking every
+	// suite. Empty on old-format reviews (whole-file staleness) and when
+	// nothing drifted.
+	StaleSuites []string `json:"stale_suites,omitempty"`
 }
 
 func runCheckReviewGate(cmd *cobra.Command, args []string) error {
@@ -110,11 +115,18 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 	// minimum bar.
 	required := requiredSuiteIDs(tcContent)
 
+	// Per-suite hashes of the current testcases; a parse failure here leaves
+	// this nil, and the validator falls back to whole-file staleness. A nil
+	// map is not an error at this layer — the same content already hashed
+	// whole-file above.
+	suiteHashesNow, _ := agent.SuiteHashes(tcContent)
+
 	in := agent.CoverageReviewInputs{
 		ReviewPath:       reviewPath,
 		Feature:          slug,
 		BuildfileHashNow: bfHash,
 		TestcasesHashNow: tcHash,
+		SuiteHashesNow:   suiteHashesNow,
 		RequiredSuites:   required,
 	}
 	for _, o := range agent.ValidateCoverageReview(agent.ModeBuild, in) {
@@ -125,6 +137,13 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 				Message:  o.Message,
 			})
 		}
+	}
+
+	// Name the drifted suites for the caller, so re-review can target only
+	// them. Best-effort: a review that failed to parse already surfaced above
+	// as an issue, and an empty list here is the honest answer in that case.
+	if cr, err := parser.ParseCoverageReview(reviewPath); err == nil {
+		out.StaleSuites = agent.PerSuiteStale(cr.SuiteHashes, suiteHashesNow, cr.ApprovedSuites)
 	}
 
 	out.Ready = len(out.Issues) == 0

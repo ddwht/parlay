@@ -23,6 +23,11 @@ type CoverageReview struct {
 	ReviewMethod   string             `yaml:"review_method"`
 	BuildfileHash  string             `yaml:"buildfile_hash"`
 	TestcasesHash  string             `yaml:"testcases_hash"`
+	// SuiteHashes records a canonical-form hash per suite so the gate can tell
+	// which suites drifted rather than invalidating the whole review when any
+	// one changes. Absent in reviews written before per-suite staleness
+	// existed; the gate falls back to TestcasesHash when it is empty.
+	SuiteHashes    map[string]string  `yaml:"suite_hashes,omitempty"`
 	ApprovedSuites []string           `yaml:"approved_suites"`
 	Exemptions     []CoverageExemption `yaml:"exemptions,omitempty"`
 }

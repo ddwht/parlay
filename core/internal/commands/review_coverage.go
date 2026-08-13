@@ -104,6 +104,10 @@ func runReviewCoverage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("hash testcases: %w", err)
 	}
+	suiteHashes, err := agent.SuiteHashes(tcContent)
+	if err != nil {
+		return fmt.Errorf("hash suites: %w", err)
+	}
 
 	// source_refs is read as well as name, because an exemption is keyed
 	// on the TERM a suite was supposed to cover, not on the suite. See the
@@ -177,6 +181,7 @@ func runReviewCoverage(cmd *cobra.Command, args []string) error {
 		ReviewMethod:   "cli",
 		BuildfileHash:  bfHash,
 		TestcasesHash:  tcHash,
+		SuiteHashes:    suiteHashes,
 		ApprovedSuites: approved,
 		Exemptions:     exemptions,
 	}

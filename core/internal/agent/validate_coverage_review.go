@@ -24,6 +24,7 @@ type CoverageReviewInputs struct {
 	Feature           string
 	BuildfileHashNow  string
 	TestcasesHashNow  string
+	SuiteHashesNow    map[string]string // per-suite canonical hashes of the on-disk testcases
 	RequiredSuites    []string // every suite present in testcases.yaml
 	RequiredCoverage  []string // every term that needs coverage (operations, errors)
 }
@@ -50,7 +51,19 @@ func ValidateCoverageReview(mode ValidationMode, in CoverageReviewInputs) []Vali
 		outcomes = append(outcomes, NewOutcome(mode, "coverage-review-stale",
 			fmt.Sprintf("buildfile_hash drift: review records %s, current is %s — run `parlay review-coverage %s`", cr.BuildfileHash, in.BuildfileHashNow, in.Feature)))
 	}
-	if cr.TestcasesHash != in.TestcasesHashNow {
+
+	// Testcases staleness is per-suite when the review carries suite_hashes,
+	// so editing one suite invalidates only that suite's approval and leaves
+	// the rest reviewable. A review written before per-suite hashing has no
+	// suite_hashes; it falls back to the whole-file testcases_hash, which
+	// stales the entire review on any change — the original behavior, kept so
+	// old reviews stay valid until re-run.
+	if len(cr.SuiteHashes) > 0 {
+		for _, suite := range PerSuiteStale(cr.SuiteHashes, in.SuiteHashesNow, cr.ApprovedSuites) {
+			outcomes = append(outcomes, NewOutcome(mode, "coverage-review-suite-stale",
+				fmt.Sprintf("suite %q was approved but its testcases changed since — re-review with `parlay review-coverage %s`", suite, in.Feature)))
+		}
+	} else if cr.TestcasesHash != in.TestcasesHashNow {
 		outcomes = append(outcomes, NewOutcome(mode, "coverage-review-stale",
 			fmt.Sprintf("testcases_hash drift: review records %s, current is %s — run `parlay review-coverage %s`", cr.TestcasesHash, in.TestcasesHashNow, in.Feature)))
 	}
