@@ -264,3 +264,102 @@ Interim conclusion (pre-judges): the **pilot's −14% and this run's +40% bracke
 inversion's savings are real where the machinery cooperates (pilot; R4 here) and are currently
 overwhelmed by implementation frictions accumulating with ledger depth (L-series). The fix
 backlog above is the path to the model's measured potential; re-benchmark after L1–L18 fixes.
+
+### Update 7 — resume aftermath: accidental crash-recovery and idempotency probes
+
+Methodology caveat first: the post-limit resume re-dispatched some already-completed mid-leg
+steps instead of replaying them from cache, so replicates 2–3 carry duplicate/no-op step runs and
+out-of-order commit labels — their wall-clocks are NOT comparable and are excluded from the cost
+analysis (replicate 1 remains the clean dataset). But the collision produced two accidental
+stress tests worth more than the lost comparability:
+
+- **F12 — refine has no idempotency branch:** ~8 re-run agents found their exact ask already
+  implemented and committed. The skill has no path for "the owning artifact already says what the
+  ask requests" — every step from amend through re-review assumes the run makes a change. Agents
+  improvised well (verified equivalence, recorded no-op, some used `--allow-empty` to honor the
+  commit mandate), but each improvised differently. Fix: an explicit early exit — "if the
+  requested state already holds, verify and report, touch nothing."
+- **F13 — no crash-recovery story for an interrupted refine:** two clones were handed over with
+  a half-finished refine in the working tree (amendment written + surface spliced, code NOT yet
+  changed — the exact mid-flight state the session limit created). Nothing in refine, doctor, or
+  the ledger checks describes how to recognize or resume/roll back a partial refine; agents had
+  to forensically reconstruct what the dead agent had been doing. The ledger actually helped
+  here (the uncommitted amendment file WAS the recovery record) — worth formalizing: doctor
+  should detect "amendment present but unapplied AND working tree dirty" as an interrupted-refine
+  state with a resume procedure.
+- **F14 — skill claims AskUserQuestion works in refine:** the deployed skill's "Asking the user"
+  section asserts the skill is always driven by a person; run as a subagent that is false and
+  contradicts the CLAUDE.md subagent rule. Align the skill text with the decision-block protocol.
+- **F15 — uniform `built_at` exposes the baseline-churn bug at the user level:** because
+  save-build-state re-stamps every feature's baseline, all 42 features report the IDENTICAL
+  `built_at` — the F2 engine bug is now visible in shipped JSON output, not just in noisy diffs.
+- **F16 — enggspec has no precedence rule for contradicting co-equal artifacts:** the handoff
+  author found intents/infrastructure asserting five phases while the amended surface says
+  otherwise, with no rule for which wins (in ledger mode the contract artifacts should win — the
+  projection guidance says so only implicitly). Also: producing specification.md for one feature
+  creates a handoff-tree entry that tree-parity checks then count against every other feature.
+- **F17 — source-root narrowing silently drops tracked files:** passing the adapter's narrower
+  source-root writes a shrunken code-hashes file — out-of-scope entries vanish with only a WARN;
+  and a pristine-HEAD save in one clone flagged 262 files as changed-outside-codegen (stale
+  committed baselines), confirming the clones needed pre-baselining as a harness step.
+- Late tail steps that ran clean confirm the L-series list without additions — L7 (dirty_set
+  union vs diff) reproduced verbatim twice more, L4/L8/L9 each once more; the R5 ledger step
+  (900s) and R4 ledger step (933–1022s) remain the slowest, consistent with rep1.
+
+## Final — judges' verdicts (3 replicates) and consolidated conclusions
+
+**R5, the deliberate reversal (3/3 judges agree):** both variants end unambiguous about current
+behavior, but status quo's in-place re-edit **erases the decision trail** — no in-repo record
+that `complete` ever existed; the journey lives only in git. The ledger's supersedes chain
+preserves it and the projection surfaces it ("001 superseded by 005", net-effect note). The
+replicate-3 pair adds the strongest quality datapoint of the whole run: **the status-quo leg
+shipped a real regression** — `✓ done` leaked into `--quiet`, breaking its documented two-field
+contract, *with a test blessing the broken output* and a self-contradicting handoff (FR-030 vs
+FR-031) — while the ledger leg, holding amendment 002's recorded contract in view, scoped the
+label to the human table only and documented why. The record didn't just describe quality; it
+produced it.
+
+**R6, the handoff (3/3 split verdict):** the ledger projection wins on provenance (regenerable,
+History section, supersedes chain, `last-applied-amendment` stamp); the status-quo handoff wins
+on code fidelity — it cross-checked the shipped Go and caught field bleed the projection missed.
+The projection's failure mode is precise: **it trusts the frozen founding docs for vocabularies**
+(claimed a five-value phase enum while code ships six) and never reads code. Fix in the
+projection guidance: current truth = contract artifacts + a code cross-check; founding docs are
+history only.
+
+**New findings from the judges:**
+
+- **F18 — supersedes chains are half-linked:** 005 supersedes 001, but 001 carries no forward
+  pointer (read alone, it asserts stale behavior), and 002's acceptance also mentions the retired
+  label yet was never superseded. Fixes: check-amendments should surface superseded-by links
+  when reading, and search later amendments' scope against earlier Acceptance text (the L15
+  wiring); the projection already partially compensates.
+- **F19 — projection must be code-aware** (above).
+- **F20 — no gate fires on buildfile-models vs contract divergence:** in BOTH variants, additive
+  JSON fields left buildfile `models:` stale (FeatureEntry lacks `built_at`, envelope lacks the
+  orphan count), caught only by human handoff authors. A validator comparing buildfile models
+  against contract artifacts would close it.
+- Judge-confirmed from step reports: L13 (the corrupted amendment 004, verbatim), P1/F5
+  (surface.md vestigial and now actively contradictory in every clone, both variants), and the
+  harness's own duplicate/empty commits in reps 2–3 (excluded from analysis).
+
+## Overall verdict
+
+1. **Record quality: ledger wins decisively** — 3/3 judges on reconstruction, plus the r3
+   regression-prevention datapoint where the record functioned as a live guardrail.
+2. **Cost: currently a wash with the truth bracketed** — pilot −14% vs rep1 +40%; the overhead is
+   attributable, finding by finding, to the L-series implementation flaws, not to the model.
+   Cost-of-Nth-refinement cannot be declared won until those are fixed and re-measured.
+3. **The benchmark's real yield is the fix backlog:** ~20 distinct, actionable findings
+   (F1–F20, L1–L18, P1–P3 resolved into them) spanning engine bugs (F2/F3/L4/L8/F17), skill/CLI
+   mismatches (F1/L5/L6/F14), and model-level gaps (L13 ledger integrity, F18 supersedes
+   linking, F19 code-aware projection, F12 idempotency, F13 crash recovery).
+
+**Recommended order:** (1) safety: L13 + F13 + L8/L4 (corruption, crash recovery, silent state
+loss); (2) honesty of the machinery: L7 dirty-set scoping + F20 models gate + F18 supersedes
+links; (3) cost: F2 partial-baseline scoping (also fixes F15), F3 unattended coverage path,
+retire surface.md (P1/F5); (4) then re-run this gauntlet — same asks, fresh clones — to measure
+the model's true cost against a toolchain that isn't fighting itself.
+
+Run totals: 39 agents, ~5.8M subagent tokens across both sessions, 6 clones, 36 gauntlet steps,
+3 judges, every suite green at every completed step in both variants.
