@@ -206,6 +206,55 @@ ratchet immediately after (A without B decays at a measured rate — six agents 
 run). Each semantic reconciliation in A leaves a one-line note in the owning schema/skill
 saying which reading won and why, so the next span-edit has something to collide with.
 
-## Theme 4 — where rationale lives · pending
+## Theme 4 — where rationale lives · DECIDED 2026-08-16
+
+### The problem, as the user experiences it
+
+A later reader — teammate, future self, cleanup agent — finds a rule contradicting the engine
+with no stated reason and "fixes" it, deleting a user-confirmed decision. A bug fixed during
+codegen returns silently on the next regeneration because the fix lived in a generated file.
+Measured cost of one skipped re-derivation: zero behavior, 35 lines of rationale. A missing
+reason doesn't fail a test; it fails the next person.
+
+### Root causes
+
+1. **Rationale has no assigned layer** — behavior compiles deterministically; the why is
+   comment-shaped and lands wherever emission drops it, so partial runs strand it in one
+   layer of several.
+2. **Codegen makes decisions but has no durable output channel** — its legitimate discoveries
+   live only in files that are overwritten by contract.
+3. **The spec is structurally unavailable as the home — correctly** — implementation
+   decisions name call sites; the portability lint forbids that, and should.
+4. **Transmission depends on agent context surviving** — both observed fixes lived only
+   because a report stayed in a driver's context; the expiring transcript was the near-miss.
+5. **Deliberate is indistinguishable from accidental** — ad-hoc DELIBERATE comments,
+   unchecked, are the only marker.
+
+### Options considered
+
+- **A. `decisions:` block in the buildfile, preserved verbatim** — per-component records of
+  codegen judgment calls (what, why, which files enforce it), read by the next emission,
+  superseded explicitly. Two facts make the buildfile the right home rather than a convenient
+  one: the `wiring:` preservation precedent (mechanics exist), and codegen's allowlisted
+  read-set already includes the buildfile (zero read-set widening). Needs anti-rot: a
+  decision names what would obsolete it. Human visibility via the handoff projection.
+- **B. Rationale propagation check** — elements carrying an explicit deliberate marker (the
+  `rationale:` field shipped in Phase 0.1, or `deliberate:` on buildfile entries) must be
+  referenced in every emitted file the element touches; a validator warns on stranding.
+  Scoped to explicitly-marked elements only — never inferred — to avoid comment spam.
+- **C. Route codegen decisions through the ledger** — rejected on altitude: amendments record
+  what the product should do and why; implementation learnings belong one layer down. Linked
+  (a decision may cite an amendment), not merged.
+- **D. Separate decisions.yaml beside the buildfile** — rejected on the read-set: codegen's
+  allowlist is one of the two mechanisms both findings corpora independently praised; not
+  worth widening for a file-layout preference.
+
+### Decision
+
+**A + B; C and D rejected.** Two halves of one rule: every deliberate decision has exactly
+one durable home and provably reaches its readers. Spec-level decisions live on the contract
+(`rationale:`/`verify:`, already built) with B enforcing propagation; implementation-level
+decisions live in the buildfile's `decisions:` block with wiring-style preservation, so the
+next emission starts from what the last one learned — mechanism on disk, not agent memory.
 
 ## Theme 5 — composition arbitration · pending
