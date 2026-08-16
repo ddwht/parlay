@@ -686,6 +686,147 @@ func TestSaveBuildState_PartialBlessesOnlyEmittedFeature_BP6(t *testing.T) {
 	}
 }
 
+// WP6.1 finding 1 (the headline false-stable). A --partial save must NOT
+// advance the project-level merged-section baseline, because those hashes are
+// a whole-project instant: the `blueprint` section covers a cross-cutting
+// artifact no single feature owns, and it lives ONLY in the project merged
+// baseline (the per-feature hashers never read the blueprint). Before WP6.1,
+// stage 2 recomputed and stored the merged sections on every save, partial
+// included, so an unrelated refine on feat-a would absorb a blueprint change
+// and flip `parlay diff`'s project verdict from `changed` to `stable` with no
+// other detector to catch it — a false-stable. The fix carries the stored
+// merged sections forward verbatim under --partial.
+func TestWP6_PartialSaveClearsBlueprintDrift_FALSESTABLE(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "feat-a", "Alpha")
+	authorFeature(t, cfg, "feat-b", "Beta")
+
+	root := filepath.Join(dir, "cmd")
+	fileA := filepath.Join(root, "a", "a.go")
+	fileB := filepath.Join(root, "b", "b.go")
+	writeMarkedFile(t, fileA, "feat-a", "a", "package a")
+	writeMarkedFile(t, fileB, "feat-b", "b", "package b")
+
+	// A blueprint exists and is part of the project-wide merged instant.
+	if err := os.MkdirAll(filepath.Dir(cfg.BlueprintPath()), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.BlueprintPath(), []byte("version: 1\nshells: [app]\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Full save blesses everything, storing the blueprint hash in the project
+	// merged sections.
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("initial full save: %v", err)
+	}
+	features, err := discoverFeatures(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := computeProjectSectionDiff(cfg, features)["blueprint"]; v != "stable" {
+		t.Fatalf("blueprint must be stable right after the full save, got %q", v)
+	}
+
+	// The blueprint changes (cross-cutting code is now behind). The project
+	// diff must see it.
+	if err := os.WriteFile(cfg.BlueprintPath(), []byte("version: 2\nshells: [app, admin]\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if v := computeProjectSectionDiff(cfg, features)["blueprint"]; v != "changed" {
+		t.Fatalf("blueprint must report changed after it is edited, got %q", v)
+	}
+
+	// An unrelated partial refine on feat-a, which touched nothing about the
+	// blueprint, emits only feat-a's file.
+	emittedPath := filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest)
+	if err := os.WriteFile(emittedPath, []byte(fileA+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	saveBuildStatePartial = true
+	saveBuildStateEmitted = emittedPath
+	t.Cleanup(func() { saveBuildStatePartial = false; saveBuildStateEmitted = "" })
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("partial save: %v", err)
+	}
+
+	// The false-stable: after the partial save the blueprint drift must STILL
+	// be visible. A partial run has no standing to bless a cross-cutting change
+	// it never addressed.
+	if v := computeProjectSectionDiff(cfg, features)["blueprint"]; v == "stable" {
+		t.Error("FALSE-STABLE: a --partial save that never touched the blueprint cleared its project-level drift; blueprint reported stable when it must stay changed until a full save")
+	}
+}
+
+// WP6.1 finding 2 (project-aggregate false-stable). If an un-emitted feature's
+// buildfile changes (re-planned, code not regenerated) and then a --partial
+// save emits only a different feature, stage 2 must not fold the un-emitted
+// feature's current buildfile into the blessed merged sections — doing so
+// masks its buildfile drift at the project view. Same root cause as finding 1:
+// stage 2 is a whole-project instant a partial run cannot advance.
+func TestWP6_PartialSaveMasksUnemittedBuildfileAtProjectLevel(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "feat-a", "Alpha")
+	authorFeature(t, cfg, "feat-b", "Beta")
+
+	root := filepath.Join(dir, "cmd")
+	fileA := filepath.Join(root, "a", "a.go")
+	fileB := filepath.Join(root, "b", "b.go")
+	writeMarkedFile(t, fileA, "feat-a", "a", "package a")
+	writeMarkedFile(t, fileB, "feat-b", "b", "package b")
+
+	// Both features have buildfiles with a models section, which the project
+	// merged-section hash concatenates across features.
+	writeBuildfileModels := func(slug, models string) {
+		bfDir := cfg.BuildPath(slug)
+		if err := os.MkdirAll(bfDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bfDir, "buildfile.yaml"), []byte(models), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBuildfileModels("feat-a", "models:\n  - name: Alpha\n")
+	writeBuildfileModels("feat-b", "models:\n  - name: Beta\n")
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("initial full save: %v", err)
+	}
+	features, err := discoverFeatures(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := computeProjectSectionDiff(cfg, features)["models"]; v != "stable" {
+		t.Fatalf("models must be stable right after the full save, got %q", v)
+	}
+
+	// feat-b's buildfile is re-planned; its code is not regenerated.
+	writeBuildfileModels("feat-b", "models:\n  - name: BetaPrime\n  - name: BetaExtra\n")
+	if v := computeProjectSectionDiff(cfg, features)["models"]; v != "changed" {
+		t.Fatalf("models must report changed after feat-b's buildfile moves, got %q", v)
+	}
+
+	// Partial save emits only feat-a.
+	emittedPath := filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest)
+	if err := os.WriteFile(emittedPath, []byte(fileA+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	saveBuildStatePartial = true
+	saveBuildStateEmitted = emittedPath
+	t.Cleanup(func() { saveBuildStatePartial = false; saveBuildStateEmitted = "" })
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("partial save: %v", err)
+	}
+
+	// feat-b's buildfile drift must survive at the project view — the partial
+	// save that emitted only feat-a must not bless it.
+	if v := computeProjectSectionDiff(cfg, features)["models"]; v == "stable" {
+		t.Error("FALSE-STABLE: a --partial save emitting only feat-a folded feat-b's re-planned buildfile into the blessed merged sections; models reported stable when feat-b's buildfile is still ahead of its code")
+	}
+}
+
 // A non-partial (full) save records no `emitted:` scope on the project
 // baseline: it blessed every feature at one instant, so there is nothing
 // narrower to audit. Guards the honest-record contract — an empty list would

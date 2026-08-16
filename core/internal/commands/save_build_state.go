@@ -308,7 +308,36 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	}
 
 	// --- Stage 2: Project-level baseline (merged section hashes) ---
-	mergedSections := hashMergedBuildfileSections(cfg, features)
+	// The merged section hashes are a whole-project instant: every hash
+	// concatenates one section across EVERY feature, and the blueprint hash
+	// covers a cross-cutting artifact no single feature owns. A --partial run
+	// regenerated only some features' code, so it has no standing to advance
+	// that instant. Recomputing and storing it here (the pre-WP6.1 behaviour,
+	// carried over from the whole-project save while stage 1 was made
+	// per-feature) folds every un-emitted feature's current buildfile — and the
+	// current blueprint — into the blessed hash, clearing project-level drift
+	// this run never addressed. That is the same false-stable WP6 exists to
+	// prevent, surfacing at the aggregate grain: an unrelated `parlay refine`
+	// on feature A would absorb a blueprint change (or feature B's re-planned
+	// buildfile) and flip `parlay diff`'s project verdict to stable with no
+	// other detector to catch it. Because the merge mixes emitted and
+	// un-emitted content into a single hash per section, there is no way to
+	// advance only the emitted contribution — so under --partial the stored
+	// merged sections are carried forward verbatim, mirroring stage 1's skip of
+	// un-emitted per-feature baselines. Only a full world-snapshot save
+	// advances them. The cost is a conservative false-DIRTY at the project view
+	// until the next full save (`parlay diff @feature` still reports the
+	// emitted feature clean from its per-feature baseline) — the safe direction.
+	var mergedSections map[string]string
+	if saveBuildStatePartial {
+		var stored ProjectBaseline
+		if data, readErr := os.ReadFile(projectBaselinePath(cfg)); readErr == nil {
+			_ = yaml.Unmarshal(data, &stored)
+		}
+		mergedSections = stored.MergedSections
+	} else {
+		mergedSections = hashMergedBuildfileSections(cfg, features)
+	}
 	projectBL := &ProjectBaseline{
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 		Emitted:        sortedFeatureSlugs(emittedFeatures),
