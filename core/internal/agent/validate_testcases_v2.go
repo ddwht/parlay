@@ -131,8 +131,14 @@ type caseCriterion struct {
 // otherwise), and a case's assertions must read only targets it declares it
 // observes (claims-unmet otherwise). isV2 gates the criterion warning — legacy
 // v1 suites predate the field and are already flagged by their own legacy code.
-func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, cases []map[string]yaml.Node) []ValidationOutcome {
+//
+// The second return is every criterion ref the suite's cases discharge — the
+// set the criterion-coverage walker holds the contract's verify: entries
+// against. It is collected here rather than re-decoded in the caller because the
+// criterion node is already decoded for the missing-ref check.
+func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, cases []map[string]yaml.Node) ([]ValidationOutcome, []string) {
 	var outcomes []ValidationOutcome
+	var criterionRefs []string
 	for i, c := range cases {
 		label := fmt.Sprintf("case %d", i+1)
 		if nameNode, ok := c["name"]; ok {
@@ -158,6 +164,8 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 			} else if err := node.Decode(&crit); err != nil || strings.TrimSpace(crit.Ref) == "" {
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
 					fmt.Sprintf("%s: suite %q %s has a criterion: with no ref — the ref cites the @feature/kind:name verify: entry the case discharges", path, suiteName, label)))
+			} else {
+				criterionRefs = append(criterionRefs, strings.TrimSpace(crit.Ref))
 			}
 		}
 
@@ -272,7 +280,7 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 			}
 		}
 	}
-	return outcomes
+	return outcomes, criterionRefs
 }
 
 type testcasesV2Shape struct {
@@ -298,24 +306,57 @@ type suiteV2Shape struct {
 	Cases      []map[string]yaml.Node `yaml:"cases,omitempty"`
 }
 
-// ValidateTestcasesV2 validates the v2 shape and walks operation coverage
-// against the supplied list of canonical operation refs.
-func ValidateTestcasesV2(mode ValidationMode, path string, content []byte, canonicalOperations []string) []ValidationOutcome {
+// TestcasesV2Input carries everything ValidateTestcasesV2 needs beyond the run
+// mode. The two coverage inputs are derived by the caller from the feature's
+// contract artifacts, and both are empty when no such artifact resolves — a
+// feature with no capabilities.yaml or surface.yaml is a normal state, and an
+// empty input disables only its own walker rather than reporting everything as
+// covered. Mirrors CoverageReviewInputs: mode stays a separate positional arg,
+// the rest travels in one struct so a new coverage source does not re-shape
+// every call site.
+type TestcasesV2Input struct {
+	Path    string
+	Content []byte
+	// CanonicalOperations are the @<feature>/operation:<id> refs the coverage
+	// walker holds operation-suite coverage against — every operation the
+	// feature's capabilities.yaml declares.
+	CanonicalOperations []string
+	// Criteria are the contract entries carrying a verify: list, each as its
+	// @<feature>/<kind>:<name> ref. Every one must be discharged by a case whose
+	// criterion.ref matches it, or excused in ExemptCriteria; the criterion
+	// walker fires verify-criterion-uncovered for each that is neither.
+	Criteria []string
+	// ExemptCriteria are refs a human review (coverage-review.yaml) has excused
+	// from needing a covering case. A ref present here is never reported
+	// uncovered.
+	ExemptCriteria map[string]bool
+}
+
+// ValidateTestcasesV2 validates the v2 shape, walks operation coverage against
+// the supplied canonical operation refs, and walks criterion coverage against
+// the supplied contract criteria.
+func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationOutcome {
+	path := in.Path
 	var outcomes []ValidationOutcome
 
 	var tc testcasesV2Shape
-	if err := yaml.Unmarshal(content, &tc); err != nil {
+	if err := yaml.Unmarshal(in.Content, &tc); err != nil {
 		// Upstream YAML validator handles parse errors.
 		return outcomes
 	}
 
 	covered := make(map[string]bool)
+	criteriaCovered := make(map[string]bool)
 	for _, suite := range tc.Suites {
 		// The cases vocabulary is version-independent, so this runs before the
 		// discriminator check and for legacy suites too — putting it after the
 		// `continue` below would have silently exempted every v1 suite, which is
 		// most of what exists in projects today.
-		outcomes = append(outcomes, validateSuiteCases(mode, path, suite.Name, suite.Kind != "", suite.Cases)...)
+		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind != "", suite.Cases)
+		outcomes = append(outcomes, caseOutcomes...)
+		for _, ref := range refs {
+			criteriaCovered[ref] = true
+		}
 
 		// Discriminator check.
 		kind := suite.Kind
@@ -372,11 +413,27 @@ func ValidateTestcasesV2(mode ValidationMode, path string, content []byte, canon
 
 	// Coverage walker — every canonical operation must have a covering
 	// operation suite.
-	for _, op := range canonicalOperations {
+	for _, op := range in.CanonicalOperations {
 		if !covered[op] {
 			outcomes = append(outcomes, NewOutcome(mode, "testcases-operation-uncovered",
 				fmt.Sprintf("%s: operation %q has no covering kind: operation suite", path, op)))
 		}
+	}
+
+	// Criterion walker — every contract entry carrying a verify: list must be
+	// discharged by a case that cites it, or excused by an explicit exemption.
+	// This is the complement of the operation walker: that one asks whether a
+	// suite exists per operation, this one asks whether a case exists per stated
+	// acceptance criterion. Warning severity while the field lands — every
+	// testcases.yaml predates criterion:, so its cases cite nothing yet and an
+	// error would fail every project at once over a fact none could have
+	// recorded.
+	for _, ref := range in.Criteria {
+		if criteriaCovered[ref] || in.ExemptCriteria[ref] {
+			continue
+		}
+		outcomes = append(outcomes, NewOutcome(mode, "verify-criterion-uncovered",
+			fmt.Sprintf("%s: contract entry %q carries verify: criteria but no case discharges it — a case must cite it in criterion.ref, or coverage-review.yaml must exempt it", path, ref)))
 	}
 
 	return outcomes

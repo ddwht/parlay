@@ -89,6 +89,17 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A contract entry carries verify: criteria that no case discharges.
+	// Warning in both modes while criterion-driven cases land: every
+	// testcases.yaml was generated before criterion: existed, so its cases
+	// cite nothing, and erroring would fail every project at once over a fact
+	// none of them could have recorded. The severity states the direction of
+	// travel; it graduates to error once projects have rebuilt with
+	// criterion-carrying cases.
+	"verify-criterion-uncovered": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// Same reasoning again: required on generate, tolerated absent on
 	// read, because every capabilities.yaml in existence predates the
 	// field. See capabilities.schema.md's "Why `source:` exists".

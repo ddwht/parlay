@@ -208,7 +208,20 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// the coverage walker ever read it. Every v2 suite-shape rule —
 		// discriminated kinds, source_refs presence, the legacy-ingestion
 		// warning — was therefore unenforceable.
-		validator = validateTestcasesAdapter
+		//
+		// The coverage inputs are gathered here and closed over, the same way
+		// the capabilities entity list is: the operation- and criterion-coverage
+		// walkers need the feature's contract artifacts, which are a fact about
+		// the project the single-file adapter cannot see on its own. Resolution
+		// failure is not fatal — testcasesCoverageInputs returns empty inputs and
+		// only the two walkers go quiet, which is the honest answer when no
+		// capabilities.yaml or surface.yaml resolves.
+		cov := testcasesCoverageInputs(cmd, path)
+		validator = func(p string, c []byte) error {
+			cov.Path = p
+			cov.Content = c
+			return renderTestcasesOutcomes(agent.ValidateTestcasesV2(agent.ModeAuthoring, cov))
+		}
 	case "adapter":
 		// The complete adapter validator — every section of adapter.schema.md,
 		// kind-conditional. This used to check ONLY the toolchain block, which
@@ -1084,17 +1097,13 @@ func validateInfrastructureDeepAdapter(path string, content []byte) error {
 	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
 }
 
-// validateTestcasesAdapter runs the v2 testcases validator.
-//
-// canonicalOperations is nil, which disables only the operation-coverage walker
-// — that check needs the feature's capabilities.yaml, and this command is handed
-// one file with no feature context. Passing nil is not a silent partial: with no
-// declared operations there is nothing for the walker to find uncovered, so it
-// reports nothing rather than reporting everything as covered. The suite-shape
-// rules, which are what a standalone file check can honestly assess, all run.
-func validateTestcasesAdapter(path string, content []byte) error {
+// renderTestcasesOutcomes splits v2 testcases findings by severity: errors fail
+// the command, warnings go to stderr. The suite-shape rules a standalone file
+// check can honestly assess all run regardless of the coverage inputs; the two
+// coverage walkers are as thorough as those inputs allow.
+func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 	var msgs []string
-	for _, o := range agent.ValidateTestcasesV2(agent.ModeAuthoring, path, content, nil) {
+	for _, o := range outcomes {
 		if o.Severity == agent.SeverityError {
 			msgs = append(msgs, fmt.Sprintf("%s: %s", o.Code, o.Message))
 		} else {
@@ -1105,6 +1114,95 @@ func validateTestcasesAdapter(path string, content []byte) error {
 		return nil
 	}
 	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+}
+
+// testcasesCoverageInputs derives the operation- and criterion-coverage inputs
+// for a testcases.yaml at path from the feature's contract artifacts.
+//
+// The path lives under .parlay/build/<feature>/, so the feature is the build
+// path's parent relative to the active root's BuildRoot(). From it the feature's
+// capabilities.yaml supplies every canonical operation (the operation walker's
+// subjects) and every operation carrying a verify: list (a criterion the
+// criterion walker requires a case for); surface.yaml supplies every fragment
+// carrying a verify: list; coverage-review.yaml supplies the exemptions a human
+// review recorded.
+//
+// Every resolution failure returns whatever was gathered so far rather than an
+// error. Absence of a domain artifact is a normal state — a feature with no
+// capabilities.yaml has no operations to cover, not a broken one — so the
+// walker it feeds simply reports nothing. Passing empty inputs is not a silent
+// partial: with no declared operations or criteria there is nothing to find
+// uncovered, which is a different answer from reporting everything as covered.
+func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2Input {
+	in := agent.TestcasesV2Input{Path: path}
+
+	pctx := config.FromCtx(cmd.Context())
+	if pctx == nil {
+		return in
+	}
+
+	// Feature = the build path's parent, relative to BuildRoot(). A path that
+	// is not under BuildRoot (a standalone file handed by absolute path, say)
+	// yields no feature, and the walkers stay quiet.
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return in
+	}
+	feature, err := filepath.Rel(pctx.BuildRoot(), filepath.Dir(abs))
+	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
+		return in
+	}
+
+	featureDir := pctx.FeaturePath(feature)
+
+	// capabilities.yaml → canonical operations + operation criteria. The ref is
+	// normalized from the file's own feature: field, which is what the operation
+	// suites' operation: and any operation criterion.ref cite; a capabilities.yaml
+	// with no feature: cannot form a reliable ref, so its operations are skipped.
+	if caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); capErr == nil && caps.Feature != "" {
+		for _, op := range caps.Operations {
+			if op.ID == "" {
+				continue
+			}
+			ref := parser.NormalizeOperationID(caps.Feature, op.ID)
+			in.CanonicalOperations = append(in.CanonicalOperations, ref)
+			if len(op.Verify) > 0 {
+				in.Criteria = append(in.Criteria, ref)
+			}
+		}
+	}
+
+	// surface.yaml (or legacy surface.md) → fragment criteria. A fragment
+	// carrying verify: is a criterion the criterion walker requires a case for,
+	// cited as @<feature>/fragment:<name>.
+	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
+		if fragments, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
+			for _, f := range fragments {
+				if f.Name == "" || f.Feature == "" || len(f.Verify) == 0 {
+					continue
+				}
+				in.Criteria = append(in.Criteria, fmt.Sprintf("@%s/fragment:%s", f.Feature, f.Name))
+			}
+		}
+	}
+
+	// coverage-review.yaml → exemptions. A recorded exemption whose item is a
+	// criterion ref excuses that criterion from needing a case — the same
+	// human-review exemption the coverage-review gate already honors, read here
+	// so the earlier warning agrees with the later gate.
+	if cr, crErr := parser.ParseCoverageReview(filepath.Join(pctx.BuildPath(feature), "coverage-review.yaml")); crErr == nil {
+		for _, ex := range cr.Exemptions {
+			if ex.Item == "" {
+				continue
+			}
+			if in.ExemptCriteria == nil {
+				in.ExemptCriteria = make(map[string]bool)
+			}
+			in.ExemptCriteria[ex.Item] = true
+		}
+	}
+
+	return in
 }
 
 // declaredCapabilityEntities returns the entity names declared in the resolved
@@ -1164,7 +1262,7 @@ func proposedCapabilityEntities(cmd *cobra.Command) map[string]string {
 // one entry point and no mode flags, and both CLI paths agree about what the model
 // contains — this one prints the deprecation as a warning rather than hiding it.
 //
-// Same shape as validateTestcasesAdapter, deliberately: two commands rendering
+// Same shape as renderTestcasesOutcomes, deliberately: two commands rendering
 // structured findings should not invent two conventions for it.
 func validateDomainModelAdapter(path string, content []byte) error {
 	var msgs []string

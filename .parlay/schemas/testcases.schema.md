@@ -292,6 +292,16 @@ Freshness of a cited test rides the existing hash machinery rather than a new on
 
 For every canonical operation declared in the feature's `capabilities.yaml`, at least one `kind: operation` suite must reference it. The walker fires `testcases-operation-uncovered` for each missing operation. Coverage is computed against the `@<feature>/operation:<id>` normalized form.
 
+The operation walker's subjects are fed from the feature's `capabilities.yaml`, resolved from the testcases.yaml's own build path (`.parlay/build/<feature>/`). A feature with no `capabilities.yaml` declares no operations, so the walker reports nothing — that is a feature with no backend contract, not a coverage failure.
+
+### Criterion coverage walker
+
+The operation walker asks whether a *suite* exists per operation; the criterion walker asks whether a *case* exists per stated acceptance criterion. Every contract entry that carries a `verify:` list — an operation in `capabilities.yaml`, a fragment in `surface.yaml` — must be discharged by at least one case whose `criterion.ref` cites it, in `@<feature>/<kind>:<name>` form (`kind` is `operation` or `fragment`). The walker fires `verify-criterion-uncovered` for each entry that no case discharges and that `coverage-review.yaml` does not exempt.
+
+This is the coverage half of the criterion-driven design (§ Criterion-driven cases): cases are derived 1:1 from `verify:` entries, and this walker holds that derivation to account — a criterion the contract states but no case discharges is a gap in the suite, not in the contract. An entry may be excused by a `coverage-review.yaml` exemption whose `item:` is the criterion ref, the same human-review exemption the coverage-review gate honors.
+
+`verify-criterion-uncovered` is a **warning** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. It graduates to an error once projects have rebuilt with criterion-carrying cases.
+
 ### Source refs requirement
 
 Every v2 suite must declare at least one `source_refs:` entry citing a real surface fragment (presentation suites) or capability operation (operation suites). Missing source_refs fail with `testcases-source-refs-missing`.
@@ -315,3 +325,4 @@ Legacy v1 suites without explicit `kind:` load as `kind: presentation` and auto-
 | `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
 | `testcases-case-criterion-missing` (warning) | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. Warning while the field lands — every testcases.yaml predates it. |
+| `verify-criterion-uncovered` (warning) | A contract entry (an operation or fragment carrying `verify:`) has no case whose `criterion.ref` discharges it and no `coverage-review.yaml` exemption. Warning while criterion-driven cases land — every testcases.yaml predates `criterion:`. |

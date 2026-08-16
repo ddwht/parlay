@@ -20,7 +20,7 @@ suites:
     component: x
     source_refs: ["@f/x"]
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, []string{"@f/operation:task.delete"})
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content, CanonicalOperations: []string{"@f/operation:task.delete"}})
 	if !findCode(outcomes, "testcases-operation-uncovered") {
 		t.Errorf("missing testcases-operation-uncovered; got %+v", outcomes)
 	}
@@ -34,7 +34,7 @@ suites:
     kind: presentation
     component: x
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-source-refs-missing") {
 		t.Errorf("missing testcases-source-refs-missing; got %+v", outcomes)
 	}
@@ -48,7 +48,7 @@ suites:
     component: x
     intent: legacy intent
 `)
-	outcomes := ValidateTestcasesV2(ModeAuthoring, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeAuthoring, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-source-refs-missing-legacy") {
 		t.Errorf("missing testcases-source-refs-missing-legacy; got %+v", outcomes)
 	}
@@ -67,7 +67,7 @@ suites:
     kind: integration
     source_refs: ["@f/x"]
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-suite-kind-unknown") {
 		t.Errorf("missing testcases-suite-kind-unknown; got %+v", outcomes)
 	}
@@ -82,7 +82,7 @@ suites:
     operation: "@f/operation:task.create"
     source_refs: ["@f/operation:task.create"]
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, []string{"@f/operation:task.create"})
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content, CanonicalOperations: []string{"@f/operation:task.create"}})
 	if findCode(outcomes, "testcases-operation-uncovered") {
 		t.Errorf("operation suite should cover the canonical op; got %+v", outcomes)
 	}
@@ -110,7 +110,7 @@ suites:
           - action: hover
             target: amount
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-unknown-term") {
 		t.Fatalf("action \"hover\" was accepted; got %+v", outcomes)
 	}
@@ -138,7 +138,7 @@ suites:
           - verify: colour
             target: total
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-unknown-term") {
 		t.Fatalf("verify \"colour\" was accepted; got %+v", outcomes)
 	}
@@ -161,7 +161,7 @@ suites:
             target: MeshViewport
             value: content
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if findCode(outcomes, "testcases-unknown-term") {
 		t.Errorf("appears action rejected as unknown term: %+v", outcomes)
 	}
@@ -192,7 +192,7 @@ suites:
           - action: appears
             target: MeshViewport
             ` + tc.value)
-			outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+			outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 			if !findCode(outcomes, "testcases-appears-level-unknown") {
 				t.Fatalf("expected testcases-appears-level-unknown, got %+v", outcomes)
 			}
@@ -219,11 +219,11 @@ suites:
 `)
 	}
 	for _, ok := range []string{"full", "state-only"} {
-		if findCode(ValidateTestcasesV2(ModeBuild, "test", base(ok), nil), "testcases-coverage-unknown") {
+		if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: base(ok)}), "testcases-coverage-unknown") {
 			t.Errorf("coverage %q wrongly rejected", ok)
 		}
 	}
-	if !findCode(ValidateTestcasesV2(ModeBuild, "test", base("partial"), nil), "testcases-coverage-unknown") {
+	if !findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: base("partial")}), "testcases-coverage-unknown") {
 		t.Errorf("coverage \"partial\" should be rejected")
 	}
 }
@@ -244,7 +244,7 @@ suites:
           - action: ` + action + `
             target: x
 `)
-		if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-unknown-term") {
+		if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-unknown-term") {
 			t.Errorf("documented action %q was rejected", action)
 		}
 	}
@@ -261,7 +261,7 @@ suites:
           - verify: ` + verb + `
             target: x
 `)
-		if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-unknown-term") {
+		if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-unknown-term") {
 			t.Errorf("documented verify %q was rejected", verb)
 		}
 	}
@@ -283,7 +283,7 @@ suites:
           - target: amount
             value: "10"
 `)
-	if !findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-unknown-term") {
+	if !findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-unknown-term") {
 		t.Error("a step with neither action: nor verify: was accepted")
 	}
 }
@@ -304,7 +304,7 @@ suites:
           - action: render
             target: form
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-case-unnamed") {
 		t.Fatalf("an unnamed case was accepted; got %+v", outcomes)
 	}
@@ -337,7 +337,7 @@ suites:
           - action: teleport
             target: x
 `)
-	if !findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-unknown-term") {
+	if !findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-unknown-term") {
 		t.Error("a legacy v1 suite's bad step vocabulary was not checked")
 	}
 }
@@ -432,7 +432,7 @@ suites:
     source_refs:
       - "@expenses/expense-list"
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "testcases.yaml", Content: content})
 	if !hasOutcomeCode(outcomes, "testcases-file-missing") {
 		t.Errorf("expected testcases-file-missing, got %v", codesOf(outcomes))
 	}
@@ -457,7 +457,7 @@ suites:
     source_refs:
       - "@expenses/expense-list"
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "testcases.yaml", Content: content})
 	if hasOutcomeCode(outcomes, "testcases-file-missing") {
 		t.Errorf("a suite declaring file: must not be reported: %v", codesOf(outcomes))
 	}
@@ -472,7 +472,7 @@ suites:
     component: expense-list
     intent: "@expenses/see-my-reports"
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "testcases.yaml", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "testcases.yaml", Content: content})
 	if hasOutcomeCode(outcomes, "testcases-file-missing") {
 		t.Errorf("a legacy v1 suite must not be asked for file:, got %v", codesOf(outcomes))
 	}
@@ -500,7 +500,7 @@ suites:
           - verify: text
             target: total
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-case-criterion-missing") {
 		t.Fatalf("a v2 case without criterion: was not flagged; got %v", codesOf(outcomes))
 	}
@@ -528,7 +528,7 @@ suites:
           - verify: text
             target: total
 `)
-	if !findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-criterion-missing") {
+	if !findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-case-criterion-missing") {
 		t.Error("a criterion: with no ref was accepted")
 	}
 }
@@ -547,7 +547,7 @@ suites:
           - verify: text
             target: total
 `)
-	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-criterion-missing") {
+	if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-case-criterion-missing") {
 		t.Error("a legacy v1 case was asked for a criterion it predates")
 	}
 }
@@ -574,7 +574,7 @@ suites:
           - verify: text
             target: total
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-case-vacuous") {
 		t.Fatalf("a case exercising a target no step touches was accepted; got %v", codesOf(outcomes))
 	}
@@ -603,7 +603,7 @@ suites:
           - verify: state
             target: ExpenseReport.status
 `)
-	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-vacuous") {
+	if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-case-vacuous") {
 		t.Error("a case whose step touches its exercise target was wrongly called vacuous")
 	}
 }
@@ -629,7 +629,7 @@ suites:
           - verify: text
             target: sneaky-total
 `)
-	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	outcomes := ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content})
 	if !findCode(outcomes, "testcases-case-claims-unmet") {
 		t.Fatalf("an assertion outside observes: was accepted; got %v", codesOf(outcomes))
 	}
@@ -657,7 +657,7 @@ suites:
           - verify: state
             target: ExpenseReport.status
 `)
-	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-claims-unmet") {
+	if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: content}), "testcases-case-claims-unmet") {
 		t.Error("a verify reading a declared observes target was wrongly flagged")
 	}
 
@@ -677,7 +677,107 @@ suites:
           - verify: text
             target: anything
 `)
-	if findCode(ValidateTestcasesV2(ModeBuild, "test", noObserves, nil), "testcases-case-claims-unmet") {
+	if findCode(ValidateTestcasesV2(ModeBuild, TestcasesV2Input{Path: "test", Content: noObserves}), "testcases-case-claims-unmet") {
 		t.Error("claims-unmet fired on a case that declared no observes:")
+	}
+}
+
+// The criterion walker is the complement of the operation walker: it holds the
+// contract's verify: entries against the cases, firing verify-criterion-uncovered
+// for a criterion no case discharges.
+func TestValidateTestcasesV2_CriterionUncovered(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        steps:
+          - verify: text
+            target: title
+`)
+	// The contract declares a criterion for an operation no case cites.
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []string{"@expenses/operation:report.submit", "@expenses/fragment:submit"},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if !findCode(outcomes, "verify-criterion-uncovered") {
+		t.Fatalf("expected verify-criterion-uncovered for the uncited operation criterion; got %+v", outcomes)
+	}
+	// The fragment criterion is discharged by the case, so only the operation
+	// criterion should be reported — exactly one finding, at warning severity.
+	var reported []ValidationOutcome
+	for _, o := range outcomes {
+		if o.Code == "verify-criterion-uncovered" {
+			reported = append(reported, o)
+		}
+	}
+	if len(reported) != 1 {
+		t.Fatalf("expected exactly one uncovered criterion, got %d: %+v", len(reported), reported)
+	}
+	if !strings.Contains(reported[0].Message, "@expenses/operation:report.submit") {
+		t.Errorf("finding names the wrong criterion: %q", reported[0].Message)
+	}
+	if reported[0].Severity != SeverityWarning {
+		t.Errorf("verify-criterion-uncovered severity = %q, want warning", reported[0].Severity)
+	}
+}
+
+// A criterion every contract entry states and every case discharges draws
+// nothing — the covered path.
+func TestValidateTestcasesV2_CriterionCovered(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        steps:
+          - verify: text
+            target: title
+`)
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []string{"@expenses/fragment:submit"},
+	}
+	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
+		t.Error("verify-criterion-uncovered fired on a criterion a case discharges")
+	}
+}
+
+// An exemption recorded in coverage-review.yaml (surfaced here as ExemptCriteria)
+// excuses a criterion from needing a case, the same way the coverage-review gate
+// honors it.
+func TestValidateTestcasesV2_CriterionExempted(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases: []
+`)
+	in := TestcasesV2Input{
+		Path:           "test",
+		Content:        content,
+		Criteria:       []string{"@expenses/operation:report.submit"},
+		ExemptCriteria: map[string]bool{"@expenses/operation:report.submit": true},
+	}
+	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
+		t.Error("verify-criterion-uncovered fired on an exempted criterion")
 	}
 }
