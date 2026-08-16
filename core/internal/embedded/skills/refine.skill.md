@@ -404,6 +404,16 @@ report — which mode ran is part of what was blessed.
    `--strict` would then fail on all of them. With the manifest, files this run
    did not touch keep the verdict they already had.
 
+   `--partial` also scopes the *baselines*, not just the provenance half. It
+   advances the `.baseline.yaml` only for the features whose files appear in the
+   manifest (resolved through each file's generation marker); every other
+   feature keeps the baseline — and the dirty flags — it already had. So a
+   feature whose source drifted but which this refine did not regenerate still
+   reports dirty afterward, instead of being silently re-blessed into a false
+   "stable". The project baseline records the blessed feature slugs under
+   `emitted:` for audit. (See `schema-versioning.schema.md`, "Per-feature
+   blessing instants".)
+
 10. **Re-review coverage** — but ask the gate what actually needs it first:
     `parlay internal check-review-gate @{feature}` reports `stale_suites` —
     the approved suites whose testcases changed since the review. When the

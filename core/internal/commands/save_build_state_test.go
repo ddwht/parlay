@@ -603,3 +603,113 @@ func TestSaveBuildState_SkippedFeaturesReported(t *testing.T) {
 	// entrypoint prints it), so assert on the result rather than stderr.
 	_ = stderr
 }
+
+// The BP6 regression. A partial save advances the baseline ONLY for the
+// feature it emitted; a feature whose source drifted but which this run did
+// not regenerate keeps its baseline and still reports dirty afterward. Before
+// WP6, stage 1 re-derived every feature's baseline from current source, so a
+// refine on feature A silently re-blessed feature B and cleared B's real
+// "this is behind" signal — a false-stable verdict worse than churn.
+func TestSaveBuildState_PartialBlessesOnlyEmittedFeature_BP6(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "feat-a", "Alpha")
+	authorFeature(t, cfg, "feat-b", "Beta")
+
+	root := filepath.Join(dir, "cmd")
+	fileA := filepath.Join(root, "a", "a.go")
+	fileB := filepath.Join(root, "b", "b.go")
+	writeMarkedFile(t, fileA, "feat-a", "a", "package a")
+	writeMarkedFile(t, fileB, "feat-b", "b", "package b")
+
+	// A full save blesses both features at one instant.
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("initial full save: %v", err)
+	}
+	if d, err := detectDrift(cfg, "feat-b", cfg.FeaturePath("feat-b")); err != nil {
+		t.Fatal(err)
+	} else if d.HasDrift {
+		t.Fatalf("feat-b must be clean right after the full save, got drift: %+v", d)
+	}
+
+	// Both features' sources now drift. The refine-shaped workload regenerates
+	// and emits only feat-a; feat-b is left behind.
+	os.WriteFile(filepath.Join(cfg.FeaturePath("feat-a"), "intents.md"),
+		[]byte("## Alpha Prime\n\n**Goal**: alpha moved on\n**Persona**: User\n"), 0644)
+	os.WriteFile(filepath.Join(cfg.FeaturePath("feat-b"), "intents.md"),
+		[]byte("## Beta Prime\n\n**Goal**: beta moved on\n**Persona**: User\n"), 0644)
+
+	// Partial save declaring ONLY feat-a's file.
+	emittedPath := filepath.Join(cfg.ProjectBuildPath(), DefaultEmittedManifest)
+	if err := os.MkdirAll(filepath.Dir(emittedPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(emittedPath, []byte(fileA+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	saveBuildStatePartial = true
+	saveBuildStateEmitted = emittedPath
+	t.Cleanup(func() { saveBuildStatePartial = false; saveBuildStateEmitted = "" })
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("partial save: %v", err)
+	}
+
+	// The BP6 property: feat-b was not emitted, so its baseline was left
+	// untouched and its source drift survives the save.
+	dB, err := detectDrift(cfg, "feat-b", cfg.FeaturePath("feat-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dB.HasDrift {
+		t.Error("BP6: an un-emitted feature whose source drifted must still report dirty after a partial save — its baseline was wrongly advanced, minting a false-stable verdict")
+	}
+
+	// The other half: the emitted feature IS re-blessed and clean again.
+	dA, err := detectDrift(cfg, "feat-a", cfg.FeaturePath("feat-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dA.HasDrift {
+		t.Errorf("the emitted feature must advance to clean, got drift: %+v", dA)
+	}
+
+	// The project baseline records exactly what the partial save blessed.
+	var pbl ProjectBaseline
+	if data, err := os.ReadFile(projectBaselinePath(cfg)); err != nil {
+		t.Fatal(err)
+	} else if err := yaml.Unmarshal(data, &pbl); err != nil {
+		t.Fatal(err)
+	}
+	if len(pbl.Emitted) != 1 || pbl.Emitted[0] != "feat-a" {
+		t.Errorf("project baseline emitted = %v, want [feat-a]", pbl.Emitted)
+	}
+}
+
+// A non-partial (full) save records no `emitted:` scope on the project
+// baseline: it blessed every feature at one instant, so there is nothing
+// narrower to audit. Guards the honest-record contract — an empty list would
+// wrongly read as "this save blessed no features".
+func TestSaveBuildState_FullSaveRecordsNoEmittedScope(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "solo", "Solo")
+	root := filepath.Join(dir, "cmd")
+	writeMarkedFile(t, filepath.Join(root, "s.go"), "solo", "s", "package s")
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	var pbl ProjectBaseline
+	data, _ := os.ReadFile(projectBaselinePath(cfg))
+	if err := yaml.Unmarshal(data, &pbl); err != nil {
+		t.Fatal(err)
+	}
+	if pbl.Emitted != nil {
+		t.Errorf("a full save must record no emitted scope, got %v", pbl.Emitted)
+	}
+	// And the field is dropped from the serialized file, not written empty.
+	if strings.Contains(string(data), "emitted:") {
+		t.Errorf("emitted: must be omitted from a full save's project baseline, got:\n%s", data)
+	}
+}

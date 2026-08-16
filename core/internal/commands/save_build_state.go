@@ -19,11 +19,14 @@ var saveBuildStateCmd = &cobra.Command{
 	Long: `Commit a successful end-to-end generation at the project level by
 atomically writing:
 
-  1. Per-feature baselines for ALL features (.parlay/build/<feature>/.baseline.yaml)
+  1. Per-feature baselines (.parlay/build/<feature>/.baseline.yaml). A full
+     run blesses every feature at one instant; --partial (e.g. parlay refine)
+     blesses ONLY the features it emitted, leaving every other feature's
+     baseline — and its dirty flags — untouched.
   2. Project-level baseline (.parlay/build/_project/.baseline.yaml) with
-     merged section hashes across all features
+     merged section hashes across all features, and the emitted feature slugs.
   3. Project-level code hashes (.parlay/build/_project/.code-hashes.yaml)
-     tracking ALL generated files
+     tracking ALL generated files.
 
 This command MUST be invoked only as the final step of /parlay-generate-code
 (project-level), after tests pass. All files are written using the
@@ -216,8 +219,45 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 
 	result := &projectSaveResult{}
 
+	// Load the emission manifest up front. It feeds stage 3's provenance
+	// classification (below) but ALSO stage 1's per-feature blessing (here):
+	// a --partial run blesses only the features it actually emitted, and the
+	// path→feature link that decides which those are lives in the manifest.
+	// Loading here does not consume the manifest — consumption is the rename
+	// at the very end — so a single load serves both stages.
+	emitted, emittedPath, err := loadEmittedManifest(cfg, saveBuildStateEmitted)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireEmittedForPartial(cfg, emitted); err != nil {
+		return nil, err
+	}
+	// Which features this run emitted, resolved from the manifest paths through
+	// their generation markers. Used to scope stage 1 under --partial and to
+	// record `emitted:` on the project baseline. A full save leaves this nil.
+	var emittedFeatures map[string]bool
+	if emitted != nil {
+		emittedFeatures, err = emittedFeatureSet(sourceRoot, emitted)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// --- Stage 1: Per-feature baselines ---
 	for _, slug := range features {
+		// Per-feature blessing (WP6). Under --partial the blessing unit is the
+		// feature, not the whole project: a feature this run did not emit is
+		// left exactly as it was — baseline untouched — so a feature whose
+		// source drifted but which nobody regenerated still reports dirty after
+		// the save. Re-deriving every feature's baseline from current source
+		// (the one-instant behaviour a full save keeps) would re-bless a
+		// feature no one rebuilt and silently clear that "this is behind"
+		// signal, the false-stable failure this WP exists to prevent. A full,
+		// non-partial save keeps the world-snapshot semantics: emittedFeatures
+		// is nil, the guard is skipped, every feature is baselined together.
+		if saveBuildStatePartial && !emittedFeatures[slug] {
+			continue
+		}
 		baseline, err := buildBaseline(cfg, slug)
 		if err != nil {
 			// Feature may not have intents yet, or has an unparseable one.
@@ -271,6 +311,7 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	mergedSections := hashMergedBuildfileSections(cfg, features)
 	projectBL := &ProjectBaseline{
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
+		Emitted:        sortedFeatureSlugs(emittedFeatures),
 		MergedSections: mergedSections,
 	}
 	projectBLBytes, err := yaml.Marshal(projectBL)
@@ -288,16 +329,10 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	// Scan the source root for ALL marker-tagged files, regardless of
 	// feature. This includes feature-scoped files (parlay-component:) and
 	// project-scoped files (parlay-scope: project + parlay-section:).
-	// What codegen declared it wrote this run, and what the last run left
-	// behind. Both are needed before classification: provenance is a fact
-	// about who wrote a file, and neither the file nor its hash carries it.
-	emitted, emittedPath, err := loadEmittedManifest(cfg, saveBuildStateEmitted)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireEmittedForPartial(cfg, emitted); err != nil {
-		return nil, err
-	}
+	// What codegen declared it wrote this run (loaded up front, above, because
+	// stage 1 needs it too), and what the last run left behind. Both are needed
+	// before classification: provenance is a fact about who wrote a file, and
+	// neither the file nor its hash carries it.
 	// The previous snapshot feeds both provenance carry-forward (below) and
 	// the two source-root guards (prefix shape here, scope narrowing further
 	// down). Loading it once and reusing it keeps those checks talking about

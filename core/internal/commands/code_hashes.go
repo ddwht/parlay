@@ -230,6 +230,53 @@ type emissionDeclaration struct {
 	Paths map[string]bool
 }
 
+// emittedFeatureSet maps the emitted file paths back to the features that own
+// them, via the generation markers under sourceRoot. It is the input to
+// per-feature blessing (WP6): a partial save advances the baseline of a
+// feature only if this run actually emitted one of its files, so the file
+// path → feature link has to be reconstructed from the markers the files
+// carry, since the manifest lists paths and knows nothing of features.
+//
+// Feature-less markers (project-scoped sections, cross-cutting files) map to
+// no feature and are simply absent from the returned set; they do not gate a
+// per-feature baseline because there is no per-feature baseline for them.
+// A nil declaration yields an empty set — nothing was declared, so nothing is
+// blessed by emission.
+func emittedFeatureSet(sourceRoot string, emitted *emissionDeclaration) (map[string]bool, error) {
+	set := map[string]bool{}
+	if emitted == nil {
+		return set, nil
+	}
+	markers, err := parser.ScanGenerated(sourceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("scan source root %q to map emitted paths to features: %w", sourceRoot, err)
+	}
+	for _, marker := range markers {
+		if marker.Feature == "" {
+			continue
+		}
+		if emitted.Paths[normalizeWriteSetPath(marker.Path)] {
+			set[marker.Feature] = true
+		}
+	}
+	return set, nil
+}
+
+// sortedFeatureSlugs returns the keys of a feature set in a stable order, or
+// nil for an empty/nil set so an `omitempty` YAML field is dropped rather than
+// serialized as an empty list.
+func sortedFeatureSlugs(set map[string]bool) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	slugs := make([]string, 0, len(set))
+	for slug := range set {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	return slugs
+}
+
 // buildCodeHashesWithProvenance is buildCodeHashes plus the classification.
 //
 // The table, and why each row compares what it does:

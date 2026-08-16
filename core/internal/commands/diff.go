@@ -752,7 +752,14 @@ func projectBaselinePath(cfg *config.Context) string {
 
 // ProjectBaseline stores merged section hashes for the project level.
 type ProjectBaseline struct {
-	GeneratedAt    string            `yaml:"generated-at"`
+	GeneratedAt string `yaml:"generated-at"`
+	// Emitted records the feature slugs a save actually blessed, for audit.
+	// Under --partial it is the subset this run regenerated; every other
+	// feature kept the baseline it already had (per-feature blessing, WP6).
+	// Empty (and dropped from the file) when no emission manifest scoped the
+	// save — a full world-snapshot save blesses every feature at once and has
+	// nothing narrower to record.
+	Emitted        []string          `yaml:"emitted,omitempty"`
 	MergedSections map[string]string `yaml:"merged-sections,omitempty"`
 }
 
