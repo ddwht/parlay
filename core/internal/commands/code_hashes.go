@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -149,6 +150,40 @@ func filesDroppedBySourceRootNarrowing(previous, current *CodeHashes) []string {
 	}
 	sort.Strings(dropped)
 	return dropped
+}
+
+// checkSourceRootMatchesSnapshot refuses a --source-root whose shape
+// disagrees with the paths a previous save tracked.
+//
+// A stored key is a generated file's path joined onto the source root that
+// produced it, so every tracked file sits under some source root. If not one
+// previously-tracked file sits under the root passed this run, the two
+// invocations disagree about where generated code lives: the wrong root was
+// passed (an absolute path where the stored keys are repo-relative, one
+// adapter's root instead of the project-wide one, or the reverse). That is a
+// mis-guessed flag, not a scope change — a narrower-but-nested root, which is
+// a legitimate (if guarded) shrink, still has its files under the passed
+// root and is left to filesDroppedBySourceRootNarrowing to catch.
+//
+// Skipped when there is no previous snapshot: a first-ever save has nothing
+// to compare against and falls back to the documented source-root convention
+// rather than guessing.
+func checkSourceRootMatchesSnapshot(previous *CodeHashes, sourceRoot string) error {
+	if previous == nil || len(previous.Files) == 0 {
+		return nil
+	}
+	root := normalizeWriteSetPath(sourceRoot)
+	var sample string
+	for key := range previous.Files {
+		nk := normalizeWriteSetPath(key)
+		if root == "." || nk == root || strings.HasPrefix(nk, root+"/") {
+			return nil
+		}
+		if sample == "" || nk < sample {
+			sample = nk
+		}
+	}
+	return fmt.Errorf("--source-root %q covers none of the %d file(s) the previous save tracked (e.g. %s): the two invocations disagree about where generated code lives, which usually means the wrong root was passed — an absolute path where the stored keys are repo-relative, one adapter's root instead of the project-wide one, or the reverse. Pass the same source root the previous run used (the adapter's file-conventions.source-root)", sourceRoot, len(previous.Files), sample)
 }
 
 // saveCodeHashes writes the sidecar file for a feature. Creates the

@@ -1,13 +1,42 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"gopkg.in/yaml.v3"
 )
+
+// runProjectSave drives the project-level save with stderr captured, the
+// path most WP1 guards live on. Returns the result, the WARN/error text
+// written to stderr, and the save error.
+func runProjectSave(t *testing.T, cfg *config.Context, sourceRoot string) (*projectSaveResult, string, error) {
+	t.Helper()
+	cmd := testCommandWithContext(t, cfg)
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	cmd.SetOut(&bytes.Buffer{})
+	res, err := saveProjectBuildState(cmd, cfg, sourceRoot)
+	return res, errBuf.String(), err
+}
+
+// authorFeature writes a minimal feature so discoverFeatures finds it and
+// stage 1 can baseline it.
+func authorFeature(t *testing.T, cfg *config.Context, slug, goal string) {
+	t.Helper()
+	dir := cfg.FeaturePath(slug)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "## " + goal + "\n\n**Goal**: " + goal + "\n**Persona**: User\n"
+	if err := os.WriteFile(filepath.Join(dir, "intents.md"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestSaveBuildState_HappyPath writes a feature with intents/dialogs/surface
 // plus a marker-tagged source file, runs saveBuildState, and verifies both
@@ -342,4 +371,235 @@ func TestWriteFileAtomic_PreservesPreviousOnFailure(t *testing.T) {
 	if string(got) != string(original) {
 		t.Errorf("destination corrupted: got %q, want %q", got, original)
 	}
+}
+
+// --- WP1: fail-loud state boundary + write-if-changed ---
+
+// An explicit --emitted path that does not exist is a hard error, not an
+// empty "emitted nothing" declaration: it is overwhelmingly a re-run against
+// a manifest a previous save already consumed, and reading it as silence
+// would downgrade a tracked run to look exactly like the feature working.
+func TestSaveBuildState_ExplicitMissingManifestErrors(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+
+	_, _, err := loadEmittedManifest(cfg, filepath.Join(cfg.ProjectBuildPath(), "never-written.emitted"))
+	if err == nil {
+		t.Fatal("explicit --emitted path that does not exist must error, not read as an empty declaration")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error should name the missing path, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), consumedManifestSuffix) {
+		t.Errorf("error should point at the consumed manifest (%s), so a re-run diagnosis is one ls away, got: %v", consumedManifestSuffix, err)
+	}
+
+	// The no-flag case is unchanged: absent default manifest reads as nil
+	// (no declaration), not an error.
+	decl, _, err := loadEmittedManifest(cfg, "")
+	if err != nil {
+		t.Fatalf("absent default manifest must not error, got %v", err)
+	}
+	if decl != nil {
+		t.Errorf("absent default manifest must read as nil (no declaration), got %v", decl)
+	}
+}
+
+// A --source-root under which none of the previously-tracked files sit means
+// the invocation disagrees with the last about where generated code lives —
+// a mis-guessed flag, refused before it commits a snapshot rooted elsewhere.
+func TestSaveBuildState_SourceRootPrefixMismatchErrors(t *testing.T) {
+	prev := &CodeHashes{Files: map[string]CodeHashEntry{
+		"/abs/cmd/widget/do.go": {Component: "widget", Hash: "h1"},
+		"/abs/cmd/gadget/go.go": {Component: "gadget", Hash: "h2"},
+	}}
+
+	if err := checkSourceRootMatchesSnapshot(prev, "cmd/widget"); err == nil {
+		t.Error("a relative root disjoint from every absolute stored key must error")
+	} else if !strings.Contains(err.Error(), "source-root") {
+		t.Errorf("error should name --source-root, got: %v", err)
+	}
+
+	// The true root the snapshot was taken under is accepted.
+	if err := checkSourceRootMatchesSnapshot(prev, "/abs/cmd"); err != nil {
+		t.Errorf("the matching root must be accepted, got %v", err)
+	}
+	// A nested-narrower root still has at least one file under it — that is a
+	// scope shrink for the narrowing check to judge, not a shape mismatch.
+	if err := checkSourceRootMatchesSnapshot(prev, "/abs/cmd/widget"); err != nil {
+		t.Errorf("a nested-narrower root must pass the shape check, got %v", err)
+	}
+
+	// First-ever save: nothing to compare, falls back to convention.
+	if err := checkSourceRootMatchesSnapshot(nil, "cmd/widget"); err != nil {
+		t.Errorf("first-ever save (nil snapshot) must not be blocked, got %v", err)
+	}
+	if err := checkSourceRootMatchesSnapshot(&CodeHashes{Files: map[string]CodeHashEntry{}}, "cmd/widget"); err != nil {
+		t.Errorf("empty snapshot must not be blocked, got %v", err)
+	}
+}
+
+// A narrower --source-root that drops previously-tracked files still on disk
+// refuses without --allow-narrowing (mirroring --strict for adopted files),
+// and proceeds with it.
+func TestSaveBuildState_NarrowingRefusesWithoutFlag(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "my-feature", "Do")
+
+	root := filepath.Join(dir, "cmd")
+	writeMarkedFile(t, filepath.Join(root, "a", "x.go"), "my-feature", "a", "package a")
+	writeMarkedFile(t, filepath.Join(root, "b", "y.go"), "my-feature", "b", "package b")
+
+	// First save under the wide root tracks both files.
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatalf("first save must succeed: %v", err)
+	}
+
+	// Second save under a nested-narrower root drops b/y.go, which still
+	// exists — refuse without the flag.
+	narrow := filepath.Join(root, "a")
+	_, stderr, err := runProjectSave(t, cfg, narrow)
+	if err == nil {
+		t.Fatal("narrowing --source-root must refuse without --allow-narrowing")
+	}
+	if !strings.Contains(err.Error(), "allow-narrowing") {
+		t.Errorf("refusal should name --allow-narrowing as the escape hatch, got: %v", err)
+	}
+	if !strings.Contains(stderr, "y.go") {
+		t.Errorf("the dropped file should be listed on stderr, got: %q", stderr)
+	}
+
+	// With the flag, the same narrowing save proceeds.
+	saveBuildStateAllowNarrowing = true
+	t.Cleanup(func() { saveBuildStateAllowNarrowing = false })
+	if _, _, err := runProjectSave(t, cfg, narrow); err != nil {
+		t.Fatalf("narrowing save with --allow-narrowing must proceed: %v", err)
+	}
+}
+
+// The F2 regression: re-saving an unedited feature must not rewrite its
+// baseline with nothing but a fresh timestamp. Proven deterministically by
+// stamping the on-disk baseline with a distinctly old generated-at and
+// showing a no-change save leaves those exact bytes untouched.
+func TestSaveBuildState_UnchangedBaselineByteIdentical(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "my-feature", "Do")
+	root := filepath.Join(dir, "cmd")
+	writeMarkedFile(t, filepath.Join(root, "do.go"), "my-feature", "do", "package do")
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rewrite the on-disk baseline with an unmistakably old generated-at, so
+	// a later overwrite (if write-if-changed were broken) would be visible.
+	blPath := baselinePath(cfg, "my-feature")
+	data, err := os.ReadFile(blPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bl Baseline
+	if err := yaml.Unmarshal(data, &bl); err != nil {
+		t.Fatal(err)
+	}
+	bl.GeneratedAt = "2000-01-01T00:00:00Z"
+	stamped, err := marshalBaseline(&bl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blPath, stamped, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-save with no source change. Write-if-changed must skip the baseline
+	// write, leaving the old-stamped bytes exactly as they are.
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(blPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stamped, after) {
+		t.Errorf("unchanged feature's baseline was rewritten by a no-change save:\n before: %s\n after:  %s", stamped, after)
+	}
+}
+
+// The other half of write-if-changed: a real content change still writes.
+func TestSaveBuildState_ChangedFeatureStillWritten(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "my-feature", "Do")
+	root := filepath.Join(dir, "cmd")
+	writeMarkedFile(t, filepath.Join(root, "do.go"), "my-feature", "do", "package do")
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	// Stamp old, then change the feature's intent so content genuinely moves.
+	blPath := baselinePath(cfg, "my-feature")
+	data, _ := os.ReadFile(blPath)
+	var bl Baseline
+	yaml.Unmarshal(data, &bl)
+	bl.GeneratedAt = "2000-01-01T00:00:00Z"
+	stamped, _ := marshalBaseline(&bl)
+	os.WriteFile(blPath, stamped, 0644)
+
+	os.WriteFile(filepath.Join(cfg.FeaturePath("my-feature"), "intents.md"),
+		[]byte("## Do It Differently\n\n**Goal**: a genuinely new goal\n**Persona**: User\n"), 0644)
+
+	if _, _, err := runProjectSave(t, cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(blPath)
+	if bytes.Equal(stamped, after) {
+		t.Fatal("a changed feature's baseline must be rewritten, but the old-stamped bytes survived")
+	}
+	var reloaded Baseline
+	if err := yaml.Unmarshal(after, &reloaded); err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.GeneratedAt == "2000-01-01T00:00:00Z" {
+		t.Error("a rewrite must refresh generated-at, but the old stamp survived")
+	}
+	if _, ok := reloaded.Intents["do-it-differently"]; !ok {
+		t.Errorf("rewritten baseline missing the new intent, has: %v", reloaded.Intents)
+	}
+}
+
+// Features stage 1 cannot baseline (no parseable intents.md) are collected
+// and reported, not dropped silently.
+func TestSaveBuildState_SkippedFeaturesReported(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	authorFeature(t, cfg, "good", "Do")
+	// A feature dir with an empty intents.md: discovered, but buildBaseline
+	// refuses the empty artifact.
+	emptyDir := cfg.FeaturePath("empty")
+	os.MkdirAll(emptyDir, 0755)
+	os.WriteFile(filepath.Join(emptyDir, "intents.md"), []byte(""), 0644)
+
+	root := filepath.Join(dir, "cmd")
+	writeMarkedFile(t, filepath.Join(root, "do.go"), "good", "do", "package do")
+
+	res, stderr, err := runProjectSave(t, cfg, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Slug != "empty" {
+		t.Fatalf("expected 'empty' reported as skipped, got %v", res.Skipped)
+	}
+	if res.Skipped[0].Reason == "" {
+		t.Error("a skipped feature must carry a reason")
+	}
+	// The good feature still baselined.
+	if _, err := os.Stat(baselinePath(cfg, "good")); err != nil {
+		t.Errorf("the good feature should have a baseline: %v", err)
+	}
+	// runSaveBuildState surfaces the summary; saveProjectBuildState itself
+	// records it on the result. Stderr here carries no skip line (the CLI
+	// entrypoint prints it), so assert on the result rather than stderr.
+	_ = stderr
 }

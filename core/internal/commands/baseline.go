@@ -331,6 +331,48 @@ func marshalBaseline(b *Baseline) ([]byte, error) {
 	return yaml.Marshal(b)
 }
 
+// baselineContentUnchanged reports whether the freshly-built baseline differs
+// from the one already on disk in nothing but its generated-at timestamp.
+//
+// GeneratedAt is the struct's only wall-clock field — every other field is a
+// content hash or a count derived from the source, so re-running the build
+// over an unedited feature reproduces them exactly. Zeroing that one field on
+// both sides and comparing the marshaled bytes isolates "same content, fresh
+// stamp" (skip the write, keep the old blame) from any real change (write).
+//
+// Returns (false, nil) when no baseline exists yet — a first save always
+// writes. A read or unmarshal error other than not-exist is returned so the
+// caller fails loudly rather than defaulting to skip-or-rewrite on a corrupt
+// baseline.
+func baselineContentUnchanged(path string, fresh *Baseline) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	var prior Baseline
+	if err := yaml.Unmarshal(data, &prior); err != nil {
+		return false, fmt.Errorf("read existing baseline %s: %w", path, err)
+	}
+
+	priorCopy := prior
+	freshCopy := *fresh
+	priorCopy.GeneratedAt = ""
+	freshCopy.GeneratedAt = ""
+
+	priorBytes, err := yaml.Marshal(priorCopy)
+	if err != nil {
+		return false, err
+	}
+	freshBytes, err := yaml.Marshal(freshCopy)
+	if err != nil {
+		return false, err
+	}
+	return string(priorBytes) == string(freshBytes), nil
+}
+
 func runCheckDrift(cmd *cobra.Command, args []string) error {
 	cfg, err := mustContext(cmd)
 	if err != nil {

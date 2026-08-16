@@ -33,11 +33,20 @@ write-then-rename pattern for atomicity.`,
 }
 
 var (
-	saveBuildStateSourceRoot string
-	saveBuildStateEmitted    string
-	saveBuildStateStrict     bool
-	saveBuildStatePartial    bool
+	saveBuildStateSourceRoot     string
+	saveBuildStateEmitted        string
+	saveBuildStateStrict         bool
+	saveBuildStatePartial        bool
+	saveBuildStateAllowNarrowing bool
 )
+
+// consumedManifestSuffix is appended to an emission manifest once a save has
+// read it, renaming `.emitted` to `.emitted.consumed` instead of deleting it.
+// A stale manifest at the original name would bless a later run's files as
+// generated (the reason it is not simply left in place), but a rename keeps
+// the evidence one `ls` away so a re-run's "manifest missing" error can point
+// at exactly where the previous run's declaration went.
+const consumedManifestSuffix = ".consumed"
 
 // DefaultEmittedManifest is where codegen declares what it wrote.
 //
@@ -65,6 +74,8 @@ func init() {
 		"Fail instead of recording when a generated file was changed outside codegen")
 	saveBuildStateCmd.Flags().BoolVar(&saveBuildStatePartial, "partial", false,
 		"This run regenerated only part of the project (e.g. `parlay refine`); makes --emitted mandatory")
+	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateAllowNarrowing, "allow-narrowing", false,
+		"Permit a --source-root that no longer covers previously-tracked files; without it the save refuses rather than silently shrinking provenance (mirrors --strict for adopted files)")
 }
 
 // requireEmittedForPartial refuses a partial save with no emission manifest.
@@ -107,6 +118,14 @@ func runSaveBuildState(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "  project baseline: %s\n", projectBaselinePath(cfg))
 	fmt.Fprintf(cmd.OutOrStdout(), "  code-hashes:      %s (%d files)\n",
 		projectCodeHashesPath(cfg), result.FileCount)
+	if len(result.Skipped) > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[WARN] %d feature(s) had no baseline written this save (no parseable intents.md yet); they will not appear in check-drift until authored:\n",
+			len(result.Skipped))
+		for _, s := range result.Skipped {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  - %s: %s\n", s.Slug, s.Reason)
+		}
+	}
 	return nil
 }
 
@@ -117,6 +136,17 @@ type projectSaveResult struct {
 	// Adopted names files that changed outside codegen this run. Recorded so
 	// the caller can report them; the save itself still succeeds.
 	Adopted []string
+	// Skipped names features stage 1 could not baseline (typically no
+	// intents authored yet, or an unparseable intents.md). Recorded and
+	// surfaced rather than dropped silently.
+	Skipped []skippedFeature
+}
+
+// skippedFeature is a feature stage 1 could not build a baseline for, paired
+// with the reason, so the caller can print an actionable summary.
+type skippedFeature struct {
+	Slug   string
+	Reason string
 }
 
 type featureSaveResult struct {
@@ -190,7 +220,12 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	for _, slug := range features {
 		baseline, err := buildBaseline(cfg, slug)
 		if err != nil {
-			// Feature may not have intents yet — skip silently.
+			// Feature may not have intents yet, or has an unparseable one.
+			// Either way no baseline is written for it — record that so the
+			// summary can report it, rather than dropping the feature
+			// silently and leaving the operator to wonder why it never
+			// appears in check-drift.
+			result.Skipped = append(result.Skipped, skippedFeature{Slug: slug, Reason: err.Error()})
 			continue
 		}
 
@@ -210,8 +245,18 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 		if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
 			return nil, fmt.Errorf("create build dir for %s: %w", slug, err)
 		}
-		if err := writeFileAtomic(blPath, baselineBytes); err != nil {
-			return nil, fmt.Errorf("write baseline for %s: %w", slug, err)
+		// Write-if-changed. A re-save of an unedited feature would otherwise
+		// rewrite its baseline with nothing but a fresh generated-at stamp,
+		// which reblames the whole file and buries the one real change in a
+		// project-wide save behind dozens of timestamp-only diffs. Skip the
+		// write when the only difference from disk is that stamp; any content
+		// difference (a changed hash, an added intent) still writes.
+		if unchanged, err := baselineContentUnchanged(blPath, baseline); err != nil {
+			return nil, fmt.Errorf("compare baseline for %s: %w", slug, err)
+		} else if !unchanged {
+			if err := writeFileAtomic(blPath, baselineBytes); err != nil {
+				return nil, fmt.Errorf("write baseline for %s: %w", slug, err)
+			}
 		}
 
 		fr := featureSaveResult{Slug: slug, IntentCount: len(baseline.Intents)}
@@ -253,7 +298,27 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	if err := requireEmittedForPartial(cfg, emitted); err != nil {
 		return nil, err
 	}
-	previous, _ := loadProjectCodeHashes(cfg)
+	// The previous snapshot feeds both provenance carry-forward (below) and
+	// the two source-root guards (prefix shape here, scope narrowing further
+	// down). Loading it once and reusing it keeps those checks talking about
+	// the same snapshot. A load error is no longer discarded: a corrupt or
+	// unreadable snapshot silently turned both guards off, so warn — the save
+	// still proceeds, but the operator knows the guards had nothing to check.
+	previous, prevErr := loadProjectCodeHashes(cfg)
+	if prevErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[WARN] could not read the previous project code-hashes snapshot at %s (%v); the source-root prefix and scope-narrowing checks have nothing to compare against and are skipped this run\n",
+			projectCodeHashesPath(cfg), prevErr)
+	}
+	// Source-root shape guard. A --source-root under which not one
+	// previously-tracked file sits means this invocation disagrees with the
+	// last about where generated code lives — a mis-guessed flag, caught
+	// before it commits a snapshot rooted somewhere else entirely. Skipped on
+	// a first-ever save, which has no snapshot and falls back to the adapter's
+	// documented source-root convention rather than guessing.
+	if err := checkSourceRootMatchesSnapshot(previous, sourceRoot); err != nil {
+		return nil, err
+	}
 
 	// The unit declarations, resolved to concrete files. Read from
 	// spec/intents/ here — which the CLI may do and codegen may not — and
@@ -335,18 +400,21 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	// verify-generated can ever check: in a multi-adapter project, a
 	// caller might accidentally pass one adapter's own (narrower) source
 	// root instead of the true project-wide root that spans every
-	// adapter. Compare against the previous run's tracked file set —
-	// files that vanished from tracking but still exist on disk are a
-	// narrowing signal, not a legitimate deletion, so warn loudly rather
-	// than silently committing a smaller CodeHashes than before.
-	if previous, loadErr := loadProjectCodeHashes(cfg); loadErr == nil {
-		if dropped := filesDroppedBySourceRootNarrowing(previous, hashes); len(dropped) > 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(),
-				"[WARN] --source-root %q no longer covers %d previously-tracked file(s) that still exist on disk — verify-generated will stop checking them. If this is unintended, pass the project-wide source root instead of a narrower one:\n",
-				sourceRoot, len(dropped))
-			for _, path := range dropped {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", path)
-			}
+	// adapter. Compare against the previous run's tracked file set (loaded
+	// once, above) — files that vanished from tracking but still exist on
+	// disk are a narrowing signal, not a legitimate deletion. This refuses
+	// rather than warns, mirroring the --strict adopted gate: overwriting
+	// the record with a smaller one is an operation whose harm is in the
+	// proceeding, so it needs an explicit --allow-narrowing to go through.
+	if dropped := filesDroppedBySourceRootNarrowing(previous, hashes); len(dropped) > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"[WARN] --source-root %q no longer covers %d previously-tracked file(s) that still exist on disk — verify-generated will stop checking them:\n",
+			sourceRoot, len(dropped))
+		for _, path := range dropped {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", path)
+		}
+		if !saveBuildStateAllowNarrowing {
+			return nil, fmt.Errorf("--source-root %q drops %d previously-tracked file(s) from provenance (listed above); refusing to commit a snapshot smaller than the last. Pass the project-wide source root instead of a narrower one, or --allow-narrowing if the shrink is intended (those files genuinely left codegen's scope)", sourceRoot, len(dropped))
 		}
 	}
 
@@ -359,11 +427,18 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	}
 	result.FileCount = len(hashes.Files)
 
-	// Consume the manifest. A stale .emitted left on disk would bless a later
-	// run's files as generated on the strength of what a previous run wrote —
-	// the exact silent blessing this whole mechanism exists to remove.
+	// Consume the manifest by renaming it, not deleting it. A stale .emitted
+	// left at its original name would bless a later run's files as generated
+	// on the strength of what a previous run wrote — the exact silent blessing
+	// this whole mechanism exists to remove — so the loader never reads the
+	// consumed name. But keeping the file under <name>.consumed leaves the
+	// declaration on disk, so a re-run that trips the "manifest missing" error
+	// above can be diagnosed with one `ls`. If the rename fails, fall back to
+	// removing: safety (no stale blessing) outranks the diagnostic keepsake.
 	if emittedPath != "" {
-		_ = os.Remove(emittedPath)
+		if err := os.Rename(emittedPath, emittedPath+consumedManifestSuffix); err != nil {
+			_ = os.Remove(emittedPath)
+		}
 	}
 
 	return result, nil
@@ -378,12 +453,15 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 // the former makes every file unknown, the latter makes every changed file
 // adopted.
 //
-// Passing --emitted IS the declaration. So an explicitly passed path that
-// does not exist reads as an EMPTY declaration — this run is
-// provenance-tracked and emitted nothing — rather than as an error or as
-// silence. Erroring would fail the save of a legitimate no-op regeneration;
-// treating it as silence would quietly downgrade a tracked run, which looks
-// identical to the feature working.
+// Passing --emitted IS the declaration, so an explicitly passed path that
+// does not exist is a hard error, not an empty declaration. Naming a file
+// that is not there is always a caller mistake: the overwhelmingly likely
+// cause is a re-run against a manifest a previous save already consumed (and
+// renamed to <path>.consumed), and silently reading it as "emitted nothing"
+// would downgrade a tracked run to an empty one — which looks identical to
+// the feature working. A run that genuinely wrote nothing declares that by
+// pointing --emitted at an existing empty file. (The no-flag case is
+// different and keeps its loud WARN: there, nothing was declared at all.)
 func loadEmittedManifest(cfg *config.Context, flagPath string) (*emissionDeclaration, string, error) {
 	path := flagPath
 	explicit := flagPath != ""
@@ -397,7 +475,8 @@ func loadEmittedManifest(cfg *config.Context, flagPath string) (*emissionDeclara
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if explicit && os.IsNotExist(err) {
-			return &emissionDeclaration{Paths: map[string]bool{}}, "", nil
+			return nil, "", fmt.Errorf("--emitted %s does not exist. save-build-state consumes the manifest by renaming it to %s%s once it has read it, so a re-run finds nothing at the original path — look there to see what the previous run declared. Regenerate the manifest (have codegen re-append every file it wrote) rather than pointing --emitted at a missing file; naming a path that is not there is always a caller mistake. To assert that this run emitted nothing, create an empty file at %s and pass that",
+				path, path, consumedManifestSuffix, path)
 		}
 		return nil, "", fmt.Errorf("read emitted manifest %s: %w", path, err)
 	}
