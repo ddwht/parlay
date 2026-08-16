@@ -155,7 +155,56 @@ failures are currently obscured by churn, and it deliberately trades the whole-p
 one-instant invariant for a per-feature one, which must not be done blind. Groundwork for C
 already exists on this branch (per-feature `last-applied-amendment` has the same shape).
 
-## Theme 3 — toolchain self-disagreement · pending
+## Theme 3 — toolchain self-disagreement · DECIDED 2026-08-16
+
+### The problem, as the user experiences it
+
+The answer to "is this right?" depends on which door you knock on: one validator blesses the
+buildfile, another reports its fragments missing; the schema recommends the shape that breaks
+and contradicts itself about it 195 lines apart; the skill names a command that doesn't exist
+(six agents burned the same discovery round-trip in one benchmark run). Every contradiction
+teaches the user to re-derive truth by hand.
+
+### Root causes
+
+1. **Two sources of truth for the command surface, on different clocks** — skills name
+   commands/flags/paths in prose; the CLI refactors; nothing couples them, so each rename
+   mints a permanent lie.
+2. **Duplicate readers of the same artifact** — check-buildfile and check-coverage each grew
+   their own buildfile parser; the v2 shape was taught to one. Two parsers guarantee drift.
+3. **Schemas accrete span-wise edits with no whole-document reconciliation** — the 17-vs-212
+   contradiction survived three rewrites of the same paragraph. (Splice-don't-rewrite
+   preserves formatting AND preserves contradictions.)
+4. **Shared names without shared definitions** — `dirty_set` (cumulative union) vs diff's
+   dirty (current delta); a skill then asserted their equivalence.
+5. **Cross-cutting contracts have no owner** — the skill mandates a step the binary was
+   deliberately hardened to refuse unattended; both decisions locally right, never
+   reconciled.
+
+### Options considered
+
+- **A. One-time reconciliation sweep** — shared buildfile reader for all validators (root
+  fix, not symptom), resolve the schema contradiction with one recommendation, scope
+  `dirty_set` to the unapplied tail and rename the union, reorder amendment validation for
+  adds, add the coverage-step no-op branch, fix the command/flag/path mentions. Every known
+  contradiction gone; whack-a-mole for causes 1/3 without B.
+- **B. Conformance ratchet** — extend the repo's proven meta-test pattern: every command a
+  skill mentions must exist and its flags parse; every documented error code has an emit
+  site; validators reading the same artifact must import the same loader. Drift becomes a
+  failing test at the introducing commit. Cannot catch semantic contradictions; the
+  ignore-list needs discipline.
+- **C. Generate skill CLI-references from the cobra tree** — rejected: flattens judgment
+  prose to fix only the slice B fixes without flattening.
+- **D. Contract registry for cross-cutting decisions** — rejected: another always-current
+  document; each reconciled contract is written as a conformance TEST instead — a contract
+  that defends itself.
+
+### Decision
+
+**A + B as one staged fix; C and D rejected.** Sweep first (the ratchet would ship red),
+ratchet immediately after (A without B decays at a measured rate — six agents per lie per
+run). Each semantic reconciliation in A leaves a one-line note in the owning schema/skill
+saying which reading won and why, so the next span-edit has something to collide with.
 
 ## Theme 4 — where rationale lives · pending
 
