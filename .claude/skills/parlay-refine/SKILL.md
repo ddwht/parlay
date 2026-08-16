@@ -45,16 +45,25 @@ Who resolves it depends on where you are running. If you own the user interactio
 
 ## Asking the user
 
-**You own the interaction — prompt directly.** This skill is invoked by a
-person typing `/parlay-refine`, not by the loop driver, so `AskUserQuestion`
-works here and there is no decision request to round-trip. An earlier version
-carried the phase-module decision protocol, which opens by telling you that no
-interactive tool exists and to return a `parlay-decision` block instead. That is
-the right rule for a phase running inside a subagent and the wrong one here: it
-would have you emit YAML at a driver that is not listening while the person who
-asked for the change waits.
+**Which protocol you use depends on how you were invoked — check before you
+prompt.** The gates below are real questions and must reach a human either way;
+what differs is the channel.
 
-The gates below are real questions. Ask them.
+- **Invoked directly** — a person typed `/parlay-refine` and you are the agent
+  they are talking to (you have `AskUserQuestion`). Prompt directly: there is no
+  driver to round-trip through, and emitting a `parlay-decision` block would
+  throw YAML at nobody while the person who asked waits.
+- **Invoked as a subagent** — a loop driver or another orchestrator is running
+  this flow and you have no `AskUserQuestion` (the standard phase-subagent
+  situation, per the CLAUDE.md subagent rule). A question asked here reaches
+  nobody and the phase answers itself, which is indistinguishable from a granted
+  confirmation. Stop at each gate and return a `parlay-decision` block instead;
+  the driver prompts the human and resumes you with the answer.
+
+The determining fact is whether `AskUserQuestion` is actually available to you,
+not the command name — do not assume refine is always person-driven (it is not).
+Either way the gate is answered by a human before you proceed; neither channel
+lets the skill confirm to itself.
 
 ## The one invariant: amend first
 
@@ -93,8 +102,9 @@ written again after first build. Do not splice them, do not re-sync dialogs
 to match a change, do not ask permission to edit them (the answer is
 structural, not personal). The contract artifacts — `surface.yaml`,
 `capabilities.yaml`, `infrastructure.md`, the domain model — are the current
-truth, and they are what step 4 amends. `check-drift` enforces this: an edit
-to a frozen doc surfaces as a `ledger_integrity` finding, not as drift.
+truth, and they are what step 4 amends. `parlay internal check-drift` enforces
+this: an edit to a frozen doc surfaces as a `ledger_integrity` finding, not as
+drift.
 
 **The change is recorded before it is applied.** Insert this step between
 steps 3 and 4:
@@ -157,7 +167,8 @@ disagreement between `dirty_set` and the diff, or any
 or the splice is wrong; stop and reconcile rather than proceeding.
 
 Steps 5–10 run unchanged; step 9's re-baseline records the new amendment as
-applied, which is what clears it from `check-drift`'s `unapplied_amendments`.
+applied, which is what clears it from `parlay internal check-drift`'s
+`unapplied_amendments`.
 The feature-gate in step 2.5 is unchanged: an ask that is a new feature still
 goes to `/parlay-loop`, which authors founding docs for the NEW feature —
 birth is not what froze.
@@ -341,7 +352,10 @@ report — which mode ran is part of what was blessed.
 
    If the amendment **added** a spec element, the buildfile does not know about
    it yet. Read `.parlay/modules/build-feature.md` and run the build phase for
-   this feature, then continue.
+   this feature, then continue. (In a multi-root project the `modules/`
+   directory — like schemas and adapters — resolves at the **parent** repo-level
+   root, not the child; read it from there even when the feature lives in a
+   child root.)
 
    **Why this step has to exist.** Steps 6–7 regenerate code from the buildfile
    and then re-stamp `source-signatures` so the freshness gate passes. Without
@@ -359,6 +373,14 @@ report — which mode ran is part of what was blessed.
    path per line, as you write it. The manifest is what makes step 9 a scoped
    re-baseline rather than a project-wide one.
 
+   **Path format:** each line is the file path as it appears under the walk
+   root that step 9 passes as `--source-root`, i.e. the same prefix the code-hash
+   keys carry. In a multi-root project that prefix is the child root — a file
+   generated into the `core` child is written as `core/internal/...`, not
+   `internal/...`. save-build-state normalizes both the manifest and the stored
+   keys before matching, but a wrong prefix here still under-scopes the
+   re-baseline; write the path exactly as it sits from the project root.
+
 7. **Refresh signatures** — `parlay internal scaffold-signatures @{feature}`.
    The amended artifact's hash moved; the buildfile's `source-signatures:` has
    to move with it or the freshness gate fires on the next run.
@@ -375,6 +397,13 @@ report — which mode ran is part of what was blessed.
 
    Tests failing stops the refinement. Raise a `failure` decision with the
    failures in `context:`. Do not re-baseline.
+
+   **Rebuild before smoke-testing.** If you go on to smoke-test the running app
+   or a compiled binary — not just the test suite — rebuild it first. Step 6
+   regenerated source; a binary compiled before this refine still runs the old
+   behavior, so the change is visible to `go test`/the test runner but not to a
+   stale binary. Smoke-testing the old binary reports a pass or a failure that
+   describes neither the code you just wrote.
 
 9. **Re-baseline** — `parlay internal save-build-state --source-root {root} --partial --emitted .parlay/build/_project/.emitted`
 
@@ -420,8 +449,11 @@ report — which mode ran is part of what was blessed.
 
 11. **Report** — What changed, in this order: the artifact and the span amended;
     the components regenerated; the test result; the baseline and coverage
-    review refreshed. Then the sentence that matters: `check-drift` is clean,
-    because the spec and the code agree again.
+    review refreshed (or `coverage re-review skipped: gate inactive` from
+    step 10 when the gate is inactive). Then run
+    `parlay internal check-drift @{feature}` and report the sentence that
+    matters: it is clean, because the spec and the code agree again. (Do not
+    assert it clean without running it — the run is the evidence.)
 
 ## What this does not do
 
