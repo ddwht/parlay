@@ -391,7 +391,22 @@ report — which mode ran is part of what was blessed.
     one suite, and the re-review walk is that suite, not all of them. Tell
     the reviewer which suites they are re-approving and why those.
 
-    Then `parlay review-coverage @{feature}`. Not optional, and not
+    **The gate may be inactive — that is a documented outcome, not a skip to
+    improvise.** When `check-review-gate` reports `ready: true` AND no
+    `.parlay/build/{feature}/coverage-review.yaml` exists, this project does
+    not run the coverage-review gate at all — it is single-target /
+    presentation-only, and the gate short-circuits to ready for exactly that
+    shape. There is nothing to re-review and nothing the next codegen run will
+    trip on. Record `coverage re-review skipped: gate inactive (no
+    coverage-review.yaml; review-gate ready)` in the step-11 report and
+    proceed to step 11. Do NOT run `review-coverage` to manufacture a review
+    the project's shape does not call for. (`ready: true` WITH a
+    coverage-review.yaml present means the existing review still holds after
+    this change; re-review anyway per the next paragraph so its pinned hashes
+    track the new buildfile.)
+
+    Otherwise — a coverage-review.yaml exists (the gate is active) — run
+    `parlay review-coverage @{feature}`. Not optional, and not
     tidiness. The refinement changed the buildfile, which invalidates the
     hashes `coverage-review.yaml` pins, so the review gate exits non-zero on
     the *next* codegen run — after this command has reported success and

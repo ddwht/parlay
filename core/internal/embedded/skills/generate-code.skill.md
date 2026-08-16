@@ -515,6 +515,8 @@ The fix is structural: the baseline and code-hashes are written together by a si
 
 When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay internal check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
 
+**Gate-inactive is a recorded outcome, not a skip to improvise (F3).** When `check-review-gate` reports `ready: true` AND no `coverage-review.yaml` exists — the presentation-only / single-target shape, where the gate short-circuits — there is no review to consult and nothing to block on. Record `coverage-review gate inactive (no coverage-review.yaml; review-gate ready) — proceeding` and continue past this gate. This is the documented unattended path (record-skipped-with-reason); do NOT invent a coverage review the project's shape does not call for, and do NOT treat the absent file as `coverage-review-missing` (that code fires only for a *multi-target* project, where the gate is active and the file is genuinely required).
+
 | Code | When it fires |
 |---|---|
 | `coverage-review-missing` | The file does not exist. |
