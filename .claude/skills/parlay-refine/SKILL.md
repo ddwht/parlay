@@ -119,7 +119,13 @@ steps 3 and 4:
    step 4's gate, and the two are one decision when convenient: show the
    amendment and the artifact splice together. An amendment is written once
    and never edited; a correction later is a new amendment naming this one
-   in `supersedes:`. After writing, run
+   in `supersedes:`. After writing, **re-read the file you just wrote and run
+   `parlay validate --type amendment spec/intents/{feature}/amendments/NNN-{slug}.md`
+   on it.** A parse or shape failure means the write itself is corrupt — a
+   truncated frontmatter, a dropped `affects:`, a mangled heading — and every
+   later step reads a broken ledger entry. Fix the file before proceeding; do
+   not run `check-amendments` against a file that does not even validate on
+   its own. Once it validates, run
    `parlay internal check-amendments @{feature}` — it validates the ledger
    and every `affects:` ref, and its `dirty_set` should agree with what
    step 5's diff reports dirty. A disagreement means the amendment or the
