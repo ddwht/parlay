@@ -669,6 +669,34 @@ func hashDialogContent(dialog parser.Dialog) string {
 	return sha256Hex(b.String())
 }
 
+// resolveBuildfileSectionNode returns the raw YAML value for a hashed
+// buildfile section, resolving the v2 relocation of routes: into
+// targets.presentation.routes:. models: and fixtures: stay top-level in both
+// the v1 and v2 shapes, so only routes: needs the fallback.
+//
+// It returns the RAW node (not a re-typed struct) so a v1 buildfile hashes
+// byte-identically to before this fallback existed: raw[key] is checked first
+// and short-circuits for every v1 file. The fallback fires only for a v2
+// buildfile whose top-level routes: is absent — which previously produced an
+// empty routes hash for every multi-target project, so its cross-cutting
+// regeneration signal never saw a route change. Making it v2-aware changes
+// those projects' section hashes once; see WP2.1 re-baseline note.
+func resolveBuildfileSectionNode(raw map[string]interface{}, key string) (interface{}, bool) {
+	if section, ok := raw[key]; ok {
+		return section, true
+	}
+	if key == "routes" {
+		if targets, ok := raw["targets"].(map[string]interface{}); ok {
+			if pres, ok := targets["presentation"].(map[string]interface{}); ok {
+				if routes, ok := pres["routes"]; ok {
+					return routes, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
 // hashBuildfileSections reads a buildfile.yaml and returns per-section
 // content hashes for the major sections (models, routes, fixtures). Used
 // by save-build-state to track which buildfile sections changed between
@@ -692,7 +720,7 @@ func hashBuildfileSections(buildfilePath string) (map[string]string, error) {
 
 	sections := make(map[string]string)
 	for _, key := range []string{"models", "routes", "fixtures"} {
-		if section, ok := raw[key]; ok {
+		if section, ok := resolveBuildfileSectionNode(raw, key); ok {
 			// Re-serialize the section for a stable hash (map key ordering
 			// in YAML is deterministic per the yaml.v3 library).
 			sectionBytes, err := yaml.Marshal(section)

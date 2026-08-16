@@ -313,3 +313,85 @@ func TestCheckDrift_DomainModelEditIsDrift(t *testing.T) {
 		t.Errorf("Drifted = %v, want empty — no intent changed, only the shared model", out.Drifted)
 	}
 }
+
+// TestHashBuildfileSections_V2RoutesResolved is the WP2.1 hasher regression.
+// In a v2 (multi-target) buildfile the routes: block relocates under
+// targets.presentation.routes:. The hasher read a raw top-level routes: only,
+// so every multi-target project produced NO routes section hash — the
+// cross-cutting regeneration signal never saw a route change. The hasher now
+// falls back to the presentation target, so the section is present and hashes
+// the relocated node.
+func TestHashBuildfileSections_V2RoutesResolved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "buildfile.yaml")
+	buildfile := `feature: notes
+adapter-set: notes-stack
+models:
+  Note: {}
+fixtures:
+  default:
+    data: {}
+targets:
+  presentation:
+    adapter: react-antd
+    routes:
+      - path: /notes
+        page: NotesPage
+`
+	if err := os.WriteFile(path, []byte(buildfile), 0o644); err != nil {
+		t.Fatalf("write buildfile: %v", err)
+	}
+
+	sections, err := hashBuildfileSections(path)
+	if err != nil {
+		t.Fatalf("hashBuildfileSections: %v", err)
+	}
+	if _, ok := sections["routes"]; !ok {
+		t.Fatal("no routes section hash for a v2 buildfile; the hasher is still blind to targets.presentation.routes")
+	}
+
+	// The routes hash must equal hashing the relocated node itself, proving
+	// the fallback hashed the right content.
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal([]byte(buildfile), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	presRoutes := raw["targets"].(map[string]interface{})["presentation"].(map[string]interface{})["routes"]
+	rb, _ := yaml.Marshal(presRoutes)
+	if want := sha256Hex(string(rb)); sections["routes"] != want {
+		t.Errorf("routes hash = %q, want %q (hash of the presentation routes node)", sections["routes"], want)
+	}
+	// models and fixtures stay top-level in both shapes and must still hash.
+	if _, ok := sections["models"]; !ok {
+		t.Error("models section missing — top-level models: must still hash in v2")
+	}
+	if _, ok := sections["fixtures"]; !ok {
+		t.Error("fixtures section missing — top-level fixtures: must still hash in v2")
+	}
+}
+
+// TestHashBuildfileSections_V1Unchanged pins that the v2-aware fallback does
+// not touch the v1 path: a top-level routes: hashes exactly as it always did.
+func TestHashBuildfileSections_V1Unchanged(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "buildfile.yaml")
+	buildfile := `feature: notes
+adapter: go-cli
+routes:
+  - path: /notes
+    page: NotesPage
+`
+	if err := os.WriteFile(path, []byte(buildfile), 0o644); err != nil {
+		t.Fatalf("write buildfile: %v", err)
+	}
+	sections, err := hashBuildfileSections(path)
+	if err != nil {
+		t.Fatalf("hashBuildfileSections: %v", err)
+	}
+	var raw map[string]interface{}
+	yaml.Unmarshal([]byte(buildfile), &raw)
+	rb, _ := yaml.Marshal(raw["routes"])
+	if want := sha256Hex(string(rb)); sections["routes"] != want {
+		t.Errorf("v1 routes hash = %q, want %q — the fallback must not change v1 hashing", sections["routes"], want)
+	}
+}

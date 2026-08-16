@@ -716,7 +716,11 @@ func hashMergedBuildfileSections(cfg *config.Context, features []string) map[str
 			continue
 		}
 		for _, key := range []string{"models", "routes", "fixtures"} {
-			if section, ok := raw[key]; ok {
+			// Same v2-aware resolution as the per-feature hasher: routes:
+			// relocates under targets.presentation in a multi-target buildfile,
+			// so a raw top-level lookup misses it. See
+			// resolveBuildfileSectionNode.
+			if section, ok := resolveBuildfileSectionNode(raw, key); ok {
 				sectionBytes, err := yaml.Marshal(section)
 				if err != nil {
 					continue

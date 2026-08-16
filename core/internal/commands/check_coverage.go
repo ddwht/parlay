@@ -315,25 +315,28 @@ func parseSourceRefs(source, feature string) []string {
 }
 
 // parseBuildfileRefs extracts component names and their source fragment slugs from a buildfile.
+//
+// Components are resolved through agent.ResolveBuildfileComponents, the shared
+// v2-aware reader, rather than a private top-level `components:` decode. The
+// private decode was the BP1 break: it saw nothing in a v2 (multi-target)
+// buildfile — whose components live under targets.presentation.components: —
+// so check-coverage reported every fragment of a multi-target feature
+// uncovered while validate --deep, reading the same file through the shared
+// resolution, reported it complete.
 func parseBuildfileRefs(path, feature string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var bf struct {
-		Components map[string]struct {
-			Source string `yaml:"source"`
-		} `yaml:"components"`
-	}
-
-	if err := yaml.Unmarshal(data, &bf); err != nil {
+	components, err := agent.ResolveBuildfileComponents(data)
+	if err != nil {
 		return nil, err
 	}
 
 	result := make(map[string]string)
 	prefix := "@" + feature + "/"
-	for name, comp := range bf.Components {
+	for name, comp := range components {
 		sourceSlug := ""
 		if strings.HasPrefix(comp.Source, prefix) {
 			sourceSlug = parser.Slugify(strings.TrimPrefix(comp.Source, prefix))

@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"gopkg.in/yaml.v3"
 )
@@ -52,10 +53,12 @@ type flowSuites struct {
 	} `yaml:"suites"`
 }
 
-type flowRoutes struct {
-	Routes []struct {
-		Path string `yaml:"path"`
-	} `yaml:"routes"`
+// flowPlan decodes only the plan: block; routes are resolved separately
+// through agent.ResolveBuildfileRoutes so the v2 relocation of routes: under
+// targets.presentation is honored (a private top-level routes: decode saw
+// nothing for a multi-target buildfile, so no route in the project had an
+// owner and every cross-feature flow read as same-feature).
+type flowPlan struct {
 	Plan struct {
 		Creates []struct {
 			Path string `yaml:"path"`
@@ -95,11 +98,12 @@ func findUnsatisfiableFlows(cfg *config.Context, features []string, storePath st
 		if err != nil {
 			continue
 		}
-		var bf flowRoutes
+		var bf flowPlan
 		if yaml.Unmarshal(data, &bf) != nil {
 			continue
 		}
-		for _, r := range bf.Routes {
+		routes, _ := agent.ResolveBuildfileRoutes(data)
+		for _, r := range routes {
 			if r.Path != "" {
 				owner[r.Path] = slug
 			}

@@ -357,6 +357,63 @@ func (bf deepBuildfile) presentationAdapter() string {
 	return ""
 }
 
+// BuildfileComponent is the subset of a buildfile component that shared
+// readers expose to callers outside this package. Only the fields the
+// coverage/traceability consumers need are surfaced; the full deepComponent
+// stays internal to deep validation.
+type BuildfileComponent struct {
+	Source string
+	Widget string
+}
+
+// BuildfileRoute is the subset of a buildfile route exposed to shared readers.
+type BuildfileRoute struct {
+	Path string
+}
+
+// ResolveBuildfileComponents parses buildfile content and returns its
+// components in a shape-agnostic way: the v1 top-level components: map for
+// single-target buildfiles, or targets.presentation.components: for v2
+// multi-target ones. Built on deepBuildfile.resolvedComponents(), the same
+// v2-aware resolution the deep validator already trusts.
+//
+// This is the ONE reader every check that needs a buildfile's components must
+// go through, so a v2 buildfile can never again read as "no components" to one
+// validator while another sees them. That divergence was the confirmed BP1
+// break: check-coverage's own struct read only top-level components:, so every
+// fragment of a multi-target feature came back uncovered while validate --deep
+// (which resolves the v2 shape) reported the same buildfile complete.
+func ResolveBuildfileComponents(content []byte) (map[string]BuildfileComponent, error) {
+	var bf deepBuildfile
+	if err := yaml.Unmarshal(content, &bf); err != nil {
+		return nil, err
+	}
+	resolved := bf.resolvedComponents()
+	out := make(map[string]BuildfileComponent, len(resolved))
+	for name, c := range resolved {
+		out[name] = BuildfileComponent{Source: c.Source, Widget: c.Widget}
+	}
+	return out, nil
+}
+
+// ResolveBuildfileRoutes mirrors ResolveBuildfileComponents for the routes
+// block: v1 top-level routes:, or v2 targets.presentation.routes:. Route
+// ownership and section hashing both need this fallback — a v2 buildfile's
+// top-level routes: is empty because the rows relocated under the presentation
+// target.
+func ResolveBuildfileRoutes(content []byte) ([]BuildfileRoute, error) {
+	var bf deepBuildfile
+	if err := yaml.Unmarshal(content, &bf); err != nil {
+		return nil, err
+	}
+	resolved := bf.resolvedRoutes()
+	out := make([]BuildfileRoute, 0, len(resolved))
+	for _, r := range resolved {
+		out = append(out, BuildfileRoute{Path: r.Path})
+	}
+	return out, nil
+}
+
 type deepPlan struct {
 	Modifies []deepPlanEntry `yaml:"modifies"`
 	Creates  []deepPlanEntry `yaml:"creates"`

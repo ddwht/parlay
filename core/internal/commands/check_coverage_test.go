@@ -169,3 +169,75 @@ func TestParseSourceRefs(t *testing.T) {
 		t.Errorf("expected 0 refs for different feature, got %d", len(refs))
 	}
 }
+
+// TestParseBuildfileRefs_V1 pins the legacy single-target shape: components
+// live at the top level. This is the byte-for-byte behavior that must not
+// regress when the reader is made v2-aware.
+func TestParseBuildfileRefs_V1(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "buildfile.yaml")
+	buildfile := `feature: notes
+adapter: go-cli
+components:
+  note-list:
+    source: "@notes/note-list"
+  note-form:
+    source: "@notes/note-form"
+`
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	refs, err := parseBuildfileRefs(path, "notes")
+	if err != nil {
+		t.Fatalf("parseBuildfileRefs: %v", err)
+	}
+	if got := refs["note-list"]; got != "note-list" {
+		t.Errorf("note-list source = %q, want %q", got, "note-list")
+	}
+	if got := refs["note-form"]; got != "note-form" {
+		t.Errorf("note-form source = %q, want %q", got, "note-form")
+	}
+}
+
+// TestParseBuildfileRefs_V2 is the BP1 regression. A v2 (multi-target)
+// buildfile keeps its components under targets.presentation.components:. The
+// old private top-level `components:` decode saw nothing here, so
+// check-coverage reported every fragment of a multi-target feature uncovered
+// while validate --deep — reading the same file through the shared resolution
+// this now shares — reported it complete. Both must agree: the components must
+// resolve.
+func TestParseBuildfileRefs_V2(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "buildfile.yaml")
+	buildfile := `feature: notes
+schema_version: 1
+adapter-set: notes-stack
+targets:
+  presentation:
+    adapter: react-antd
+    components:
+      note-list:
+        source: "@notes/note-list"
+        widget: Table
+      note-form:
+        source: "@notes/note-form"
+        widget: Form
+    routes:
+      - path: /notes
+        page: NotesPage
+`
+	os.WriteFile(path, []byte(buildfile), 0644)
+
+	refs, err := parseBuildfileRefs(path, "notes")
+	if err != nil {
+		t.Fatalf("parseBuildfileRefs: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("v2 buildfile resolved %d components, want 2 (BP1: top-level-only reader saw 0)", len(refs))
+	}
+	if got := refs["note-list"]; got != "note-list" {
+		t.Errorf("note-list source = %q, want %q", got, "note-list")
+	}
+	if got := refs["note-form"]; got != "note-form" {
+		t.Errorf("note-form source = %q, want %q", got, "note-form")
+	}
+}
