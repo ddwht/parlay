@@ -236,6 +236,17 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A decisions: entry names an enforcing file that exists but does not
+	// carry the decision id. A warning in both modes: the code still runs and
+	// the buildfile still records the reason — what is missing is the link
+	// from one to the other, which is a documentation gap a reader can close,
+	// not a build-blocking defect. Blocking it would also fail a buildfile the
+	// instant a decision is recorded ahead of the codegen pass that will write
+	// the id into the file, which is the normal authoring order.
+	"rationale-stranded": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 }
 
 // unknown-turn-form is deliberately absent from this table, so it is an

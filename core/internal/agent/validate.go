@@ -308,6 +308,18 @@ type deepBuildfile struct {
 	Components   map[string]deepComponent `yaml:"components"`
 	CrossCutting []deepCrossCuttingEntry  `yaml:"cross-cutting"`
 	Plan         *deepPlan                `yaml:"plan"`
+	Decisions    []deepDecision           `yaml:"decisions"`
+}
+
+// deepDecision is one entry of the buildfile's decisions: block — an
+// implementation-level judgment call codegen recorded so the next emission
+// starts from it instead of re-deriving it. Only the fields the propagation
+// check consults are captured; the rest of the entry rides through parse
+// untouched (the block is preserved verbatim, not rewritten by validation).
+type deepDecision struct {
+	ID         string   `yaml:"id"`
+	Component  string   `yaml:"component"`
+	EnforcedBy []string `yaml:"enforced-by"`
 }
 
 // deepTarget is one entry of the v2 targets: block. Only the fields the deep
@@ -710,6 +722,61 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 	planErrors := validatePlanSection(bf, buildfilePath, plannedCreates)
 	errors = append(errors, planErrors...)
 
+	// 8. Rationale propagation: every decisions: entry must reach the code it
+	// governs. A recorded decision whose enforcing file exists but never names
+	// the decision id is stranded — the reason is on disk in the buildfile but
+	// absent from the file a later reader edits.
+	decisionErrors := validateDecisionPropagation(bf, buildfilePath)
+	errors = append(errors, decisionErrors...)
+
+	return errors
+}
+
+// validateDecisionPropagation implements the WP7 rationale-stranded check.
+// For each decisions: entry, every file named in enforced-by: that exists on
+// disk must contain the decision's id verbatim. The check is lexical and
+// scoped to explicitly-recorded decisions only — it never infers a decision
+// from unmarked code.
+//
+// A file that does not yet exist is not stranded: a plan.creates path before
+// codegen has run simply has not been written, and firing on it would make the
+// check noise for every buildfile validated between build and generate. That
+// is why the missing-file case is silent here rather than a finding — file
+// existence is the plan section's concern, not this one's.
+func validateDecisionPropagation(bf deepBuildfile, buildfilePath string) []ValidationError {
+	if len(bf.Decisions) == 0 {
+		return nil
+	}
+	rootDir := planRootDirFromBuildfilePath(buildfilePath)
+	var errors []ValidationError
+	for i, d := range bf.Decisions {
+		// An entry with no id or no enforcing files records nothing the check
+		// can hold anything to; the schema requires both, and the shape checks
+		// for that live where the block is authored, not here.
+		if d.ID == "" || len(d.EnforcedBy) == 0 {
+			continue
+		}
+		for _, rel := range d.EnforcedBy {
+			abs := rel
+			if rootDir != "" && !filepath.IsAbs(rel) {
+				abs = filepath.Join(rootDir, rel)
+			}
+			content, err := os.ReadFile(abs)
+			if err != nil {
+				// Unwritten (or unreadable) file: not stranded — see the
+				// function comment. Existence is the plan section's job.
+				continue
+			}
+			if !strings.Contains(string(content), d.ID) {
+				errors = append(errors, ValidationError{
+					Code:    "rationale-stranded",
+					Message: fmt.Sprintf("decision %q names %q in enforced-by:, but that file does not contain the decision id — the recorded reason never reached the code it governs", d.ID, rel),
+					Context: fmt.Sprintf("decisions[%d].enforced-by (%s)", i, rel),
+					Fix:     fmt.Sprintf("reference %q in %s (a comment naming the decision is enough), or drop the file from enforced-by: if the decision no longer governs it", d.ID, rel),
+				})
+			}
+		}
+	}
 	return errors
 }
 

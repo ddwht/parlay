@@ -359,6 +359,36 @@ The section is keyed three levels deep: `<feature> → <page-path> → <layout-n
 
 **Freshness gate cross-reference.** Bindings are part of the buildfile that codegen reads. The freshness gate's `source-signatures:` cover the layout, surface, and domain inputs that drive binding resolution — a change in any of them invalidates the buildfile and forces a rebuild.
 
+## Decisions section
+
+The `decisions:` section is the durable home for **implementation-level** judgment calls codegen makes — the "why" behind a non-obvious choice in generated code that no test encodes and that the next regeneration would otherwise re-derive from scratch or silently undo. It is a peer to `fixtures`, `operations`, `targets`, `cross-cutting`, `wiring`, `bindings`, and `source-signatures`.
+
+**Preserved verbatim, on the `wiring:` footing.** The build agent carries the prior buildfile's `decisions:` through unchanged rather than regenerating it — the block is not build-time state, it is accumulated judgment (see `build-feature.skill.md`). `generate-code` is the only writer that adds to it: it reads the block for a component before regenerating and appends a record for every judgment call it makes (see `generate-code.skill.md`). Because the buildfile is already in codegen's read allowlist, this widens no read-set — the two facts that make the buildfile the right home rather than a convenient one (the `wiring:` preservation precedent and codegen's allowlisted read-set) are the same two that placed `wiring:` here.
+
+**Spec-level rationale does NOT live here.** A decision about what the product should do belongs on the contract (`rationale:` / `verify:` in the surface and capabilities artifacts); the `decisions:` block is one layer down — call-site-shaped implementation learnings the portability lint correctly forbids the spec from naming. A `decisions:` entry MAY cite an amendment or a contract entry as its origin, but the two are linked, not merged. See `improvement-solutions.md` Theme 4 for the altitude split.
+
+Each entry:
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | Stable identifier, unique within `decisions:`. Appears verbatim in the files that enforce the decision (see `enforced-by`) so a reader of the code can find the record and the propagation check can confirm it landed. |
+| `component` | Yes | The `components:` entry (or `section/<name>`) this decision constrains — the emission unit whose regeneration must respect it. |
+| `decided` | Yes | One line: what was chosen. |
+| `why` | Yes | One line: the reason — the thing a later reader would otherwise delete as unexplained. |
+| `enforced-by` | Yes | List of emitted file paths (relative to the source root) that carry the decision. Each must contain `id` verbatim once emitted, or the propagation check reports `rationale-stranded`. |
+| `obsolete-when` | Yes | The condition that would retire the decision — the anti-rot field. A decision that names nothing that could obsolete it rots into folklore. |
+| `supersedes` | No | The `id` of an earlier decision this one replaces. |
+
+**Backward compatibility.** The section is optional. Buildfiles without `decisions:` remain valid — a feature that has provoked no implementation judgment call has nothing to record.
+
+### Propagation check
+
+For every decision entry, each file named in `enforced-by:` that exists on disk must contain the decision's `id` verbatim. A file that exists but does not is `rationale-stranded`: the decision was recorded but never reached the code it claims to govern, so the next reader of that file meets the choice with no reason attached and "fixes" it. The check is lexical, runs at check-buildfile / verify-generated time, and is scoped to explicitly-recorded decisions only — it never infers a decision from unmarked code, which is what keeps it from becoming comment spam. A file in `enforced-by:` that does not yet exist (a `plan.creates` path before codegen has run) is not stranded — it is simply unwritten — so the check stays silent on it.
+
+| Code | When it fires |
+|---|---|
+| `rationale-stranded` (warning) | A `decisions:` entry names a file in `enforced-by:` that exists on disk but does not contain the decision's `id` verbatim. Warning, not error: the code still runs, but the recorded reason never reached it, so a later reader has no way to know the choice was deliberate. |
+
 ## Plan section
 
 The `plan:` section is the **executable contract** for which files this feature touches. It enumerates every path generate-code will create, modify, or delete, and cites the components or cross-cuttings that produced each entry. Multi-target buildfiles additionally nest per-target plan rows under `plan.targets.<kind>:` (see "Section: Multi-target operations and targets blocks" below) — the top-level `modifies`/`creates`/`deletes` shown here are what a presentation-only project populates directly, and what the per-target rows aggregate from for multi-target ones.
