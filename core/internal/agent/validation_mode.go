@@ -78,6 +78,17 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A v2 case with no criterion: records nothing about why it exists.
+	// Warning in both modes while the field lands — every testcases.yaml was
+	// generated before criterion-driven cases existed, so erroring would fail
+	// every project at once over a fact none of them could have recorded. The
+	// severity states the direction of travel; the vacuous/claims checks that
+	// enforce a criterion's mechanics stay at the default error, because those
+	// only fire once a case declares the fields at all.
+	"testcases-case-criterion-missing": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// Same reasoning again: required on generate, tolerated absent on
 	// read, because every capabilities.yaml in existence predates the
 	// field. See capabilities.schema.md's "Why `source:` exists".

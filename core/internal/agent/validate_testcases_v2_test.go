@@ -393,3 +393,207 @@ suites:
 		t.Errorf("a legacy v1 suite must not be asked for file:, got %v", codesOf(outcomes))
 	}
 }
+
+// Criterion-driven cases (WP4, Theme 1 A+B+E).
+//
+// A case exists because a criterion demands it, states its claim checkably, and
+// admits what it could not express. Three per-case checks make that structural.
+
+// A v2 case with no criterion: draws the transition warning — nothing records
+// why the case exists. It must be a warning, not an error: every testcases.yaml
+// predates the field.
+func TestValidateTestcasesV2_CaseCriterionMissingWarns(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: totals
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: total shown
+        steps:
+          - verify: text
+            target: total
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	if !findCode(outcomes, "testcases-case-criterion-missing") {
+		t.Fatalf("a v2 case without criterion: was not flagged; got %v", codesOf(outcomes))
+	}
+	for _, o := range outcomes {
+		if o.Code == "testcases-case-criterion-missing" && o.Severity != SeverityWarning {
+			t.Errorf("criterion-missing must be a warning during transition; got %v", o.Severity)
+		}
+	}
+}
+
+// A criterion: block with an empty ref is as uninformative as none at all.
+func TestValidateTestcasesV2_CaseCriterionEmptyRefWarns(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: totals
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: total shown
+        criterion:
+          text: the total is shown
+        steps:
+          - verify: text
+            target: total
+`)
+	if !findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-criterion-missing") {
+		t.Error("a criterion: with no ref was accepted")
+	}
+}
+
+// Legacy v1 suites are exempt from the criterion warning — they exit before the
+// v2 discriminator, and their own legacy code already tells the designer to
+// regenerate.
+func TestValidateTestcasesV2_LegacyCaseNotAskedForCriterion(t *testing.T) {
+	content := []byte(`feature: expenses
+suites:
+  - name: legacy
+    intent: "@expenses/submit"
+    cases:
+      - name: c
+        steps:
+          - verify: text
+            target: total
+`)
+	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-criterion-missing") {
+		t.Error("a legacy v1 case was asked for a criterion it predates")
+	}
+}
+
+// A case that declares exercises but whose steps touch none of them acts on
+// nothing it claims to — the vacuous ceremony test the coverage count would
+// otherwise reward.
+func TestValidateTestcasesV2_CaseVacuousRejected(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        exercises: ["submit-button"]
+        steps:
+          - action: render
+            target: form
+          - verify: text
+            target: total
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	if !findCode(outcomes, "testcases-case-vacuous") {
+		t.Fatalf("a case exercising a target no step touches was accepted; got %v", codesOf(outcomes))
+	}
+	if !findMessage(outcomes, "submit-button") {
+		t.Error("the vacuous diagnostic does not name the untouched exercise target")
+	}
+}
+
+// A case whose steps do touch a declared exercise is not vacuous.
+func TestValidateTestcasesV2_CaseExercisesTouchedIsClean(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        exercises: ["submit-button"]
+        steps:
+          - action: click
+            target: submit-button
+          - verify: state
+            target: ExpenseReport.status
+`)
+	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-vacuous") {
+		t.Error("a case whose step touches its exercise target was wrongly called vacuous")
+	}
+}
+
+// A verify step reading a target the case does not declare it observes is a
+// claim the declaration does not admit.
+func TestValidateTestcasesV2_CaseClaimsUnmetRejected(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        observes: ["ExpenseReport.status"]
+        steps:
+          - action: click
+            target: submit-button
+          - verify: text
+            target: sneaky-total
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	if !findCode(outcomes, "testcases-case-claims-unmet") {
+		t.Fatalf("an assertion outside observes: was accepted; got %v", codesOf(outcomes))
+	}
+	if !findMessage(outcomes, "sneaky-total") {
+		t.Error("the claims-unmet diagnostic does not name the undeclared read")
+	}
+}
+
+// A verify step reading a declared observes target is clean; a case with no
+// observes: declared is not checked at all (nothing to hold it against).
+func TestValidateTestcasesV2_CaseObservesSatisfiedIsClean(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        observes: ["ExpenseReport.status"]
+        steps:
+          - verify: state
+            target: ExpenseReport.status
+`)
+	if findCode(ValidateTestcasesV2(ModeBuild, "test", content, nil), "testcases-case-claims-unmet") {
+		t.Error("a verify reading a declared observes target was wrongly flagged")
+	}
+
+	// No observes: declared → not checked.
+	noObserves := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        steps:
+          - verify: text
+            target: anything
+`)
+	if findCode(ValidateTestcasesV2(ModeBuild, "test", noObserves, nil), "testcases-case-claims-unmet") {
+		t.Error("claims-unmet fired on a case that declared no observes:")
+	}
+}

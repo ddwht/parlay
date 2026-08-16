@@ -84,16 +84,31 @@ func sortedSetKeys(set map[string]bool) string {
 
 // caseStepShape decodes the two mutually-exclusive step forms. A step is either
 // an action (something the test does) or a verify (something it asserts); the
-// schema's example alternates them within one steps: list.
+// schema's example alternates them within one steps: list. Value and Expected
+// were previously dropped on the floor — the loose decode read only the verb and
+// its target — so nothing could hold a case's mechanics against its declaration.
 type caseStepShape struct {
-	Action string `yaml:"action,omitempty"`
-	Verify string `yaml:"verify,omitempty"`
-	Target string `yaml:"target,omitempty"`
+	Action   string `yaml:"action,omitempty"`
+	Verify   string `yaml:"verify,omitempty"`
+	Target   string `yaml:"target,omitempty"`
+	Value    string `yaml:"value,omitempty"`
+	Expected string `yaml:"expected,omitempty"`
 }
 
-// validateSuiteCases checks the cases[] a suite declares: every case is named,
-// and every step's action/verify term is in its closed set.
-func validateSuiteCases(mode ValidationMode, path, suiteName string, cases []map[string]yaml.Node) []ValidationOutcome {
+// caseCriterion is the reason a case exists: the verify: entry it discharges,
+// with the criterion text pinned so a later contract edit shows as drift.
+type caseCriterion struct {
+	Ref  string `yaml:"ref"`
+	Text string `yaml:"text,omitempty"`
+}
+
+// validateSuiteCases checks the cases[] a suite declares. Beyond naming and step
+// vocabulary it holds each case's declared mechanics against its steps: a case
+// that says it exercises a target must have a step that touches it (vacuous
+// otherwise), and a case's assertions must read only targets it declares it
+// observes (claims-unmet otherwise). isV2 gates the criterion warning — legacy
+// v1 suites predate the field and are already flagged by their own legacy code.
+func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, cases []map[string]yaml.Node) []ValidationOutcome {
 	var outcomes []ValidationOutcome
 	for i, c := range cases {
 		label := fmt.Sprintf("case %d", i+1)
@@ -110,6 +125,30 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, cases []map
 				fmt.Sprintf("%s: suite %q %s declares no name", path, suiteName, label)))
 		}
 
+		// A v2 case with no criterion records nothing about why it exists.
+		// Warning while the field lands — every testcases.yaml predates it.
+		if isV2 {
+			var crit caseCriterion
+			if node, ok := c["criterion"]; !ok {
+				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
+					fmt.Sprintf("%s: suite %q %s declares no criterion: — nothing records which verify: entry it discharges; regenerate with `parlay build-feature` to derive it", path, suiteName, label)))
+			} else if err := node.Decode(&crit); err != nil || strings.TrimSpace(crit.Ref) == "" {
+				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
+					fmt.Sprintf("%s: suite %q %s has a criterion: with no ref — the ref cites the @feature/kind:name verify: entry the case discharges", path, suiteName, label)))
+			}
+		}
+
+		// Declared mechanics: exercises are the targets steps must mutate,
+		// observes the targets expectations may read. Optional, but held
+		// against the steps once present.
+		var exercises, observes []string
+		if node, ok := c["exercises"]; ok {
+			_ = node.Decode(&exercises)
+		}
+		if node, ok := c["observes"]; ok {
+			_ = node.Decode(&observes)
+		}
+
 		stepsNode, ok := c["steps"]
 		if !ok {
 			continue
@@ -121,7 +160,11 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, cases []map
 			// same problem twice in different words.
 			continue
 		}
+		stepTargets := make(map[string]bool)
 		for j, st := range steps {
+			if t := strings.TrimSpace(st.Target); t != "" {
+				stepTargets[t] = true
+			}
 			if st.Action != "" && !closedSetCaseActions[st.Action] {
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",
 					fmt.Sprintf("%s: suite %q %s step %d action %q is outside the closed set {render, click, input, select, navigate, wait}", path, suiteName, label, j+1, st.Action)))
@@ -133,6 +176,51 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, cases []map
 			if st.Action == "" && st.Verify == "" {
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",
 					fmt.Sprintf("%s: suite %q %s step %d declares neither action: nor verify: — a step either does something or asserts something", path, suiteName, label, j+1)))
+			}
+		}
+
+		// Vacuity: a case that names things it exercises but touches none of
+		// them in any step asserts on nothing it claims to.
+		if len(exercises) > 0 {
+			touched := false
+			var missing []string
+			for _, ex := range exercises {
+				ex = strings.TrimSpace(ex)
+				if ex == "" {
+					continue
+				}
+				if stepTargets[ex] {
+					touched = true
+				} else {
+					missing = append(missing, ex)
+				}
+			}
+			if !touched {
+				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-vacuous",
+					fmt.Sprintf("%s: suite %q %s declares exercises: %v but no step targets any of them — the case acts on nothing it claims to", path, suiteName, label, missing)))
+			}
+		}
+
+		// Claims: an expectation may only read a target the case declares it
+		// observes. Checked when observes: is declared; without it there is
+		// nothing to hold the assertions against.
+		if len(observes) > 0 {
+			observed := make(map[string]bool, len(observes))
+			for _, o := range observes {
+				observed[strings.TrimSpace(o)] = true
+			}
+			for j, st := range steps {
+				if st.Verify == "" {
+					continue
+				}
+				t := strings.TrimSpace(st.Target)
+				if t == "" {
+					continue
+				}
+				if !observed[t] {
+					outcomes = append(outcomes, NewOutcome(mode, "testcases-case-claims-unmet",
+						fmt.Sprintf("%s: suite %q %s step %d asserts on %q, which is outside its declared observes: %v — the assertion reads something the case does not admit it observes", path, suiteName, label, j+1, t, observes)))
+				}
 			}
 		}
 	}
@@ -179,7 +267,7 @@ func ValidateTestcasesV2(mode ValidationMode, path string, content []byte, canon
 		// discriminator check and for legacy suites too — putting it after the
 		// `continue` below would have silently exempted every v1 suite, which is
 		// most of what exists in projects today.
-		outcomes = append(outcomes, validateSuiteCases(mode, path, suite.Name, suite.Cases)...)
+		outcomes = append(outcomes, validateSuiteCases(mode, path, suite.Name, suite.Kind != "", suite.Cases)...)
 
 		// Discriminator check.
 		kind := suite.Kind

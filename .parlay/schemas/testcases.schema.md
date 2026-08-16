@@ -21,6 +21,12 @@ suites:
     cases:
       - name: <test case name>
         description: <what this test verifies>
+        criterion:
+          ref: "@<feature>/<kind>:<name>"   # the verify: entry this case discharges
+          text: <the criterion's text, pinned so drift is visible>
+        exercises: [<target the steps must mutate>, ...]   # what this case acts on
+        observes: [<target the expectations read>, ...]     # what this case asserts on
+        coverage: full            # or state-only when a display criterion compiled to store assertions
         steps:
           - action: <render | click | input | select | navigate | wait>
             target: <element name, action name, or route path>
@@ -99,6 +105,18 @@ Tests should cover these categories (derived from buildfile):
 ## Where assertions come from
 
 Suite assertions derive from the contract artifacts' `verify:` fields — the operation's `verify:` in capabilities.yaml for operation suites, the fragment's `verify:` in surface.yaml for component suites. Intent **Verify** bullets are the fallback for entries that carry no `verify:` (artifacts predating the field; `parlay migrate-verify` relocates them). When both exist, `verify:` wins: it is the reviewed contract, and the intent bullets are its history.
+
+## Criterion-driven cases
+
+A case exists because a criterion demands it. Three per-case fields make that reason machine-checkable rather than prose:
+
+- **`criterion:`** — `{ref, text}`. `ref` cites the `verify:` entry the case discharges, in `@<feature>/<kind>:<name>` form (`kind` is `operation`, `fragment`, or `intent`); `text` pins the criterion's wording so a later edit to the contract shows up as drift here. A case in a v2 suite with no `criterion:` draws `testcases-case-criterion-missing` — a **warning** while the field lands, because every testcases.yaml predates it.
+- **`exercises:`** — the targets the case's steps must mutate. If a case declares `exercises:` and none of those targets appears as a step `target:`, the case acts on nothing it claims to and draws `testcases-case-vacuous`. This is what makes a ceremony test — one that satisfies a coverage count while asserting nothing — unauthorable rather than merely detectable.
+- **`observes:`** — the targets the case's expectations read. If a `verify:` step reads a `target:` outside the declared `observes:`, the case asserts on something its declaration does not admit and draws `testcases-case-claims-unmet`. The declaration and the mechanics cannot silently diverge.
+
+`exercises:` and `observes:` are optional — a case that declares neither is checked only for the criterion warning — but once declared they are held against the steps. This is the A+B half of the "green must mean verified" design: a test exists because a criterion demands it (A) and states its claim checkably (B).
+
+**`coverage:`** — `full` (default) or `state-only`. A display-shaped criterion ("the viewport shows the mesh") has no assertion vocabulary yet, so it compiles down to a store-level assertion ("the store holds the mesh"). Stamping `coverage: state-only` records that the downgrade happened, so the coverage reviewer sees a weaker claim instead of a silent one (part E).
 
 ## Determinism contract
 
@@ -258,3 +276,6 @@ Legacy v1 suites without explicit `kind:` load as `kind: presentation` and auto-
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |
 | `testcases-case-unnamed` | A `cases[]` entry declares no `name:`, or an empty one. The name is what a failing test reports, so an unnamed case fails anonymously. |
 | `testcases-unknown-term` | A `cases[].steps[]` entry uses an `action:` outside `{render, click, input, select, navigate, wait}`, a `verify:` outside `{element, state, route, count, text, visible, hidden, enabled, disabled}`, or declares neither. |
+| `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
+| `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
+| `testcases-case-criterion-missing` (warning) | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. Warning while the field lands — every testcases.yaml predates it. |
