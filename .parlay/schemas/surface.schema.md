@@ -171,6 +171,8 @@ A fragment may declare at most one Flow. Not every fragment needs a Flow — sim
 
 Multiple features can target the same page. `/parlay view-page ==page-name==` collects all fragments targeting that page, groups by Region, sorts by Order. Conflicts (same region + same order) are flagged.
 
+`parlay validate --type page` reports the build-boundary form of the same collision as the `surface-region-shared` warning (see page.schema.md's error-code table): a region two or more different features contribute to, with a sharper message when they collide on an exact Order slot. The warning names both features so a silent-loser mystery becomes a named finding; it does not block, because a page manifest or a cross-feature "this replaces that" annotation can order the stack legitimately.
+
 When layout needs to be locked, use `/parlay lock-page` to create a page manifest (see page.schema.md).
 
 ## Adapter mapping

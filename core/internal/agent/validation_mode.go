@@ -158,6 +158,17 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// Two or more different features contribute fragments to the same
+	// (page, region). A warning in both modes: two features stacking in one
+	// region is legitimate when a page manifest or a supersedes: annotation
+	// orders them, and blocking it would forbid the composition the tool is
+	// meant to support. What it converts from silence into a named finding is
+	// the "a working component never appears" mystery — the first feature's
+	// assembly quietly winning over the second's.
+	"surface-region-shared": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// A capabilities.yaml referencing an entity that no root model declares
 	// but some feature's contribution proposes. A warning in both modes: the
 	// reference is correct about where the project is going, and the only

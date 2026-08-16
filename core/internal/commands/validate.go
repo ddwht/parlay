@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
@@ -617,6 +618,94 @@ func validatePageReferences(cmd *cobra.Command, path string, page *parser.Page) 
 				Severity: "warning",
 			})
 		}
+	}
+
+	errs = append(errs, sharedRegionWarnings(fragments, pageName)...)
+	return errs
+}
+
+// sharedRegionWarnings reports every region on the named page that two or more
+// different features contribute fragments to. The full cross-feature fragment
+// set is already in hand (ScanAllSurfaces), so the collision is a grouping, not
+// a second walk.
+//
+// Two features stacking in one region is not by itself a defect — a page
+// manifest or (WP8) a supersedes: annotation can order them — but it is the
+// exact shape behind the "a working component never appears" mystery, where the
+// first feature's assembly silently wins over the second's. One named warning
+// beats the silence. An exact-slot collision (same order, different features)
+// gets a sharper message, because there the assembler picks a winner with
+// nothing to separate the two; assembleRegions stays the view-time reporter for
+// that same case.
+func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.ValidationError {
+	type occupant struct {
+		feature  string
+		fragment string
+		order    int
+	}
+	byRegion := map[string][]occupant{}
+	for _, f := range fragments {
+		if f.Page != pageName {
+			continue
+		}
+		region := f.Region
+		if region == "" {
+			region = "main"
+		}
+		byRegion[region] = append(byRegion[region], occupant{f.Feature, f.Name, f.Order})
+	}
+
+	regionNames := make([]string, 0, len(byRegion))
+	for name := range byRegion {
+		regionNames = append(regionNames, name)
+	}
+	sort.Strings(regionNames)
+
+	var errs []agent.ValidationError
+	for _, region := range regionNames {
+		occ := byRegion[region]
+		sort.Slice(occ, func(i, j int) bool {
+			if occ[i].feature != occ[j].feature {
+				return occ[i].feature < occ[j].feature
+			}
+			if occ[i].fragment != occ[j].fragment {
+				return occ[i].fragment < occ[j].fragment
+			}
+			return occ[i].order < occ[j].order
+		})
+
+		features := map[string]bool{}
+		for _, o := range occ {
+			features[o.feature] = true
+		}
+		if len(features) < 2 {
+			continue
+		}
+
+		exactSlot := 0
+		for i := 0; i < len(occ); i++ {
+			for j := i + 1; j < len(occ); j++ {
+				if occ[i].order > 0 && occ[i].order == occ[j].order && occ[i].feature != occ[j].feature {
+					exactSlot = occ[i].order
+				}
+			}
+		}
+
+		parts := make([]string, 0, len(occ))
+		for _, o := range occ {
+			parts = append(parts, fmt.Sprintf("@%s/%s", o.feature, parser.Slugify(o.fragment)))
+		}
+		msg := fmt.Sprintf("region %q on page %q is contributed to by %d features (%s) — the assembly of one may hide the other", region, pageName, len(features), strings.Join(parts, ", "))
+		if exactSlot > 0 {
+			msg = fmt.Sprintf("region %q on page %q holds fragments from different features at the same order %d (%s) — the assembler picks a winner with nothing to separate them", region, pageName, exactSlot, strings.Join(parts, ", "))
+		}
+		errs = append(errs, agent.ValidationError{
+			Code:     "surface-region-shared",
+			Message:  msg,
+			Context:  "regions." + region,
+			Fix:      "order the fragments with a page manifest (parlay lock-page), or record that one replaces the other",
+			Severity: "warning",
+		})
 	}
 	return errs
 }

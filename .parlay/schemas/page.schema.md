@@ -115,6 +115,7 @@ the parser had parsed.
 |---|---|
 | `page-fragment-unresolved` (warning) | A listed `@feature/fragment` reference matches no fragment any surface produces |
 | `page-has-no-fragments` (warning) | No surface fragment carries `page: <this page>`, so the manifest orders nothing |
+| `surface-region-shared` (warning) | Two or more different features contribute fragments to the same `(page, region)`; a sharper variant fires when the collision is on an exact `order` slot. The composition may be legitimate — a manifest or a `supersedes:` annotation can order it — but unordered it is the shape behind "a working component never appears" |
 
 Both are warnings on purpose. A manifest listing a fragment its feature has not
 written yet is the normal state of a page designed ahead of its features, and
