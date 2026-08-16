@@ -117,34 +117,50 @@ steps 3 and 4:
 
    **Decision-gate the exact file content before writing** — same rule as
    step 4's gate, and the two are one decision when convenient: show the
-   amendment and the artifact splice together. An amendment is written once
+   amendment and the artifact splice together. Gating both texts here is what
+   makes the ordering below safe: the reviewer has already approved the
+   amendment AND the splice before either lands. An amendment is written once
    and never edited; a correction later is a new amendment naming this one
    in `supersedes:`. After writing, **re-read the file you just wrote and run
    `parlay validate --type amendment spec/intents/{feature}/amendments/NNN-{slug}.md`
    on it.** A parse or shape failure means the write itself is corrupt — a
    truncated frontmatter, a dropped `affects:`, a mangled heading — and every
-   later step reads a broken ledger entry. Fix the file before proceeding; do
-   not run `check-amendments` against a file that does not even validate on
-   its own. Once it validates, run
-   `parlay internal check-amendments @{feature}` — it validates the ledger
-   and every `affects:` ref, and emits `dirty_set`: the resolvable `affects:`
-   of the **unapplied tail** (amendments past the baseline's
-   `last-applied-amendment`), which after this write is exactly the amendment
-   you just added. That tail is what step 5's diff should report dirty — the
-   two answer the same "changed since the last build" question and must agree.
-   (`all_affects`, the whole-ledger union, is emitted alongside it for audit;
-   it is NOT the rebuild-scoping set and will name long-applied refs.) A
-   disagreement between `dirty_set` and the diff means the amendment or the
-   splice is wrong; stop and reconcile rather than proceeding.
+   later step reads a broken ledger entry. Fix the file before proceeding.
+   This single-file check is shape only; it does **not** resolve `affects:`
+   against the contract, so it is safe to run now, before the splice.
+
+   **Do not run `check-amendments` yet.** That command resolves every
+   `affects:` ref against the contract artifacts, and an **ADD** amendment —
+   one that introduces a new operation, fragment, or entity — names a ref that
+   does not exist until step 4 splices it in. Running it here would report a
+   spurious `amendment-affects-unresolved` for exactly the additions the
+   amendment authorizes (L2). So the order is: write the amendment (this
+   step) → apply the splice (step 4) → **then** `check-amendments`. Nothing is
+   lost by resolving after applying, because the decision gate above already
+   fixed both texts before either was written.
 
 Step 4 then applies the delta **to contract artifacts only** — the ledger
 branch of step 3's altitude table routes "user-visible" to `surface.yaml`
-(the narrative record already happened in 3.5). Steps 5–10 run unchanged;
-step 9's re-baseline records the new amendment as applied, which is what
-clears it from `check-drift`'s `unapplied_amendments`. The feature-gate in
-step 2.5 is unchanged: an ask that is a new feature still goes to
-`/parlay-loop`, which authors founding docs for the NEW feature — birth is
-not what froze.
+(the narrative record already happened in 3.5).
+
+**After the splice lands, run `parlay internal check-amendments @{feature}`.**
+Now every `affects:` ref resolves — including the entries step 4 just added —
+and the command validates the ledger and emits `dirty_set`: the resolvable
+`affects:` of the **unapplied tail** (amendments past the baseline's
+`last-applied-amendment`), which after this write is exactly the amendment you
+just added. That tail is what step 5's diff should report dirty — the two
+answer the same "changed since the last build" question and must agree.
+(`all_affects`, the whole-ledger union, is emitted alongside it for audit; it
+is NOT the rebuild-scoping set and will name long-applied refs.) A
+disagreement between `dirty_set` and the diff, or any
+`amendment-affects-unresolved` now that the splice is in, means the amendment
+or the splice is wrong; stop and reconcile rather than proceeding.
+
+Steps 5–10 run unchanged; step 9's re-baseline records the new amendment as
+applied, which is what clears it from `check-drift`'s `unapplied_amendments`.
+The feature-gate in step 2.5 is unchanged: an ask that is a new feature still
+goes to `/parlay-loop`, which authors founding docs for the NEW feature —
+birth is not what froze.
 
 **Scope your reading, not just your writes.** The amendment's `affects:`
 names the dirty entries before any hashing happens. Use it: at steps 5.5–6,
