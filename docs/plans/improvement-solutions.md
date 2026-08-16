@@ -91,7 +91,69 @@ four — no state assertion could have caught any of them.
 
 ---
 
-## Theme 2 — the `save-build-state` family · under discussion
+## Theme 2 — the `save-build-state` family · DECIDED 2026-08-16
+
+### The problem, as the user experiences it
+
+A three-line change produces a 43-file commit that buries the change and rewrites every
+baseline's blame. The tool's answer to "what's behind?" is silently consumed at save time, so
+it later reports "all current" when it isn't. A mis-guessed flag makes tracked files vanish
+from provenance with a warning that scrolls past. The tool whose job is remembering is the
+thing the user must double-check by hand.
+
+### Root causes
+
+1. **Blessing unit ≠ work unit:** save-build-state was designed for full codegen runs — one
+   atomic world-snapshot with a deliberate one-instant invariant (baseline + code-hashes move
+   together). Refine's partial, per-feature work arrived later; `--partial/--emitted` were
+   bolted on but could only scope the provenance half, because scoping baselines would break
+   the invariant. The churn is the old design faithfully executing under a workload it wasn't
+   built for.
+2. **Timestamps conflated with content:** most churn is `generated-at` re-stamping on files
+   whose content didn't change — noise that buries real diffs and produced 42 identical
+   `built_at` values in shipped JSON.
+3. **Undefended prose/binary boundary:** `--source-root`/`--emitted` are free-form inputs
+   validated against nothing, and the caller is a skill — prose interpreted by an agent.
+   Wrong guesses were accepted silently.
+4. **Destructive, happy-path-only reads:** the `.emitted` manifest is consumed-and-deleted;
+   a re-run against the missing path degrades to an empty declaration. Exactly-once design in
+   a world where agents re-run commands constantly.
+5. **"Record honestly, never block" misapplied:** scope-shrinking saves and adopted-floods
+   WARN and exit 0 — right philosophy for observations, wrong for operations that overwrite
+   the record, where proceeding is the harm.
+
+### Options considered
+
+- **A. Fail-loud contract** (causes 3/4/5): missing explicit `--emitted` path errors;
+  `--source-root` validated against the stored key shape; scope-shrinking saves refuse
+  without `--force`; manifest marked consumed rather than deleted; refine re-reads and
+  validates an amendment after writing (kills the L13 corruption path). Days of work,
+  surgical, eliminates the silent-corruption class; touches neither churn nor the dirty
+  signal.
+- **B. Write-if-changed** (cause 2): compare content hashes before writing each per-feature
+  baseline; skip files where only the timestamp would move. ~A day, trivially safe, kills
+  most churn and the uniform-`built_at` symptom without touching the invariant; cosmetic
+  relative to cause 1.
+- **C. True per-feature blessing** (cause 1 — the root): the blessing unit becomes the
+  feature/component; untouched components keep their dirty flags; the baseline records what
+  a run actually emitted; the one-instant invariant relaxes to per-feature instants (the
+  pair still moves atomically, at finer grain). The only fix for the destroyed "what's
+  behind" signal. Real surgery: diff/check-drift/consistency machinery must learn mixed
+  staleness — and a wrong implementation could mint false "stable" verdicts, a worse failure
+  than churn.
+- **D. Journaled blessing events** — deferred: rebuilds the subsystem to fix failures A+B+C
+  already cover; revisit only if C's mixed-instant model proves fragile.
+- **E. Interactive saves** — rejected: unattended agent flows are the norm; silent paths
+  untouched.
+
+### Decision
+
+**A + B immediately, C staged behind them; D deferred, E rejected.** A defends the boundary
+(nothing silent), B removes the noise that hides real signals (nothing cosmetic in diffs),
+and only then is C's semantic change safe to attempt — it is surgery on a subsystem whose
+failures are currently obscured by churn, and it deliberately trades the whole-project
+one-instant invariant for a per-feature one, which must not be done blind. Groundwork for C
+already exists on this branch (per-feature `last-applied-amendment` has the same shape).
 
 ## Theme 3 — toolchain self-disagreement · pending
 
