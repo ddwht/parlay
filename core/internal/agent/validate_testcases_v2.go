@@ -38,6 +38,29 @@ var validSuiteKinds = map[SuiteKind]bool{
 var closedSetCaseActions = map[string]bool{
 	"render": true, "click": true, "input": true,
 	"select": true, "navigate": true, "wait": true,
+	// appears asserts that a component reached the renderer at a given depth —
+	// the composition-visibility vocabulary behind Theme 1's E. The level lives
+	// in the step's value:, drawn from closedSetAppearsLevels.
+	"appears": true,
+}
+
+// closedSetAppearsLevels is the depth an `appears` step asserts to: mounted (a
+// mount point exists), output (the component produced output), content (the
+// declared content reached the renderer — e.g. a rendered row or triangle
+// count). Pixels are deliberately out of scope. The store was correct in every
+// composition defect these levels exist to catch, so no state assertion could
+// have caught them; only a render-level fact can.
+var closedSetAppearsLevels = map[string]bool{
+	"mounted": true, "output": true, "content": true,
+}
+
+// closedSetCoverage is the honesty marker on a case: full when the criterion
+// compiled to an assertion at its own altitude, state-only when a display-shaped
+// criterion could only compile to a store-level assertion because the adapter
+// cannot deliver `appears` yet. Stamping the downgrade is part E — a weaker
+// claim the coverage reviewer sees instead of a silent one.
+var closedSetCoverage = map[string]bool{
+	"full": true, "state-only": true,
 }
 
 // The set is the union of two lists testcases.schema.md carries, and the union
@@ -149,6 +172,20 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 			_ = node.Decode(&observes)
 		}
 
+		// coverage: is the state-only honesty marker. When present it must name
+		// a known altitude; an unknown value hides whether the claim was
+		// downgraded, which is the exact thing the marker exists to make visible.
+		if node, ok := c["coverage"]; ok {
+			var coverage string
+			if err := node.Decode(&coverage); err == nil {
+				coverage = strings.TrimSpace(coverage)
+				if coverage != "" && !closedSetCoverage[coverage] {
+					outcomes = append(outcomes, NewOutcome(mode, "testcases-coverage-unknown",
+						fmt.Sprintf("%s: suite %q %s declares coverage %q, outside {full, state-only}", path, suiteName, label, coverage)))
+				}
+			}
+		}
+
 		stepsNode, ok := c["steps"]
 		if !ok {
 			continue
@@ -167,7 +204,18 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 			}
 			if st.Action != "" && !closedSetCaseActions[st.Action] {
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",
-					fmt.Sprintf("%s: suite %q %s step %d action %q is outside the closed set {render, click, input, select, navigate, wait}", path, suiteName, label, j+1, st.Action)))
+					fmt.Sprintf("%s: suite %q %s step %d action %q is outside the closed set {render, click, input, select, navigate, wait, appears}", path, suiteName, label, j+1, st.Action)))
+			}
+			// An appears step names its depth in value:; an unknown or missing
+			// level makes the assertion unrunnable — the runner cannot decide
+			// what "appears" means without knowing whether it must reach a
+			// mount point, an output, or content.
+			if st.Action == "appears" {
+				level := strings.TrimSpace(st.Value)
+				if level == "" || !closedSetAppearsLevels[level] {
+					outcomes = append(outcomes, NewOutcome(mode, "testcases-appears-level-unknown",
+						fmt.Sprintf("%s: suite %q %s step %d appears value %q is outside the level set {mounted, output, content}", path, suiteName, label, j+1, st.Value)))
+				}
 			}
 			if st.Verify != "" && !closedSetCaseVerbs[st.Verify] {
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",

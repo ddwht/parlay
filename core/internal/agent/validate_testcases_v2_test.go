@@ -144,6 +144,90 @@ suites:
 	}
 }
 
+// An appears step at a known level is accepted; the level lives in value:.
+func TestValidateTestcasesV2_AppearsStepAccepted(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: viewer
+suites:
+  - name: mesh renders
+    kind: presentation
+    source_refs: ["@viewer/render"]
+    cases:
+      - name: mesh reaches the renderer
+        steps:
+          - action: render
+            target: MeshViewport
+          - action: appears
+            target: MeshViewport
+            value: content
+`)
+	outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+	if findCode(outcomes, "testcases-unknown-term") {
+		t.Errorf("appears action rejected as unknown term: %+v", outcomes)
+	}
+	if findCode(outcomes, "testcases-appears-level-unknown") {
+		t.Errorf("appears value \"content\" flagged as unknown level: %+v", outcomes)
+	}
+}
+
+// An appears step with a bad or missing level cannot run — the runner does not
+// know what depth to assert.
+func TestValidateTestcasesV2_AppearsLevelUnknownRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+	}{
+		{"bad level", "value: painted\n"},
+		{"missing level", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := []byte(`schema_version: 2
+feature: viewer
+suites:
+  - name: mesh renders
+    kind: presentation
+    source_refs: ["@viewer/render"]
+    cases:
+      - name: mesh appears
+        steps:
+          - action: appears
+            target: MeshViewport
+            ` + tc.value)
+			outcomes := ValidateTestcasesV2(ModeBuild, "test", content, nil)
+			if !findCode(outcomes, "testcases-appears-level-unknown") {
+				t.Fatalf("expected testcases-appears-level-unknown, got %+v", outcomes)
+			}
+		})
+	}
+}
+
+// coverage: is the state-only honesty marker; a known value is clean, an unknown
+// one hides whether the claim was downgraded.
+func TestValidateTestcasesV2_CoverageValidated(t *testing.T) {
+	base := func(cov string) []byte {
+		return []byte(`schema_version: 2
+feature: viewer
+suites:
+  - name: mesh renders
+    kind: presentation
+    source_refs: ["@viewer/render"]
+    cases:
+      - name: mesh shown
+        coverage: ` + cov + `
+        steps:
+          - action: render
+            target: MeshViewport
+`)
+	}
+	for _, ok := range []string{"full", "state-only"} {
+		if findCode(ValidateTestcasesV2(ModeBuild, "test", base(ok), nil), "testcases-coverage-unknown") {
+			t.Errorf("coverage %q wrongly rejected", ok)
+		}
+	}
+	if !findCode(ValidateTestcasesV2(ModeBuild, "test", base("partial"), nil), "testcases-coverage-unknown") {
+		t.Errorf("coverage \"partial\" should be rejected")
+	}
+}
+
 // Every documented term must pass. An over-strict check would reject valid
 // generated testcases, which is worse than the gap it closes.
 func TestValidateTestcasesV2_AllDocumentedTermsAccepted(t *testing.T) {

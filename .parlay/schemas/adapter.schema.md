@@ -222,6 +222,21 @@ Pattern descriptions for non-presentation kinds (e.g., describing how an applica
 
 The `shows:`, `actions:`, and `flows:` sections are required ONLY for presentation adapters. Non-presentation adapters (transport, application, persistence) MAY omit them — those vocabularies don't apply to backend layers. The validation rules in section "Validation" below treat presence as required only when `kind:` is `presentation` (or absent).
 
+### `render-support:` — which `appears` levels the adapter can assert
+
+A presentation adapter MAY declare which render-visibility levels it can emit test assertions for. This is the presentation-side twin of a backend adapter's `supports.steps:`: it gates the testcase `appears` step (testcases.schema.md) the way `supports.steps` gates an operation's steps.
+
+```yaml
+render-support:        # optional; presentation kind only
+  - mounted            # can assert a mount point exists
+  - output             # can assert the component produced output
+  - content            # can assert declared content reached the renderer
+```
+
+Each entry is drawn from the closed set `{mounted, output, content}`. **Absence means the adapter supports no level** — `appears` cannot be emitted against it, so `build-feature` compiles every display-shaped criterion to a store-level assertion and stamps the case `coverage: state-only`. This is the default for every adapter that predates the field. As an adapter grows the ability to render-assert a level, listing it here **lifts** those cases from `state-only` to a real `appears` assertion on the next `build-feature` — no per-case edit, because the criterion already records what it needs and the gate now clears.
+
+`render-support:` is a declaration the build phase reads, not a codegen input: the per-framework machinery that actually makes an `appears: content` assertion runnable is adapter-implementation work, out of scope for the vocabulary itself.
+
 ## Section 1: Framework vocabulary
 
 ### Shows mapping
