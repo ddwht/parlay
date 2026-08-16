@@ -61,19 +61,14 @@ var knownUnimplementedCodes = map[string]string{
 	// TestConformance_AllowlistIsHonest correctly reported them as stale. That
 	// takes this list from eight entries to six.
 
-	// These two are additions to this list, which the comment above says not to
-	// make. They are not new gaps: both have been documented and unimplemented
-	// all along, in prose rather than in a code table, and the parser below only
-	// reads tables — so this check never saw them. Moving them into
-	// testcases.schema.md's table is what surfaced them. An entry here is worse
-	// than an implementation and better than an invisible hole.
-	//
-	// Implementing them needs inputs ValidateTestcasesV2 is not given: the merged
-	// route table for route coverage, and the dialog-declared flows for flow
-	// coverage. It receives only the canonical operation list, so route and flow
-	// coverage cannot be computed from what it has.
-	"testcases-route-uncovered": "route coverage needs the merged route table; ValidateTestcasesV2 receives only canonical operations.",
-	"testcases-flow-uncovered":  "flow coverage needs the dialog-declared flow list; same missing input as testcases-route-uncovered.",
+	// testcases-route-uncovered and testcases-flow-uncovered were here. They
+	// documented a per-route / per-flow enumeration walker that was never built
+	// and never could be from what ValidateTestcasesV2 is handed — it receives
+	// only the canonical operation list, not the merged route table or the
+	// dialog-declared flows. Rather than carry two permanent allowlist entries
+	// for a walker with no path to implementation, WP4 removed the codes from
+	// testcases.schema.md entirely; coverage moved to the contract artifacts'
+	// `verify:` criteria. The rows and these entries left in the same commit.
 }
 
 // Blind spot worth knowing about: repoSchemaCodes reads codes out of markdown
