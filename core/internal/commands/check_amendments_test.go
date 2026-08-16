@@ -262,6 +262,143 @@ c
 	}
 }
 
+// TestCheckAmendments_ScopeOverlapWarnsWhenNotSuperseded is the L15/F18
+// regression: a later amendment editing a contract entry an earlier one also
+// edits, without naming the earlier in supersedes:, is two unordered writers on
+// the same entry and must warn.
+func TestCheckAmendments_ScopeOverlapWarnsWhenNotSuperseded(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-13
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+Creation rejects duplicates.
+
+## Acceptance
+- dup rejected.
+`)
+	writeAmendment(t, featDir, "002-loosen-create.md", `---
+amendment: loosen-create
+date: 2026-08-14
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+Creation permits duplicates after all.
+
+## Acceptance
+- dup allowed.
+`)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("scope overlap is a warning, not an error: %v (issues %+v)", err, out.Issues)
+	}
+	if !hasIssueCode(out, "amendment-scope-overlap") {
+		t.Errorf("expected amendment-scope-overlap; got %+v", out.Issues)
+	}
+	if !out.Ready {
+		t.Errorf("a warning must not flip ready to false: %+v", out.Issues)
+	}
+}
+
+// TestCheckAmendments_ScopeOverlapSilentWhenSuperseded confirms naming the
+// earlier amendment in supersedes: — the declaration that this change replaces
+// it — silences the overlap warning, and that the forward link appears in
+// superseded_by.
+func TestCheckAmendments_ScopeOverlapSilentWhenSuperseded(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-13
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+Creation rejects duplicates.
+
+## Acceptance
+- dup rejected.
+`)
+	writeAmendment(t, featDir, "002-loosen-create.md", `---
+amendment: loosen-create
+date: 2026-08-14
+affects:
+  - "@verify-fixture/operation:thing.create"
+supersedes: [tighten-create]
+---
+
+## Change
+Creation permits duplicates after all.
+
+## Acceptance
+- dup allowed.
+`)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("healthy superseding ledger should exit zero: %v (issues %+v)", err, out.Issues)
+	}
+	if hasIssueCode(out, "amendment-scope-overlap") {
+		t.Errorf("an overlap the later amendment supersedes must be silent; got %+v", out.Issues)
+	}
+	if got := out.SupersededBy["tighten-create"]; len(got) != 1 || got[0] != "loosen-create" {
+		t.Errorf("superseded_by should record the forward link tighten-create -> loosen-create; got %v", out.SupersededBy)
+	}
+}
+
+// TestCheckAmendments_DisjointScopesDoNotOverlap confirms two amendments
+// touching different contract entries do not warn.
+func TestCheckAmendments_DisjointScopesDoNotOverlap(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-13
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+	writeAmendment(t, featDir, "002-relabel-list.md", `---
+amendment: relabel-list
+date: 2026-08-14
+affects:
+  - "@verify-fixture/surface:thing-list"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("disjoint ledger should exit zero: %v", err)
+	}
+	if hasIssueCode(out, "amendment-scope-overlap") {
+		t.Errorf("disjoint affects must not overlap; got %+v", out.Issues)
+	}
+}
+
 func hasIssueCode(out checkAmendmentsOutput, code string) bool {
 	for _, i := range out.Issues {
 		if i.Code == code {

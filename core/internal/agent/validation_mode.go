@@ -214,6 +214,17 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A later amendment edits a contract entry an earlier one also edits,
+	// without naming the earlier in its supersedes:. A warning in both modes:
+	// two amendments composing over the same entry is legitimate as long as an
+	// ordering exists between them, and only the author knows whether this one
+	// replaces the earlier or genuinely stacks on it. Naming the earlier in
+	// supersedes: silences it; that is the intended resolution, not a
+	// workaround.
+	"amendment-scope-overlap": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 }
 
 // unknown-turn-form is deliberately absent from this table, so it is an

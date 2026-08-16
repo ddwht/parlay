@@ -73,9 +73,14 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `amendment-sequence-gap` (warning) | Sequence numbers jump — expected after compaction, otherwise a numbering mistake. |
 | `amendment-supersedes-unknown` | `supersedes:` names no earlier amendment in this ledger. |
 | `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts. |
+| `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
 
 ## The dirty set
 
 `check-amendments` emits `dirty_set` — the resolvable `affects:` refs of the **unapplied tail** only: amendments whose sequence exceeds the feature baseline's `last-applied-amendment`. Everything at or below that sequence was already folded into generated code when the baseline was saved, so it is not what a rebuild must touch. This is the **declared** counterpart of what `parlay internal diff` **infers** by hashing: consumers scope rebuilds, prompts, and (later) test selection with it, while the hash comparison remains as trust-but-verify. A disagreement between the declared set and the observed diff is a bug signal — in the amendment or in the apply — not something to proceed past.
 
 *Which reading won and why (L7):* the tail, not the cumulative union. `dirty_set` names what has changed since the last build — the same question `parlay internal diff` answers — so the two agree. The union kept naming long-applied refs as dirty forever and never converged with the observed diff. The full union is still available, honestly named, as `all_affects` (every amendment's resolvable refs regardless of application state) for consumers that want the whole ledger footprint rather than the rebuild-scoping tail. With no baseline (never built, or pre-v3) `last-applied-amendment` reads as 0, so `dirty_set` equals `all_affects` — the conservative from-scratch reading.
+
+## Forward links: `superseded_by`
+
+`supersedes:` points backward — a later amendment names the earlier ones it replaces. The forward link ("which later amendment replaced me?") cannot live in the earlier file, because an amendment is immutable once written: nothing may edit a landed ledger entry to record something that happened after it. So `check-amendments` computes the reverse at read time and emits it as `superseded_by` — a map from each superseded slug to the slugs of the later amendments that supersede it. The map is always present (possibly empty); consumers index it without a nil check. This is the same "compute the forward link rather than mutate the immutable record" move the composition vocabulary uses for surface `supersedes:` (F18).

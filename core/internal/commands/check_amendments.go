@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
@@ -64,9 +66,17 @@ type checkAmendmentsOutput struct {
 	// dirty_set semantics, kept under an honest name for consumers that want
 	// the full history (audit, cross-feature pressure surveys) rather than the
 	// rebuild-scoping tail.
-	AllAffects []string         `json:"all_affects"`
-	Ready      bool             `json:"ready"`
-	Issues     []amendmentIssue `json:"issues"`
+	AllAffects []string `json:"all_affects"`
+	// SupersededBy is the computed reverse of every amendment's supersedes:
+	// forward links keyed by the superseded slug, valued by the slugs of the
+	// later amendments that supersede it. The amendment files are immutable
+	// once written, so a "who replaced me" link cannot live in the earlier
+	// file; computing it here gives read-time forward navigation without
+	// touching the ledger. Always present (possibly empty) so consumers can
+	// index it unconditionally.
+	SupersededBy map[string][]string `json:"superseded_by"`
+	Ready        bool                `json:"ready"`
+	Issues       []amendmentIssue    `json:"issues"`
 }
 
 func runCheckAmendments(cmd *cobra.Command, args []string) error {
@@ -78,11 +88,12 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 	featDir := cfg.FeaturePath(slug)
 
 	out := checkAmendmentsOutput{
-		Feature:    slug,
-		Amendments: []amendmentEntry{},
-		DirtySet:   []string{},
-		AllAffects: []string{},
-		Issues:     []amendmentIssue{},
+		Feature:      slug,
+		Amendments:   []amendmentEntry{},
+		DirtySet:     []string{},
+		AllAffects:   []string{},
+		SupersededBy: map[string][]string{},
+		Issues:       []amendmentIssue{},
 	}
 
 	// The unapplied tail is defined against the feature baseline's
@@ -114,6 +125,16 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 	slugs := map[string]bool{}
 	seqSeen := map[int]string{}
 	prevSeq := 0
+	// Accumulated in sequence order for scope-overlap detection: each earlier
+	// amendment's file slug plus the canonical set of contract entries it
+	// declares in affects:. A later amendment editing an entry an earlier one
+	// also edits, without naming the earlier in its supersedes:, is two
+	// unordered writers on the same contract entry — the L15/F18 hazard.
+	type priorScope struct {
+		fileSlug string
+		affects  map[string]bool
+	}
+	var priors []priorScope
 	for _, a := range amendments {
 		entry := amendmentEntry{Seq: a.Seq, Slug: a.Slug, Date: a.Date, Affects: a.Affects, Supersedes: a.Supersedes}
 		out.Amendments = append(out.Amendments, entry)
@@ -160,11 +181,18 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 		}
 		slugs[a.FileSlug] = true
 
+		// Canonical scope of THIS amendment: every affects: ref that parses,
+		// keyed by its normalized @feature/kind:name form so two spellings of
+		// the same entry collide. Built regardless of on-disk resolvability —
+		// scope overlap is about declared intent, and an unresolvable ref is
+		// reported on its own line below.
+		affectsCanon := map[string]bool{}
 		for _, raw := range a.Affects {
 			ref, parseErr := parser.ParseAmendmentRef(raw)
 			if parseErr != nil {
 				continue // already reported by ValidateAmendment as malformed
 			}
+			affectsCanon[canonicalAmendmentRef(ref)] = true
 			if resolveErr := resolveAmendmentRef(cfg, ref); resolveErr != nil {
 				out.Issues = append(out.Issues, amendmentIssue{
 					Severity: "error", Code: "amendment-affects-unresolved",
@@ -178,6 +206,42 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 			if a.Seq > lastApplied {
 				out.DirtySet = appendUniqueRef(out.DirtySet, raw)
 			}
+		}
+
+		// Scope overlap against every earlier amendment this one does not
+		// supersede. Naming the earlier amendment in supersedes: is exactly the
+		// declaration that the later change replaces it, so an overlap there is
+		// intended and silent; an overlap without it is two writers with no
+		// ordering between them.
+		supersedesSet := map[string]bool{}
+		for _, sup := range a.Supersedes {
+			supersedesSet[sup] = true
+		}
+		for _, prior := range priors {
+			if supersedesSet[prior.fileSlug] {
+				continue
+			}
+			var overlap []string
+			for ref := range affectsCanon {
+				if prior.affects[ref] {
+					overlap = append(overlap, ref)
+				}
+			}
+			if len(overlap) == 0 {
+				continue
+			}
+			sort.Strings(overlap)
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "warning", Code: "amendment-scope-overlap",
+				Message: fmt.Sprintf("%03d-%s edits %s, which earlier %q also edits and this amendment does not supersede — two amendments change the same contract entry with no ordering between them", a.Seq, a.FileSlug, strings.Join(overlap, ", "), prior.fileSlug),
+			})
+		}
+		priors = append(priors, priorScope{fileSlug: a.FileSlug, affects: affectsCanon})
+
+		// Forward link: this amendment supersedes each named earlier slug, so
+		// record it as the "superseded by" of that slug.
+		for _, sup := range a.Supersedes {
+			out.SupersededBy[sup] = append(out.SupersededBy[sup], a.FileSlug)
 		}
 	}
 
@@ -275,6 +339,14 @@ func resolveAmendmentRef(cfg *config.Context, ref parser.AmendmentRef) error {
 	default:
 		return fmt.Errorf("affects %s: unknown kind %q", ref.Raw, ref.Kind)
 	}
+}
+
+// canonicalAmendmentRef normalizes a parsed affects: ref to a stable
+// @feature/kind:name key so two spellings of the same contract entry compare
+// equal in the scope-overlap check. The raw text can vary (surrounding
+// whitespace); the parsed fields cannot.
+func canonicalAmendmentRef(ref parser.AmendmentRef) string {
+	return fmt.Sprintf("@%s/%s:%s", ref.Feature, ref.Kind, ref.Name)
 }
 
 func appendUniqueRef(list []string, v string) []string {
