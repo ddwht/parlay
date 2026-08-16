@@ -115,13 +115,17 @@ the parser had parsed.
 |---|---|
 | `page-fragment-unresolved` (warning) | A listed `@feature/fragment` reference matches no fragment any surface produces |
 | `page-has-no-fragments` (warning) | No surface fragment carries `page: <this page>`, so the manifest orders nothing |
-| `surface-region-shared` (warning) | Two or more different features contribute fragments to the same `(page, region)`; a sharper variant fires when the collision is on an exact `order` slot. The composition may be legitimate — a manifest or a `supersedes:` annotation can order it — but unordered it is the shape behind "a working component never appears" |
+| `surface-region-shared` (warning) | Two or more different features contribute fragments to the same `(page, region)` **and the stack is resolved** — a manifest orders the region, or a `supersedes:` annotation names what replaces what. A non-blocking note that an intentional cross-feature stack lives here |
+| `surface-region-conflict` | Two or more different features share a `(page, region)` with **neither** a manifest ordering nor a `supersedes:` annotation — one feature's assembly silently wins over the other, the shape behind "a working component never appears". A sharper variant fires on an exact `order` slot. Blocks: by now the tool offers two ways to order a legitimate stack, so a stack using neither is a defect, not a heads-up |
+| `surface-supersedes-conflict` | Two or more fragments name the same `@feature/fragment` in their `supersedes:` — a two-headed chain the composition cannot resolve to one winner, exactly like duplicate amendment sequence numbers. Reported project-wide by `parlay validate --project` |
 
-Both are warnings on purpose. A manifest listing a fragment its feature has not
-written yet is the normal state of a page designed ahead of its features, and
-blocking it would make the manifest unusable for the thing it exists to do.
-`view-page` reports the same drift at assembly time; what was missing was any
-report at all.
+`page-fragment-unresolved` and `page-has-no-fragments` are warnings on purpose.
+A manifest listing a fragment its feature has not written yet is the normal
+state of a page designed ahead of its features, and blocking it would make the
+manifest unusable for the thing it exists to do. `view-page` reports the same
+drift at assembly time; what was missing was any report at all. `surface-region-shared`
+is likewise non-blocking, because a resolved stack is intentional; the *unresolved*
+stack is what escalated to the blocking `surface-region-conflict`.
 
 **Page identity is the filename stem** — `spec/pages/<page>.page.md` — not the
 `# ` heading. That is what `view-page` looks up and what a surface fragment's

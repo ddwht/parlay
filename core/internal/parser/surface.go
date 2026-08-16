@@ -19,6 +19,22 @@ type Fragment struct {
 	Notes   []string
 	Verify  []string // acceptance criteria relocated from the owning intent
 	Feature string   // populated during scanning, not from file
+	// Supersedes names the @feature/fragment this one replaces when they
+	// occupy the same (page, region). It is the composition-level twin of the
+	// amendment ledger's supersedes: — one "this replaces that" model at every
+	// level. Empty when the fragment replaces nothing.
+	Supersedes string
+	// Interactive is tri-state: nil means the fragment is interactive (the
+	// default — it may capture input), and an explicit false marks an
+	// output-only fragment the adapter should emit as non-hit-testable output.
+	// A pointer rather than a bool so "unset" and "false" stay distinct.
+	Interactive *bool
+}
+
+// IsInteractive reports whether the fragment may capture input. A fragment is
+// interactive unless it explicitly declares interactive: false.
+func (f Fragment) IsInteractive() bool {
+	return f.Interactive == nil || *f.Interactive
 }
 
 // ParseSurfaceFile reads a surface artifact at the supplied path. When the
@@ -86,6 +102,16 @@ func ParseSurfaceFile(path string) ([]Fragment, error) {
 		} else if strings.HasPrefix(line, "**Order**:") {
 			val := extractField(line, "**Order**:")
 			current.Order, _ = strconv.Atoi(val)
+			currentList = nil
+		} else if strings.HasPrefix(line, "**Supersedes**:") {
+			current.Supersedes = extractField(line, "**Supersedes**:")
+			currentList = nil
+		} else if strings.HasPrefix(line, "**Interactive**:") {
+			val := strings.ToLower(strings.TrimSpace(extractField(line, "**Interactive**:")))
+			if val == "true" || val == "false" {
+				b := val == "true"
+				current.Interactive = &b
+			}
 			currentList = nil
 		} else if strings.HasPrefix(line, "**Notes**:") {
 			currentList = &current.Notes

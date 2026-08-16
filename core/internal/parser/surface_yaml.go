@@ -38,6 +38,11 @@ type surfaceYAMLFragment struct {
 	// relocated from the owning intent's **Verify** bullets, carried by the
 	// fragment when no operation covers that intent.
 	Verify []string `yaml:"verify,omitempty"`
+	// Supersedes names the @feature/fragment this one replaces in a shared
+	// (page, region); Interactive is the tri-state output-only marker (a
+	// pointer so an explicit `interactive: false` stays distinct from unset).
+	Supersedes  string `yaml:"supersedes,omitempty"`
+	Interactive *bool  `yaml:"interactive,omitempty"`
 }
 
 // LoadSurfaceYAML reads surface.yaml at path and returns the same []Fragment
@@ -68,16 +73,18 @@ func LoadSurfaceYAMLBytes(path string, content []byte) ([]Fragment, error) {
 	out := make([]Fragment, 0, len(doc.Fragments))
 	for _, f := range doc.Fragments {
 		out = append(out, Fragment{
-			Name:    f.Name,
-			Shows:   f.Shows,
-			Actions: f.Actions,
-			Source:  f.Source,
-			Page:    f.Page,
-			Region:  f.Region,
-			Order:   f.Order,
-			Notes:   f.Notes,
-			Verify:  f.Verify,
-			Feature: feature,
+			Name:        f.Name,
+			Shows:       f.Shows,
+			Actions:     f.Actions,
+			Source:      f.Source,
+			Page:        f.Page,
+			Region:      f.Region,
+			Order:       f.Order,
+			Notes:       f.Notes,
+			Verify:      f.Verify,
+			Feature:     feature,
+			Supersedes:  f.Supersedes,
+			Interactive: f.Interactive,
 		})
 	}
 	return out, nil

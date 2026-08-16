@@ -25,6 +25,9 @@ Generation sources:
 **Region**: <screen area — main, sidebar, header, toolbar, footer, dialog>
 **Order**: <integer — relative position within region, lower first>
 
+**Supersedes**: <optional — @feature/fragment this one replaces in a shared region>
+**Interactive**: <optional — false marks an output-only fragment the adapter emits as non-hit-testable>
+
 **Notes**:
 - <Design decisions, reviewer comments, open questions>
 ```
@@ -41,6 +44,8 @@ Generation sources:
 | Page | No | `**Page**:` plain text page name |
 | Region | No | `**Region**:` plain text region name |
 | Order | No | `**Order**:` integer |
+| Supersedes | No | `**Supersedes**:` a single `@feature/fragment` reference this fragment replaces when both occupy the same `(page, region)`. See Cross-feature composition below. |
+| Interactive | No | `**Interactive**:` `true` or `false`. Absent reads as `true` (the fragment may capture input). `false` marks an output-only fragment; the adapter emits it as non-hit-testable output so a sibling cannot silently eat its input. |
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines |
 | Verify | No | YAML form (`fragments[].verify`) only: acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets, carried by the fragment when no capabilities operation covers that intent. Populated by `/parlay-create-artifacts` on generate and `parlay migrate-verify` for pre-existing artifacts; testcase derivation reads these first, intent bullets as fallback. |
 
@@ -171,7 +176,17 @@ A fragment may declare at most one Flow. Not every fragment needs a Flow — sim
 
 Multiple features can target the same page. `/parlay view-page ==page-name==` collects all fragments targeting that page, groups by Region, sorts by Order. Conflicts (same region + same order) are flagged.
 
-`parlay validate --type page` reports the build-boundary form of the same collision as the `surface-region-shared` warning (see page.schema.md's error-code table): a region two or more different features contribute to, with a sharper message when they collide on an exact Order slot. The warning names both features so a silent-loser mystery becomes a named finding; it does not block, because a page manifest or a cross-feature "this replaces that" annotation can order the stack legitimately.
+`parlay validate --type page` reports the build-boundary form of the same collision as the `surface-region-shared` warning (see page.schema.md's error-code table): a region two or more different features contribute to, with a sharper message when they collide on an exact Order slot. The warning names both features so a silent-loser mystery becomes a named finding; it does not block when the stack is *resolved* — a page manifest ordering the region, or a `supersedes:` annotation naming what replaces what. A region two or more features share with **neither** resolution present is the shape behind "a working component never appears", and there the finding blocks (see page.schema.md).
+
+### `supersedes:` — the composition-level "this replaces that"
+
+`supersedes: @feature/fragment` on a fragment declares that it replaces the named fragment where the two occupy the same `(page, region)`. It is deliberately the **same** concept the amendment ledger uses — one "this replaces that" model at every level, so a cross-feature intent that used to be a doomed hand-edit to a generated file is now durable spec. Codegen routes the *composed* result (the superseding fragment's output in the shared slot), not two parallel files that race to mount.
+
+Two fragments that both supersede the **same** target are a two-headed chain — the composition forks and no single winner exists, exactly the way two amendments carrying the same sequence number collide. That is an error, reported project-wide.
+
+### `interactive: false` — output-only fragments
+
+A fragment marked `interactive: false` produces output the user reads but never acts on — a readout, a status line, a rendered mesh. The adapter emits it as **non-hit-testable** output, so a sibling stacked over it cannot silently capture the input meant for something else (the "dead mouse" composition defect). Absent, a fragment is interactive and may capture input. The derived assembly suite (see testcases.schema.md) asserts each declared component is mounted, interactive components are hit-reachable, and `interactive: false` ones are not.
 
 When layout needs to be locked, use `/parlay lock-page` to create a page manifest (see page.schema.md).
 
@@ -226,6 +241,8 @@ fragments:
     page: <target page name>
     region: <screen area — main, sidebar, header, toolbar, footer, dialog>
     order: <integer — relative position within region, lower first>
+    supersedes: "@feature/fragment"   # optional — the fragment this replaces in a shared region
+    interactive: false                # optional — output-only fragment, emitted non-hit-testable
     notes:
       - <design decisions, reviewer comments, open questions>
 ```
@@ -241,6 +258,8 @@ fragments:
 | `fragments[].page` | No | Target page name. |
 | `fragments[].region` | No | Region name. |
 | `fragments[].order` | No | Integer position within region. |
+| `fragments[].supersedes` | No | A single `@feature/fragment` reference this fragment replaces in a shared `(page, region)`. See Cross-feature composition. |
+| `fragments[].interactive` | No | Boolean. Absent reads as `true`. `false` marks an output-only fragment the adapter emits as non-hit-testable output. |
 | `fragments[].notes` | No | List of free-text strings — the YAML-form equivalent of `surface.md`'s `- ` bulleted lines under `**Notes**:`. |
 
 This shape mirrors the parser's in-memory `Fragment` representation field-for-field — `shows` and `actions` stay comma-separated strings rather than becoming YAML lists, matching what the legacy `surface.md` parser already produces, so both formats resolve to byte-identical `[]Fragment` values and the build pipeline never needs to know which form it read.

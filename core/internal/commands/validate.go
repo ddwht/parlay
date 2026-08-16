@@ -433,6 +433,18 @@ func runValidateProject(cmd *cobra.Command) error {
 	// carried alongside the per-feature verdicts rather than inside one.
 	sharedConcepts := sharedInfrastructureConcepts(filepath.Join(root, config.SpecDir))
 
+	// Two-headed supersedes chains are a project-wide property of the surface
+	// set — a fork no single page owns — so they are computed here and, being
+	// blocking errors, carried as a synthetic verdict the way multi-target
+	// errors are above.
+	if conflicts := supersedesConflicts(filepath.Join(root, config.SpecDir)); len(conflicts) > 0 {
+		verdicts = append(verdicts, agent.FeatureVerdict{
+			Feature:       "_surface",
+			BuildfilePath: filepath.Join(root, config.SpecDir, "intents"),
+			Errors:        conflicts,
+		})
+	}
+
 	totalBlocking := 0
 	totalWarnings := len(sharedConcepts)
 	for _, v := range verdicts {
@@ -644,7 +656,7 @@ func validatePageReferences(cmd *cobra.Command, path string, page *parser.Page) 
 		}
 	}
 
-	errs = append(errs, sharedRegionWarnings(fragments, pageName)...)
+	errs = append(errs, sharedRegionWarnings(fragments, page, pageName)...)
 	return errs
 }
 
@@ -653,19 +665,30 @@ func validatePageReferences(cmd *cobra.Command, path string, page *parser.Page) 
 // set is already in hand (ScanAllSurfaces), so the collision is a grouping, not
 // a second walk.
 //
-// Two features stacking in one region is not by itself a defect — a page
-// manifest or (WP8) a supersedes: annotation can order them — but it is the
+// Two features stacking in one region is not by itself a defect — but it is the
 // exact shape behind the "a working component never appears" mystery, where the
-// first feature's assembly silently wins over the second's. One named warning
-// beats the silence. An exact-slot collision (same order, different features)
-// gets a sharper message, because there the assembler picks a winner with
-// nothing to separate the two; assembleRegions stays the view-time reporter for
-// that same case.
-func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.ValidationError {
+// first feature's assembly silently wins over the second's. WP3 named the stack
+// as a `surface-region-shared` warning; WP8 escalates the *unresolved* subset
+// to a blocking `surface-region-conflict` error, because by now the tool offers
+// two ways to order a legitimate stack and a stack using neither is a defect,
+// not a heads-up:
+//
+//   - a page manifest that lists the region (the designer locked its order), or
+//   - a `supersedes:` annotation on one occupant naming another (this replaces
+//     that).
+//
+// A resolved stack stays a warning: the reviewer already annotated it, but the
+// stack is still worth seeing. An exact-slot collision (same order, different
+// features) with no resolution gets a sharper conflict message, because there
+// the assembler picks a winner with nothing to separate the two; assembleRegions
+// stays the view-time reporter for that same case.
+func sharedRegionWarnings(fragments []parser.Fragment, page *parser.Page, pageName string) []agent.ValidationError {
 	type occupant struct {
-		feature  string
-		fragment string
-		order    int
+		feature    string
+		fragment   string
+		order      int
+		ref        string
+		supersedes string
 	}
 	byRegion := map[string][]occupant{}
 	for _, f := range fragments {
@@ -676,7 +699,23 @@ func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.
 		if region == "" {
 			region = "main"
 		}
-		byRegion[region] = append(byRegion[region], occupant{f.Feature, f.Name, f.Order})
+		ref := fmt.Sprintf("@%s/%s", f.Feature, parser.Slugify(f.Name))
+		byRegion[region] = append(byRegion[region], occupant{f.Feature, f.Name, f.Order, ref, strings.TrimSpace(f.Supersedes)})
+	}
+
+	// Regions the manifest orders — a region heading listing at least one
+	// fragment is the designer locking that region's sequence.
+	orderedByManifest := map[string]bool{}
+	if page != nil {
+		for _, r := range page.Regions {
+			name := strings.ToLower(strings.TrimSpace(r.Name))
+			if name == "" {
+				name = "main"
+			}
+			if len(r.Components) > 0 {
+				orderedByManifest[name] = true
+			}
+		}
 	}
 
 	regionNames := make([]string, 0, len(byRegion))
@@ -699,12 +738,25 @@ func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.
 		})
 
 		features := map[string]bool{}
+		refs := map[string]bool{}
 		for _, o := range occ {
 			features[o.feature] = true
+			refs[o.ref] = true
 		}
 		if len(features) < 2 {
 			continue
 		}
+
+		// Resolution: a manifest that orders the region, or a supersedes:
+		// among the occupants naming another occupant in the same region.
+		resolvedBySupersedes := false
+		for _, o := range occ {
+			if o.supersedes != "" && refs[o.supersedes] {
+				resolvedBySupersedes = true
+				break
+			}
+		}
+		resolved := orderedByManifest[region] || resolvedBySupersedes
 
 		exactSlot := 0
 		for i := 0; i < len(occ); i++ {
@@ -717,18 +769,83 @@ func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.
 
 		parts := make([]string, 0, len(occ))
 		for _, o := range occ {
-			parts = append(parts, fmt.Sprintf("@%s/%s", o.feature, parser.Slugify(o.fragment)))
+			parts = append(parts, o.ref)
 		}
-		msg := fmt.Sprintf("region %q on page %q is contributed to by %d features (%s) — the assembly of one may hide the other", region, pageName, len(features), strings.Join(parts, ", "))
+
+		if resolved {
+			msg := fmt.Sprintf("region %q on page %q is contributed to by %d features (%s) — ordered by a manifest or a supersedes: annotation, so the stack is intentional", region, pageName, len(features), strings.Join(parts, ", "))
+			errs = append(errs, agent.ValidationError{
+				Code:     "surface-region-shared",
+				Message:  msg,
+				Context:  "regions." + region,
+				Fix:      "none required — this is a note that an intentional cross-feature stack lives here",
+				Severity: "warning",
+			})
+			continue
+		}
+
+		msg := fmt.Sprintf("region %q on page %q is contributed to by %d features (%s) with nothing ordering them — one feature's assembly silently wins over the other", region, pageName, len(features), strings.Join(parts, ", "))
 		if exactSlot > 0 {
-			msg = fmt.Sprintf("region %q on page %q holds fragments from different features at the same order %d (%s) — the assembler picks a winner with nothing to separate them", region, pageName, exactSlot, strings.Join(parts, ", "))
+			msg = fmt.Sprintf("region %q on page %q holds fragments from different features at the same order %d (%s) with nothing to separate them — the assembler picks a winner blind", region, pageName, exactSlot, strings.Join(parts, ", "))
 		}
 		errs = append(errs, agent.ValidationError{
-			Code:     "surface-region-shared",
+			Code:     "surface-region-conflict",
 			Message:  msg,
 			Context:  "regions." + region,
-			Fix:      "order the fragments with a page manifest (parlay lock-page), or record that one replaces the other",
-			Severity: "warning",
+			Fix:      "order the fragments with a page manifest (parlay lock-page), or add supersedes: @feature/fragment to the occupant that replaces the other",
+			Severity: "error",
+		})
+	}
+	return errs
+}
+
+// supersedesConflicts reports two-headed supersedes chains across every
+// feature's surface: two fragments that both name the SAME @feature/fragment in
+// their supersedes:. The composition forks — no single winner exists — exactly
+// the way two amendments carrying the same sequence number collide, so it is an
+// error rather than a warning. Reported project-wide because supersedes crosses
+// feature boundaries and no one page owns the pair.
+func supersedesConflicts(specDir string) []agent.ValidationError {
+	fragments, err := parser.ScanAllSurfaces(specDir)
+	if err != nil {
+		return nil
+	}
+	type head struct{ feature, fragment string }
+	byTarget := map[string][]head{}
+	var order []string
+	for _, f := range fragments {
+		target := strings.TrimSpace(f.Supersedes)
+		if target == "" {
+			continue
+		}
+		if _, seen := byTarget[target]; !seen {
+			order = append(order, target)
+		}
+		byTarget[target] = append(byTarget[target], head{f.Feature, f.Name})
+	}
+
+	var errs []agent.ValidationError
+	for _, target := range order {
+		heads := byTarget[target]
+		if len(heads) < 2 {
+			continue
+		}
+		sort.Slice(heads, func(i, j int) bool {
+			if heads[i].feature != heads[j].feature {
+				return heads[i].feature < heads[j].feature
+			}
+			return heads[i].fragment < heads[j].fragment
+		})
+		parts := make([]string, 0, len(heads))
+		for _, h := range heads {
+			parts = append(parts, fmt.Sprintf("@%s/%s", h.feature, parser.Slugify(h.fragment)))
+		}
+		errs = append(errs, agent.ValidationError{
+			Code:     "surface-supersedes-conflict",
+			Message:  fmt.Sprintf("%d fragments (%s) all supersede %s — a two-headed chain the composition cannot resolve to one winner", len(heads), strings.Join(parts, ", "), target),
+			Context:  "supersedes",
+			Fix:      "keep one superseding fragment, or chain them (A supersedes B, B supersedes the target) so a single head remains",
+			Severity: "error",
 		})
 	}
 	return errs
