@@ -99,7 +99,12 @@ type projectValidateJSONResult struct {
 	Root     string                 `json:"root"`
 	OK       bool                   `json:"ok"`
 	Features []agent.FeatureVerdict `json:"features,omitempty"`
-	Note     string                 `json:"note,omitempty"`
+	// SharedConcepts lists infrastructure-concept-shared warnings: one per
+	// architectural concept two or more features constrain. Cross-feature by
+	// construction, so they hang off the project envelope rather than any one
+	// feature's verdict. Warnings, never blocking — they never touch OK.
+	SharedConcepts []agent.ValidationError `json:"shared_concepts,omitempty"`
+	Note           string                  `json:"note,omitempty"`
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -422,8 +427,14 @@ func runValidateProject(cmd *cobra.Command) error {
 	// note, which names plan-create-collision as the case it was split out
 	// for, and ApplyBuildfileSeverity's call site in the project pass for how
 	// these findings come to be graded at all.
+	// Cross-feature infrastructure concept sharing is independent of any one
+	// buildfile — one architectural concept constrained by two features is a
+	// property of the pair — so it is computed here at project scope and
+	// carried alongside the per-feature verdicts rather than inside one.
+	sharedConcepts := sharedInfrastructureConcepts(filepath.Join(root, config.SpecDir))
+
 	totalBlocking := 0
-	totalWarnings := 0
+	totalWarnings := len(sharedConcepts)
 	for _, v := range verdicts {
 		b := blockingCount(v.Errors)
 		totalBlocking += b
@@ -433,9 +444,10 @@ func runValidateProject(cmd *cobra.Command) error {
 
 	if validateJSON {
 		out := projectValidateJSONResult{
-			Root:     root,
-			OK:       ok,
-			Features: verdicts,
+			Root:           root,
+			OK:             ok,
+			Features:       verdicts,
+			SharedConcepts: sharedConcepts,
 		}
 		if len(verdicts) == 0 {
 			out.Note = fmt.Sprintf("no buildfiles under %s/.parlay/build/", root)
@@ -448,9 +460,19 @@ func runValidateProject(cmd *cobra.Command) error {
 		return nil
 	}
 
+	// One line per shared concept, printed in every text outcome — a warning
+	// only becomes useful if it is read, and the summary count alone cannot
+	// name the concept or the features. To stdout, as a non-failing finding.
+	printSharedConcepts := func() {
+		for _, c := range sharedConcepts {
+			fmt.Fprintf(cmd.OutOrStdout(), "  [warning] [%s] %s\n", c.Code, c.Message)
+		}
+	}
+
 	// Text output.
 	if len(verdicts) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "OK (no buildfiles under %s/.parlay/build/)\n", root)
+		printSharedConcepts()
 		return nil
 	}
 	if ok {
@@ -462,8 +484,10 @@ func runValidateProject(cmd *cobra.Command) error {
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "OK (%d feature(s) validated)\n", len(verdicts))
 		}
+		printSharedConcepts()
 		return nil
 	}
+	printSharedConcepts()
 	fmt.Fprintf(cmd.ErrOrStderr(), "FAIL: %d issue(s) across %d feature(s)\n", totalBlocking, len(verdicts))
 	for _, v := range verdicts {
 		if len(v.Errors) == 0 {
@@ -704,6 +728,78 @@ func sharedRegionWarnings(fragments []parser.Fragment, pageName string) []agent.
 			Message:  msg,
 			Context:  "regions." + region,
 			Fix:      "order the fragments with a page manifest (parlay lock-page), or record that one replaces the other",
+			Severity: "warning",
+		})
+	}
+	return errs
+}
+
+// sharedInfrastructureConcepts scans every feature's infrastructure.md and
+// reports each architectural concept that two or more different features
+// constrain — one infrastructure-concept-shared warning per concept, named by
+// its normalized Affects: value. Two features holding invariants over the same
+// concept (a cache, a boundary, a probe) is the third composition mystery: two
+// individually-correct invariants that jointly forbid something, with every
+// per-feature signal green. No lexical check can decide whether the invariants
+// actually contradict, so this names the pair for a human rather than judging
+// it — the same warning-not-error stance the whole detection tier takes.
+//
+// The trigger is a concept constrained by more than one distinct FEATURE, not
+// merely more than one fragment: a single feature legitimately splitting its
+// own constraints across two fragments is not the cross-feature hazard this
+// exists to surface, and warning on it would be noise on ordinary specs.
+func sharedInfrastructureConcepts(specDir string) []agent.ValidationError {
+	fragments, err := parser.ScanAllInfrastructure(specDir)
+	if err != nil {
+		return nil
+	}
+
+	type contributor struct {
+		feature  string
+		fragment string
+	}
+	// Preserve first-seen concept order for a stable listing, and keep the
+	// human-readable form of the concept alongside its normalized key.
+	byConcept := map[string][]contributor{}
+	display := map[string]string{}
+	var order []string
+	for _, f := range fragments {
+		concept := strings.Join(strings.Fields(strings.ToLower(f.Affects)), " ")
+		if concept == "" {
+			continue
+		}
+		if _, seen := byConcept[concept]; !seen {
+			order = append(order, concept)
+			display[concept] = strings.TrimSpace(f.Affects)
+		}
+		byConcept[concept] = append(byConcept[concept], contributor{f.Feature, f.Name})
+	}
+
+	var errs []agent.ValidationError
+	for _, concept := range order {
+		contribs := byConcept[concept]
+		sort.Slice(contribs, func(i, j int) bool {
+			if contribs[i].feature != contribs[j].feature {
+				return contribs[i].feature < contribs[j].feature
+			}
+			return contribs[i].fragment < contribs[j].fragment
+		})
+		features := map[string]bool{}
+		for _, c := range contribs {
+			features[c.feature] = true
+		}
+		if len(features) < 2 {
+			continue
+		}
+		parts := make([]string, 0, len(contribs))
+		for _, c := range contribs {
+			parts = append(parts, fmt.Sprintf("%s/%s", c.feature, c.fragment))
+		}
+		errs = append(errs, agent.ValidationError{
+			Code:     "infrastructure-concept-shared",
+			Message:  fmt.Sprintf("concept %q is constrained by %d features (%s) — one implementation must satisfy every invariant they place on it", display[concept], len(features), strings.Join(parts, ", ")),
+			Context:  "affects:" + concept,
+			Fix:      "read the fragments together; if their invariants cannot both hold, record which supersedes the other",
 			Severity: "warning",
 		})
 	}

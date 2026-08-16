@@ -7,6 +7,7 @@ package parser
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -26,6 +27,11 @@ type InfraFragment struct {
 	// the record that a reviewer can disagree with. Nobody can disagree
 	// with a warning that was never read.
 	DeliberatelySpecific string
+	// Feature is populated during a cross-feature scan
+	// (ScanAllInfrastructure), not from the file — the same convention as
+	// Fragment.Feature on the surface side. A single-file parse leaves it
+	// empty.
+	Feature string
 }
 
 func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
@@ -91,4 +97,87 @@ func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
 	}
 
 	return fragments, scanner.Err()
+}
+
+// ScanAllInfrastructure finds every infrastructure.md under spec/intents/ —
+// including features nested one level under an initiative directory — and
+// returns their fragments with Feature populated. It is the infrastructure
+// counterpart of ScanAllSurfaces, and shares its structure so the two
+// cross-feature scans stay recognisably the same walk: a directory holding
+// nested feature directories is an initiative and is recursed one level; a
+// directory holding an infrastructure.md is a feature. A feature with no
+// infrastructure.md simply contributes nothing.
+func ScanAllInfrastructure(specDir string) ([]InfraFragment, error) {
+	intentsDir := filepath.Join(specDir, "intents")
+	entries, err := os.ReadDir(intentsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var all []InfraFragment
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		featureSlug := entry.Name()
+		featureDir := filepath.Join(intentsDir, featureSlug)
+
+		if nested := scanNestedInfrastructure(featureDir, featureSlug); len(nested) > 0 {
+			all = append(all, nested...)
+			continue
+		}
+
+		infraPath := filepath.Join(featureDir, "infrastructure.md")
+		fragments, err := parseInfrastructureFragmentsIfPresent(infraPath, featureSlug)
+		if err != nil {
+			continue
+		}
+		all = append(all, fragments...)
+	}
+
+	return all, nil
+}
+
+// scanNestedInfrastructure returns fragments for features nested one level
+// under an initiative directory, with Feature set to the qualified
+// "<initiative>/<feature>" form. Returns nil when dir holds no nested feature
+// infrastructure — i.e. when dir is itself a feature.
+func scanNestedInfrastructure(dir, initiativeSlug string) []InfraFragment {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []InfraFragment
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		childDir := filepath.Join(dir, e.Name())
+		infraPath := filepath.Join(childDir, "infrastructure.md")
+		qualified := initiativeSlug + "/" + e.Name()
+		fragments, err := parseInfrastructureFragmentsIfPresent(infraPath, qualified)
+		if err != nil {
+			continue
+		}
+		out = append(out, fragments...)
+	}
+	return out
+}
+
+// parseInfrastructureFragmentsIfPresent parses infrastructure.md at infraPath
+// and stamps Feature on every fragment. A missing file is not an error — it
+// yields no fragments — so callers can treat "feature has no infrastructure"
+// and "feature has an empty infrastructure" identically.
+func parseInfrastructureFragmentsIfPresent(infraPath, feature string) ([]InfraFragment, error) {
+	if _, err := os.Stat(infraPath); err != nil {
+		return nil, nil
+	}
+	fragments, err := ParseInfrastructureFile(infraPath)
+	if err != nil {
+		return nil, err
+	}
+	for i := range fragments {
+		fragments[i].Feature = feature
+	}
+	return fragments, nil
 }

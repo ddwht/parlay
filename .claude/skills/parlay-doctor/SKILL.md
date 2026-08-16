@@ -40,6 +40,10 @@ Gather state before proposing anything. None of these mutate:
 
 - `parlay status` — active root, features, phases, orphaned build dirs
 - `parlay repair --dry-run` — three-tree consistency
+- `parlay validate --project` — cross-feature collisions the per-feature
+  passes cannot see, including `infrastructure-concept-shared` (one line per
+  architectural concept two or more features constrain). Warnings, not
+  failures — report them, do not treat them as repairs.
 - `parlay internal check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
 - `parlay internal collect-questions @{feature}` — unresolved `Questions:` blocks
 - `parlay internal check-drift @{feature}` — sources changed since the last build

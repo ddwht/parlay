@@ -167,6 +167,16 @@ When an infrastructure file is loaded, the tool verifies that every fragment has
 
 These three were documented as prose bullets rather than as a table for as long as this schema existed, which made them invisible to the conformance check that asserts every documented code is actually emitted — the check reads tables only. All three were emitted the whole time; the documentation simply could not be verified against the implementation. A code in a bullet list is a promise nothing holds you to.
 
+## Cross-feature concept sharing
+
+A concept named in one feature's `**Affects**:` may also be named in another's. Two features holding invariants over the same concept — a cache, a boundary, a probe — is the composition mystery where two individually-correct invariants jointly forbid something (a cache that may never invalidate because each feature independently requires it stable), with every per-feature signal green.
+
+| Code | When it fires |
+|---|---|
+| `infrastructure-concept-shared` (warning) | Two or more different features carry fragments whose normalized `**Affects**:` value is the same concept. Emitted at `parlay validate --project` (one line per concept, naming every contributing feature and fragment) and surfaced in the doctor survey. |
+
+It is a warning, never blocking, and it does not judge whether the invariants actually contradict — no lexical check can decide that. It names the pair so a reviewer reads the two fragments together; if the invariants cannot both hold, the resolution is to record which one supersedes the other (composition vocabulary, WP8). The trigger is more than one distinct *feature*, not merely more than one fragment: a single feature splitting its own constraints across two fragments is not the cross-feature hazard and is not warned on.
+
 The schema is **advisory** with respect to operation-shaped content: no validator rule rejects a fragment in `infrastructure.md` simply because it looks operation-shaped. The `migrate-capabilities` command is the only enforcement path and is opt-in; running it moves operation-shaped fragments into `capabilities.yaml` while leaving architectural prose in place. Authors who keep operation-shaped fragments in `infrastructure.md` accept that the migrator will move them on the next opt-in run.
 
 Portability lint (warnings, non-blocking) scans `Affects` and `Behavior` for:

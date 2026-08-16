@@ -169,6 +169,16 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// One architectural concept (a normalized Affects: value) is constrained
+	// by fragments from two or more features. A warning in both modes: two
+	// features holding invariants over the same concept is not by itself a
+	// contradiction — it becomes one only when a single implementation cannot
+	// satisfy both, which no lexical check can decide. What it converts from
+	// silence into a named finding is the pair a reviewer should read together.
+	"infrastructure-concept-shared": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// A capabilities.yaml referencing an entity that no root model declares
 	// but some feature's contribution proposes. A warning in both modes: the
 	// reference is correct about where the project is going, and the only
