@@ -266,15 +266,32 @@ func TestBuildfileSchemaDocumentsBothShapesAndWhichOneValidates(t *testing.T) {
 	}
 
 	// And the reader must be told, before that block, which shape actually
-	// validates. Without this the doc reads as an instruction to author v2,
-	// which the validator rejects.
+	// validates. The reconciled truth (WP2.2): for a multi-target project the
+	// v2 shape IS accepted — a buildfile carrying adapter-set: plus a
+	// resolvable presentation adapter validates. The doc once claimed the
+	// opposite ("not what the validator accepts today" / "not yet the accepted
+	// shape"), and every build that trusted it paid for it; that phrasing now
+	// survives only inside the Status note's retraction of itself, so this pin
+	// no longer requires the stale sentence — it forbids its return to the v2
+	// structure section and requires the honest acceptance claim there instead.
 	if targetsIdx >= 0 {
-		preamble := body[:targetsIdx]
-		if !strings.Contains(preamble, "not yet the accepted shape") {
-			t.Error("buildfile.schema.md must say, before the v2 structure block, that v2 is not the accepted shape — the doc previously claimed the opposite and every build paid for it")
+		structIdx := strings.Index(body, "## Structure (v2 multi-target")
+		if structIdx == -1 || structIdx > targetsIdx {
+			t.Error("buildfile.schema.md must carry the v2 structure heading before the targets: block")
+		} else {
+			structSection := body[structIdx:targetsIdx]
+			if !strings.Contains(structSection, "validates") && !strings.Contains(structSection, "accepted") {
+				t.Error("the v2 structure section must state that a resolvable adapter-set buildfile validates — not leave the reader unsure which shape the validator takes")
+			}
+			for _, stale := range []string{"not what the validator accepts today", "not yet the accepted shape"} {
+				if strings.Contains(structSection, stale) {
+					t.Errorf("the v2 structure section still carries the retracted claim %q — v2 is accepted for multi-target projects (see ValidateBuildfile)", stale)
+				}
+			}
 		}
+		preamble := body[:targetsIdx]
 		if !strings.Contains(preamble, "appendix-legacy-v1-buildfile-shape-frozen") {
-			t.Error("buildfile.schema.md must point an author at the shape that does validate, not merely warn them off the one that does not")
+			t.Error("buildfile.schema.md must point a single-target author at the v1 shape that validates for them")
 		}
 	}
 }

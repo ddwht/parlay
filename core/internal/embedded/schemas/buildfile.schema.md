@@ -24,11 +24,20 @@ This section previously claimed v2 was "primary … every project, including pre
 
 ## Structure (v2 multi-target — accepted when adapter-set.yaml is present)
 
-Read the Status note above before authoring from this section. The shape below is
-where new multi-target content is documented; it is **not** what the validator
-accepts today. The `adapter-set:` line is the specific difference — a buildfile
-declaring it, rather than `adapter:`, is rejected with
+Read the Status note above before authoring from this section. This is where
+new multi-target content is documented, and it **validates**: a buildfile that
+carries `adapter-set:` together with a `targets.presentation.adapter` that
+resolves is accepted (see `ValidateBuildfile` in `validate.go`). The
+`adapter-set:` line is the switch — declaring it, rather than a top-level
+`adapter:`, selects this v2 shape; a buildfile carrying neither still fails with
 `schema-validation-failed: buildfile missing 'adapter' field`.
+
+*Which reading won and why:* v2-is-accepted (the Status note, line 17), not the
+retracted v2-is-rejected. The code is the tiebreaker — `ValidateBuildfile`
+returns nil for a resolvable adapter-set buildfile — and a schema that tells an
+author to write the shape the validator refuses spends a build cycle on every
+author who trusts it. A future span-edit that reintroduces "rejected" here
+collides with this note.
 
 A multi-target project (one with `.parlay/adapter-set.yaml`) authors this shape; a single-target project authors [the frozen v1 shape](#appendix-legacy-v1-buildfile-shape-frozen). Everything below this heading describes fields, rules, and diagnostics that apply to both shapes except where the multi-target `targets:` block is involved; the sections on `targets.<kind>:`, adapter-set resolution, and per-target projection are live for multi-target buildfiles and simply absent from single-target ones.
 
