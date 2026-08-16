@@ -363,3 +363,32 @@ the model's true cost against a toolchain that isn't fighting itself.
 
 Run totals: 39 agents, ~5.8M subagent tokens across both sessions, 6 clones, 36 gauntlet steps,
 3 judges, every suite green at every completed step in both variants.
+
+## WP10 re-run — replicate 1 interim (post-improvement toolchain)
+
+Same six asks, pre-baselined clones, sq @ debb835 vs ledger @ becb9d4 (all WP1-WP9 fixes):
+
+| Step | Status quo (tok/s) | Ledger (tok/s) |
+|---|---|---|
+| R1 replace | 37,286 / 565 | 34,683 / 567 |
+| R2 add | 74,828 / 1,095 | 54,990 / 830 |
+| R3 add | 44,169 / 691 | 47,574 / 784 |
+| R4 add+drift | 69,439 / 1,067 | 71,127 / 1,029 |
+| R5 contradiction | 36,408 / 493 | 63,062 / 963 |
+| R6 handoff | 23,933 / 294 | 21,836 / 276 |
+| **Total** | **286,063 / 70.1m** | **293,272 / 74.2m (+2.5%)** |
+
+**The L-series fixes worked: +40% → +2.5%.** The ledger is now cheaper on the adds (R2 −26%)
+and the replace; the entire remaining premium is R5, where the ledger does strictly more work
+(supersedes chain + forward links vs silent re-edit) — the record's honest price, now isolated
+from implementation friction. Frictions: 37 (sq) vs 31 (ledger), and the ledger's are
+skill-wording issues rather than state damage. Pre-baseline stage validated WP1's fail-loud UX
+live: the sq binary WARNed-and-committed a narrowing that would have silently under-scoped the
+baseline to ~70 of 149+ files; the lg binary refused until given the correct root — no force
+flag needed. Open residuals for the backlog: the `--source-root {root}` wording still
+under-documents the multi-root child prefix (one MAJOR cross-root pollution report in r1-lg
+R2); matrix golden files pin full `--json` output so any additive field reds the package;
+`.emitted.consumed` rename costs a manifest-regen on re-runs (intended trade, now measured).
+Note for the record: r2-sq R1 completed while the safety classifier was briefly unavailable —
+its commit gets extra scrutiny in the judge pass. Reps 2-3 + judges pending (session-limit
+interruption, resumed from cache).
