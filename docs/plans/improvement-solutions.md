@@ -257,4 +257,70 @@ one durable home and provably reaches its readers. Spec-level decisions live on 
 decisions live in the buildfile's `decisions:` block with wiring-style preservation, so the
 next emission starts from what the last one learned — mechanism on disk, not agent memory.
 
-## Theme 5 — composition arbitration · pending
+## Theme 5 — composition arbitration · DECIDED 2026-08-16
+
+### The problem, as the user experiences it
+
+Adding a second feature that touches the same place as the first breaks the product *as a
+mystery*: a working component that never appears (a second routes file nothing mounts), a
+dead mouse (an inert readout eating clicks), a cache serving the first design forever (two
+individually-correct invariants jointly forbidding invalidation). Every per-feature signal is
+green and points away from the cause; debugging is hours of exclusion. Real products are made
+of features touching, and composition is the one thing nothing specifies, generates, or tests.
+
+### Root causes
+
+1. **Composition is nobody's phase** — spec/build/codegen/tests are feature-scoped by design
+   (and that isolation is a confirmed strength); each emission acts as if alone.
+2. **Placement is an address, not a claim** — page+region carries no occupancy semantics, so
+   two occupants isn't even a detectable conflict.
+3. **Validators check entries, never pairs** — no check reads two fragments/invariants
+   together and asks whether one implementation can satisfy both.
+4. **Interaction semantics hide below the spec's floor** — hit-testability is an emission
+   detail with page-wide consequences the spec cannot see.
+5. **Cross-feature intent is inexpressible** — "this replaces that viewport" had no
+   vocabulary, so it became a hand-edit to a generated file (Theme 4: where decisions die).
+
+### Options considered
+
+- **A. Collision detection tier** — build-boundary lints: same page+region (naming both
+  features); concepts constrained by more than one fragment (printed list); later amendment
+  scope intersecting earlier Acceptance (the L15/F18 wiring). Days of work, no schema change;
+  warnings only, lexical matching at the margins.
+- **B. Composition vocabulary** — `supersedes:` on surface entries (codegen emits the
+  composed result); region occupancy exclusive by default (second claimant without
+  supersedes/order is an ERROR); `interactive: false` on output-only fragments (already
+  adopted via Theme 1's assembly suite; adapter emits non-hit-testable output). Deliberately
+  the SAME supersedes concept the amendment ledger uses — one "this replaces that" model at
+  every level, sharing the F18 forward-link fix. Dueling chains: two heads = error. Does not
+  resolve non-replacement contradictions — those stay A's listing plus a human.
+- **C. Standalone composition phase** — dissolved, not rejected: its test half is Theme 1's
+  derived assembly suite; its emission half is B's supersedes-aware routes generation.
+
+### Decision
+
+**A and B, sequenced A-first.** Detection converts silent mysteries into named warnings
+cheaply and immediately; the vocabulary then makes resolutions durable spec instead of doomed
+hand-edits. Occupancy escalates from warning (A) to error (B) only after users have had the
+warning long enough to annotate legitimate stacks.
+
+---
+
+## Consolidated execution order
+
+All five themes decided. The shared principle throughout: **make the implicit claim explicit,
+then make the explicit claim checked** — the same principle the benchmark validated for the
+ledger itself.
+
+| # | Work | Theme | Size |
+|---|---|---|---|
+| 1 | Fail-loud state boundary + write-if-changed baselines (+ post-write amendment validation) | 2-A/B | S |
+| 2 | Reconciliation sweep: shared buildfile reader, schema 17-vs-212, dirty_set scoping, L2 ordering, coverage no-op branch, command/flag renames | 3-A | S |
+| 3 | Collision detection tier (page+region, shared concepts, amendment-scope intersection) | 5-A | S–M |
+| 4 | Criterion-driven testcase derivation + `exercises:`/`observes:` + `state-only` stamp; audit lints as backstop | 1-A/B/E | M |
+| 5 | Conformance ratchet tests | 3-B | M |
+| 6 | Per-feature blessing (dirty flags preserved; per-feature instants) | 2-C | M |
+| 7 | Buildfile `decisions:` block + rationale propagation check | 4-A/B | M |
+| 8 | Composition vocabulary (`supersedes:`, occupancy-as-error, `interactive:`) + `appears` step + assembly suites | 5-B, 1-C | L |
+| 9 | `relation:` field → computed expectations + fixture oracle | 1-C/D | L |
+| 10 | **Re-run the gauntlet** — same asks, fresh clones — for the true cost verdict | — | harness exists |
