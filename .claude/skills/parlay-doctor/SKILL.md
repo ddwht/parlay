@@ -9,9 +9,9 @@ Inspect the project, report what is wrong or out of date, and offer the fix.
 Diagnosis-first: you determine which checks apply by looking at the project,
 not by asking the designer to know which of a dozen commands they need.
 
-This replaces the previous per-operation skills (`sync`, `collect-questions`,
-`review-coverage`, and the five `migrate-*` skills). Every underlying CLI
-command still exists and can be run directly; this skill is the front door
+This replaces the previous per-operation skills — the former sync,
+collect-questions, review-coverage, and five migrate-* skills. Every underlying
+CLI command still exists and can be run directly; this skill is the front door
 that decides which ones matter right now.
 
 ## Arguments
@@ -71,8 +71,8 @@ sync that would "fix" it is exactly the write the freeze forbids. Coverage
 is a birth-time concern there; skip it for frozen features and say so in the
 report.
 
-`check-coverage` matches intents to dialogs on title and word overlap, so it
-reports false gaps. Before presenting anything:
+`parlay internal check-coverage` matches intents to dialogs on title and word
+overlap, so it reports false gaps. Before presenting anything:
 
 - Check whether an "uncovered" intent is in fact covered by an orphan dialog
   under a different name — e.g. intent "Configure Project Tools" and dialog
@@ -91,13 +91,13 @@ If drifted intents exist, do not just report the hashes:
   the old one — and distinguish them from cosmetic edits.
 - Note that a changed **shared** source (`domain-model.yaml`, the adapter)
   dirties every feature that reads it, not just the one you asked about.
-  `check-drift` reports these under `shared_sources_changed`.
+  `parlay internal check-drift` reports these under `shared_sources_changed`.
 
 ### 3.5 Ledger findings (ledger projects only)
 
-In a `ledger: true` project, `check-drift` carries two extra fields and
-`check-amendments` adds a third dimension. Each finding has one right
-disposition:
+In a `ledger: true` project, `parlay internal check-drift` carries two extra
+fields and `parlay internal check-amendments` adds a third dimension. Each
+finding has one right disposition:
 
 - **`unapplied_amendments`** — the ledger records a decision whose delta
   never reached the contract artifacts. This is the highest-priority ledger
@@ -125,8 +125,8 @@ disposition:
      with the approved text.
   3. Move the existing ledger to `amendments/archive/` (retained, never
      deleted) and start the sequence fresh.
-  4. Re-run the build phases and `save-build-state` so the baseline
-     refreezes on the new founding text.
+  4. Re-run the build phases and `parlay internal save-build-state` so the
+     baseline refreezes on the new founding text.
 
 ### 4. Report, then offer
 

@@ -139,13 +139,13 @@ steps 3 and 4:
    This single-file check is shape only; it does **not** resolve `affects:`
    against the contract, so it is safe to run now, before the splice.
 
-   **Do not run `check-amendments` yet.** That command resolves every
+   **Do not run `parlay internal check-amendments` yet.** That command resolves every
    `affects:` ref against the contract artifacts, and an **ADD** amendment —
    one that introduces a new operation, fragment, or entity — names a ref that
    does not exist until step 4 splices it in. Running it here would report a
    spurious `amendment-affects-unresolved` for exactly the additions the
    amendment authorizes (L2). So the order is: write the amendment (this
-   step) → apply the splice (step 4) → **then** `check-amendments`. Nothing is
+   step) → apply the splice (step 4) → **then** `parlay internal check-amendments`. Nothing is
    lost by resolving after applying, because the decision gate above already
    fixed both texts before either was written.
 
@@ -290,7 +290,7 @@ report — which mode ran is part of what was blessed.
 
    The only amend semantics in this codebase say it exactly:
    *preserve hand-authored entries, replace extractor-owned spans*. And
-   `scaffold-signatures` splices its block by line rather than re-encoding the
+   `parlay internal scaffold-signatures` splices its block by line rather than re-encoding the
    buildfile, because round-tripping a 700-line reviewed document through a
    YAML encoder preserves every value and destroys the folded descriptions, the
    grouping blank lines, and the comments explaining why a field is the way it
@@ -421,7 +421,7 @@ report — which mode ran is part of what was blessed.
     the reviewer which suites they are re-approving and why those.
 
     **The gate may be inactive — that is a documented outcome, not a skip to
-    improvise.** When `check-review-gate` reports `ready: true` AND no
+    improvise.** When `parlay internal check-review-gate` reports `ready: true` AND no
     `.parlay/build/{feature}/coverage-review.yaml` exists, this project does
     not run the coverage-review gate at all — it is single-target /
     presentation-only, and the gate short-circuits to ready for exactly that
