@@ -118,8 +118,14 @@ steps 3 and 4:
    not run `check-amendments` against a file that does not even validate on
    its own. Once it validates, run
    `parlay internal check-amendments @{feature}` — it validates the ledger
-   and every `affects:` ref, and its `dirty_set` should agree with what
-   step 5's diff reports dirty. A disagreement means the amendment or the
+   and every `affects:` ref, and emits `dirty_set`: the resolvable `affects:`
+   of the **unapplied tail** (amendments past the baseline's
+   `last-applied-amendment`), which after this write is exactly the amendment
+   you just added. That tail is what step 5's diff should report dirty — the
+   two answer the same "changed since the last build" question and must agree.
+   (`all_affects`, the whole-ledger union, is emitted alongside it for audit;
+   it is NOT the rebuild-scoping set and will name long-applied refs.) A
+   disagreement between `dirty_set` and the diff means the amendment or the
    splice is wrong; stop and reconcile rather than proceeding.
 
 Step 4 then applies the delta **to contract artifacts only** — the ledger

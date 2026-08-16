@@ -27,6 +27,7 @@ import (
 
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var affectedSetCmd = &cobra.Command{
@@ -59,8 +60,24 @@ func runAffectedSet(cmd *cobra.Command, args []string) error {
 
 	// Declared dirty set, when a ledger exists. Best-effort: an unreadable
 	// ledger is check-amendments' finding to report, not this probe's.
+	//
+	// Scoped to the unapplied tail (Seq > baseline last-applied-amendment), the
+	// same as check-amendments' dirty_set (L7). The comment on the field claims
+	// these two are the same set; they must actually be, or the divergence this
+	// probe exists to avoid reappears one command over. A missing/unreadable
+	// baseline reads as 0 — every amendment counts as unapplied.
+	lastApplied := 0
+	if blData, readErr := os.ReadFile(baselinePath(cfg, slug)); readErr == nil {
+		var baseline Baseline
+		if yaml.Unmarshal(blData, &baseline) == nil {
+			lastApplied = baseline.LastAppliedAmendment
+		}
+	}
 	if amendments, err := parser.LoadFeatureAmendments(cfg.FeaturePath(slug)); err == nil {
 		for _, a := range amendments {
+			if a.Seq <= lastApplied {
+				continue
+			}
 			for _, raw := range a.Affects {
 				out.DirtySet = appendUniqueRef(out.DirtySet, raw)
 			}

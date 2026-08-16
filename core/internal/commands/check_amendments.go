@@ -21,6 +21,7 @@ import (
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var checkAmendmentsCmd = &cobra.Command{
@@ -47,13 +48,25 @@ type amendmentEntry struct {
 type checkAmendmentsOutput struct {
 	Feature    string           `json:"feature"`
 	Amendments []amendmentEntry `json:"amendments"`
-	// DirtySet is the union of every amendment's resolvable affects: refs,
-	// deduplicated in first-seen order — the declared counterpart of what
-	// `parlay internal diff` infers by hashing. Consumers scope rebuilds
-	// and prompts with it; the hash comparison stays as trust-but-verify.
-	DirtySet []string         `json:"dirty_set"`
-	Ready    bool             `json:"ready"`
-	Issues   []amendmentIssue `json:"issues"`
+	// DirtySet is the resolvable affects: refs of the UNAPPLIED TAIL only —
+	// amendments whose Seq exceeds the feature baseline's
+	// last-applied-amendment. That is the set a rebuild must actually touch:
+	// everything at or below the baseline's last-applied sequence was already
+	// folded into the generated code when the baseline was saved. Scoping it
+	// this way (L7) is what makes dirty_set agree with what
+	// `parlay internal diff` infers by hashing — the two disagreed when
+	// dirty_set was the cumulative union, because the union kept naming
+	// long-applied refs as dirty forever. Deduplicated in first-seen order.
+	DirtySet []string `json:"dirty_set"`
+	// AllAffects is the cumulative union of EVERY amendment's resolvable
+	// affects: refs, deduplicated in first-seen order — the whole ledger's
+	// footprint, regardless of what has been applied. This is the former
+	// dirty_set semantics, kept under an honest name for consumers that want
+	// the full history (audit, cross-feature pressure surveys) rather than the
+	// rebuild-scoping tail.
+	AllAffects []string         `json:"all_affects"`
+	Ready      bool             `json:"ready"`
+	Issues     []amendmentIssue `json:"issues"`
 }
 
 func runCheckAmendments(cmd *cobra.Command, args []string) error {
@@ -68,7 +81,21 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 		Feature:    slug,
 		Amendments: []amendmentEntry{},
 		DirtySet:   []string{},
+		AllAffects: []string{},
 		Issues:     []amendmentIssue{},
+	}
+
+	// The unapplied tail is defined against the feature baseline's
+	// last-applied-amendment: any amendment beyond it has not yet been folded
+	// into generated code. A missing/unreadable baseline (never built, or
+	// pre-v3) reads as 0, so every amendment counts as unapplied — the
+	// conservative reading, matching a from-scratch build.
+	lastApplied := 0
+	if blData, readErr := os.ReadFile(baselinePath(cfg, slug)); readErr == nil {
+		var baseline Baseline
+		if yaml.Unmarshal(blData, &baseline) == nil {
+			lastApplied = baseline.LastAppliedAmendment
+		}
 	}
 
 	amendments, err := parser.LoadFeatureAmendments(featDir)
@@ -145,7 +172,12 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 				})
 				continue
 			}
-			out.DirtySet = appendUniqueRef(out.DirtySet, raw)
+			// Every resolvable ref joins the cumulative footprint; only the
+			// unapplied tail joins the rebuild-scoping dirty set.
+			out.AllAffects = appendUniqueRef(out.AllAffects, raw)
+			if a.Seq > lastApplied {
+				out.DirtySet = appendUniqueRef(out.DirtySet, raw)
+			}
 		}
 	}
 

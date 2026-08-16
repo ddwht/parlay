@@ -167,6 +167,101 @@ func TestCheckAmendments_EmptyLedgerIsHealthy(t *testing.T) {
 	}
 }
 
+// TestCheckAmendments_DirtySetScopesToUnappliedTail is the L7 regression.
+// dirty_set was the cumulative union of every amendment's affects, so a ref
+// touched by a long-applied amendment stayed "dirty" forever and never agreed
+// with what `parlay internal diff` infers from hashes. It must now name only
+// the unapplied tail — amendments beyond the baseline's last-applied-amendment
+// — while the full union lives under all_affects.
+func TestCheckAmendments_DirtySetScopesToUnappliedTail(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	// 001 (applied) touches the operation; 002 (unapplied tail) touches the
+	// surface fragment. Two distinct resolvable refs so the sets are legible.
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-13
+trigger: "duplicate names slipped through"
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+Creation rejects duplicate names.
+
+## Acceptance
+- Creating "Alpha" when "alpha" exists is rejected with conflict.
+`)
+	writeAmendment(t, featDir, "002-relabel-list.md", `---
+amendment: relabel-list
+date: 2026-08-14
+trigger: "the list heading was ambiguous"
+affects:
+  - "@verify-fixture/surface:thing-list"
+---
+
+## Change
+Relabel the list heading.
+
+## Acceptance
+- The heading reads "Your Things".
+`)
+
+	// Baseline records 001 as applied, 002 as not.
+	blPath := baselinePath(testContext(t), "verify-fixture")
+	if err := os.MkdirAll(filepath.Dir(blPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blPath, []byte("schema-version: 3\ngenerated-at: 2026-08-13T00:00:00Z\nlast-applied-amendment: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("healthy ledger should exit zero: %v (issues: %+v)", err, out.Issues)
+	}
+
+	// dirty_set: only the unapplied tail's ref.
+	if len(out.DirtySet) != 1 || out.DirtySet[0] != "@verify-fixture/surface:thing-list" {
+		t.Errorf("dirty_set must be the unapplied tail only ([surface:thing-list]); got %v", out.DirtySet)
+	}
+	// all_affects: the whole ledger footprint.
+	if len(out.AllAffects) != 2 {
+		t.Errorf("all_affects must be the full union of both amendments; got %v", out.AllAffects)
+	}
+}
+
+// TestCheckAmendments_NoBaselineTreatsAllAsUnapplied pins the conservative
+// fallback: with no baseline (never built / pre-v3), last-applied is 0 so every
+// amendment is unapplied and dirty_set equals all_affects.
+func TestCheckAmendments_NoBaselineTreatsAllAsUnapplied(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-13
+trigger: "x"
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("healthy ledger should exit zero: %v", err)
+	}
+	if len(out.DirtySet) != 1 || len(out.AllAffects) != 1 {
+		t.Errorf("with no baseline, dirty_set==all_affects==[operation:thing.create]; got dirty=%v all=%v", out.DirtySet, out.AllAffects)
+	}
+}
+
 func hasIssueCode(out checkAmendmentsOutput, code string) bool {
 	for _, i := range out.Issues {
 		if i.Code == code {
