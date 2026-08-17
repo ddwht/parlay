@@ -34,8 +34,6 @@ adapter-set: parlay-studio
 #   internal/ui/package.json
 #     — adds the React Flow dependency the ER-diagram composition pins
 
-models: {}
-
 # No `models:` and no fixture `data:` blocks: the "model" edited here is the
 # PROJECT's domain-model.yaml document at runtime, not a build-time parlay
 # entity set. Each fixture is a named scenario described inline and reproduced

@@ -69,8 +69,8 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
-	// Warning in both modes for now, on the same reasoning as
-	// buildfile-models-deprecated below: every testcases.yaml in existence
+	// Warning in both modes for now, on the same reasoning that once
+	// governed buildfile-models (since removed): every testcases.yaml in existence
 	// was written before `file:` existed, so erroring would fail every
 	// project at once over a fact none of them could have recorded. The
 	// severity states the direction of travel while leaving them valid.
@@ -104,18 +104,6 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 	// read, because every capabilities.yaml in existence predates the
 	// field. See capabilities.schema.md's "Why `source:` exists".
 	"capabilities-source-missing": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
-	// Warning in both modes, and deliberately not an error in build. Every
-	// buildfile in existence carries models: because the validator used to
-	// require it, so erroring would fail every project at once. The severity
-	// states the direction of travel while leaving existing buildfiles valid.
-	//
-	// It lived as a hardcoded SeverityWarning literal at the emit site, which put
-	// it outside this table and therefore outside anything that reads this table
-	// — including the check that a code documented as a warning really is one.
-	"buildfile-models-deprecated": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},

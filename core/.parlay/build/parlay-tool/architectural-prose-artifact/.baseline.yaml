@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     clarify-architectural-scope-in-infrastructureschemamd:
         content-hash: 8de86f1075cd8d13
@@ -33,5 +33,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ca3d163bab055381
-    models: ca3d163bab055381
     routes: 37517e5f3dc66819

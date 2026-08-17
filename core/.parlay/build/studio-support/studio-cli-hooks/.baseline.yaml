@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     deferred-artifacts-review-and-reconcile:
         content-hash: ffa1d2aab40ff6bd
@@ -41,5 +41,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: a138c4ab4d486db8
-    models: 9c603f560f1e590d
     routes: 4bc72b274efe796e

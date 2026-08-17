@@ -16,8 +16,6 @@ adapter: go-cli
 # Both are referenced from cross-cutting entries below as upstream
 # dependencies but are NOT modified by this buildfile.
 
-models: {}
-
 fixtures: {}
 
 routes: []

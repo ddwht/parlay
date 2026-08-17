@@ -1,49 +1,6 @@
 feature: repair-project-state
 adapter: go-cli
 
-models:
-  Mismatch:
-    properties:
-      category:
-        type: enum
-        enum: [initiative-rename, feature-move, ambiguous, missing-directory, extra-directory, unrecognized]
-        required: true
-        description: Classification of the detected inconsistency
-      paths:
-        type: string[]
-        required: true
-        description: Full paths on each tree involved in the mismatch
-      proposed-repair:
-        type: string
-        required: false
-        description: Human-readable description of the proposed fix (absent for unrecognized)
-      ambiguous-options:
-        type: string[]
-        required: false
-        description: Candidate pairings for ambiguous mismatches
-      file-count:
-        type: number
-        required: false
-        description: Number of files in a directory proposed for deletion
-      resolved:
-        type: boolean
-        required: true
-
-  RepairSummary:
-    properties:
-      total-detected:
-        type: number
-        required: true
-      applied:
-        type: number
-        required: true
-      failed:
-        type: number
-        required: true
-      unresolved:
-        type: number
-        required: true
-
 fixtures:
   project-in-lockstep:
     description: All three trees are consistent — no mismatches.

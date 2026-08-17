@@ -48,8 +48,8 @@ models:
       title: { type: string }
 `)
 	outcomes := ValidateBuildfileCanonical(ModeBuild, "test", content)
-	if !findCode(outcomes, "buildfile-models-deprecated") {
-		t.Errorf("missing buildfile-models-deprecated; got %+v", outcomes)
+	if !findCode(outcomes, "buildfile-models-unsupported") {
+		t.Errorf("missing buildfile-models-unsupported; got %+v", outcomes)
 	}
 }
 

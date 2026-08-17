@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     define-a-versioned-yaml-schema-for-the-domain-model:
         content-hash: 8a1d41ec41631073
@@ -45,5 +45,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 31ee07ee558a0ce2
-    models: 1fcd35668f99d5bd
     routes: 2c38faad05cda50c

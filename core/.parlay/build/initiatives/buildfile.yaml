@@ -1,67 +1,6 @@
 feature: initiatives
 adapter: go-cli
 
-models:
-  Initiative:
-    properties:
-      slug:
-        type: string
-        required: true
-        description: Lowercase-hyphenated identifier; unique at the top level of spec/intents/ — cannot collide with orphan feature slugs or other initiative slugs
-      readme:
-        type: string
-        required: false
-        description: Optional narrative content stored in <initiative>/README.md
-      classification:
-        type: enum
-        enum: [deferred, initiative]
-        required: true
-        description: "deferred when the directory is empty or holds only non-classifying files; initiative once it contains at least one feature subdirectory"
-    states:
-      values: [deferred, initiative]
-      transitions:
-        deferred: [initiative]
-        initiative: [deferred]
-
-  Feature:
-    properties:
-      slug:
-        type: string
-        required: true
-        description: Leaf slug; unique within its parent — top-level scope (orphan features) or within a single initiative scope
-      qualified-path:
-        type: string
-        required: true
-        description: "<feature-slug> for an orphan; <initiative-slug>/<feature-slug> for a nested feature"
-      parent:
-        type: string
-        required: false
-        description: Initiative slug if nested; empty for orphans
-      classification:
-        type: enum
-        enum: [deferred, feature]
-        required: true
-        description: feature once intents.md exists at the directory root
-    states:
-      values: [deferred, feature]
-      transitions:
-        deferred: [feature]
-
-  Project:
-    properties:
-      intents-tree:
-        type: string
-        required: true
-        description: Path to spec/intents/ — designer-authored
-      handoff-tree:
-        type: string
-        required: true
-        description: Path to spec/handoff/ — engineering-consumed
-      build-tree:
-        type: string
-        required: true
-        description: Path to .parlay/build/ — tool internals
-
 fixtures:
   empty-project:
     description: A fresh project with no initiatives or orphan features yet.

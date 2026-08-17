@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     aggregate-status-across-parent-and-child-roots:
         content-hash: f99e329b260df924
@@ -48,5 +48,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 8d016f69eeb53741
-    models: f3a3d1de244e5c86
     routes: de34b2608784600c

@@ -25,14 +25,17 @@ func deepBuildfileMessages(buildfilePath, adapterPath string) []string {
 
 func TestValidateBuildfileDeep_ValidBuildfile(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-model.yaml"), []byte("schema_version: 1\nentities:\n  - name: Cluster\n    fields:\n      - name: name\n        type: string\n        required: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bfDir := filepath.Join(dir, ".parlay", "build", "test-feature")
+	if err := os.MkdirAll(bfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir = bfDir
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models:
-  Cluster:
-    properties:
-      name:
-        type: string
 fixtures:
   default:
     data:
@@ -69,11 +72,6 @@ func TestValidateBuildfileDeep_InvalidModelRef(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models:
-  Cluster:
-    properties:
-      name:
-        type: string
 components:
   cluster-view:
     source: "@test-feature/cluster-list"
@@ -103,7 +101,6 @@ func TestValidateBuildfileDeep_InvalidRouteComponent(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 routes:
   - path: main
     regions:
@@ -128,14 +125,17 @@ plan:
 
 func TestValidateBuildfileDeep_InvalidFixtureModel(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-model.yaml"), []byte("schema_version: 1\nentities:\n  - name: Cluster\n    fields:\n      - name: name\n        type: string\n        required: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bfDir := filepath.Join(dir, ".parlay", "build", "test-feature")
+	if err := os.MkdirAll(bfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir = bfDir
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models:
-  Cluster:
-    properties:
-      name:
-        type: string
 fixtures:
   default:
     data:
@@ -159,7 +159,6 @@ func TestValidateBuildfileDeep_InvalidChildRef(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components:
   parent:
     source: "@test-feature/parent"
@@ -184,7 +183,6 @@ func TestValidateBuildfileDeep_AdapterVocabulary(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: test-adapter
-models: {}
 components:
   my-comp:
     source: "@test-feature/frag"
@@ -329,10 +327,17 @@ navigation:
 
 func TestValidateBuildfileDeep_MultipleErrors(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-model.yaml"), []byte("schema_version: 1\nentities:\n  - name: Cluster\n    fields:\n      - name: name\n        type: string\n        required: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bfDir := filepath.Join(dir, ".parlay", "build", "test-feature")
+	if err := os.MkdirAll(bfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir = bfDir
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 fixtures:
   default:
     data:
@@ -372,7 +377,6 @@ func TestValidatePlan_MissingPlanFails(t *testing.T) {
 	dir := t.TempDir()
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 `
 	path := filepath.Join(dir, "buildfile.yaml")
@@ -388,7 +392,6 @@ func TestValidatePlan_ComponentNotInPlan(t *testing.T) {
 	dir := t.TempDir()
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components:
   orphan-comp:
     source: "@test-feature/frag"
@@ -415,7 +418,6 @@ func TestValidatePlan_CrossCuttingTargetNotInPlan(t *testing.T) {
 	dir := t.TempDir()
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: my-cc
@@ -468,7 +470,6 @@ func TestValidatePlan_DiskShapeChecks(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components:
   comp-a:
     source: "@test-feature/frag"
@@ -529,7 +530,6 @@ func TestValidatePlan_DiskShapeChecks_QualifiedSlug(t *testing.T) {
 
 	buildfile := `feature: my-initiative/test-feature
 adapter: go-cli
-models: {}
 cross-cutting:
   - id: cc-real
     source: "@my-initiative/test-feature/intent"
@@ -556,7 +556,6 @@ func TestValidatePlan_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components:
   my-comp:
     source: "@test-feature/frag"
@@ -611,7 +610,6 @@ func TestValidatePlan_CrossCutting_PurelyIntroducing_RoutesToCreates(t *testing.
 	// Path absent on disk -> classifier returns "purely-introducing".
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: introduce-pkg
@@ -645,7 +643,6 @@ func TestValidatePlan_CrossCutting_PurelyIntroducing_MissingFromCreates(t *testi
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: introduce-pkg
@@ -683,7 +680,6 @@ func TestValidatePlan_CrossCutting_ModifiesOnly_NoRegression(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: edit-config
@@ -721,7 +717,6 @@ func TestValidatePlan_CrossCutting_MixedKinds_FailsLoudly(t *testing.T) {
 	// Two paths in target-files: one exists on disk, one doesn't.
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: split-me
@@ -762,7 +757,6 @@ func TestValidatePlan_CrossCutting_TwoKinded_HappyPath(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: extend-and-add
@@ -805,7 +799,6 @@ func TestValidatePlan_CrossCutting_TargetCreatesMissingFromPlan(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: forgot-the-create
@@ -845,7 +838,6 @@ func TestValidatePlan_CrossCutting_DoubleListed_FailsLoudly(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: double-listed
@@ -885,7 +877,6 @@ func TestValidatePlan_CrossCutting_TargetPattern_EmptyResolution(t *testing.T) {
 
 	buildfile := `feature: test-feature
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: pattern-miss
@@ -955,7 +946,6 @@ func TestProjectPass_TwoFeatureHappyPath(t *testing.T) {
 	os.MkdirAll(dirA, 0755)
 	os.WriteFile(filepath.Join(dirA, "buildfile.yaml"), []byte(`feature: feat-a
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: create-foo
@@ -976,7 +966,6 @@ plan:
 	os.MkdirAll(dirB, 0755)
 	os.WriteFile(filepath.Join(dirB, "buildfile.yaml"), []byte(`feature: feat-b
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: extend-foo
@@ -1013,7 +1002,6 @@ func TestProjectPass_SingleVsProjectRegression(t *testing.T) {
 	bfPath := filepath.Join(dirB, "buildfile.yaml")
 	os.WriteFile(bfPath, []byte(`feature: feat-b
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: extend-foo
@@ -1049,7 +1037,6 @@ func TestProjectPass_TwoFeatureCycleDetection(t *testing.T) {
 	// A creates foo.go, modifies bar.go. B creates bar.go, modifies foo.go.
 	os.WriteFile(filepath.Join(dirA, "buildfile.yaml"), []byte(`feature: feat-a
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: a-create
@@ -1072,7 +1059,6 @@ plan:
 `), 0644)
 	os.WriteFile(filepath.Join(dirB, "buildfile.yaml"), []byte(`feature: feat-b
 adapter: go-cli
-models: {}
 components: {}
 cross-cutting:
   - id: b-create

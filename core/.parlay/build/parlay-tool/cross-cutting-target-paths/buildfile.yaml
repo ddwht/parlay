@@ -22,8 +22,6 @@ adapter: go-cli
 # active root (core/) — the buildfile validator resolves them against the
 # root derived from the buildfile's location, NOT against the repo root.
 
-models: {}
-
 fixtures: {}
 
 routes: []

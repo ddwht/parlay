@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     move-a-feature-between-locations:
         content-hash: a39f49fbee12076a
@@ -19,5 +19,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 3cf1a01a53ef042f
-    models: b91a7e33facfe1d5
     routes: 9638152e9491b0e1

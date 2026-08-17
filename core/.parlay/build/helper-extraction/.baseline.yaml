@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:09Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     extract-duplicated-helpers-into-shared-packages:
         content-hash: d0e808fbd68b8cd1
@@ -20,5 +20,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: c7770da92b99cbb8
-    models: 6b7760f42db4dee0
     routes: ef0879d79fef3f02

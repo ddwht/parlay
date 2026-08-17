@@ -18,8 +18,6 @@ adapter: go-cli
 # one-time manual sync after the code phase to pick up the new
 # four-artifact framing until the next `parlay upgrade` runs.
 
-models: {}
-
 fixtures: {}
 
 routes: []

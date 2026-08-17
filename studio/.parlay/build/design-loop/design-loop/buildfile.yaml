@@ -39,8 +39,6 @@ adapter-set: parlay-studio
 # follow-up parlay-tool feature is needed to formally support skill-shaped
 # features whose creates land outside the active root.
 
-models: {}
-
 fixtures: {}
 
 routes: []

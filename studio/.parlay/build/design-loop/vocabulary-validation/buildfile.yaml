@@ -72,8 +72,6 @@ adapter-set: parlay-studio
 # core/internal/commands/root.go gets one new AddCommand registration.
 # ---------------------------------------------------------------------
 
-models: {}
-
 fixtures: {}
 
 routes: []

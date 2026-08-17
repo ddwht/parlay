@@ -38,8 +38,6 @@ adapter-set: parlay-studio
 # same role. The intent is the feature-level authority, so this buildfile
 # uses internal/domain/. Flagged for the code phase.
 
-models: {}
-
 # The "model" this feature edits is the PROJECT's domain-model.yaml document
 # at runtime, not a build-time parlay entity set — so there is no `models:`
 # entry and fixture `data:` blocks (which must resolve to a declared model)

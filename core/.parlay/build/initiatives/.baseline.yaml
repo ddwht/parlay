@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:09Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     create-a-feature-inside-an-initiative:
         content-hash: dba5d389998834ce
@@ -38,5 +38,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: e9a3635e39a3449b
-    models: d3373d399f3224df
     routes: 812326b516bf53ea

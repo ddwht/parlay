@@ -1,5 +1,5 @@
 schema-version: 2
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 files:
     core/internal/agent/adapter_doc.go:
         component: canonical-adapter-model
@@ -66,10 +66,10 @@ files:
         hash: 570e770db48924e3
     core/internal/agent/validate_buildfile_canonical.go:
         component: multi-target-buildfile-schema
-        hash: e88c16a450621170
+        hash: 7b5dd2fc27e9d150
     core/internal/agent/validate_buildfile_canonical_test.go:
         component: multi-target-buildfile-schema
-        hash: 18e7af3a18425825
+        hash: 04b0d354e5cfd3a6
     core/internal/agent/validate_capabilities.go:
         component: capabilities-artifact
         hash: 3e2f7c82422fc969
@@ -117,10 +117,10 @@ files:
         hash: 53022d17aa96b9b2
     core/internal/agent/validate_project_multi_target.go:
         component: cli-and-deployer-registration
-        hash: 7381fd0acde9cf40
+        hash: 1caaa9205e63f285
     core/internal/agent/validate_project_multi_target_test.go:
         component: cli-and-deployer-registration
-        hash: 6ed6d547fb881b05
+        hash: fe4d7c07a8f43444
     core/internal/agent/validate_supports.go:
         component: adapter-supports-contract
         hash: 37bef5a56ea00409
@@ -135,7 +135,7 @@ files:
         hash: 08d0c29f681dc752
     core/internal/agent/validation_mode.go:
         component: validation-mode-dispatch
-        hash: 36239e8f6839ab5a
+        hash: 04605875b39ac40b
     core/internal/agent/validation_mode_test.go:
         component: validation-mode-dispatch
         hash: 61a7392393501ccd
@@ -177,7 +177,7 @@ files:
         hash: 595c90811d78e7e3
     core/internal/commands/check_readiness.go:
         component: check-readiness
-        hash: e1263b10381b0d60
+        hash: 3e7ba6254037a7a3
     core/internal/commands/check_review_gate.go:
         component: coverage-review-gate-failure
         hash: bf1767213706f442
@@ -291,10 +291,10 @@ files:
         hash: 726adf056f39e044
     core/internal/commands/no_editor_flag.go:
         component: no-editor-flag-domain-model
-        hash: 3071d80c9fb483c1
+        hash: 27296defa2915cef
     core/internal/commands/no_editor_flag_test.go:
         component: no-editor-flag-domain-model
-        hash: ea41dc9738fa9000
+        hash: 7d7d9979e0d75a19
     core/internal/commands/parse.go:
         component: cross-root-reference-validation-error
         hash: d9d339aa9ffdb2d9
@@ -387,7 +387,7 @@ files:
         hash: 7f56fd79aa1f7297
     core/internal/config/config.go:
         component: ""
-        hash: d51cbf258a815961
+        hash: 59307f0795a91252
     core/internal/config/config_test.go:
         component: directory-classification-validation
         hash: 045d3a7b2a158c00
@@ -402,10 +402,10 @@ files:
         hash: b6681d3b25ab7f5c
     core/internal/config/topology.go:
         component: ""
-        hash: f329faadb6c5918d
+        hash: 44d797d08610d55f
     core/internal/config/topology_test.go:
         component: ""
-        hash: 1365935fa9203a83
+        hash: 538ac545e1613db5
     core/internal/deployer/claude.go:
         component: ""
         hash: b9e400e02942e8a5
@@ -459,7 +459,7 @@ files:
         hash: a322250322ba613f
     core/internal/embedded/schemas/buildfile.schema.md:
         component: ""
-        hash: 1632cd36b2cb6ec2
+        hash: a24db0309defcd63
     core/internal/embedded/schemas/capabilities.schema.md:
         component: ""
         hash: 2faab46c8675233d
@@ -492,7 +492,7 @@ files:
         hash: 7d3736f85b046c4f
     core/internal/embedded/skills/build-feature.skill.md:
         component: ""
-        hash: 453afe70873b6c90
+        hash: b3f08823e309f849
     core/internal/embedded/skills/create-adapter.skill.md:
         component: ""
         hash: abb3e8dcf2015714
@@ -501,13 +501,13 @@ files:
         hash: ffda2ab2a8e124c5
     core/internal/embedded/skills/generate-code.skill.md:
         component: ""
-        hash: 30d82c8196a0b9eb
+        hash: d631c5581664c74c
     core/internal/embedded/skills/load-domain-model.skill.md:
         component: load-domain-model-conflict-prompt
         hash: 4bcb75a6827e2f8e
     core/internal/feedback/feedback.go:
         component: recorder
-        hash: 70f06ae0a1325b0b
+        hash: 5e7d2008097e94ef
     core/internal/feedback/feedback_test.go:
         component: recorder
         hash: cbf6be01705843f5

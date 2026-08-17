@@ -52,11 +52,10 @@ fixtures:
 	}
 }
 
-// TestBuildfileModels_DeprecationWarns asserts the documented code actually
-// fires now — as a warning, so the buildfiles that exist today (all of
-// which carry models:, because the validator used to require it) stay
-// valid rather than failing en masse.
-func TestBuildfileModels_DeprecationWarns(t *testing.T) {
+// TestBuildfileModels_RemovedIsError pins the v0.3 removal: a buildfile
+// still carrying models: fails hard, with the fix pointing at
+// domain-model.yaml and a rebuild.
+func TestBuildfileModels_RemovedIsError(t *testing.T) {
 	root := t.TempDir()
 	bfDir := filepath.Join(root, ".parlay", "build", "f")
 	if err := os.MkdirAll(bfDir, 0o755); err != nil {
@@ -82,16 +81,16 @@ components: {}
 
 	var found *ValidationError
 	for i, e := range ValidateBuildfileDeepStructured(bfPath, "") {
-		if e.Code == "buildfile-models-deprecated" {
+		if e.Code == "buildfile-models-unsupported" {
 			found = &ValidateBuildfileDeepStructured(bfPath, "")[i]
 			break
 		}
 	}
 	if found == nil {
-		t.Fatal("buildfile-models-deprecated did not fire for a non-empty models: block")
+		t.Fatal("buildfile-models-unsupported did not fire for a non-empty models: block")
 	}
-	if found.Severity != string(SeverityWarning) {
-		t.Errorf("severity = %q, want warning — blocking would fail every existing buildfile at once", found.Severity)
+	if found.Severity != string(SeverityError) {
+		t.Errorf("severity = %q, want error — the field was removed in v0.3", found.Severity)
 	}
 }
 

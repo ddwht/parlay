@@ -54,8 +54,6 @@ adapter-set: parlay-studio
 # route count becomes three, the persistence count stays two. This is the
 # coherent registration story the invariant intends.
 
-models: {}
-
 # No `models:` and no fixture `data:` blocks: the "model" validated here is a
 # domain-model.yaml DRAFT submitted in the request body at runtime, not a
 # build-time parlay entity set. Each fixture is a named scenario — the sample

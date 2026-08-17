@@ -1,41 +1,6 @@
 feature: move-feature
 adapter: go-cli
 
-models:
-  MoveOperation:
-    properties:
-      feature-slug:
-        type: string
-        required: true
-        description: Leaf slug of the feature being moved (never changes during a move)
-      before-qualified:
-        type: string
-        required: true
-        description: Qualified identifier before the move (e.g., "password-reset" or "auth-overhaul/password-reset")
-      after-qualified:
-        type: string
-        required: true
-        description: Qualified identifier after the move
-      target-initiative:
-        type: string
-        required: false
-        description: Initiative slug for --to moves; empty for --out
-      initiative-created:
-        type: boolean
-        required: true
-        description: Whether the target initiative was auto-created during this move
-      outcome:
-        type: enum
-        enum: [moved, noop, scope-collision, namespace-collision, not-found, wrong-type, arg-error, rollback]
-        required: true
-      error-message:
-        type: string
-        required: false
-      conflicting-path:
-        type: string
-        required: false
-        description: Path of the conflicting entity for collision errors
-
 fixtures:
   orphan-to-initiative:
     description: Moving an orphan feature into an existing initiative.

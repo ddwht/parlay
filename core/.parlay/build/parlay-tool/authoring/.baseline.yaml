@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     author-intents:
         content-hash: 0eedf5f52d571df2
@@ -47,5 +47,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ddc160700de6b96c
-    models: 7bbe64bd10b995a4
     routes: dcf2b9e4832dce28

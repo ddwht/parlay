@@ -46,7 +46,7 @@ feature: <feature-slug>
 schema_version: 1
 adapter-set: <name from .parlay/adapter-set.yaml>
 
-models:            # DEPRECATED — see "models: is deprecated" below; entities belong in domain-model.yaml
+models:            # REMOVED in v0.3 — see "models: was removed" below; entities belong in domain-model.yaml
   <EntityName>: ...
 
 fixtures:
@@ -189,13 +189,11 @@ source-signatures:
   adapter-version: <content-hash or version string of the adapter file>
 ```
 
-### `models:` is deprecated
+### `models:` was removed (v0.3)
 
-Top-level `models:` predates `domain-model.yaml`. Entity declarations belong there now, not in the buildfile.
+Top-level `models:` predated `domain-model.yaml`. Entity declarations live there; component inputs and fixtures resolve against the project's domain model, never against the buildfile.
 
-A non-empty `models:` emits `buildfile-models-deprecated` as a **warning**, not a failure — this section previously said it "fails validation", which was never true of the validator the CLI runs. Warning severity is deliberate: every buildfile in existence carries `models:` because the validator used to require it, so erroring would fail every project at once. The severity states the direction of travel while leaving existing buildfiles valid.
-
-The diagnostic is also **conditional**: it fires only when the project has a resolvable `domain-model.yaml` with declared entities. A buildfile carrying `models:` in a project with no domain model gets no warning at all, because there is nowhere else for those entities to live yet — telling an author to move them somewhere that does not exist is not advice.
+A buildfile still carrying a non-empty `models:` fails with `buildfile-models-unsupported` (error, unconditional). There is no in-place migrator because the file is tool-generated: re-running `/parlay-build-feature` emits the current shape without the block, or delete the block by hand. (The field spent one release as the conditional warning `buildfile-models-deprecated` before removal.)
 
 The field is shown in the structure above only because legacy buildfiles being normalized (see the Appendix) may still carry it on the way in — a freshly-generated buildfile never populates it.
 
@@ -213,7 +211,7 @@ Every `bindings:` rule and every `targets.<kind>.operations[]` entry references 
 | `buildfile-binding-operation-missing` | A `bindings:` rule references an operation that doesn't resolve under `operations:`. |
 | `buildfile-target-operation-missing` | A `targets.<kind>:` entry references an operation that doesn't resolve. |
 | `buildfile-components-double-declared` | Top-level `components:` (legacy) AND `targets.presentation.components:` are both populated. |
-| `buildfile-models-deprecated` (warning) | Top-level `models:` is non-empty AND the project has a resolvable `domain-model.yaml`. Warning, not error — see "`models:` is deprecated" for why, and for why the domain-model condition matters. |
+| `buildfile-models-unsupported` | Top-level `models:` is non-empty. The field was removed in v0.3 — delete the block or re-run `/parlay-build-feature`; entities belong in `domain-model.yaml`. |
 | `buildfile-routes-ambiguous` | Top-level `routes:` (legacy) collide with both `targets.presentation` (client-side) and `targets.transport` (HTTP exposure); designer must disambiguate. |
 | `codegen-wrote-outside-plan` | A file tracked in `.code-hashes.yaml` is declared by no `plan.creates`, `plan.modifies`, or cross-cutting `target-files` / `target-creates`. Emitted by `parlay internal check-write-set`, which audits after the fact — parlay does not perform codegen's writes and cannot intercept them. Three categories are exempt and reported as such, broken down by reason in the `exempt_by_reason` field: test files (identified by their `parlay-artifact: test` marker; emitted by the test-generation step, not the plan), project scaffold (files with no `component` attribution, which no feature's plan can declare), and hand-authored unit files (`provenance: hand-authored` in `.code-hashes.yaml` — codegen must never write them, so no plan can declare them, and the finding would accuse the tool of a write it did not perform). A fourth admission, files inside a mutating toolchain tool's declared write-set, is authorized by the tool contract rather than exempt from the plan. |
 
@@ -667,7 +665,7 @@ See "Canonical-once rule" and "Operation-ref resolution" above for the field-own
 | top-level `routes:` | `targets.presentation.routes:` (client-side) or `targets.transport.routes:` (HTTP) — disambiguated via designer prompt when both are plausible |
 | per-component `operations:` | per-component `file-operations:` (see "Why this was renamed" above) |
 | `plan.creates` / `plan.modifies` | `plan.targets.<kind>.creates` / `plan.targets.<kind>.modifies` |
-| non-empty `models:` | flagged as deprecated; entities belong in `domain-model.yaml` |
+| non-empty `models:` | fails with `buildfile-models-unsupported`; entities belong in `domain-model.yaml` |
 
 The diff is surfaced to the designer for review before any write; cancelling abandons normalization. `wiring.rules` and `bindings` sections stay byte-equivalent through normalization.
 

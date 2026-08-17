@@ -98,10 +98,10 @@ func ValidateBuildfileCanonical(mode ValidationMode, path string, content []byte
 			fmt.Sprintf("%s: top-level components: AND targets.<kind>.components: are both populated", path)))
 	}
 
-	// Top-level models: deprecated.
+	// Top-level models: removed in v0.3.
 	if !isEmptyNode(bf.Models) {
-		outcomes = append(outcomes, NewOutcome(mode, "buildfile-models-deprecated",
-			fmt.Sprintf("%s: top-level models: is deprecated (entity declarations belong in domain-model.yaml)", path)))
+		outcomes = append(outcomes, NewOutcome(mode, "buildfile-models-unsupported",
+			fmt.Sprintf("%s: top-level models: was removed in v0.3 (entity declarations belong in domain-model.yaml)", path)))
 	}
 
 	// Operation-ref resolution: every reference under targets[].operations

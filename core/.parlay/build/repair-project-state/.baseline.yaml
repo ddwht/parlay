@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     repair-project-state:
         content-hash: eb81cf58d3c88ec5
@@ -20,5 +20,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 4e26004f82ef8736
-    models: 70c6d0c473ccc5e4
     routes: 060db07c0dedb98b

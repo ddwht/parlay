@@ -259,7 +259,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:`, `schema_version: 1`, and `adapter:` (or `adapter-set:` for multi-target projects) fields
-   - Do NOT populate `models:` — it's deprecated. Entities live in `domain-model.yaml`; a non-empty `models:` fails validation with `buildfile-models-deprecated`. Reference domain entities by name from `domain-model.yaml` wherever the buildfile needs to name one (fixtures, data.inputs.model).
+   - Do NOT populate `models:` — the field was removed in v0.3. Entities live in `domain-model.yaml`; a non-empty `models:` fails validation with `buildfile-models-unsupported`. Reference domain entities by name from `domain-model.yaml` wherever the buildfile needs to name one (fixtures, data.inputs.model).
    - Create `fixtures:` with representative sample data
    - **Mark exactly one fixture `composes: true`** — the one whose data the *running prototype* boots with. A feature's other fixtures are scenarios and are supposed to disagree with it (an empty state and a populated one are the same ids at different moments); the composing one is the feature's contribution to the single dataset every feature shares. Pick the fixture your `scope: route` suite uses — that suite already means "everything this route renders", which is the same question. See `testcases.schema.md` § The composing fixture.
    - Map each surface fragment to a `component:`:
@@ -361,7 +361,7 @@ When `parlay internal check-readiness` returns errors:
 - `no-config` / `no-adapter-configured` — project not initialized or no adapter-set slot filled. Suggest `parlay init`, or `parlay migrate-config` for a legacy config.
 
 When `parlay internal check-buildfile @{feature}` returns errors (it emits JSON unconditionally — there is no `--json` flag):
-- `missing-model-reference` — a component references a model that doesn't exist. Either add the model to `models:` or change the input. The error's `context` field shows the component path.
+- `missing-model-reference` — a component references an entity the project's `domain-model.yaml` does not declare. Add the entity to the domain model (via a feature contribution) or change the input. The error's `context` field shows the component path.
 - `missing-component-reference` — a route references a component that doesn't exist. Either add the component or remove it from the route.
 - `missing-child-reference` — a component's `children:` references a non-existent component. Add or remove.
 - `missing-fixture-model` — a fixture references a model that doesn't exist. Add the model or remove the fixture data.
@@ -403,7 +403,7 @@ On first regeneration of a legacy buildfile, normalize:
 - top-level `routes:` → `targets.presentation` (client-side) or `targets.transport` (HTTP) — disambiguate via designer prompt when both are plausible
 - per-component `operations:` → per-component `file-operations:` (the pre-multi-target field name collided with the new top-level `operations:` block; see `buildfile.schema.md`'s "Why this was renamed")
 - `plan.creates`/`plan.modifies` → `plan.targets.<kind>.creates`/`plan.targets.<kind>.modifies`
-- non-empty `models:` → flagged as `buildfile-models-deprecated` (entities belong in `domain-model.yaml`)
+- non-empty `models:` → fails with `buildfile-models-unsupported` (removed in v0.3; entities belong in `domain-model.yaml`)
 - missing `schema_version:` → set to `1`
 
 Surface the diff to the designer for review before any write. `wiring.rules` and `bindings` sections stay byte-equivalent through normalization.

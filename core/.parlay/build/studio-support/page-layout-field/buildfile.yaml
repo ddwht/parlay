@@ -34,8 +34,6 @@ adapter: go-cli
 # @design-loop/design-loop respectively and stay byte-equivalent through
 # this edit — only the "Out of scope" stub section is replaced.
 
-models: {}
-
 fixtures: {}
 
 routes: []

@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     adapter-kinds-and-adapter-set-topology:
         content-hash: 4d7d974ca287b08f
@@ -175,5 +175,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: b728976eaed1ab12
-    models: 026c842d52b34d89
     routes: 407f1e6cce62b51f

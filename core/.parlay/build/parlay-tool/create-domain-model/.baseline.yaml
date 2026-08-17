@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract:
         content-hash: 67415ebfa80143e6
@@ -25,5 +25,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: b1cd7284d813f249
-    models: ca3d163bab055381
     routes: 37517e5f3dc66819

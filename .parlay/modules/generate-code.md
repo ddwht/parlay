@@ -163,7 +163,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    **Require `plan:` on every buildfile.** Each buildfile MUST have a `plan:` section enumerating every file the build will create, modify, or delete (see buildfile.schema.md). If a buildfile is missing `plan:`, STOP and tell the user to regenerate it via `/parlay-build-feature @{feature}` — do NOT fall back to deriving paths on the fly. The plan is the executable contract for which files this feature touches; missing it means the integration intent was never captured.
 
 5. **Compute the merged model and routes** — Across all features' buildfiles:
-   - MERGE the `models:` sections: collect all entity definitions from all features. If the same entity appears in multiple features with different properties, take the UNION of properties. This produces the complete model layer.
+   - The model layer comes from the project's `domain-model.yaml` — the one canonical entity set every feature shares. (Buildfile `models:` sections were removed in v0.3; a buildfile still carrying one fails validation before codegen starts.)
    - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
    - **External type resolution** (brownfield): for each entity in the merged model set, grep the source tree (under `file-conventions.source-root`) for existing type/interface/struct definitions matching the entity name (e.g., `interface User`, `type User struct`, `export type User`).

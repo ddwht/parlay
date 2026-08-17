@@ -1,62 +1,6 @@
 feature: qualified-identifier-resolver
 adapter: go-cli
 
-models:
-  QualifiedIdentifier:
-    properties:
-      raw:
-        type: string
-        required: true
-        description: "The input string — either a bare slug ('password-reset') or qualified ('auth-overhaul/password-reset')"
-      initiative:
-        type: string
-        required: false
-        description: "Initiative slug parsed from the identifier (empty for orphan features)"
-      feature:
-        type: string
-        required: true
-        description: "Feature slug — the leaf component of the identifier"
-      is-qualified:
-        type: boolean
-        required: true
-        description: "True if the identifier contains a '/', false for bare slugs"
-
-  FeatureEntry:
-    properties:
-      qualified-id:
-        type: string
-        required: true
-        description: "Qualified identifier — bare slug for orphans, initiative/feature for nested"
-      path:
-        type: string
-        required: true
-        description: "Resolved filesystem path (e.g., spec/intents/auth-overhaul/password-reset/)"
-      classification:
-        type: enum
-        enum: [feature, initiative, deferred]
-        required: true
-
-  CrossCuttingSchema:
-    properties:
-      id:
-        type: string
-        required: true
-      source:
-        type: string
-        required: true
-      target-files:
-        type: string[]
-        required: false
-      target-pattern:
-        type: string
-        required: false
-      transform:
-        type: string
-        required: true
-      introduces:
-        type: string[]
-        required: false
-
 fixtures:
   project-with-initiatives:
     description: A project with orphan features and initiative-nested features for testing resolver and enumeration behavior.

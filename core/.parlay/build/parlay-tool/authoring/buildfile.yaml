@@ -1,59 +1,6 @@
 feature: parlay-tool/authoring
 adapter: go-cli
 
-models:
-  Feature:
-    properties:
-      name:
-        type: string
-        required: true
-        description: Display name of the feature
-      slug:
-        type: string
-        required: true
-        description: Slugified folder name
-      path:
-        type: string
-        required: true
-        description: "spec/intents/<slug>/"
-
-  DialogUpdate:
-    properties:
-      intent-title:
-        type: string
-        required: true
-        description: Name of the intent that changed
-      change-type:
-        type: enum
-        enum: [new-constraint, new-verify, renamed, cosmetic]
-        required: true
-      intent-field:
-        type: string
-        required: true
-        description: Which intent field changed (Constraints, Verify, Goal, etc.)
-      proposed-change:
-        type: string
-        required: true
-        description: Description of the proposed dialog modification
-      accepted:
-        type: boolean
-        required: false
-
-  CoverageReport:
-    properties:
-      covered-intents:
-        type: string[]
-        required: true
-      uncovered-intents:
-        type: string[]
-        required: true
-      orphan-dialogs:
-        type: string[]
-        required: true
-      drifted-intents:
-        type: string[]
-        required: false
-
 fixtures:
   new-feature:
     description: A freshly created feature with no intents yet.

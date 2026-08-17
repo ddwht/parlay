@@ -1,55 +1,6 @@
 feature: helper-extraction
 adapter: go-cli
 
-models:
-  DuplicateGroup:
-    properties:
-      function-name:
-        type: string
-        required: true
-        description: Name of the duplicated function
-      similarity:
-        type: enum
-        enum: [identical, near-identical]
-        required: true
-        description: Whether the copies are byte-identical or structurally similar with minor differences
-      similarity-percent:
-        type: number
-        required: false
-        description: Structural similarity percentage (for near-identical matches)
-      source-files:
-        type: string[]
-        required: true
-        description: List of generated files containing this duplicate
-      differences:
-        type: string
-        required: false
-        description: Human-readable description of differences for near-identical matches
-      proposed-target:
-        type: string
-        required: true
-        description: Proposed shared package path determined from adapter file-conventions
-
-  ExtractionResult:
-    properties:
-      function-name:
-        type: string
-        required: true
-      target-path:
-        type: string
-        required: true
-        description: Where the function was extracted to
-      files-updated:
-        type: number
-        required: true
-        description: Number of files that had imports updated
-      skipped:
-        type: boolean
-        required: true
-      commit-message:
-        type: string
-        required: false
-
 fixtures:
   project-with-duplicates:
     description: A project where two generated files contain identical helper functions.

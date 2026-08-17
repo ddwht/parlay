@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-17T11:19:13Z"
 intents:
     add-a-child-root-to-an-existing-project:
         content-hash: be69a984ceac4477
@@ -116,5 +116,4 @@ sources:
     adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: c350b78fb95a7854
-    models: d0f7bdfdc207395a
     routes: 5ed9f73e2f2c37cd

@@ -6,8 +6,6 @@ adapter: go-cli
 # vocabulary to translate. Every change is a cross-cutting modification or a rename
 # of an existing file pair.
 
-models: {}
-
 fixtures:
   empty-project:
     description: |

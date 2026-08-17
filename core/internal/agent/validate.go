@@ -601,26 +601,21 @@ func validateBuildfileDeepCore(buildfilePath, adapterPath string, plannedCreates
 	// way the schema and skill prescribe failed validation.
 	domainEntities := domainEntityNames(buildfilePath)
 
-	// The documented deprecation, now actually emitted. It is a WARNING,
-	// not an error: every buildfile in existence carries models: because
-	// the validator used to require it, so blocking on it would fail every
-	// project at once. Warning severity states the direction of travel
-	// while leaving existing buildfiles valid — and, unlike the previous
-	// state, the schema's claim that this code exists is now true.
-	if len(bf.Models) > 0 && len(domainEntities) > 0 {
+	// models: was removed in v0.3 — entity declarations live in
+	// domain-model.yaml, and a buildfile still carrying the block gets a
+	// hard error (regenerating via build-feature drops it; there is no
+	// in-place migrator because the file is tool-generated).
+	if len(bf.Models) > 0 {
 		errors = append(errors, ValidationError{
-			Code:     "buildfile-models-deprecated",
-			Message:  "top-level models: is deprecated — entity declarations belong in domain-model.yaml",
+			Code:     "buildfile-models-unsupported",
+			Message:  "top-level models: was removed in v0.3 — entity declarations belong in domain-model.yaml",
 			Context:  "models",
-			Fix:      "remove the models: block; component inputs and fixtures now resolve against the project's domain-model.yaml",
-			Severity: string(RuleSeverity("buildfile-models-deprecated", ModeBuild)),
+			Fix:      "delete the models: block (or re-run /parlay-build-feature, which no longer emits it); inputs and fixtures resolve against the project's domain-model.yaml",
+			Severity: string(SeverityError),
 		})
 	}
 
 	knownModel := func(name string) bool {
-		if _, ok := bf.Models[name]; ok {
-			return true
-		}
 		return domainEntities[name]
 	}
 	modelFix := func(name string) string {

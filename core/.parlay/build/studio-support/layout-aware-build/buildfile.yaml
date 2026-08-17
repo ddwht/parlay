@@ -23,8 +23,6 @@ adapter: go-cli
 #     follow-up features that introduce concrete code rather than skill
 #     contracts.
 
-models: {}
-
 fixtures: {}
 
 routes:
