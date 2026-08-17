@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -580,6 +581,14 @@ type projectDiffOutput struct {
 	Project  bool                       `json:"project"`
 	Features map[string]featureDiffView `json:"features"`
 	Sections map[string]string          `json:"sections,omitempty"`
+
+	// MissingPlan names built features whose buildfile declares no plan:
+	// section. generate-code hard-stops on these, and reporting it here is
+	// what lets that gate run without opening every buildfile — the read
+	// this field exists to remove. A feature with no buildfile at all is
+	// absent from this list: it is unbuilt, which has_buildfile already
+	// says, and calling it "missing plan" would name the wrong repair.
+	MissingPlan []string `json:"missing_plan,omitempty"`
 }
 
 // featureDiffView is the per-feature summary within a project diff.
@@ -674,10 +683,20 @@ func runProjectDiff(cmd *cobra.Command, cfg *config.Context) error {
 					intentsDiff, dialogsDiff, fragmentsDiff, designSpecDiff,
 				)
 			}
+			// The plan:-presence gate, answered here so codegen does not
+			// have to open every buildfile to enforce it. generate-code
+			// stops on a buildfile with no plan: — the plan is the
+			// executable contract for which files a feature touches, and
+			// deriving paths on the fly instead is the failure that rule
+			// exists to prevent.
+			if !buildfileDeclaresPlan(buildfilePath) {
+				output.MissingPlan = append(output.MissingPlan, slug)
+			}
 		}
 
 		output.Features[slug] = view
 	}
+	sort.Strings(output.MissingPlan)
 
 	// Compute merged section hashes across all buildfiles and compare to
 	// the project-level baseline.
@@ -689,6 +708,18 @@ func runProjectDiff(cmd *cobra.Command, cfg *config.Context) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
+}
+
+// buildfileDeclaresPlan reports whether the buildfile at path carries a
+// plan: section. Routed through agent.BuildfileDeclaresPlan rather than a
+// local struct so diff cannot come to a different view of the v2 shape than
+// the validator does — the BP1 divergence, in miniature.
+func buildfileDeclaresPlan(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return agent.BuildfileDeclaresPlan(data)
 }
 
 // discoverFeatures scans the active root's spec/intents/ tree for

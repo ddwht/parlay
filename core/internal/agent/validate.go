@@ -426,7 +426,48 @@ func ResolveBuildfileRoutes(content []byte) ([]BuildfileRoute, error) {
 	return out, nil
 }
 
+// BuildfileDeclaresPlan reports whether buildfile content carries a
+// non-empty plan: section — the executable contract for which files the
+// feature touches. Generate-code hard-stops without one.
+//
+// A member of the ResolveBuildfile* family for the same reason they are:
+// one v2-aware reader, so no caller can conclude "no plan" from a buildfile
+// whose rows sit under plan.targets.<kind>. It answers presence only —
+// deciding what the plan MEANS stays with the readers that need the rows.
+//
+// Unparseable content reports false: a buildfile nothing can read cannot be
+// shown to declare a plan, and check-buildfile owns saying why.
+func BuildfileDeclaresPlan(content []byte) bool {
+	var bf deepBuildfile
+	if err := yaml.Unmarshal(content, &bf); err != nil {
+		return false
+	}
+	if bf.Plan == nil {
+		return false
+	}
+	if len(bf.Plan.Modifies) > 0 || len(bf.Plan.Creates) > 0 || len(bf.Plan.Deletes) > 0 {
+		return true
+	}
+	for _, t := range bf.Plan.Targets {
+		if len(t.Modifies) > 0 || len(t.Creates) > 0 || len(t.Deletes) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 type deepPlan struct {
+	Modifies []deepPlanEntry `yaml:"modifies"`
+	Creates  []deepPlanEntry `yaml:"creates"`
+	Deletes  []deepPlanEntry `yaml:"deletes"`
+	// Targets holds the per-target rows a multi-target buildfile nests
+	// under plan.targets.<kind>. The top-level lists above are what a
+	// presentation-only project populates; these are what the multi-target
+	// shape aggregates from.
+	Targets map[string]deepPlanTarget `yaml:"targets"`
+}
+
+type deepPlanTarget struct {
 	Modifies []deepPlanEntry `yaml:"modifies"`
 	Creates  []deepPlanEntry `yaml:"creates"`
 	Deletes  []deepPlanEntry `yaml:"deletes"`

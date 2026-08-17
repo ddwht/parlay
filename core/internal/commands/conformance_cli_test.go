@@ -302,6 +302,8 @@ var buildfileReaderAllowlist = map[string]string{
 	"commands/toolchain_plan.go": "reads adapter-set: to decide whether multi-target toolchain steps apply. Shape probe, not a fragment reader.",
 
 	"commands/check_buildfile.go": "autoDiscoverAdapter is a thin adapter/adapter-set/targets shape probe used to pick the v1-vs-v2 validation path; the buildfile body itself is handed to the agent validator (agent/validate.go), the canonical reader above.",
+
+	"commands/merged_routes.go": "the own struct here decodes the BLUEPRINT's navigation.routes for the shell/guard join, not a buildfile — the detector matches it only because the same file names buildfile.yaml. Every buildfile route it emits comes from agent.ResolveBuildfileRoutes, and the plan:-presence field it feeds comes from agent.BuildfileDeclaresPlan; this file has no buildfile struct of its own.",
 }
 
 // TestBuildfileReadersAreAllowlisted enumerates every production Go file that

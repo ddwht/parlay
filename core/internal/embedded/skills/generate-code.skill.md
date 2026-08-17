@@ -32,9 +32,9 @@ This skill reads ONLY from these locations:
 - `.parlay/config.yaml`
 - `.parlay/blueprint.yaml` — application blueprint (optional for CLIs, recommended for web/mobile)
 - `.parlay/adapters/{framework}.adapter.yaml`
-- `.parlay/build/*/buildfile.yaml` — ALL features' buildfiles
+- `.parlay/build/{feature}/buildfile.yaml` — the features the project diff names as having work (step 4 scopes this; the allowlist is every feature, the read-set is not)
 - The existing prototype source tree (for incremental updates)
-- `.parlay/build/*/testcases.yaml` — read **only** at the test execution phase
+- `.parlay/build/{feature}/testcases.yaml` — read **only** at the test execution phase, and only for the features you regenerated
 
 **You must NOT read anything under `spec/intents/{feature}/`.** This includes intents.md, dialogs.md, surface.yaml, capabilities.yaml, and infrastructure.md. The buildfile is the deterministic intermediate; if you find yourself wanting to read source-of-truth design files to make a decision, the buildfile is leaking detail and the right fix is to enrich the buildfile schema, not to cross the boundary.
 
@@ -90,13 +90,25 @@ Concretely:
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary, file conventions, and patterns.
 
-4. **Load ALL buildfiles** — Read `.parlay/build/*/buildfile.yaml` for every feature that has been built. If no buildfiles exist, stop and tell the user to run `/parlay-build-feature @{feature}` for at least one feature.
+4. **Scope the read-set, then load only what it names** — Run `parlay internal diff` (no @feature) FIRST, before opening any buildfile. Its JSON (documented at step 8) names exactly which features this run has work in:
 
-   **Require `plan:` on every buildfile.** Each buildfile MUST have a `plan:` section enumerating every file the build will create, modify, or delete (see buildfile.schema.md). If a buildfile is missing `plan:`, STOP and tell the user to regenerate it via `/parlay-build-feature @{feature}` — do NOT fall back to deriving paths on the fly. The plan is the executable contract for which files this feature touches; missing it means the integration intent was never captured.
+   - a feature with entries in `components.dirty[]` or `components.removed[]`,
+   - a feature with `first_build: true`,
+   - plus any feature named in a `sections` entry that reads `"changed"`/`"new"`, when you need its rows to regenerate the project-scoped file.
 
-5. **Compute the merged model and routes** — Across all features' buildfiles:
+   **Read `.parlay/build/{feature}/buildfile.yaml` for those features only.** A feature whose components are all `stable` is not read: its entries are preserved verbatim by construction — the same preserve-stable rule this skill already applies when writing — so loading it buys nothing and costs its whole file. On a mature project that is the difference between reading one buildfile and reading every buildfile, and it is why a one-feature change used to cost the same as a whole-project one.
+
+   If the diff reports no features at all, stop and tell the user to run `/parlay-build-feature @{feature}` for at least one feature.
+
+   **Require `plan:` on every buildfile — from the diff, not by reading them.** The project diff's `missing_plan[]` names every built feature whose buildfile declares no `plan:` section. If it is non-empty, STOP and tell the user to regenerate those features via `/parlay-build-feature @{feature}` — do NOT fall back to deriving paths on the fly. The plan is the executable contract for which files a feature touches; missing it means the integration intent was never captured. (Answering this from the diff is what lets the gate cover every feature while you read only a few.)
+
+   **Widening is allowed, and it is an escalation — never a silent fallback.** If generation surfaces a cross-feature contradiction the scoped set cannot explain — a component referencing an entry you have not loaded, a composition finding naming a feature you skipped — open *that named feature's* buildfile and say in the step-11 report that you widened and why. What you must not do is respond to uncertainty by loading everything again: that reintroduces the cost this step exists to remove, and hides the contradiction instead of naming it.
+
+   **Fallback.** If the project has no baseline yet (first generation) or the diff errors, read every buildfile as before — with no recorded state there is no scope to trust, and correctness outranks the saving.
+
+5. **Compute the merged model and routes** — Across the project:
    - The model layer comes from the project's `domain-model.yaml` — the one canonical entity set every feature shares. (Buildfile `models:` sections were removed in v0.3; a buildfile still carrying one fails validation before codegen starts.)
-   - MERGE the `routes:` sections: collect all routes from all features. This produces the complete entry point dispatch table.
+   - The route dispatch table comes from `parlay internal merged-routes`, not from reading every buildfile's `routes:` section. It emits every route with its owning `feature`, the blueprint's `shell`/`guard` join already applied, `strategy` and `default_route`, and `conflicts[]` for any path two features both claim. Resolve a conflict before emitting the entry point — two unordered writers on one path is a composition question (`parlay internal check-composition`), not a tie for this skill to break.
    - These merged artifacts drive the cross-cutting files (model definitions, entry point).
    - **External type resolution** (brownfield): for each entity in the merged model set, grep the source tree (under `file-conventions.source-root`) for existing type/interface/struct definitions matching the entity name (e.g., `interface User`, `type User struct`, `export type User`).
      - If exactly **one match** is found: record it as an external type (entity name → import path). In step 14, generate an import statement for this entity instead of a type declaration.
@@ -111,8 +123,8 @@ Concretely:
      - Store the external type map (`{ entityName: importPath }`) for use in step 14.
 
 6. **Load and merge blueprint** — Read `.parlay/blueprint.yaml` if it exists. The blueprint provides app-level structural decisions that complement the per-feature buildfiles:
-   - For each route in the merged route table (from step 5), join on `path` to the blueprint's `navigation.routes` to determine: which `shell` wraps it, which `guard` protects it, whether it's `lazy`-loaded. Routes not listed in the blueprint get the default shell (first shell in `shells:`) and no guard.
-   - Record the `navigation.strategy` and `navigation.default-route` — these drive the router component and the root redirect.
+   - The route-level join (`shell`, `guard`) and `navigation.strategy`/`default-route` already arrived with step 5's merged table — that lookup is a deterministic join on `path` and is done for you. Routes the blueprint does not list come back unjoined: they get the default shell (first shell in `shells:`) and no guard. Read the blueprint here for what the join does NOT cover, below.
+   - `lazy` loading per route, where the blueprint declares it.
    - Record `authorization.guards` — each guard becomes a wrapper component.
    - Record `errors.boundaries` — each boundary scope becomes an error boundary component.
    - Record `state.global` — each global state slice becomes a context provider.
@@ -123,9 +135,10 @@ Concretely:
    - **Single-target project** (no `.parlay/adapter-set.yaml`, or one with only the presentation slot): from the adapter's `file-conventions.source-root`. All features share one source root since they compile into one project.
    - **Multi-target project** (adapter-set with a non-presentation slot): there is **one source root per target**, taken from `adapter-set.yaml`'s `targets.<kind>.root` — NOT the adapter's own `source-root`, which the target root overrides. Codegen loops the filled slots and emits each target's files under its own root using the kind-appropriate adapter: `presentation` (e.g. React under `apps/web`), `application` (e.g. NestJS controllers/services/modules under `apps/api`), `persistence` (e.g. the Prisma schema under `apps/api`). The buildfile's `plan.targets.<kind>.creates` is authoritative for which files land where — emit exactly those paths, per target, and never recompute them from the adapter's `source-root`. Run `parlay internal scaffold-plan @{feature}` to see the derived per-target plan.
 
-8. **Compute the project-level diff** — Run: `parlay internal diff` (no @feature) to get the unified change report. The JSON output has:
+8. **The project-level diff** — already run at step 4, where it scoped the read-set; this is the reference for what its JSON carries. Do not re-run it: nothing between step 4 and here writes to the project, so a second call would return the same answer at the cost of another round trip.
    - `features.<name>.components.stable/dirty/removed` — per-feature component status based on source changes. On `first_build: true` for a feature, treat all its components as new.
-   - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration.
+   - `sections` — `models`, `routes`, `fixtures` compared across ALL features' merged buildfile sections. Values: `"changed"`, `"stable"`, `"new"`. Used to determine which project-scoped cross-cutting files need regeneration. Note the scope difference: these hashes are computed in Go across every feature's buildfile, so `sections` stays a whole-project answer even though you read only a few buildfiles — that is exactly why the gate can be trusted while the read-set is narrow.
+   - `missing_plan[]` — built features whose buildfile declares no `plan:` section (step 4's hard stop).
 
 9. **Scan generated files** — Run: `parlay internal scan-generated {source-root}` to map each file to its owner.
    - Files with `parlay-feature: X + parlay-component: Y` belong to feature X's component Y.
@@ -152,7 +165,7 @@ Concretely:
 
 11. **Tell the user what's about to happen** — Before regenerating, summarize: "Regenerating N component files: ... . Keeping M stable files. Deleting K removed component files."
 
-    Also print the merged plan derived from every loaded buildfile's `plan:` section: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write.
+    Also print the merged plan derived from the `plan:` sections of the buildfiles you loaded: list every path the run will create, modify, or delete, with the producing component or cross-cutting id. The plan is the contract; the user sees it before any file write. Features you did not load contribute no rows because this run writes none of their files — say how many features were in scope, so "three paths" reads as a scoped run rather than a suspiciously short whole-project plan. If you widened the read-set at step 4, name that here too.
 
 11.4. **Load the hand-authored denylist** — Read `.parlay/build/_project/authored-files.yaml`. It lists every file a hand-authored unit declares: code a person wrote, which this skill must never write, modify, delete or merge into. An absent file means the project declares no units; that is a normal state, not an error.
 
@@ -411,7 +424,7 @@ Concretely:
 
    Cross-cutting entries follow the same diff lifecycle as components. On subsequent runs, `parlay internal diff` classifies each entry as stable/dirty/removed. Stable entries are skipped; dirty entries are re-applied; removed entries have their claims revoked from the target files.
 
-15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field.
+15. **Generate test code** — Read `.parlay/build/{feature}/testcases.yaml` **for the features this run regenerated** (step 4's scope) and translate each suite into framework-appropriate test code. Use the test framework specified in `testcases.yaml` `framework:` field. A stable feature's suites are already generated and already passing; re-reading them to emit the same file is the same wasted read as its buildfile. Step 16 still RUNS the whole suite — what is scoped here is generation, never execution.
 
     **The suite's `file:` is where its code goes.** `build-feature` set it from the plan row that `scaffold-plan` derived from the adapter's `file-conventions.paths.test` template, so the path is already decided, already in the plan allowlist, and already consistent with every other component's tests. Write there.
 
