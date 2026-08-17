@@ -40,7 +40,7 @@ When a skill step says to "ask the user", "present options", or "wait for the us
 Three-zone layout — strict ownership:
 - **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
 - **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts —
-  - **surface.yaml** (or surface.md) — visible output, page assemblies, dialog turns
+  - **surface.yaml** — visible output, page assemblies, dialog turns
   - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
   - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
   - **domain-model.yaml** (or domain-model.md) — entities, relationships, and shared vocabulary

@@ -36,7 +36,7 @@ This skill reads ONLY from these locations:
 - The existing prototype source tree (for incremental updates)
 - `.parlay/build/*/testcases.yaml` — read **only** at the test execution phase
 
-**You must NOT read anything under `spec/intents/{feature}/`.** This includes intents.md, dialogs.md, surface.md, and domain-model.md. The buildfile is the deterministic intermediate; if you find yourself wanting to read source-of-truth design files to make a decision, the buildfile is leaking detail and the right fix is to enrich the buildfile schema, not to cross the boundary.
+**You must NOT read anything under `spec/intents/{feature}/`.** This includes intents.md, dialogs.md, surface.yaml, capabilities.yaml, and infrastructure.md. The buildfile is the deterministic intermediate; if you find yourself wanting to read source-of-truth design files to make a decision, the buildfile is leaking detail and the right fix is to enrich the buildfile schema, not to cross the boundary.
 
 This isolation rule is the load-bearing test for whether the buildfile is doing its job. If a code generator can produce a working, test-passing prototype using only buildfile + adapter, the buildfile is correct.
 

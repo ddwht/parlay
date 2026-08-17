@@ -29,7 +29,7 @@ Who resolves it depends on where you are running. If you own the user interactio
 2. **Read all feature artifacts** — the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another; read whichever subset the feature has:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
-   - `spec/intents/{feature}/surface.yaml` or `surface.md` (if exists — YAML wins when both are present)
+   - `spec/intents/{feature}/surface.yaml` (if exists)
    - `spec/intents/{feature}/capabilities.yaml` (if exists)
    - `spec/intents/{feature}/infrastructure.md` (if exists)
    - `<activeRoot>/domain-model.yaml` (if exists — the project's one canonical domain model, not per-feature) or legacy `spec/intents/{feature}/domain-model.md`
@@ -85,5 +85,5 @@ Who resolves it depends on where you are running. If you own the user interactio
 
 ## Error Handling
 
-- Absent optional artifacts (`surface.yaml`/`surface.md`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are skipped silently — the corresponding specification section is simply omitted.
+- Absent optional artifacts (`surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are skipped silently — the corresponding specification section is simply omitted.
 - `no-spec-artifacts` — the feature has none of the four spec artifacts. Tell the user to run `/parlay-create-artifacts @{feature}` first.

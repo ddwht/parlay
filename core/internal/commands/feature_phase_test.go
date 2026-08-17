@@ -78,7 +78,7 @@ func TestComputeFeaturePhase_PlusSurfaceOnly(t *testing.T) {
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "with-surface")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
-	writeFile(t, filepath.Join(dir, "surface.md"))
+	writeFile(t, filepath.Join(dir, "surface.yaml"))
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "with-surface")
 	if got != PhaseArtifacts {
@@ -123,7 +123,7 @@ func TestComputeFeaturePhase_AllFourPreTerminal(t *testing.T) {
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "full")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
-	writeFile(t, filepath.Join(dir, "surface.md"))
+	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "full", "buildfile.yaml"))
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "full")
@@ -160,7 +160,7 @@ func TestComputeFeaturePhase_NoSideEffectsAcrossManyCalls(t *testing.T) {
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "looped")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
-	writeFile(t, filepath.Join(dir, "surface.md"))
+	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "looped", "buildfile.yaml"))
 
 	rc := rootCtxAt(root)
@@ -205,7 +205,7 @@ func TestComputeFeaturePhase_ReturnsOnlyExportedConstants(t *testing.T) {
 			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "dialogs.md"))
 		},
 		func() {
-			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "surface.md"))
+			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "surface.yaml"))
 		},
 		func() {
 			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "infrastructure.md"))
@@ -247,7 +247,7 @@ func TestComputeFeaturePhase_PerRoot_SameNameTwoRoots(t *testing.T) {
 	// studio/widget — full pipeline through buildfile.
 	dir := writeIntents(t, studio, "widget")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
-	writeFile(t, filepath.Join(dir, "surface.md"))
+	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(studio, ".parlay", "build", "widget", "buildfile.yaml"))
 
 	if got := ComputeFeaturePhase(rootCtxAt(core), "widget"); got != PhaseIntents {

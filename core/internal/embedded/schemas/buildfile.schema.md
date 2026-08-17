@@ -180,7 +180,7 @@ plan:
 source-signatures:
   intents: <content-hash of spec/intents/<feature>/intents.md>
   dialogs: <content-hash of spec/intents/<feature>/dialogs.md>
-  surface: <content-hash of spec/intents/<feature>/surface.yaml (or surface.md)>
+  surface: <content-hash of spec/intents/<feature>/surface.yaml>
   capabilities: <content-hash of spec/intents/<feature>/capabilities.yaml>
   infrastructure: <content-hash of spec/intents/<feature>/infrastructure.md>
   domain: <content-hash of the project domain-model.yaml>
@@ -441,7 +441,7 @@ The `source-signatures:` section records a **content-based** signature for every
 |---|---|---|
 | `intents` | When intents.md exists | Content hash of `spec/intents/<feature>/intents.md` at build time |
 | `dialogs` | When dialogs.md exists | Content hash of `spec/intents/<feature>/dialogs.md` at build time |
-| `surface` | When surface.yaml or surface.md exists | Content hash of `spec/intents/<feature>/surface.yaml` (or `surface.md`) at build time |
+| `surface` | When surface.yaml exists | Content hash of `spec/intents/<feature>/surface.yaml` at build time |
 | `capabilities` | When capabilities.yaml exists | Content hash of `spec/intents/<feature>/capabilities.yaml` at build time |
 | `infrastructure` | When infrastructure.md exists | Content hash of `spec/intents/<feature>/infrastructure.md` at build time |
 | `domain` | When domain-model.yaml exists | Content hash of the project domain-model.yaml at build time |

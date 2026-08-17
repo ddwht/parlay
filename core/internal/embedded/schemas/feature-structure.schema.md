@@ -13,7 +13,7 @@ Parlay projects use three zones with strict ownership:
       <feature-name>/
         intents.md                 ← Human-authored
         dialogs.md                 ← Scaffolded → human-authored
-        surface.yaml                ← Generated, human-reviewed (surface.md is the legacy form — see Format rationale)
+        surface.yaml                ← Generated, human-reviewed (the only surface artifact since v0.3)
         capabilities.yaml           ← Generated, human-reviewed (operation-shaped backend behavior)
         infrastructure.md           ← Generated, human-reviewed (architectural prose)
         <page-name>.layout.yaml     ← Generated, human-reviewed (optional — per-page layout tree)
@@ -51,7 +51,7 @@ Parlay projects use three zones with strict ownership:
 
 A feature's `spec/intents/<feature-name>/` directory holds intents.md and dialogs.md (designer-authored, primary source) plus any subset of four co-equal generated artifacts. None of the four is a stand-in for another — each covers an orthogonal concern:
 
-- **surface.yaml** (or legacy `surface.md`) — visible output: what the user sees, page assemblies, dialog turns.
+- **surface.yaml** — visible output: what the user sees, page assemblies, dialog turns.
 - **capabilities.yaml** — operation-shaped backend behavior: closed-vocabulary commands and queries against domain entities.
 - **infrastructure.md** — architectural prose for concerns that do not reduce to operations: boundaries, probes, allowlists, dependency pins, and similar shape constraints on the codebase.
 - The project's single `domain-model.yaml` — entities, relationships, and shared vocabulary the feature references. This is a project-level singleton at `<activeRoot>/domain-model.yaml`, not a per-feature file (see below).
@@ -60,7 +60,7 @@ A feature picks whichever subset it needs, decided by `/parlay-create-artifacts`
 
 ## Format rationale
 
-File format follows a simple rule: designer-authored prose is markdown; generated closed-vocabulary artifacts are YAML. `intents.md` and `dialogs.md` are markdown because a human writes and edits them directly. `capabilities.yaml` and `domain-model.yaml` are YAML because they hold a closed, machine-validated vocabulary (operation kinds, entity fields) that the tool parses structurally. `surface.yaml` follows the same YAML rule as its target format, with `surface.md` retained as the legacy form during the migration window (see `surface.schema.md`'s resolution-precedence section). `infrastructure.md` stays markdown — it is by definition architectural prose that does not reduce to a closed operation vocabulary, so there is no structural schema to gain by moving it to YAML.
+File format follows a simple rule: designer-authored prose is markdown; generated closed-vocabulary artifacts are YAML. `intents.md` and `dialogs.md` are markdown because a human writes and edits them directly. `capabilities.yaml` and `domain-model.yaml` are YAML because they hold a closed, machine-validated vocabulary (operation kinds, entity fields) that the tool parses structurally. `surface.yaml` follows the same YAML rule as its target format (`surface.md`, the pre-v0.3 legacy form, is no longer read — `parlay migrate-spec` converts and `--retire-md` deletes it). `infrastructure.md` stays markdown — it is by definition architectural prose that does not reduce to a closed operation vocabulary, so there is no structural schema to gain by moving it to YAML.
 
 ## Domain model: one per active root
 
@@ -72,7 +72,7 @@ File format follows a simple rule: designer-authored prose is markdown; generate
 |---|---|---|---|
 | `spec/intents/<feature>/intents.md` | `/parlay add-feature` | Yes — primary source | Feature creation |
 | `spec/intents/<feature>/dialogs.md` | `/parlay add-feature` (empty) → `/parlay scaffold-dialogs` (scaffolded) | Yes — primary source | Intents authored |
-| `spec/intents/<feature>/surface.yaml` (or legacy `surface.md`) | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has surface signals |
+| `spec/intents/<feature>/surface.yaml` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has surface signals |
 | `spec/intents/<feature>/capabilities.yaml` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has operation signals |
 | `spec/intents/<feature>/infrastructure.md` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has architectural signals |
 | `spec/intents/<feature>/<page-name>.layout.yaml` | `/parlay create-artifacts` (optional) | Review and adjust only | Surface reviewed, if the page needs an explicit layout tree |

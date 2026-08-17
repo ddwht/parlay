@@ -36,7 +36,9 @@ fragments:
     region: main
     order: 1
 `)
-	// Top-level feature still in the legacy markdown format.
+	// Top-level feature still in the pre-v0.3 markdown format: invisible
+	// to the scanner by design — the runtime no longer reads surface.md,
+	// and surfaceResolutionIssues reports it as surface-md-unsupported.
 	mk("intents/legacy-feature/surface.md", `# Legacy — Surface
 
 ## A legacy fragment
@@ -68,12 +70,15 @@ fragments:
 	for _, f := range got {
 		byFeature[f.Feature]++
 	}
-	for _, want := range []string{"expense-list", "legacy-feature", "approvals/review-queue"} {
+	for _, want := range []string{"expense-list", "approvals/review-queue"} {
 		if byFeature[want] == 0 {
 			t.Errorf("no fragments found for %q — got %v", want, byFeature)
 		}
 	}
-	if n := len(got); n != 3 {
-		t.Errorf("got %d fragments, want 3 (one per feature): %v", n, byFeature)
+	if byFeature["legacy-feature"] != 0 {
+		t.Errorf("md-only feature must be invisible since v0.3; got %v", byFeature)
+	}
+	if n := len(got); n != 2 {
+		t.Errorf("got %d fragments, want 2 (md-only feature invisible since v0.3): %v", n, byFeature)
 	}
 }

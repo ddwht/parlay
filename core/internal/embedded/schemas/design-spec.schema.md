@@ -68,7 +68,7 @@ Optional. Values here apply to all fragments unless overridden per-fragment.
 
 ### Per-fragment fields
 
-Each key under `fragments:` must match a fragment name from the feature's `surface.md`. Fragments in the surface that have no Figma counterpart are simply absent — they fall through to adapter defaults.
+Each key under `fragments:` must match a fragment name from the feature's `surface.yaml`. Fragments in the surface that have no Figma counterpart are simply absent — they fall through to adapter defaults.
 
 | Field | Required | Description |
 |---|---|---|
@@ -120,8 +120,8 @@ Per-fragment values override shared values for the same field:
 When a design-spec file is loaded, the tool verifies:
 - Valid YAML syntax
 - `feature` field matches the feature directory name
-- Every key under `fragments:` matches a fragment name in the corresponding `surface.md`
-- Fragment keys not present in surface.md are errors (stale reference)
+- Every key under `fragments:` matches a fragment name in the corresponding `surface.yaml`
+- Fragment keys not present in surface.yaml are errors (stale reference)
 - Token category names match categories declared in the adapter's `design-system:` section (warning, not error — adapter may be updated later)
 
 ## Relationship to other artifacts

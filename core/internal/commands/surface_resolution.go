@@ -24,27 +24,26 @@ func surfaceResolutionIssues(featureDir string) []readinessIssue {
 	hasYAML := fileExistsAt(yamlPath)
 	hasMD := fileExistsAt(mdPath)
 
+	// surface.md stopped being a runtime surface artifact in v0.3: the
+	// resolver no longer falls back to it, so an .md-only feature has NO
+	// surface at all, and a dual-form feature carries a stale mirror that
+	// three benchmark replicates out of three measured actively misleading
+	// readers. Either state is a hard error naming the migration out.
 	switch {
 	case hasYAML && hasMD:
-		// Warning, not an error: the project is correct and buildable — the
-		// YAML wins. What is worth saying is that the .md is now inert, since
-		// editing it and seeing no effect is the confusing outcome.
 		return []readinessIssue{{
-			Severity: "warning",
-			Code:     "surface-md-superseded",
-			Message: fmt.Sprintf("%s and %s both exist; the YAML form wins and the Markdown form is inert",
-				filepath.Base(yamlPath), filepath.Base(mdPath)),
-			Fix: fmt.Sprintf("delete %s once you have confirmed %s carries everything it did",
-				mdPath, filepath.Base(yamlPath)),
+			Severity: "error",
+			Code:     "surface-md-unsupported",
+			Message: fmt.Sprintf("%s exists beside %s; surface.md was removed as a surface artifact in v0.3 and nothing reads it",
+				filepath.Base(mdPath), filepath.Base(yamlPath)),
+			Fix: "run `parlay migrate-spec --retire-md` (refuses per-feature if the .md carries fragments the .yaml lacks), then `parlay internal scaffold-signatures @{feature}`",
 		}}
 	case hasMD:
-		// Informational. surface.md remains a supported input, so this must
-		// not block anything — it exists to make the migration discoverable.
 		return []readinessIssue{{
-			Severity: "warning",
-			Code:     "surface-md-legacy-format",
-			Message:  fmt.Sprintf("%s is the legacy Markdown surface form", mdPath),
-			Fix:      "run `parlay migrate-spec` to emit an equivalent surface.yaml; the migrator is idempotent and never deletes your file",
+			Severity: "error",
+			Code:     "surface-md-unsupported",
+			Message:  fmt.Sprintf("%s is the pre-v0.3 Markdown surface form; the runtime no longer reads it", mdPath),
+			Fix:      "run `parlay migrate-spec` to emit surface.yaml (idempotent), review it, then `parlay migrate-spec --retire-md`",
 		}}
 	}
 	return nil

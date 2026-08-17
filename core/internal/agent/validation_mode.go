@@ -57,14 +57,6 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,
 	},
-	"surface-md-superseded": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
-	"surface-md-legacy-format": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
 	"testcases-source-refs-missing-legacy": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,

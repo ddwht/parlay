@@ -22,7 +22,7 @@ Translate feature design artifacts into a formal engineering specification for h
 2. **Read all feature artifacts** — <!-- parlay:expand-co-equal-artifacts -->; read whichever subset the feature has:
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
-   - `spec/intents/{feature}/surface.yaml` or `surface.md` (if exists — YAML wins when both are present)
+   - `spec/intents/{feature}/surface.yaml` (if exists)
    - `spec/intents/{feature}/capabilities.yaml` (if exists)
    - `spec/intents/{feature}/infrastructure.md` (if exists)
    - `<activeRoot>/domain-model.yaml` (if exists — the project's one canonical domain model, not per-feature) or legacy `spec/intents/{feature}/domain-model.md`
@@ -78,5 +78,5 @@ Translate feature design artifacts into a formal engineering specification for h
 
 ## Error Handling
 
-- Absent optional artifacts (`surface.yaml`/`surface.md`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are skipped silently — the corresponding specification section is simply omitted.
+- Absent optional artifacts (`surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are skipped silently — the corresponding specification section is simply omitted.
 - `no-spec-artifacts` — the feature has none of the four spec artifacts. Tell the user to run `/parlay-create-artifacts @{feature}` first.

@@ -124,12 +124,13 @@ func TestReadiness_BuildFeature_FragmentMissingPage(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 
-	surface := `## My Fragment
-
-**Shows**: Some data
-**Source**: @test-feature/some-intent
+	surface := `feature: test-feature
+fragments:
+    - name: My Fragment
+      shows: Some data
+      source: '@test-feature/some-intent'
 `
-	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
 	// Need a config for the build-feature stage
 	parlayDir := filepath.Join(dir, ".parlay")
@@ -164,14 +165,15 @@ func TestReadiness_BuildFeature_Valid(t *testing.T) {
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 	os.WriteFile(filepath.Join(featureDir, "dialogs.md"), []byte(""), 0644)
 
-	surface := `## My Fragment
-
-**Shows**: Some data
-**Source**: @test-feature/some-intent
-**Page**: dashboard
-**Region**: main
+	surface := `feature: test-feature
+fragments:
+    - name: My Fragment
+      shows: Some data
+      source: '@test-feature/some-intent'
+      page: dashboard
+      region: main
 `
-	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
 	parlayDir := filepath.Join(dir, ".parlay")
 	os.MkdirAll(parlayDir, 0755)
@@ -204,14 +206,15 @@ func TestReadiness_BuildFeature_AdapterSetSatisfiesAdapterRequirement(t *testing
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 	os.WriteFile(filepath.Join(featureDir, "dialogs.md"), []byte(""), 0644)
 
-	surface := `## My Fragment
-
-**Shows**: Some data
-**Source**: @test-feature/some-intent
-**Page**: dashboard
-**Region**: main
+	surface := `feature: test-feature
+fragments:
+    - name: My Fragment
+      shows: Some data
+      source: '@test-feature/some-intent'
+      page: dashboard
+      region: main
 `
-	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
 	// Config with NO prototype-framework, plus an adapter-set.yaml — the
 	// modern multi-target shape.
@@ -256,14 +259,15 @@ func TestReadiness_BuildFeature_NoAdapterConfigured(t *testing.T) {
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(intents), 0644)
 	os.WriteFile(filepath.Join(featureDir, "dialogs.md"), []byte(""), 0644)
 
-	surface := `## My Fragment
-
-**Shows**: Some data
-**Source**: @test-feature/some-intent
-**Page**: dashboard
-**Region**: main
+	surface := `feature: test-feature
+fragments:
+    - name: My Fragment
+      shows: Some data
+      source: '@test-feature/some-intent'
+      page: dashboard
+      region: main
 `
-	os.WriteFile(filepath.Join(featureDir, "surface.md"), []byte(surface), 0644)
+	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
 	parlayDir := filepath.Join(dir, ".parlay")
 	os.MkdirAll(parlayDir, 0755)

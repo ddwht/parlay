@@ -16,7 +16,7 @@ This is an **optional** step between surface creation and build-feature. The pip
 ## Prerequisites
 
 - **Figma MCP** must be available. If not, inform the user and stop.
-- **Surface** must exist at `spec/intents/{feature}/surface.md`. If not, tell the user to run `/parlay-create-artifacts @{feature}` first.
+- **Surface** must exist at `spec/intents/{feature}/surface.yaml`. If not, tell the user to run `/parlay-create-artifacts @{feature}` first.
 
 <!-- parlay:active-root-aware -->
 ## Active root
@@ -41,7 +41,7 @@ Who resolves it depends on where you are running. If you own the user interactio
    - `.parlay/schemas/surface.schema.md`
    - `.parlay/schemas/adapter.schema.md`
 
-3. **Load feature surface** — Read `spec/intents/{feature}/surface.md`. Parse fragment names. If the file does not exist, stop and tell the user to create the surface first.
+3. **Load feature surface** — Read `spec/intents/{feature}/surface.yaml`. Parse fragment names. If the file does not exist, stop and tell the user to create the surface first.
 
 4. **Load adapter** — Resolve the adapter from `.parlay/adapter-set.yaml`'s presentation slot and read `.parlay/adapters/{slug}.adapter.yaml`. (`prototype-framework:` was removed in v0.3 — there is no fallback; a project without an adapter-set converts via `parlay migrate-config`.) Extract the `design-system:` section to identify which categories have `source: figma`.
 
@@ -68,10 +68,10 @@ Who resolves it depends on where you are running. If you own the user interactio
    - Multiple candidates: ask user to pick
    - No match: skip (adapter defaults)
    - Figma component with no fragment: present each unmapped component to the user and ask:
-     - A: Create a new fragment in surface.md for this element (provide a suggested name, Shows, Actions, Page, Region, and Order based on the Figma context — e.g., a page header becomes a fragment in the `header` region)
+     - A: Create a new fragment in surface.yaml for this element (provide a suggested name, Shows, Actions, Page, Region, and Order based on the Figma context — e.g., a page header becomes a fragment in the `header` region)
      - B: Skip — it's decorative or not part of this feature
      - C: Assign to an existing fragment (list candidates)
-     If the user chooses A, write the new fragment to surface.md before proceeding to extraction.
+     If the user chooses A, write the new fragment to surface.yaml before proceeding to extraction.
 
 7. **Extract visual details per mapped fragment** — For each mapped pair:
    - **widget**: Determine the exact framework widget variant from the Figma component structure (e.g., "Table with fixed header and bordered cells" not just "Table")
@@ -107,7 +107,7 @@ Who resolves it depends on where you are running. If you own the user interactio
 ## Error Handling
 
 - `figma-mcp-unavailable`: Figma MCP tool is not available. Tell the user to configure Figma MCP and retry.
-- `no-surface`: surface.md does not exist. Tell user to run `/parlay-create-artifacts @{feature}` first.
+- `no-surface`: surface.yaml does not exist. Tell user to run `/parlay-create-artifacts @{feature}` first.
 - `no-adapter`: adapter file not found. Tell user to run `parlay init` or `parlay register-adapter <path>`.
 - `figma-read-failed`: MCP could not read the Figma file. Check the link and permissions.
 - `no-fragments-mapped`: No Figma components could be mapped to surface fragments. Ask user if they want to proceed with manual annotation or cancel.

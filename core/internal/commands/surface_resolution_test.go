@@ -25,17 +25,17 @@ func codesOf(issues []readinessIssue) []string {
 	return out
 }
 
-// Both diagnostics were specified in surface.schema.md's File resolution
-// section and emitted by nothing — the strings existed only as severity-table
-// keys. A designer editing a superseded surface.md saw no effect and no warning.
+// Since v0.3 surface.md is not a surface artifact: any presence of it is a
+// hard error pointing at the migration out. yaml-only and empty directories
+// stay clean.
 func TestSurfaceResolutionDiagnostics(t *testing.T) {
 	cases := []struct {
 		name  string
 		files []string
 		want  []string
 	}{
-		{"both present", []string{"surface.yaml", "surface.md"}, []string{"surface-md-superseded"}},
-		{"legacy only", []string{"surface.md"}, []string{"surface-md-legacy-format"}},
+		{"both present", []string{"surface.yaml", "surface.md"}, []string{"surface-md-unsupported"}},
+		{"legacy only", []string{"surface.md"}, []string{"surface-md-unsupported"}},
 		{"yaml only", []string{"surface.yaml"}, nil},
 		{"neither", nil, nil},
 	}
@@ -54,14 +54,13 @@ func TestSurfaceResolutionDiagnostics(t *testing.T) {
 	}
 }
 
-// Neither may block. surface.md is still a supported input, so a project on the
-// legacy form must stay buildable — the diagnostics exist to make the migration
-// discoverable, not to force it.
-func TestSurfaceResolutionNeverBlocks(t *testing.T) {
+// The error must block AND carry the way out: an unreadable legacy form with
+// no fix text would strand exactly the projects the migration exists for.
+func TestSurfaceResolutionBlocksWithFix(t *testing.T) {
 	for _, files := range [][]string{{"surface.yaml", "surface.md"}, {"surface.md"}} {
 		for _, issue := range surfaceResolutionIssues(surfaceFixture(t, files...)) {
-			if issue.Severity == "error" {
-				t.Errorf("%s is severity error; a supported legacy form must not block the build", issue.Code)
+			if issue.Severity != "error" {
+				t.Errorf("%s severity = %q; surface.md stopped being readable in v0.3, so this must block", issue.Code, issue.Severity)
 			}
 			if issue.Fix == "" {
 				t.Errorf("%s carries no fix — the point is pointing at migrate-spec", issue.Code)

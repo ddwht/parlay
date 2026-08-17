@@ -165,7 +165,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    - **Write nothing before this is answered.** The override menu exists so the designer can change the artifact set; authoring first makes it a notification.
 
 5. **Create the artifacts**:
-   - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.md or surface.yaml, validate)
+   - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.yaml, validate)
      - **Populate `verify:` on each fragment** (YAML form) with the acceptance criteria from the owning intent's **Verify** bullets that describe visible behavior — but only for intents no capabilities operation covers; an intent that produces an operation carries its criteria there instead. This is what testcase derivation reads; a fragment without it falls back to the intent bullets.
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
      - **Set `source:` on every operation** to the `@{feature}/{intent-slug}` refs it came from, the same way a surface fragment carries one. This is the only record of which intent an operation implements, and it is what lets a later change described in prose be routed to the operation that owns it. An operation without it can be found only by name similarity, which misses renames and matches things that merely sound alike.
@@ -198,4 +198,4 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
 - `no-dialogs` — dialogs.md doesn't exist. Warn that the decision will be based on intents only (less signal). Ask whether to proceed or scaffold dialogs first.
-- `artifacts-already-exist` — one or more of surface.md / surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip.
+- `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip.

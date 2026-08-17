@@ -33,7 +33,7 @@ Who resolves it depends on where you are running. If you own the user interactio
    and `.parlay/schemas/domain-model.schema.md`.
 
 2. **Scan all features** — Read `spec/intents/*/intents.md`, `dialogs.md`,
-   and `surface.md`.
+   and `surface.yaml`.
 
 3. **Extract entities, enums, relationships, operations** — From intent
    Objects fields and implicit references in dialogs and surfaces:

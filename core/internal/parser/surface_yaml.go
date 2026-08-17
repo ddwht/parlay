@@ -91,9 +91,11 @@ func LoadSurfaceYAMLBytes(path string, content []byte) ([]Fragment, error) {
 }
 
 // ResolveSurfacePath returns the on-disk surface artifact path inside a
-// feature directory, preferring surface.yaml (the v1 multi-adapter target
-// format) over the legacy surface.md. Returns an empty string when neither
-// file is present — callers handle this as "feature has no surface."
+// feature directory: surface.yaml, the only surface artifact since v0.3.
+// Returns an empty string when it is not present — callers handle this as
+// "feature has no surface." (A lingering surface.md is invisible here by
+// design; surfaceResolutionIssues reports it as surface-md-unsupported,
+// and migrate-spec remains the path out.)
 //
 // parlay-feature: parlay-tool/multi-adapter
 // parlay-component: surface-yaml-and-migrator
@@ -101,10 +103,6 @@ func ResolveSurfacePath(featureDir string) string {
 	yamlPath := filepath.Join(featureDir, "surface.yaml")
 	if _, err := os.Stat(yamlPath); err == nil {
 		return yamlPath
-	}
-	mdPath := filepath.Join(featureDir, "surface.md")
-	if _, err := os.Stat(mdPath); err == nil {
-		return mdPath
 	}
 	return ""
 }
