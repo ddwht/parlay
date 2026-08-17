@@ -46,7 +46,7 @@ type Baseline struct {
 	// save-build-state runs after a green build, at which point the ledger
 	// is by definition fully applied — so this records the ledger's highest
 	// sequence at save time. A ledger entry beyond it is the unapplied tail
-	// check-drift reports under the ledger flag. Zero means "no amendments
+	// check-drift reports. Zero means "no amendments
 	// yet" (or a pre-v3 baseline, which is the same statement).
 	LastAppliedAmendment int `yaml:"last-applied-amendment,omitempty"`
 }
@@ -56,7 +56,8 @@ type Baseline struct {
 //	1 — adds Domain and AdapterVersion to HashedSources.
 //	2 — adds Authored to HashedSources.
 //	3 — adds LastAppliedAmendment and HashedSources.Amendments (the
-//	    ledger-and-contract model; both zero-valued in flag-off projects).
+//	    ledger-and-contract model; both zero-valued while a feature has
+//	    no amendments).
 const BaselineSchemaVersion = 3
 
 // IntentHash stores hashes of individual intent fields for granular drift detection.
@@ -154,8 +155,8 @@ type HashedSources struct {
 	// this set over time is NEW entries: a stored entry whose hash moved
 	// or whose file vanished is a ledger-integrity violation (an amendment
 	// was edited or deleted after being recorded), which check-drift
-	// reports under the ledger flag. Same "missing means unknown" rule as
-	// its siblings for pre-v3 baselines.
+	// reports. Same "missing means unknown" rule as its siblings for
+	// pre-v3 baselines.
 	Amendments map[string]string `yaml:"amendments,omitempty"`
 }
 
@@ -179,11 +180,14 @@ type driftOutput struct {
 	// whole project shares changed underneath it".
 	SharedSourcesChanged []string `json:"shared_sources_changed,omitempty"`
 
-	// Ledger-flag fields. Under parlay.ledger the founding docs are frozen,
-	// so a change to intents.md is not drift to rebuild from — it is a
-	// LedgerIntegrity violation to surface. UnappliedAmendments names the
-	// ledger tail beyond the baseline's last-applied-amendment: changes
-	// that were decided but never applied to the contract.
+	// The founding docs are frozen at first build, so a change to
+	// intents.md is not drift to rebuild from — it is a LedgerIntegrity
+	// violation to surface. UnappliedAmendments names the ledger tail
+	// beyond the baseline's last-applied-amendment: changes that were
+	// decided but never applied to the contract. Drifted, NewIntents and
+	// Removed above no longer carry founding-doc changes (those all
+	// classify as integrity findings); the fields stay for the JSON
+	// shape's consumers.
 	LedgerIntegrity     []string `json:"ledger_integrity,omitempty"`
 	UnappliedAmendments []string `json:"unapplied_amendments,omitempty"`
 }
@@ -294,8 +298,8 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 		baseline.Sources.Authored = unitHashes
 	}
 
-	// The amendment ledger. Recorded unconditionally (a flag-off project
-	// simply has no amendments/ directory and records nothing): the file
+	// The amendment ledger. Recorded unconditionally (a feature with no
+	// amendments/ directory simply records nothing): the file
 	// hashes feed the integrity check, and the highest sequence becomes
 	// LastAppliedAmendment — save-build-state runs after a green build, at
 	// which point the ledger is by definition fully applied.
@@ -410,57 +414,44 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 		return nil, fmt.Errorf("invalid baseline: %w", err)
 	}
 
-	ledgerOn := projectLedgerEnabled(cfg)
-
 	// Load current intents
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read intents: %w", err)
 	}
 
+	// Founding docs are frozen at first build (the baseline IS the freeze
+	// point), so any change to intents.md is an integrity finding, not
+	// rebuild-drift. A pre-v0.4 edit made when editing was legal dissolves
+	// via `parlay migrate-ledger`, which re-stamps the founding hashes.
 	currentSlugs := make(map[string]bool)
 	for _, intent := range intents {
 		currentSlugs[intent.Slug] = true
 		oldHash, exists := baseline.Intents[intent.Slug]
 		if !exists {
-			if ledgerOn {
-				output.LedgerIntegrity = append(output.LedgerIntegrity,
-					"intents.md: intent \""+intent.Slug+"\" added after freeze — new ground goes through /parlay-loop, changes through an amendment")
-			} else {
-				output.NewIntents = append(output.NewIntents, intent.Title)
-			}
+			output.LedgerIntegrity = append(output.LedgerIntegrity,
+				"intents.md: intent \""+intent.Slug+"\" added after freeze — new ground goes through /parlay-loop, changes through an amendment (/parlay-refine); for a pre-v0.4 edit the freeze shouldn't count, run parlay migrate-ledger")
 			continue
 		}
 
 		newHash := hashIntent(intent)
 		if changed := diffHashes(oldHash, newHash); len(changed) > 0 {
-			if ledgerOn {
-				output.LedgerIntegrity = append(output.LedgerIntegrity,
-					"intents.md: intent \""+intent.Slug+"\" changed after freeze — record the change as an amendment and restore the founding text")
-			} else {
-				output.Drifted = append(output.Drifted, driftItem{
-					Intent:        intent.Title,
-					ChangedFields: changed,
-				})
-			}
+			output.LedgerIntegrity = append(output.LedgerIntegrity,
+				"intents.md: intent \""+intent.Slug+"\" changed after freeze — record the change as an amendment (/parlay-refine) and restore the founding text; for a pre-v0.4 edit the freeze shouldn't count, run parlay migrate-ledger")
 		}
 	}
 
 	// Detect removed intents
 	for slug := range baseline.Intents {
 		if !currentSlugs[slug] {
-			if ledgerOn {
-				output.LedgerIntegrity = append(output.LedgerIntegrity,
-					"intents.md: intent \""+slug+"\" removed after freeze — a dead decision is superseded by an amendment, not erased")
-			} else {
-				output.Removed = append(output.Removed, slug)
-			}
+			output.LedgerIntegrity = append(output.LedgerIntegrity,
+				"intents.md: intent \""+slug+"\" removed after freeze — a dead decision is superseded by an amendment, not erased")
 		}
 	}
 
-	// Under the ledger flag, dialogs are frozen too, and the amendment
-	// ledger itself has integrity and an unapplied tail to report.
-	if ledgerOn && baseline.Sources != nil {
+	// Dialogs are frozen too, and the amendment ledger itself has
+	// integrity and an unapplied tail to report.
+	if baseline.Sources != nil {
 		detectLedgerFindings(&baseline, featurePath, output)
 	}
 
@@ -523,23 +514,13 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 	return output, nil
 }
 
-// projectLedgerEnabled reads the parlay.ledger flag. A missing or unreadable
-// config is a flag-off project — the ledger model is opt-in.
-func projectLedgerEnabled(cfg *config.Context) bool {
-	pc, err := cfg.LoadProjectConfig()
-	if err != nil {
-		return false
-	}
-	return pc.LedgerEnabled()
-}
-
-// detectLedgerFindings adds the ledger-flag findings to a drift output:
+// detectLedgerFindings adds the ledger findings to a drift output:
 // frozen-dialog edits, mutated or deleted amendment files, and the unapplied
 // ledger tail. Intents are handled inline in detectDrift, where the per-slug
 // comparison already exists.
 func detectLedgerFindings(baseline *Baseline, featurePath string, output *driftOutput) {
-	// Dialogs freeze. Same per-slug comparison the flag-off path uses for
-	// diff scoping, reinterpreted: any change is an integrity finding.
+	// Dialogs freeze. Same per-slug comparison parlay diff uses for
+	// scoping, reinterpreted: any change is an integrity finding.
 	if len(baseline.Sources.Dialogs) > 0 {
 		current := map[string]string{}
 		if dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md")); err == nil {

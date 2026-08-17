@@ -27,8 +27,9 @@ const ledgerTestIntents = `## Check Readiness
 - Readiness status is displayed
 `
 
-// setupLedgerFeature lays down a feature with a saved baseline in a project
-// with parlay.ledger enabled, and returns the feature dir.
+// setupLedgerFeature lays down a feature with a saved baseline and returns
+// the feature dir. The config carries a leftover `ledger: true` key on
+// purpose — old projects still have one, and it must be inert.
 func setupLedgerFeature(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, ".parlay"), 0o755); err != nil {
@@ -103,10 +104,12 @@ func TestDetectDrift_LedgerFreezesIntents(t *testing.T) {
 	}
 }
 
-func TestDetectDrift_LedgerFlagOffKeepsOldSemantics(t *testing.T) {
+// TestLedgerFlagIsRemoved pins the v0.4 removal: `ledger: false` in an old
+// config is inert — freeze semantics apply regardless (same idiom as
+// TestNoStudioFlagIsRemoved).
+func TestLedgerFlagIsRemoved(t *testing.T) {
 	dir := setupTestDir(t)
 	featureDir := setupLedgerFeature(t, dir)
-	// Turn the flag back off — same fixture, old semantics.
 	if err := os.WriteFile(filepath.Join(dir, ".parlay", "config.yaml"), []byte("ledger: false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +124,8 @@ func TestDetectDrift_LedgerFlagOffKeepsOldSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(output.Drifted) != 1 || len(output.LedgerIntegrity) != 0 {
-		t.Errorf("flag off: intent edit is ordinary drift, not integrity; got drifted=%+v integrity=%v", output.Drifted, output.LedgerIntegrity)
+	if len(output.Drifted) != 0 || len(output.LedgerIntegrity) != 1 {
+		t.Errorf("ledger: false must be inert — an intent edit is an integrity finding; got drifted=%+v integrity=%v", output.Drifted, output.LedgerIntegrity)
 	}
 }
 

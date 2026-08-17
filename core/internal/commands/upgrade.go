@@ -217,6 +217,108 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "  Note: adapter kind opt-in skipped (%v)\n", err)
 	}
 
+	// parlay-feature: parlay-tool/ledger-and-contract
+	// parlay-component: ledger-migration
+	//
+	// After deploying skills + schemas, scan for features whose founding
+	// docs drifted before the single-regime switch and offer to freeze
+	// them. Upgrade never migrates silently — freezing grandfathers edits
+	// into founding history, and a person should see the list.
+	if err := offerLedgerMigration(cmd, rootPath); err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "  Note: ledger migration scan skipped (%v)\n", err)
+	}
+
+	return nil
+}
+
+// offerLedgerMigration runs the migrate-ledger dry-run scan over the repo
+// root and every registered child root. If any feature needs freezing it
+// prompts interactively to run the migration; in non-interactive mode it
+// prints a note naming the command instead. Refusal states (leftover
+// surface.md, drifted docs alongside existing amendments) are reported and
+// never auto-fixed.
+func offerLedgerMigration(cmd *cobra.Command, rootPath string) error {
+	roots := []string{rootPath}
+	if idx, err := config.LoadRootsIndex(rootPath); err == nil {
+		for _, child := range idx.Children {
+			roots = append(roots, child.Path)
+		}
+	}
+
+	type rootScan struct {
+		path     string
+		toFreeze []ledgerMigrationVerdict
+		blocked  []ledgerMigrationVerdict
+	}
+	var scans []rootScan
+	needFreeze, blocked := 0, 0
+	for _, root := range roots {
+		verdicts, err := scanLedgerMigration(root)
+		if err != nil {
+			return err
+		}
+		s := rootScan{path: root}
+		for _, v := range verdicts {
+			switch v.State {
+			case ledgerNeedsFreeze:
+				s.toFreeze = append(s.toFreeze, v)
+			case ledgerRefuseAmendments, ledgerRefuseSurfaceMD, ledgerError:
+				s.blocked = append(s.blocked, v)
+			}
+		}
+		needFreeze += len(s.toFreeze)
+		blocked += len(s.blocked)
+		scans = append(scans, s)
+	}
+	if needFreeze == 0 && blocked == 0 {
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Founding docs are frozen at first build in v0.4+. Some features have founding docs that were edited after their last green build — legal when made, but read as ledger_integrity violations now:")
+	for _, s := range scans {
+		for _, v := range s.toFreeze {
+			fmt.Fprintf(out, "  - %s (%s): %d change(s) to freeze as founding state\n", v.Feature, s.path, len(v.Detail))
+		}
+		for _, v := range s.blocked {
+			fmt.Fprintf(out, "  - %s (%s): needs attention before migration — run `parlay migrate-ledger --dry-run` there for details\n", v.Feature, s.path)
+		}
+	}
+
+	if needFreeze == 0 {
+		return nil
+	}
+
+	stat, err := os.Stdin.Stat()
+	if err != nil || (stat.Mode()&os.ModeCharDevice) == 0 {
+		fmt.Fprintln(out, "  Run `parlay migrate-ledger` (per root) to accept the current text as the founding state.")
+		return nil
+	}
+
+	fmt.Fprint(out, "Freeze the current text as each feature's founding state now? [y/N] ")
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(strings.ToLower(line)) != "y" {
+		fmt.Fprintln(out, "  Skipped — run `parlay migrate-ledger` when ready; until then check-drift reports these as ledger_integrity.")
+		return nil
+	}
+
+	for _, s := range scans {
+		if len(s.blocked) > 0 {
+			fmt.Fprintf(out, "  %s skipped — %d feature(s) need attention first (see above)\n", s.path, len(s.blocked))
+			continue
+		}
+		for _, v := range s.toFreeze {
+			if err := restampFoundingHashes(s.path, v.Feature); err != nil {
+				return fmt.Errorf("freeze %s: %w", v.Feature, err)
+			}
+			fmt.Fprintf(out, "  %s — froze current founding text (%d change(s) grandfathered)\n", v.Feature, len(v.Detail))
+		}
+	}
 	return nil
 }
 

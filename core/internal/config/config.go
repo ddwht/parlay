@@ -52,28 +52,12 @@ type ProjectConfig struct {
 	// parlay-feature: parlay-tool/feedback-mode
 	Feedback bool `yaml:"feedback,omitempty"`
 
-	// Ledger mirrors the parlay.ledger key in .parlay/config.yaml: when
-	// true, this project runs the ledger-and-contract model — intents.md
-	// and dialogs.md freeze at feature birth, refinements append amendment
-	// files under spec/intents/<feature>/amendments/ and apply their
-	// deltas to the contract artifacts, and drift is measured contract →
-	// build → code rather than against the narrative docs. Off by default
-	// during the transition; read by the skills (which branch on it) and
-	// by the drift/doctor semantics. See
-	// docs/plans/ledger-and-contract-plan.md.
-	//
-	// parlay-feature: parlay-tool/ledger-and-contract
-	Ledger bool `yaml:"ledger,omitempty"`
-}
-
-// LedgerEnabled reports whether this project runs the ledger-and-contract
-// model. The accessor exists for the same reason NoEditorEnabled does: one
-// answer, every call site.
-func (c *ProjectConfig) LedgerEnabled() bool {
-	if c == nil {
-		return false
-	}
-	return c.Ledger
+	// ledger: was removed in v0.4 — the ledger-and-contract model is the
+	// only regime, so there is nothing left for the flag to gate. A config
+	// still carrying the key is silently inert (decoding is non-strict).
+	// Old projects whose founding docs drifted before the switch run
+	// `parlay migrate-ledger` once to accept current text as the founding
+	// state.
 }
 
 // NoEditorEnabled reports whether this project has opted out of the

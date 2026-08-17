@@ -151,9 +151,11 @@ func (s surface) appliesTo(fixture string) bool {
 //     largest known gap in this matrix. The save gate's dropped `code` field
 //     (R4-23) is invisible here for exactly that reason.
 //   - init, upgrade, sync, add-feature, move-feature: mutations, not checks.
-//   - repair --dry-run: reports a plan rather than a verdict, and running it
-//     needs a build tree in a specific broken state per fixture rather than
-//     one shared fixture. Worth adding when a fixture motivates it.
+//   - repair --dry-run and migrate-ledger --dry-run: they report a plan
+//     rather than a verdict, and running them needs a build tree in a
+//     specific broken state per fixture rather than one shared fixture.
+//     Worth adding when a fixture motivates it. (migrate-ledger's verdict
+//     states are pinned directly in migrate_ledger_test.go instead.)
 func matrixSurfaces() []surface {
 	return []surface{
 		{

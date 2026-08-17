@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -87,7 +88,8 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(modified), 0644)
 
-	// Check drift
+	// Check drift: founding docs are frozen at first build, so an edited
+	// goal is an integrity finding, not rebuild-drift.
 	output, err := detectDrift(testContext(t), "my-feature", featureDir)
 	if err != nil {
 		t.Fatal(err)
@@ -95,21 +97,11 @@ func TestDetectDrift_GoalChanged(t *testing.T) {
 	if !output.HasDrift {
 		t.Fatal("expected drift")
 	}
-	if len(output.Drifted) != 1 {
-		t.Fatalf("Drifted = %d, want 1", len(output.Drifted))
+	if len(output.Drifted) != 0 {
+		t.Fatalf("an intent edit must not be rebuild-drift; got %+v", output.Drifted)
 	}
-	if output.Drifted[0].Intent != "Check Readiness" {
-		t.Errorf("Drifted intent = %q", output.Drifted[0].Intent)
-	}
-	// Goal changed
-	found := false
-	for _, f := range output.Drifted[0].ChangedFields {
-		if f == "Goal" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected Goal in changed fields, got %v", output.Drifted[0].ChangedFields)
+	if len(output.LedgerIntegrity) != 1 || !strings.Contains(output.LedgerIntegrity[0], "changed after freeze") {
+		t.Errorf("expected one changed-after-freeze integrity finding; got %v", output.LedgerIntegrity)
 	}
 }
 
@@ -153,13 +145,24 @@ func TestDetectDrift_NewAndRemovedIntents(t *testing.T) {
 	if !output.HasDrift {
 		t.Fatal("expected drift")
 	}
-	if len(output.NewIntents) != 1 || output.NewIntents[0] != "Intent C" {
-		t.Errorf("NewIntents = %v, want [Intent C]", output.NewIntents)
+	// Added and removed intents both classify as integrity findings —
+	// the founding doc is frozen, so its intent set cannot change.
+	var added, removed bool
+	for _, f := range output.LedgerIntegrity {
+		if strings.Contains(f, "\"intent-c\" added after freeze") {
+			added = true
+		}
+		if strings.Contains(f, "\"intent-b\" removed after freeze") {
+			removed = true
+		}
 	}
-	if len(output.Removed) != 1 || output.Removed[0] != "intent-b" {
-		t.Errorf("Removed = %v, want [intent-b]", output.Removed)
+	if !added || !removed {
+		t.Errorf("expected added + removed integrity findings; got %v", output.LedgerIntegrity)
 	}
-	// Intent A should not be drifted
+	if len(output.NewIntents) != 0 || len(output.Removed) != 0 {
+		t.Errorf("founding-doc changes must not report as rebuild-drift; got new=%v removed=%v", output.NewIntents, output.Removed)
+	}
+	// Intent A should not be flagged at all
 	if len(output.Drifted) != 0 {
 		t.Errorf("Drifted = %d, want 0 (Intent A unchanged)", len(output.Drifted))
 	}
