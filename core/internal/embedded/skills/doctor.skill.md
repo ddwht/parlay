@@ -38,15 +38,15 @@ Gather state before proposing anything. None of these mutate:
 - `parlay internal check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
 - `parlay internal collect-questions @{feature}` — unresolved `Questions:` blocks
 - `parlay internal check-drift @{feature}` — sources changed since the last build
-- `parlay internal check-amendments @{feature}` — ledger projects only
-  (`.parlay/config.yaml` carries `ledger: true`): amendment ledger health and
+- `parlay internal check-amendments @{feature}` — amendment ledger health and
   the declared dirty set
 
 Then detect pending migrations by looking at what is on disk:
 
 | If you find | Migration | Command |
 |---|---|---|
-| `spec/intents/*/surface.md` | surface.md → surface.yaml | `parlay migrate-spec` — and in **ledger projects** a lingering surface.md is not optional debt: it goes stale against the amended surface.yaml and actively misleads (measured 3/3 benchmark replicates). Follow up with `parlay migrate-spec --retire-md` (refuses per-feature when the .md carries fragments the .yaml lacks), then re-stamp `parlay internal scaffold-signatures @{feature}` for each retired feature. |
+| `spec/intents/*/surface.md` | surface.md → surface.yaml | `parlay migrate-spec` — a lingering surface.md is not optional debt: it goes stale against the amended surface.yaml and actively misleads (measured 3/3 benchmark replicates). Follow up with `parlay migrate-spec --retire-md` (refuses per-feature when the .md carries fragments the .yaml lacks), then re-stamp `parlay internal scaffold-signatures @{feature}` for each retired feature. |
+| `ledger_integrity` findings on a feature with **no** `amendments/` directory | pre-v0.4 founding-doc edits → freeze at current text | `parlay migrate-ledger` (run `--dry-run` first; it prints per-feature verdicts). This is how an unmigrated pre-v0.4 project surfaces: founding-doc edits that were ordinary drift under the old regime read as integrity violations now, and the migrator dissolves exactly that state. |
 | `prototype-framework:` in `.parlay/config.yaml` | legacy config → adapter-set | `parlay migrate-config` |
 | operation-shaped fragments in `infrastructure.md` | infrastructure → capabilities | `parlay migrate-capabilities` |
 | `domain-model.md` (not `.yaml`) | domain model → YAML | `parlay migrate-domain-model` |
@@ -55,11 +55,11 @@ Then detect pending migrations by looking at what is on disk:
 
 ### 2. Enhance coverage findings with semantic matching
 
-**Ledger projects: run this analysis only for features not yet built.** After
+**Run this analysis only for features not yet built.** After
 first build the founding docs freeze, an intent↔dialog gap in frozen
 documents is a historical fact rather than a repairable finding, and the
 sync that would "fix" it is exactly the write the freeze forbids. Coverage
-is a birth-time concern there; skip it for frozen features and say so in the
+is a birth-time concern; skip it for frozen features and say so in the
 report.
 
 `parlay internal check-coverage` matches intents to dialogs on title and word
@@ -73,20 +73,20 @@ overlap, so it reports false gaps. Before presenting anything:
 
 ### 3. Interpret drift
 
-If drifted intents exist, do not just report the hashes:
+If drift exists, do not just report the hashes:
 
-- Read the downstream artifacts for the drifted intents (surface, buildfile,
+- Read the downstream artifacts for the drifted sources (surface, buildfile,
   testcases).
-- Compare the changed intent fields against what those artifacts encode.
-- Flag meaningful mismatches — a changed Goal whose surface still reflects
-  the old one — and distinguish them from cosmetic edits.
+- Compare what changed against what those artifacts encode.
+- Flag meaningful mismatches — a changed operation whose surface still
+  reflects the old one — and distinguish them from cosmetic edits.
 - Note that a changed **shared** source (`domain-model.yaml`, the adapter)
   dirties every feature that reads it, not just the one you asked about.
   `parlay internal check-drift` reports these under `shared_sources_changed`.
 
-### 3.5 Ledger findings (ledger projects only)
+### 3.5 Ledger findings
 
-In a `ledger: true` project, `parlay internal check-drift` carries two extra
+`parlay internal check-drift` carries two ledger
 fields and `parlay internal check-amendments` adds a third dimension. Each
 finding has one right disposition:
 
@@ -96,9 +96,12 @@ finding has one right disposition:
   Route to `/parlay-refine` — its apply step is the only path that clears
   the tail. Do not apply the delta ad hoc from doctor.
 - **`ledger_integrity`** — a frozen founding doc was edited, or a recorded
-  amendment was mutated or deleted. Present the specific findings and offer
-  exactly two repairs, both destructive-adjacent and both needing explicit
-  confirmation:
+  amendment was mutated or deleted. First check for the one non-violation
+  case: a feature with these findings and **no** amendments at all is an
+  unmigrated pre-v0.4 project — route to `parlay migrate-ledger` (see the
+  migrations table), not to the repairs below. Otherwise present the
+  specific findings and offer exactly two repairs, both
+  destructive-adjacent and both needing explicit confirmation:
   - **Restore** — `git checkout` the affected file(s) back to the recorded
     state. The right answer almost always; history stays intact.
   - **Bless and refreeze** — accept the edited state as the new frozen

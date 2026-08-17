@@ -75,19 +75,13 @@ Two things not to do: never narrow the options to spare the user a question, and
    - The generated dialogs should be complete enough that the designer can review and approve with minor edits — not empty templates requiring rewriting
    - Run `parlay create-dialogs @{feature}` for the mechanical scaffolding, then enrich each template with full content
 
-4. **Update existing dialogs** — Skip this step entirely in a ledger project
-   (`.parlay/config.yaml` carries `ledger: true`): there, dialogs freeze at
-   feature birth as founding documents, intents cannot have changed underneath
-   them (check-drift enforces the freeze), and post-birth change is recorded
-   in the amendment ledger instead of re-synced into the transcript. This
-   skill's job in ledger mode is step 3 only, at birth. Otherwise — for
-   intents that already have dialogs, compare each dialog against its current
-   intent:
-   - For new Constraints: generate a complete `#### Branch:` section with user turn, system response, and any sub-branches
-   - For new Verify edge cases: generate a complete branch showing the edge case flow
-   - For renamed intents: propose updating the dialog heading
-   - Skip cosmetic changes (rewording that preserves meaning)
-   - Raise one decision request carrying every proposed update: the triggering intent change and the complete proposed content for each, with a per-update option id
-   - `dialogs.md` is designer-authored — modify it only after that decision comes back
+4. **Never re-sync existing dialogs** — dialogs freeze at first build as
+   founding documents. Intents cannot have changed underneath them
+   (check-drift enforces the freeze), and post-birth change is recorded in
+   the amendment ledger instead of re-synced into the transcript. This
+   skill's job is step 3 only, at birth. If a dialog looks out of date with
+   the current behavior, that is the ledger working as designed — the
+   transcript records the founding conversation, and the contract artifacts
+   carry current truth.
 
-5. **Report** — Summarize: how many dialogs were generated, how many updates were proposed, how many were accepted/skipped. If everything is current: "Dialogs are up to date — no updates needed."
+5. **Report** — Summarize: how many dialogs were generated. If every intent is covered: "Dialogs are up to date — no updates needed."

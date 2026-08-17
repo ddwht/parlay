@@ -30,16 +30,17 @@ type Deployer interface {
 }
 
 // fileOwnershipSection is the canonical "File Ownership" doctrine block —
-// the three-zone layout and the four co-equal spec artifacts — rendered
+// the four-zone layout and the four co-equal spec artifacts — rendered
 // verbatim into every agent's project-config file (CLAUDE.md, Cursor's
 // parlay.mdc, ...). A single constant here is what keeps deployers from
 // drifting out of sync with each other as the artifact set evolves.
 const fileOwnershipSection = `## File Ownership
 
-Three-zone layout — strict ownership:
-- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — ask permission before modifying
-- **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts —
-  - **surface.yaml** — visible output, page assemblies, dialog turns
+Four-zone layout — strict ownership:
+- **spec/intents/<feature>/** (designer-authored): intents.md, dialogs.md — **frozen founding documents** after first build: do not modify them at all (not even with permission); change goes through an amendment via /parlay-refine, and check-drift reports frozen-doc edits as ledger_integrity violations. Before first build they are ordinary designer-authored files — ask permission before modifying.
+- **spec/intents/<feature>/amendments/** (designer-authored, append-only): NNN-<slug>.md — one file per change, written once and NEVER edited; a correction is a new amendment naming the old one in supersedes:. Compaction may move files to amendments/archive/, never delete them.
+- **spec/intents/<feature>/** (generated, human-reviewed): four co-equal spec artifacts — the current truth the amendments apply to —
+  - **surface.yaml** — visible output, page assemblies, dialog turns. (surface.md is retired: a lingering one goes stale against the amended contract and misleads; run ` + "`parlay migrate-spec --retire-md`" + ` and never mirror edits into a surface.md.)
   - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
   - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
   - **domain-model.yaml** — entities, relationships, and shared vocabulary
@@ -47,11 +48,6 @@ Three-zone layout — strict ownership:
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
 - **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
-
-Ledger projects (` + "`ledger: true`" + ` in .parlay/config.yaml) add one zone and change two rules:
-- **surface.md is retired**: surface.yaml is the only surface artifact. A lingering surface.md goes stale against the amended contract and misleads; run ` + "`parlay migrate-spec --retire-md`" + ` and never mirror edits into a surface.md.
-- **spec/intents/<feature>/amendments/** (designer-authored, append-only): NNN-<slug>.md — one file per change, written once and NEVER edited; a correction is a new amendment naming the old one in supersedes:. Compaction may move files to amendments/archive/, never delete them.
-- In these projects intents.md and dialogs.md are **frozen founding documents** after first build — do not modify them at all (not even with permission); change goes through an amendment via /parlay-refine, and check-drift reports frozen-doc edits as ledger_integrity violations.
 `
 
 // renderAvailableCommands returns the "- `/parlay-<name>` — <description>"

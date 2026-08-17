@@ -5,7 +5,7 @@ parlay-feature: parlay-tool/ledger-and-contract
 
 # Amendment Schema
 
-File: `spec/intents/<feature>/amendments/NNN-<slug>.md`. The append-only change ledger of the ledger-and-contract model: one file per change, written once and **never edited** — a later change that alters the same ground is a NEW amendment that names the old one in `supersedes:`. Active only in projects with `parlay.ledger: true` in `.parlay/config.yaml`; without the flag the directory is inert.
+File: `spec/intents/<feature>/amendments/NNN-<slug>.md`. The append-only change ledger of the ledger-and-contract model: one file per change, written once and **never edited** — a later change that alters the same ground is a NEW amendment that names the old one in `supersedes:`. A standard zone of every feature (since v0.4 the ledger model is the only regime); a feature that has never been refined simply has no `amendments/` directory yet.
 
 An amendment records a refinement to an existing feature: what changed, why, and — machine-readably — which contract artifact entries it touches. The apply step splices the delta into those artifacts and lands the `## Acceptance` bullets as `verify:` entries on them. The founding documents (intents.md, dialogs.md) are frozen at feature birth and are never modified by an amendment.
 

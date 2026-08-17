@@ -90,20 +90,21 @@ the wrong query and answers `stable` about files it never looked at.
 So amend-first buys one thing precisely: after step 4 you *know* where the
 change landed, which is the input step 5 needs. Use it there.
 
-## Ledger mode
+## The ledger — record before you apply
 
-Read `.parlay/config.yaml` before step 3. If it carries `ledger: true`, this
-project runs the ledger-and-contract model and two things change about the
-steps below; if not, skip this section entirely — nothing else here applies.
+Every project runs the ledger-and-contract model: the founding docs froze at
+first build, the contract artifacts are current truth, and change goes
+through append-only amendments. A refinement IS an amendment applied to the
+contract. Two things follow for the steps below.
 
-**surface.md does not exist in ledger projects.** If the feature still
+**surface.md does not exist anymore.** If the feature still
 carries one, it is pending retirement — run `parlay migrate-spec --retire-md`
 (then `parlay internal scaffold-signatures @{feature}`) BEFORE amending, and
 never mirror an amendment into a surface.md: surface.yaml is the only
 surface artifact, and a maintained-looking .md that lags the contract is the
 most misleading document a feature can carry.
 
-**The founding documents are frozen.** In a ledger project, `intents.md` and
+**The founding documents are frozen.** `intents.md` and
 `dialogs.md` are the historical record of the feature's founding — never
 written again after first build. Do not splice them, do not re-sync dialogs
 to match a change, do not ask permission to edit them (the answer is
@@ -156,9 +157,9 @@ steps 3 and 4:
    lost by resolving after applying, because the decision gate above already
    fixed both texts before either was written.
 
-Step 4 then applies the delta **to contract artifacts only** — the ledger
-branch of step 3's altitude table routes "user-visible" to `surface.yaml`
-(the narrative record already happened in 3.5).
+Step 4 then applies the delta **to contract artifacts only** — step 3's
+altitude table routes "user-visible" to `surface.yaml` (the narrative record
+already happened in 3.5).
 
 **After the splice lands, run `parlay internal check-amendments @{feature}`.**
 Now every `affects:` ref resolves — including the entries step 4 just added —
@@ -280,8 +281,9 @@ report — which mode ran is part of what was blessed.
    user typed or whether the word "new" appears.
 
 3. **Classify the altitude** — Two destinations:
-   - **User-visible** → `intents.md`, `dialogs.md`, or `surface.yaml`. What
-     someone sees, does, or is told.
+   - **User-visible** → `surface.yaml`. What someone sees, does, or is told.
+     (Never `intents.md` or `dialogs.md` — those are frozen founding
+     documents; the narrative record of the change is step 3.5's amendment.)
    - **Implementation-shaped** → `infrastructure.md`. Boundaries, probes,
      allowlists, dependency pins, timeouts — architectural constraints that do
      not reduce to operations. See that schema's promotion section.
@@ -375,9 +377,9 @@ report — which mode ran is part of what was blessed.
 
    **Why this step has to exist.** Steps 6–7 regenerate code from the buildfile
    and then re-stamp `source-signatures` so the freshness gate passes. Without
-   a rebuild, an added intent produces: the intent in `intents.md`, nothing in
-   the buildfile, no component, no test — and a green run, because the gate was
-   satisfied by re-stamping rather than by the buildfile actually being fresh.
+   a rebuild, an added operation produces: the operation in the contract,
+   nothing in the buildfile, no component, no test — and a green run, because
+   the gate was satisfied by re-stamping rather than by the buildfile actually being fresh.
    The spec would document a capability that does not exist, and every check
    would agree it was fine.
 

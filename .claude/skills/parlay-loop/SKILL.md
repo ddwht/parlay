@@ -156,16 +156,16 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
    Offer to back up to the earliest phase whose output is stale. This is the only gate that catches an intents↔dialogs contradiction — `parlay internal check-coverage` matches on structure and titles, not meaning, so a dialog that contradicts its intent passes it cleanly.
 
-   **Ledger mode** (`.parlay/config.yaml` carries `ledger: true`): the same
-   check-drift call may return two extra fields, and each has one right
-   response. `ledger_integrity` findings mean a frozen founding doc or a
-   recorded amendment was edited — stop and surface them to the user; do not
-   proceed as if they were drift to rebuild through, and do not "fix" the
-   frozen file yourself. `unapplied_amendments` names ledger entries whose
-   deltas never reached the contract artifacts — route those to
-   `/parlay-refine`, whose apply step is the only path that clears them.
-   Intent-level drift does not occur in ledger projects for existing
-   features (the founding docs are frozen); this loop's business here is new
+   The same check-drift call may return two more fields, and each has one
+   right response. `ledger_integrity` findings mean a frozen founding doc or
+   a recorded amendment was edited — stop and surface them to the user; do
+   not proceed as if they were drift to rebuild through, and do not "fix"
+   the frozen file yourself (for a pre-v0.4 edit the freeze shouldn't count,
+   `parlay migrate-ledger` is the sanctioned repair). `unapplied_amendments`
+   names ledger entries whose deltas never reached the contract artifacts —
+   route those to `/parlay-refine`, whose apply step is the only path that
+   clears them. Intent-level drift does not occur for existing features
+   (founding docs freeze at first build); this loop's business here is new
    features, whose birth is unchanged.
 
 4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.

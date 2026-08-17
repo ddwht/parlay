@@ -11,8 +11,9 @@ Parlay projects use three zones with strict ownership:
   spec/                            ← Designer authors and reviews; engineering consumes
     intents/                       ← Designer-authored input (per feature)
       <feature-name>/
-        intents.md                 ← Human-authored
-        dialogs.md                 ← Scaffolded → human-authored
+        intents.md                 ← Human-authored; frozen founding document after first build
+        dialogs.md                 ← Scaffolded → human-authored; frozen founding document after first build
+        amendments/                 ← Append-only change ledger (NNN-<slug>.md, written once, never edited)
         surface.yaml                ← Generated, human-reviewed (the only surface artifact since v0.3)
         capabilities.yaml           ← Generated, human-reviewed (operation-shaped backend behavior)
         infrastructure.md           ← Generated, human-reviewed (architectural prose)
@@ -43,7 +44,7 @@ Parlay projects use three zones with strict ownership:
 | Zone | Audience | What lives here |
 |---|---|---|
 | `<activeRoot>/domain-model.yaml` | Designer authors and reviews | The project's one canonical domain model — entities, relationships, shared vocabulary. Never per-feature. |
-| `spec/intents/` | Designer authors and reviews | Per-feature design source: intents, dialogs, and whichever subset of the four co-equal spec artifacts (surface, capabilities, infrastructure) the feature needs, plus optional per-page layout trees |
+| `spec/intents/` | Designer authors and reviews | Per-feature design source: intents, dialogs, the append-only `amendments/` ledger, and whichever subset of the four co-equal spec artifacts (surface, capabilities, infrastructure) the feature needs, plus optional per-page layout trees |
 | `spec/handoff/` | Engineering consumes | Per-feature engineering specification |
 | `.parlay/` | Tool only — never user-facing | Config, blueprint, adapter-set, schemas, adapters, internal build artifacts |
 
@@ -72,6 +73,7 @@ File format follows a simple rule: designer-authored prose is markdown; generate
 |---|---|---|---|
 | `spec/intents/<feature>/intents.md` | `/parlay add-feature` | Yes — primary source | Feature creation |
 | `spec/intents/<feature>/dialogs.md` | `/parlay add-feature` (empty) → `/parlay scaffold-dialogs` (scaffolded) | Yes — primary source | Intents authored |
+| `spec/intents/<feature>/amendments/NNN-<slug>.md` | `/parlay-refine` (step 3.5) | Written once, never edited — a correction is a new amendment naming the old in `supersedes:` | First post-build refinement |
 | `spec/intents/<feature>/surface.yaml` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has surface signals |
 | `spec/intents/<feature>/capabilities.yaml` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has operation signals |
 | `spec/intents/<feature>/infrastructure.md` | `/parlay create-artifacts` | Review and adjust only | Dialogs authored, if the feature has architectural signals |
@@ -100,7 +102,7 @@ A page manifest may embed an optional `## Layout` section (a fenced YAML block c
 
 ## Rules
 
-- `intents.md` and `dialogs.md` are the source of truth — everything else derives from them.
+- `intents.md` and `dialogs.md` are the founding record — everything derives from them at birth, and they freeze at the feature's first green build (`save-build-state` writes the baseline that IS the freeze point). After that, change goes through `amendments/` applied to the contract artifacts, which carry current truth; `check-drift` reports frozen-doc edits as `ledger_integrity` violations. A founding doc edited before v0.4's single regime is repaired with `parlay migrate-ledger`, which accepts the current text as the founding state.
 - The three zones are strict: never write designer files to `spec/handoff/` or `.parlay/`; never write internal artifacts to `spec/intents/` or `spec/handoff/`; never write engineering output to `spec/intents/` or `.parlay/`.
 - `surface.yaml`, `capabilities.yaml`, `infrastructure.md`, everything under `.parlay/build/`, and `spec/handoff/` are regeneratable. Preserve human edits to `surface.yaml`, `capabilities.yaml`, and `infrastructure.md` during regeneration.
 - `domain-model.yaml` is regeneratable via `/parlay-create-domain-model`, but hand-editing is a first-class flow — both paths must produce structurally identical files.

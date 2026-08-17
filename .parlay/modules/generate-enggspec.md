@@ -47,9 +47,9 @@ Who resolves it depends on where you are running. If you own the user interactio
    - Acceptance criteria (from intent constraints)
    - Format according to the configured SDD framework (e.g., GitHub SpecKit)
 
-   **Ledger projects** (`.parlay/config.yaml` carries `ledger: true`): this
-   document doubles as the ledger's **projection** — the always-derivable
-   "current state in prose" the compaction model depends on. Three changes:
+   This document doubles as the ledger's **projection** — the
+   always-derivable "current state in prose" the compaction model depends
+   on. Three rules follow:
    - **The contract artifacts are the source of current truth**, not the
      founding docs: where the list above says "from intents" or "from dialog
      flows", read the frozen founding docs for the feature's original story,

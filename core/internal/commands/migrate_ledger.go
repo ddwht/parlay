@@ -81,7 +81,13 @@ type ledgerMigrationVerdict struct {
 // Path-based rather than Context-based so `parlay upgrade` can scan the
 // repo root and each registered child root with the same code.
 func scanLedgerMigration(rootPath string) ([]ledgerMigrationVerdict, error) {
-	features, err := config.ScanFeatureTree(filepath.Join(rootPath, config.SpecDir, config.IntentsDir))
+	intentsRoot := filepath.Join(rootPath, config.SpecDir, config.IntentsDir)
+	if _, err := os.Stat(intentsRoot); os.IsNotExist(err) {
+		// A root with no spec/intents/ — a bare multi-root parent whose
+		// features all live in child roots — has nothing to migrate.
+		return nil, nil
+	}
+	features, err := config.ScanFeatureTree(intentsRoot)
 	if err != nil {
 		return nil, fmt.Errorf("scan feature tree: %w", err)
 	}
