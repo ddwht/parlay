@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     aggregate-status-across-parent-and-child-roots:
         content-hash: f99e329b260df924
@@ -42,7 +43,9 @@ sources:
         per-feature-phase-column-in-human-listing: 3e5c8e8f3e7b80cf
         unavailable-child-root-inline-diagnostic: d458f9874e23a2b0
     infrastructure: eaf10e61953116db
-    surface-yaml: 44d7ed2e9086ace8
+    surface-yaml: 730c71f680781cb6
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 8d016f69eeb53741
     models: f3a3d1de244e5c86

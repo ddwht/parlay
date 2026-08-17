@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     generate-engineering-specification:
         content-hash: 0157b3a391bffe8a
@@ -11,3 +12,4 @@ sources:
         generate-engineering-specification: 9730e19197638bab
     dialogs:
         generate-engineering-specification: 75d8dfc910c8a018
+    domain: 56866a325365609d

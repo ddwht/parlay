@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     clarify-architectural-scope-in-infrastructureschemamd:
         content-hash: 8de86f1075cd8d13
@@ -28,6 +29,8 @@ sources:
         make-migrate-capabilities-partial-migration-semantics-explicit: c0f60ecd185b596e
         restore-infrastructuremd-to-co-equal-spec-artifact-status: f9d86bc803772ae6
     infrastructure: 2ec8fbbda3953769
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

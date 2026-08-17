@@ -1409,3 +1409,9 @@ plan:
     - path: internal/embedded/skills/migrate-domain-model.skill.md
       sources:
         - cross-cutting/migrate-domain-model-skill-file
+source-signatures:
+  intents: "sha256:31de76db4f61a7a86bac897a3038990e9bbf7e0bd9efdb2cbf4e61ce4bf91359"
+  dialogs: "sha256:83612f1ee78a2b2dc67894c66f2ad9aa24af24076f10462d4ed8838476018ab2"
+  surface: "sha256:6215968bdd02024f3cf4227b9a3135372ebcc27ac77de7f07c612d94c7ed0ed5"
+  infrastructure: "sha256:024b5edbc0af10addd499507de25549eaf313f10ea55c55228e0631df286d37f"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

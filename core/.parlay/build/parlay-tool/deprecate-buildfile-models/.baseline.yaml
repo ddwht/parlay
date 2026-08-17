@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     remove-models-from-the-buildfile-schema-and-parser:
         content-hash: f48f0ad7a1521449
@@ -11,3 +12,4 @@ sources:
         remove-models-from-the-buildfile-schema-and-parser: 4f0339de5eb47581
     dialogs:
         remove-models-from-the-buildfile-schema-and-parser: de16384026890966
+    domain: 56866a325365609d

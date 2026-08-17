@@ -305,3 +305,8 @@ components:
             from: "{tree}/{before-qualified-path}/"
             to: "{tree}/{after-qualified-path}/"
             recursive: true
+source-signatures:
+  intents: "sha256:9ef2c02755cce495853f17cda0de60ff0efdc1553d3064dc443a26639c71ef0b"
+  dialogs: "sha256:10770d4a3751e939fd66486c77b90c51906de426b6e24bc47873c8f992fc25c5"
+  surface: "sha256:f5360ef652eb6b2de1519d4aae3844a13cfb8c8166d135a8be2408a2b9d13fe9"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

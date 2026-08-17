@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     child-root-buildfile-path-prefixes-are-validated-against-the-resolved-root:
         content-hash: 95194c1cd84bec66
@@ -16,3 +17,4 @@ sources:
     intents:
         child-root-buildfile-path-prefixes-are-validated-against-the-resolved-root: 57382052f7ceb663
         deep-validator-reads-and-reconciles-plantargetskind-rows: 844d2757856391bc
+    domain: 56866a325365609d

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     adapter-kinds-and-adapter-set-topology:
         content-hash: 4d7d974ca287b08f
@@ -13,8 +14,8 @@ intents:
         verify-hash: 329155ad3d083d54
         objects-hash: 64683e833affb123
     adapter-supports-contract-gates-codegen-pre-ai:
-        content-hash: 58a5039dfbb2a46a
-        goal-hash: 5ca7d535349cec42
+        content-hash: d95458f2d99403cb
+        goal-hash: a8f44335492462ee
         constraints-hash: 7bedc2845b7d6a04
         verify-hash: b94703e87ad7f70b
         objects-hash: de51cb5c815b0656
@@ -112,7 +113,7 @@ sources:
     intents:
         adapter-kinds-and-adapter-set-topology: eb8410619e2a367a
         adapter-set-links-enforce-cross-kind-boundaries: 4e40679b2791375c
-        adapter-supports-contract-gates-codegen-pre-ai: c1244006f56b9629
+        adapter-supports-contract-gates-codegen-pre-ai: 877f2ec5cfb6acb7
         blueprint-scope-override-precedence-and-strategy-selection: bf4de29fc3067db0
         bundled-adapter-set-presets: 044b15bc8b22b46e
         capabilitiesyaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact: fdfb8ed52235e195
@@ -131,7 +132,7 @@ sources:
     dialogs:
         adapter-kinds-and-adapter-set-topology: 2284f1a912df0eeb
         adapter-set-links-enforce-cross-kind-boundaries: 169efd72ff819d92
-        adapter-supports-contract-gates-codegen-pre-ai: d3b436b47bf12d37
+        adapter-supports-contract-gates-codegen-pre-ai: a0785e61c297ed28
         blueprint-scope-override-precedence-and-strategy-selection: 0480b2ce1421986b
         bundled-adapter-set-presets: 8a08ffd315887878
         capabilitiesyaml-replaces-infrastructure-as-the-closed-vocabulary-backend-artifact: d9f2d45e18023f09
@@ -145,7 +146,7 @@ sources:
         presentation-only-projects-continue-to-work-unchanged: bc863d75c18fc3e3
         surfaceyaml-replaces-surfacemd-as-the-closed-presentation-artifact-format: ec797b7ea6864fab
         testcasesyaml-v2-discriminated-suite-kinds-and-sourcerefs: 4a9768e23b80dfcd
-        v1-closed-vocabularies-and-v2-deferrals: 6890c6778d8cc390
+        v1-closed-vocabularies-and-v2-deferrals: adab78f7f032e771
         validation-modes-authoring-vs-build: 2854da9297379120
     surface-fragments:
         adapter-kind-field-opt-in-prompt: 95b1895fb459f6c2
@@ -162,14 +163,16 @@ sources:
         domain-model-validation-output: 4f2541e27a6b1283
         domain-operations-migration-prompt: b36a5b303a9ac414
         pattern-fragment-migration-report: f6bed891c2f217fd
-        pre-codegen-support-gate-failure: d39234fe231ca1d0
+        pre-codegen-support-gate-failure: 8862359dea0fc562
         project-setup-preset-selection: 08199b4c9cd4e40b
         routes-disambiguation-prompt: 3a85d24cc3a83bbc
         spec-migration-report: f68e9ee292ddad25
         surface-validation-output: b50c3d070ca5615c
         testcases-validation-output: 04e4fdacf256fc50
-    infrastructure: 4950ec442fcd37d4
-    surface-yaml: 37f4b9cea66a7b27
+    infrastructure: 4239907f57bfaa7c
+    surface-yaml: bd8f9220bbeae9a5
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: b728976eaed1ab12
     models: 026c842d52b34d89

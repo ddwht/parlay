@@ -2571,3 +2571,9 @@ plan:
     - path: internal/config/topology.go
       sources:
         - cross-cutting/topology-validator
+source-signatures:
+  intents: "sha256:f8527835c604be64f378a45765e50762dad954bddbe3e1fa0c2f02206e8b3446"
+  dialogs: "sha256:aa6eda70eb50b4cf006fd9802822500f42db3f9fa18d544b7665fc6997719ba7"
+  surface: "sha256:485cf4ffca22d53fdca148e3c235a6d1fea66a259e186efb994194a49c0bc78a"
+  infrastructure: "sha256:dc63a8991649f66d35141c6649910d66b1fe4ed4a827ac62d98d8b7e229769d0"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:09Z"
 intents:
     create-a-feature-inside-an-initiative:
         content-hash: dba5d389998834ce
@@ -24,15 +25,17 @@ sources:
         create-an-empty-initiative: 8bfed8660e82bdaa
         group-features-under-an-initiative: 0a3883586ae2479b
     dialogs:
-        create-a-feature-inside-an-initiative: 324034014469f5e9
-        create-an-empty-initiative: 453e39c7692c4ebc
-        group-features-under-an-initiative: 15bf0d425cca3621
+        create-a-feature-inside-an-initiative: 8f63b99f25590132
+        create-an-empty-initiative: a4996bb8c03844b3
+        group-features-under-an-initiative: 05b0d804c989ab6f
     surface-fragments:
-        empty-initiative-creation-result: b098576594b39594
+        empty-initiative-creation-result: 08ea712d9598a0f2
         feature-creation-result: 5bc29263cda01c02
-        initiative-orientation: bea865aeb8b18734
+        initiative-orientation: 9513fa5bbf303f3e
     infrastructure: 4051a7e2a16f139b
-    surface-yaml: a5da9313b3dca55a
+    surface-yaml: b96f4a91260219e5
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: e9a3635e39a3449b
     models: d3373d399f3224df

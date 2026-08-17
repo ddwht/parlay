@@ -637,3 +637,9 @@ cross-cutting:
     introduces:
       - "isNewSchemaFormat(path string) bool"
     backward-compatible: true
+source-signatures:
+  intents: "sha256:686a65df9834790863f47a749437a8b09174657ce94e297368e735cb8c13d828"
+  dialogs: "sha256:003d0f9633085ada7f5fa123fc8d282f4b275dc4a4750544bdd983794b881f9d"
+  surface: "sha256:520870e9d7e2a598be6e2bf3974bcb4db6fb5f8269a570c1b5645b8cf4e21f45"
+  infrastructure: "sha256:c752d8d1ce0e58451a14190323e7d1eac2214137ac21aed944729daab3b39d86"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

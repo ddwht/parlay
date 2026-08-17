@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     a-cross-cutting-entry-may-declare-both-create-targets-and-modify-targets:
         content-hash: 34c4392c5fa4065e
@@ -36,6 +37,8 @@ sources:
         planmodifies-is-satisfied-by-an-on-disk-file-or-another-features-plancreates-in-the-same-pass: 71dafddb9257dc0b
         target-pattern-resolves-to-concrete-paths-at-validation-time: 653fa03bb070b449
     infrastructure: 2194c8ef69237445
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

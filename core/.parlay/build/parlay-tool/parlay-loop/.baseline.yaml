@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     adapt-between-new-and-existing-features:
         content-hash: d0c02572d381f5e5
@@ -88,7 +89,9 @@ sources:
         readiness-check-result: 7924dbb1e6d8684e
         sub-skill-failure-prompt: 6f3b88918eca9a87
     infrastructure: d362e635a74c1765
-    surface-yaml: 743b3c2df937d613
+    surface-yaml: 53a3e66c0ca77c2a
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 45b06d98733ec4d4
     models: 9b9a62ee5d604484

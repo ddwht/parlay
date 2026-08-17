@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     define-a-starter-rule-set-extensible-per-project:
         content-hash: 5d2c09017513caf4
@@ -46,7 +47,9 @@ sources:
     surface-fragments:
         disambiguation-prompt: 4b52eeaea5722314
     infrastructure: 8431848e620d1e40
-    surface-yaml: e037ed5ac130f5f9
+    surface-yaml: b884f573cd8794d8
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

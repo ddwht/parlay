@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     determine-required-artifacts-from-intents-and-dialogs:
         content-hash: 42b937c41132dc09
@@ -32,6 +33,7 @@ sources:
         view-assembled-page: ada5506c8223fdd2
     dialogs:
         determine-required-artifacts: d448af3a042cdcd7
-        lock-page-layout: 2598a505146801d6
+        lock-page-layout: d7cefb6170272ec2
         reference-design-spec-from-figma: 9f8ec872787f8f09
-        view-assembled-page: dd9088b1074fd02e
+        view-assembled-page: d6ea890dad0a07ca
+    domain: 56866a325365609d

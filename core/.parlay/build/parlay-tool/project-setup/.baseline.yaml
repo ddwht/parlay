@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     configure-project-tools:
         content-hash: 635c7a384aacacdb
@@ -26,4 +27,5 @@ sources:
     dialogs:
         bootstrap-project: 2ba7c74ee0f289c4
         define-application-blueprint: 3f627e5c7072a827
-        register-framework-adapter: dfd9e281a011b806
+        register-framework-adapter: 5bda938cdfecc0c7
+    domain: 56866a325365609d

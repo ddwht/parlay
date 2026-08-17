@@ -250,3 +250,8 @@ components:
         enabled-when: "user selected 'Change the target package'"
         effect: "mutate:DuplicateGroup.proposed-target=<input>"
         target: current-group.proposed-target
+source-signatures:
+  intents: "sha256:73443e5f779b0e6b3691a0a99d2bbd5c75b4c99d3820d69fa2bb9d520263aa13"
+  dialogs: "sha256:7bbe9306a83edd2133ee883f875748fc7729a24a2f7c6ec3dc8b0e2701543679"
+  surface: "sha256:eca326fcc3c6fec75c062da4461b0f75e572b017e49faa0a216d55005b1d5bc5"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

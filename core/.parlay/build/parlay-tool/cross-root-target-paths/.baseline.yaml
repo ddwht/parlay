@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     a-buildfile-plancross-cutting-entry-can-reference-a-file-in-another-root:
         content-hash: 04ac3019b99daafd
@@ -9,3 +10,4 @@ intents:
 sources:
     intents:
         a-buildfile-plancross-cutting-entry-can-reference-a-file-in-another-root: 4674deea8465c379
+    domain: 56866a325365609d

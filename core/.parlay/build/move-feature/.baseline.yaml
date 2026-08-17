@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     move-a-feature-between-locations:
         content-hash: a39f49fbee12076a
@@ -10,10 +11,12 @@ sources:
     intents:
         move-a-feature-between-locations: ef784d1b50311ae0
     dialogs:
-        move-a-feature-between-locations: 0f083b87f9d4872f
+        move-a-feature-between-locations: e8e2ba25555f37a0
     surface-fragments:
         move-result: 71d2dd429361277f
-    surface-yaml: c5786429ece0a79f
+    surface-yaml: f5360ef652eb6b2d
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 3cf1a01a53ef042f
     models: b91a7e33facfe1d5

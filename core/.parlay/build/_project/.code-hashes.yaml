@@ -1,47 +1,66 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 2
+generated-at: "2026-08-17T06:53:10Z"
 files:
+    core/internal/agent/adapter_doc.go:
+        component: canonical-adapter-model
+        hash: 221d14c79a3b87ec
     core/internal/agent/blueprint_resolver.go:
         component: blueprint-scope-and-precedence
-        hash: 16232cb6019f84b0
+        hash: 27486ce63b174370
     core/internal/agent/blueprint_resolver_test.go:
         component: blueprint-scope-and-precedence
-        hash: d598a299d41cdd15
-    core/internal/agent/codegen_input_guard.go:
-        component: codegen-read-set-and-layer-pipeline
-        hash: e3a7f00ad905781f
-    core/internal/agent/codegen_input_guard_test.go:
-        component: codegen-read-set-and-layer-pipeline
-        hash: 118d01c551d7114d
+        hash: b02679216be29a55
     core/internal/agent/coverage_hash.go:
         component: coverage-review-gate
-        hash: 76ba8644f7a8eb53
+        hash: 2e886141bdf7a4c6
     core/internal/agent/coverage_hash_test.go:
         component: coverage-review-gate
-        hash: 1a0dd69063907d03
+        hash: f779e58e4124d255
+    core/internal/agent/domain_contribution.go:
+        component: cross-cutting/contribution-impact
+        hash: dfd12c843a9b2d2b
+    core/internal/agent/domain_contribution_test.go:
+        component: cross-cutting/contribution-impact
+        hash: 399d6da5bc12f52f
     core/internal/agent/pattern_fragment_classifier.go:
         component: pattern-fragment-classifier
         hash: 04fb6665d749ab84
     core/internal/agent/pattern_fragment_classifier_test.go:
         component: pattern-fragment-classifier
         hash: 2d5ed8a6d77d7cd6
+    core/internal/agent/severity_doc_test.go:
+        component: validation-mode-dispatch
+        hash: a415f639c52609eb
     core/internal/agent/structured_domain_model_validation_test.go:
         component: cross-cutting/element-path-on-every-finding
-        hash: afda5bf73b9c3eef
+        hash: 0d577de02d68aef7
+    core/internal/agent/validate_adapter.go:
+        component: complete-adapter-validator
+        hash: 5057fca9ddaf8d46
     core/internal/agent/validate_adapter_set.go:
         component: adapter-kind-discriminator
         hash: d8d6c454bf7a6021
     core/internal/agent/validate_adapter_set_links.go:
         component: adapter-set-link-enforcement
-        hash: 80c18ad41aba0ccb
+        hash: eb3b2a76cb64dcb4
     core/internal/agent/validate_adapter_set_links_test.go:
         component: adapter-set-link-enforcement
         hash: 93827ba080c17df8
     core/internal/agent/validate_adapter_set_test.go:
         component: adapter-kind-discriminator
         hash: d8dab4dd950dbd5b
+    core/internal/agent/validate_amendment.go:
+        component: amendment-artifact
+        hash: 85e9a16f79358f28
+    core/internal/agent/validate_authored.go:
+        component: authored-unit-validation
+        hash: bad6745d47f2f3bc
+    core/internal/agent/validate_authored_test.go:
+        component: authored-unit-validation
+        hash: 4c3eb93228ece2cc
     core/internal/agent/validate_blueprint_scope.go:
         component: blueprint-scope-and-precedence
-        hash: e88442aac28ae03f
+        hash: 7b9dafac85c9221c
     core/internal/agent/validate_blueprint_scope_test.go:
         component: blueprint-scope-and-precedence
         hash: 570e770db48924e3
@@ -53,121 +72,187 @@ files:
         hash: 18e7af3a18425825
     core/internal/agent/validate_capabilities.go:
         component: capabilities-artifact
-        hash: 3e0df4bd81d06a3c
+        hash: 3e2f7c82422fc969
     core/internal/agent/validate_capabilities_test.go:
         component: capabilities-artifact
-        hash: 391a6893faf6323b
+        hash: 92d22028e090f876
     core/internal/agent/validate_coverage_review.go:
         component: coverage-review-gate
-        hash: 736155d527899cbc
+        hash: 2adf42250ba97739
     core/internal/agent/validate_coverage_review_test.go:
         component: coverage-review-gate
-        hash: ba984154f0e2d4d8
+        hash: e83b4161a7c3ae85
+    core/internal/agent/validate_dialog.go:
+        component: DialogValidationResult
+        hash: 91cfe50160e80931
+    core/internal/agent/validate_dialog_test.go:
+        component: DialogValidationResult
+        hash: 1a5ebf9e128c2006
     core/internal/agent/validate_domain_model.go:
         component: validate-go-split-domain-model
-        hash: 8d87075551d2b09f
+        hash: e1646f923c42c3d1
     core/internal/agent/validate_domain_model_test.go:
         component: validation-error-reporter
-        hash: 77b5d21196e88fcf
+        hash: 88e45cac89bcefa8
     core/internal/agent/validate_infrastructure.go:
         component: InfrastructureValidationResult
-        hash: 53fd03b2c7caae50
+        hash: 0b8703be8630300e
+    core/internal/agent/validate_infrastructure_test.go:
+        component: portability-lint
+        hash: e7a7ab63b44e4150
+    core/internal/agent/validate_intent.go:
+        component: IntentValidationResult
+        hash: 0e4315e25ee2c591
+    core/internal/agent/validate_intent_test.go:
+        component: IntentValidationResult
+        hash: 8b0fd1edc2e493a0
     core/internal/agent/validate_layout.go:
         component: ""
-        hash: bb2167bfaa9d6967
+        hash: 1ad70d6dd9e1032d
     core/internal/agent/validate_layout_test.go:
         component: adapter-validator-deep-vocabulary-and-tokens
-        hash: 4b71cce2d42f4e5a
+        hash: d2a8b5ab6d31f0da
     core/internal/agent/validate_project.go:
         component: validate-go-split-project-pass
-        hash: 3f00f6cf7c4de459
+        hash: 53022d17aa96b9b2
     core/internal/agent/validate_project_multi_target.go:
         component: cli-and-deployer-registration
-        hash: 82e625d4e689f80f
+        hash: 7381fd0acde9cf40
     core/internal/agent/validate_project_multi_target_test.go:
         component: cli-and-deployer-registration
-        hash: 1fb7fbb2f7106801
+        hash: 6ed6d547fb881b05
     core/internal/agent/validate_supports.go:
         component: adapter-supports-contract
-        hash: f6d6e3458105e272
+        hash: 37bef5a56ea00409
     core/internal/agent/validate_supports_test.go:
         component: adapter-supports-contract
-        hash: 3215dd24d3403eb5
+        hash: b4b1d96934705d2b
     core/internal/agent/validate_testcases_v2.go:
         component: testcases-v2
-        hash: 990eaaabbaba1d5e
+        hash: 7f0451b57ee6c794
     core/internal/agent/validate_testcases_v2_test.go:
         component: testcases-v2
-        hash: e8e1e5100f5b6f36
+        hash: 08d0c29f681dc752
     core/internal/agent/validation_mode.go:
         component: validation-mode-dispatch
-        hash: e5a5d6506f8db1d0
+        hash: 36239e8f6839ab5a
     core/internal/agent/validation_mode_test.go:
         component: validation-mode-dispatch
-        hash: 243ed5ad4813ba03
-    core/internal/agent/vocabulary_parity.go:
-        component: vocabulary-block-parity-check
-        hash: 669b9f6c2c673c68
-    core/internal/agent/vocabulary_parity_test.go:
-        component: vocabulary-block-parity-check
-        hash: 6e3052ab40e79559
+        hash: 61a7392393501ccd
+    core/internal/atomicfile/atomicfile.go:
+        component: ""
+        hash: 236605ce3510d170
+    core/internal/atomicfile/atomicfile_test.go:
+        component: ""
+        hash: aed716a6b5cd5807
     core/internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
-        hash: e3aaeaa497a6f2b2
+        hash: f92a67b1cfffcc38
     core/internal/commands/add_root.go:
         component: add-child-root-result
         hash: 44971be36d1dc429
+    core/internal/commands/affected_set.go:
+        component: affected-set-probe
+        hash: 21c3fa717322ef46
+    core/internal/commands/affected_set_test.go:
+        component: affected-set-probe
+        hash: 5698705b948f6c5a
+    core/internal/commands/authored_units.go:
+        component: authored-unit-ingestion
+        hash: bf90bafb6ffc800f
+    core/internal/commands/authored_units_test.go:
+        component: authored-unit-ingestion
+        hash: 7de5fb9be638b31a
+    core/internal/commands/baseline_ledger_test.go:
+        component: baseline-freeze-semantics
+        hash: e32ffe8d3efac400
+    core/internal/commands/check_amendments.go:
+        component: amendment-ledger-check
+        hash: af1ec64825bcf1dc
+    core/internal/commands/check_amendments_test.go:
+        component: amendment-ledger-check
+        hash: 1db6722f7c91ae6c
     core/internal/commands/check_coverage.go:
         component: CoverageReport
-        hash: a25dfb50265f481b
+        hash: 595c90811d78e7e3
     core/internal/commands/check_readiness.go:
         component: check-readiness
-        hash: 3212889c52fb7d6e
+        hash: e1263b10381b0d60
     core/internal/commands/check_review_gate.go:
         component: coverage-review-gate-failure
-        hash: a23f8cc49b4c2aa8
+        hash: bf1767213706f442
+    core/internal/commands/check_review_gate_test.go:
+        component: review-gate
+        hash: f1e332b5b69669b8
     core/internal/commands/check_supports.go:
         component: pre-codegen-support-gate-failure
-        hash: ac464e988171fc21
+        hash: 20f5f56fed1567bf
     core/internal/commands/check_supports_test.go:
         component: pre-codegen-support-gate-failure
         hash: 203ee1499bb53257
+    core/internal/commands/check_write_set.go:
+        component: codegen-read-set-and-layer-pipeline
+        hash: a8bbeb5c81fb5ae7
+    core/internal/commands/check_write_set_test.go:
+        component: codegen-read-set-and-layer-pipeline
+        hash: 7a9c5a7eb8057185
     core/internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
-        hash: de141d3f52ba4f3c
+        hash: fbe0a9151fdfc404
     core/internal/commands/create_dialogs.go:
         component: DialogGenerationReport
-        hash: d76f71582b883892
+        hash: c5a7daad7655e2be
     core/internal/commands/create_domain_model.go:
         component: ""
-        hash: 8826a6269a4b7735
+        hash: 22c944a916a812ad
+    core/internal/commands/domain_impact.go:
+        component: domain-impact
+        hash: f0a56ed9dc06eeee
+    core/internal/commands/domain_impact_test.go:
+        component: domain-impact
+        hash: 5188f9376b41a4f4
+    core/internal/commands/domain_parity_test.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: 106508f8ee580d28
+    core/internal/commands/domain_validator.go:
+        component: cross-cutting/out-of-process-validate-endpoint
+        hash: 16e73c395ecec32e
     core/internal/commands/feature_phase.go:
         component: ""
-        hash: 7b016169c28057f3
+        hash: 7ceb6219f50ab287
     core/internal/commands/feature_phase_test.go:
         component: ""
-        hash: d62f078c94167312
+        hash: c99ede440d2cc361
+    core/internal/commands/feedback_export.go:
+        component: export
+        hash: bd522474d3013975
+    core/internal/commands/feedback_record.go:
+        component: agent-event-intake
+        hash: 22383022d2e18bba
+    core/internal/commands/infrastructure_concept_shared_test.go:
+        component: infrastructure-concept-shared
+        hash: db7ea9a6523b96b5
     core/internal/commands/init.go:
         component: init-agent-identity-prompt
-        hash: 83fa24f3e86c4b21
+        hash: b5fc46c6949a63b0
     core/internal/commands/loop.go:
         component: LoopInvocationAndFeatureResolution
-        hash: 5243b3063a6003ef
+        hash: f5a42cc3352e5bec
     core/internal/commands/loop_test.go:
         component: LoopInvocationAndFeatureResolution
-        hash: a0fd4c3cfda9f7e3
+        hash: dcd3dd349d1c8135
     core/internal/commands/migrate_capabilities.go:
         component: capabilities-migration-operations-extraction
-        hash: 4627bf6e738ca056
+        hash: ba56a67db9f42f8d
     core/internal/commands/migrate_capabilities_test.go:
         component: capabilities-migration-operations-extraction
         hash: 5e4be793aa63a927
     core/internal/commands/migrate_config.go:
         component: config-migration-result
-        hash: 651e7485628fddfb
+        hash: 470a13d5dabc2099
     core/internal/commands/migrate_config_test.go:
         component: config-migration-result
-        hash: ed0f6b356ddc5342
+        hash: 00efa3154975ad8b
     core/internal/commands/migrate_domain_model.go:
         component: migrate-domain-model-command
         hash: 4ad835c0df9cf25e
@@ -182,154 +267,169 @@ files:
         hash: 8910547c8173f122
     core/internal/commands/migrate_spec.go:
         component: spec-migration-report
-        hash: 54606fb1fb79bbbb
+        hash: e29226673c5fd355
     core/internal/commands/migrate_spec_test.go:
         component: spec-migration-report
-        hash: c82ba3104123cc64
+        hash: fc2d4115c990d9df
+    core/internal/commands/migrate_verify.go:
+        component: verify-relocation-migration
+        hash: b287af640932607a
+    core/internal/commands/migrate_verify_test.go:
+        component: verify-relocation-migration
+        hash: 11aa268894cd0ed9
     core/internal/commands/move_feature.go:
         component: MoveResult
-        hash: 3d12ad2c202a1040
+        hash: db10d6bd341235ba
     core/internal/commands/move_feature_test.go:
         component: MoveResult
-        hash: eca8c75ebf3a4976
+        hash: ec41f7a7db417ecb
     core/internal/commands/new_initiative.go:
         component: EmptyInitiativeCreationResult
         hash: b65a2c1c84a088fa
     core/internal/commands/new_initiative_test.go:
         component: EmptyInitiativeCreationResult
         hash: 726adf056f39e044
-    core/internal/commands/no_studio_flag.go:
-        component: no-studio-flag-domain-model
-        hash: d296d6fb65109fcf
-    core/internal/commands/no_studio_flag_test.go:
-        component: no-studio-flag-domain-model
-        hash: f4f4f4fa236cd5ec
+    core/internal/commands/no_editor_flag.go:
+        component: no-editor-flag-domain-model
+        hash: 3071d80c9fb483c1
+    core/internal/commands/no_editor_flag_test.go:
+        component: no-editor-flag-domain-model
+        hash: ea41dc9738fa9000
     core/internal/commands/parse.go:
         component: cross-root-reference-validation-error
-        hash: 7b37626d41d9815a
+        hash: d9d339aa9ffdb2d9
     core/internal/commands/register_adapter.go:
         component: adapter-registration
-        hash: 6fca293a86451390
+        hash: faf0c1acc501a836
     core/internal/commands/register_adapter_vocabulary_test.go:
         component: adapter-parser-vocabulary-and-tokens
-        hash: 1b466d975cf8eb56
+        hash: 77b97aaa259db479
     core/internal/commands/repair.go:
         component: RepairReport
-        hash: 928e67233141684e
+        hash: e3a115a44189c863
     core/internal/commands/repair_test.go:
         component: RepairReport
-        hash: c819d81b32bd6010
+        hash: 551d1084ca55e28e
     core/internal/commands/review_coverage.go:
         component: coverage-review-authoring
-        hash: b67c9fd8da8485fd
+        hash: 32d9720117654a5f
+    core/internal/commands/review_coverage_test.go:
+        component: coverage-review-gate
+        hash: 611014cc7862e304
+    core/internal/commands/scaffold_operations.go:
+        component: multi-target-buildfile-schema
+        hash: 6dd6c0e43b7159a2
     core/internal/commands/simplify.go:
         component: DuplicationScanResults
-        hash: 0b733684852708c1
+        hash: 755d826e812b95c8
     core/internal/commands/simplify_test.go:
         component: DuplicationScanResults
-        hash: 974b6edae04fb7fd
+        hash: a73cad442e489d59
     core/internal/commands/status.go:
         component: hierarchical-listing
-        hash: dfc438460edb4ec0
-    core/internal/commands/studio_hook.go:
+        hash: 583b437d15521078
+    core/internal/commands/surface_region_shared_test.go:
+        component: surface-region-shared
+        hash: 2bb9466a439b1dc8
+    core/internal/commands/sync.go:
         component: ""
-        hash: 6c480f4c78821d60
-    core/internal/commands/studio_hook_test.go:
-        component: studio-hook-shared-helper
-        hash: 463b95c146f1a36c
-    core/internal/commands/studio_launch_failure_line.go:
-        component: studio-launch-failure-line
-        hash: a51034109781b492
-    core/internal/commands/studio_launch_failure_line_test.go:
-        component: studio-launch-failure-line
-        hash: 9cda7030eaf801cd
-    core/internal/commands/studio_prompt_artifacts.go:
-        component: studio-prompt-artifacts
-        hash: 1e40ea27d677bb8b
-    core/internal/commands/studio_prompt_domain_model.go:
-        component: studio-prompt-domain-model
-        hash: d4ecd16ddef2bd33
-    core/internal/commands/studio_prompt_domain_model_test.go:
-        component: studio-prompt-domain-model
-        hash: 9987570d30fbbeac
-    core/internal/commands/studio_prompt_sync.go:
-        component: studio-prompt-sync
-        hash: 07a57352c64774a7
-    core/internal/commands/studio_status_line.go:
-        component: studio-status-line
-        hash: ab5a2e6fbdb9eaba
-    core/internal/commands/studio_status_line_test.go:
-        component: studio-status-line
-        hash: 0e9f2a484e6572ee
-    core/internal/commands/studio_version_warning.go:
-        component: version-mismatch-warning
-        hash: 045d19d0eac14abf
-    core/internal/commands/studio_version_warning_test.go:
-        component: version-mismatch-warning
-        hash: 10c559eb896f5df5
+        hash: d140f558c58331b7
+    core/internal/commands/testdata/multitarget/apps/api/prisma/schema.prisma:
+        component: ""
+        hash: fb703f2ee66b05d2
+    core/internal/commands/testdata/multitarget/apps/api/src/notes/notes.controller.ts:
+        component: notes-controller
+        hash: d9df5fd91da486eb
+    core/internal/commands/testdata/multitarget/apps/api/src/notes/notes.module.ts:
+        component: notes-module
+        hash: da6059156e90448b
+    core/internal/commands/testdata/multitarget/apps/api/src/notes/notes.service.ts:
+        component: notes-service
+        hash: 7d9c0eec2fc39f66
+    core/internal/commands/testdata/multitarget/apps/web/src/features/Notes/NoteForm.test.tsx:
+        component: note-form
+        hash: fcf467021ee48906
+    core/internal/commands/testdata/multitarget/apps/web/src/features/Notes/NoteForm.tsx:
+        component: note-form
+        hash: 81385684bc75b0f5
+    core/internal/commands/testdata/multitarget/apps/web/src/features/Notes/NoteList.test.tsx:
+        component: note-list
+        hash: e5669a2026bd4e34
+    core/internal/commands/testdata/multitarget/apps/web/src/features/Notes/NoteList.tsx:
+        component: note-list
+        hash: dacf407184f04930
+    core/internal/commands/toolchain_plan.go:
+        component: adapter-toolchain-runtime
+        hash: a0d9ad62dbdd1d8d
+    core/internal/commands/tty.go:
+        component: ""
+        hash: 778d698cf738a56c
     core/internal/commands/upgrade.go:
         component: upgrade-refresh-confirmation
-        hash: a7c663bafa114068
+        hash: 867b4cf80fb75754
     core/internal/commands/upgrade_test.go:
         component: bare-parent-upgrade-error
         hash: 5271a12fbc792002
     core/internal/commands/validate.go:
         component: validate
-        hash: f0203877d1886ade
+        hash: 6070ed0d9ac90c8a
     core/internal/commands/validate_domain_model_json_test.go:
         component: cross-cutting/json-validation-mode
-        hash: 7d08b77a3c0172ec
+        hash: e831b0cceaccf971
+    core/internal/commands/validate_intent_dialog_test.go:
+        component: validate
+        hash: 3dfbdd18fdb978d7
     core/internal/commands/validate_project_test.go:
         component: validate (extends project-pass-validation-and-cli-flag)
         hash: 71d173c4c52fe3fb
-    core/internal/commands/validate_vocabulary.go:
-        component: cross-cutting/core-cli-wiring
-        hash: 90f66244cae25ca8
-    core/internal/commands/validate_vocabulary_test.go:
-        component: cross-cutting/core-cli-wiring
-        hash: d8ed7a7e128ef5a7
+    core/internal/commands/validate_testcases_coverage_test.go:
+        component: validate
+        hash: 7f56fd79aa1f7297
     core/internal/config/config.go:
         component: ""
-        hash: aed34fcc59a6c024
+        hash: d51cbf258a815961
     core/internal/config/config_test.go:
         component: directory-classification-validation
-        hash: 55bc85d6ea5777c8
+        hash: 045d3a7b2a158c00
+    core/internal/config/context.go:
+        component: ""
+        hash: b92b260799bd5a5d
     core/internal/config/context_domain_model_test.go:
         component: extract-domain-model-output
         hash: dc7f6032b416660a
     core/internal/config/resolver.go:
         component: ""
-        hash: 0f3620b715ceb23e
-    core/internal/config/studio.go:
-        component: ""
-        hash: 35cbcfb702e1b58b
-    core/internal/config/studio_test.go:
-        component: runtime-studio-detection
-        hash: eb20feb2cd636c2f
+        hash: b6681d3b25ab7f5c
     core/internal/config/topology.go:
         component: ""
-        hash: d6ffb6d707e52c50
+        hash: f329faadb6c5918d
+    core/internal/config/topology_test.go:
+        component: ""
+        hash: 1365935fa9203a83
+    core/internal/deployer/claude.go:
+        component: ""
+        hash: b9e400e02942e8a5
     core/internal/deployer/cursor.go:
         component: ""
-        hash: d9e3674835ef5a29
+        hash: 03e03e5fdb5fce9c
     core/internal/deployer/generic.go:
         component: ""
-        hash: f3652a7bb4fe301a
+        hash: d4ead2109ef6a440
     core/internal/embedded/adapters/nestjs-application.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: 258f58195108b745
+        hash: 50928b3876144ac1
     core/internal/embedded/adapters/openapi-rest.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: 7bea74013733eb17
+        hash: a706d89d6dc95128
     core/internal/embedded/adapters/prisma-postgres.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: 51c967c406f3f328
+        hash: 8458b3012af0a714
     core/internal/embedded/agents.go:
         component: ""
         hash: aa8cdfcba8cefd43
     core/internal/embedded/agents_test.go:
         component: SubagentDefinitionBundle
-        hash: 417cc51f15a6e170
+        hash: 22e44cf4498e041c
     core/internal/embedded/presets.go:
         component: bundled-adapter-set-presets
         hash: 9877ef67b2e20f73
@@ -350,100 +450,109 @@ files:
         hash: b8f8c49a12d3e213
     core/internal/embedded/schemas/adapter.schema.md:
         component: ""
-        hash: 0a10edd468027633
+        hash: 381156174040d46f
+    core/internal/embedded/schemas/amendment.schema.md:
+        component: ""
+        hash: abaa481a5a622766
+    core/internal/embedded/schemas/authored.schema.md:
+        component: ""
+        hash: a322250322ba613f
     core/internal/embedded/schemas/buildfile.schema.md:
         component: ""
-        hash: 228ce97d416170af
+        hash: 1632cd36b2cb6ec2
     core/internal/embedded/schemas/capabilities.schema.md:
         component: ""
-        hash: 3bd33bcf4546f4a1
+        hash: 2faab46c8675233d
     core/internal/embedded/schemas/coverage-review.schema.md:
         component: ""
-        hash: 38f147efaf625df7
-    core/internal/embedded/schemas/design-loop-conflicts.schema.md:
-        component: cross-cutting/on-disk-artifact-contract
-        hash: 431e9e96a056d0ce
-    core/internal/embedded/schemas/design-loop-result.schema.md:
-        component: cross-cutting/on-disk-artifact-contract
-        hash: a2fa1b262610a32d
+        hash: 5aba6657ca068fb9
+    core/internal/embedded/schemas/domain-model.schema.md:
+        component: ""
+        hash: 0e68ba7d43f09457
     core/internal/embedded/schemas/errors.schema.md:
         component: ""
-        hash: 9e32d58075bd7779
+        hash: 64ce8e17d40d9e59
     core/internal/embedded/schemas/layout.schema.md:
         component: ""
-        hash: f3b3a9bcd4b354ee
+        hash: 9cc066d90774feb0
     core/internal/embedded/schemas/operation-kinds.schema.md:
         component: ""
         hash: e90adae7013016ec
     core/internal/embedded/schemas/page.schema.md:
         component: ""
-        hash: aff91811710dbde3
+        hash: 18d6b4d8a7787ac3
     core/internal/embedded/schemas/policies.schema.md:
         component: ""
         hash: 1b3a98353214f3c9
     core/internal/embedded/schemas/schema-versioning.schema.md:
         component: ""
-        hash: 4c2778c580caf2ee
+        hash: 1b33f4d04893591c
     core/internal/embedded/schemas/steps.schema.md:
         component: ""
         hash: 7d3736f85b046c4f
-    core/internal/embedded/schemas/vocabulary.schema.md:
-        component: ""
-        hash: bcfb7dc7bec9c89a
     core/internal/embedded/skills/build-feature.skill.md:
         component: ""
-        hash: bd6a21bc2a692959
+        hash: 453afe70873b6c90
+    core/internal/embedded/skills/create-adapter.skill.md:
+        component: ""
+        hash: abb3e8dcf2015714
+    core/internal/embedded/skills/create-domain-model.skill.md:
+        component: extract-domain-model-output
+        hash: ffda2ab2a8e124c5
     core/internal/embedded/skills/generate-code.skill.md:
         component: ""
-        hash: 464cb2361f2421e1
-    core/internal/embedded/skills/migrate-capabilities.skill.md:
-        component: capabilities-migration-operations-extraction
-        hash: f2dc53dcb39b6db5
-    core/internal/embedded/skills/migrate-config.skill.md:
-        component: config-migration-result
-        hash: c6f2d84f717eb311
-    core/internal/embedded/skills/migrate-domain-operations.skill.md:
-        component: domain-operations-migration-prompt
-        hash: 8f9bf41ef6705f77
-    core/internal/embedded/skills/migrate-spec.skill.md:
-        component: spec-migration-report
-        hash: 5e18d792e922cd97
-    core/internal/embedded/skills/review-coverage.skill.md:
-        component: coverage-review-authoring
-        hash: f9ea47cb9a3a910e
+        hash: 30d82c8196a0b9eb
+    core/internal/embedded/skills/load-domain-model.skill.md:
+        component: load-domain-model-conflict-prompt
+        hash: 4bcb75a6827e2f8e
+    core/internal/feedback/feedback.go:
+        component: recorder
+        hash: 70f06ae0a1325b0b
+    core/internal/feedback/feedback_test.go:
+        component: recorder
+        hash: cbf6be01705843f5
+    core/internal/feedback/guard_test.go:
+        component: recorder
+        hash: bcad82faf2d25be3
     core/internal/parser/adapter_set.go:
         component: adapter-kind-discriminator
         hash: fe22faadc9e7804a
     core/internal/parser/adapter_set_test.go:
         component: adapter-kind-discriminator
         hash: d1a2b93c216bde03
+    core/internal/parser/amendment.go:
+        component: amendment-artifact
+        hash: d6c065a093704ff4
+    core/internal/parser/amendment_test.go:
+        component: amendment-artifact
+        hash: 80ebfae996122212
     core/internal/parser/capabilities.go:
         component: capabilities-artifact
-        hash: 3d6630f7f2dfb1d1
+        hash: ee74660ee0cb6fe5
     core/internal/parser/capabilities_test.go:
         component: capabilities-artifact
         hash: 4e7788afe3d95a53
     core/internal/parser/coverage_review.go:
         component: coverage-review-gate
-        hash: 431af7d1953e1f38
+        hash: 5202a9c47db8eb40
     core/internal/parser/coverage_review_test.go:
         component: coverage-review-gate
         hash: 42bfe6dce85defbe
     core/internal/parser/infrastructure.go:
         component: InfrastructureValidationResult
-        hash: e2aa9eac3492224b
+        hash: 34ab2d0b86e3e88d
     core/internal/parser/marker_test.go:
         component: upgrade-prompt
-        hash: fc3768c9f3dea897
+        hash: fc8edf81052d0b85
     core/internal/parser/page.go:
         component: ""
-        hash: 9603298d6b958d2d
+        hash: 2c11959b62200d34
     core/internal/parser/page_test.go:
         component: ""
         hash: 42cada951ec97495
     core/internal/parser/surface_yaml.go:
         component: surface-yaml-and-migrator
-        hash: 9593daaaddda1adf
+        hash: c85acc09c0ee67f7
     core/internal/parser/surface_yaml_test.go:
         component: surface-yaml-and-migrator
-        hash: db4e269d6bb2c81d
+        hash: 825fc82c43f973fd

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:09Z"
 intents:
     bridge-infrastructure-to-framework-specific-cross-cutting:
         content-hash: b69fa47e5838c4db
@@ -41,7 +42,9 @@ sources:
         cross-cutting-merge-review: 7eea389f3d02329f
         infrastructure-validation-result: 8444c457587da22b
     infrastructure: c752d8d1ce0e5845
-    surface-yaml: 8e0bfa36ea33a6aa
+    surface-yaml: 520870e9d7e2a598
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 8815604fde10e1e4
     models: e8a57be7e3438785

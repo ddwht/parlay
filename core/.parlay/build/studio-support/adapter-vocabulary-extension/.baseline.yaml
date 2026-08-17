@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     declare-a-named-component-vocabulary-in-the-adapter:
         content-hash: b896b75c40276dc2
@@ -20,6 +21,8 @@ sources:
         declare-a-named-component-vocabulary-in-the-adapter: 3fbb2ac1a2669c4c
         declare-design-tokens-in-the-adapter: cd5aa46d9bd83b2b
     infrastructure: ad34217f6814d81a
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 647200200276b57c
     models: 073afe96ca265582

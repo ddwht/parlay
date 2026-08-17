@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     backward-compatible-path-for-layout-free-pages:
         content-hash: 87313d148bb92a25
@@ -44,6 +45,8 @@ sources:
         codegen-is-non-interactive-and-ci-safe: 7acd686dbd232f76
         codegen-reads-the-layout-block-when-present: 4fdb7a1d81af17f0
     infrastructure: e902a136680a63a0
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ca3d163bab055381
     models: ca3d163bab055381

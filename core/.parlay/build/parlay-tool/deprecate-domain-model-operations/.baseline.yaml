@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     remove-operations-from-the-domain-model-schema-and-parser:
         content-hash: 0760271bed86edf4
@@ -11,3 +12,4 @@ sources:
         remove-operations-from-the-domain-model-schema-and-parser: 46c5190619f0a588
     dialogs:
         remove-operations-from-the-domain-model-schema-and-parser: 27ebb0d327f37827
+    domain: 56866a325365609d

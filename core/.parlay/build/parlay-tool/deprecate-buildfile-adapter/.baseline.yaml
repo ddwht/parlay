@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     remove-top-level-adapter-from-the-buildfile-schema-and-parser:
         content-hash: 912cce492f76fc46
@@ -11,3 +12,4 @@ sources:
         remove-top-level-adapter-from-the-buildfile-schema-and-parser: af4bc495d4aebd70
     dialogs:
         remove-top-level-adapter-from-the-buildfile-schema-and-parser: 85b1fb4c0cf9539e
+    domain: 56866a325365609d

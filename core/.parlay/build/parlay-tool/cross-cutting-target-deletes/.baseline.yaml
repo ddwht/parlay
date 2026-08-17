@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     add-target-deletes-to-the-cross-cutting-entry-schema:
         content-hash: cd2d1ccca0c88b9a
@@ -9,3 +10,4 @@ intents:
 sources:
     intents:
         add-target-deletes-to-the-cross-cutting-entry-schema: 0e98418f723099eb
+    domain: 56866a325365609d

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract:
         content-hash: 67415ebfa80143e6
@@ -20,6 +21,8 @@ sources:
         greenfield-mode-write-a-schema-valid-empty-stub-when-there-is-nothing-to-extract: d0cd32e388aeb467
         rename-to-parlay-create-domain-model-and-preserve-brownfield-behavior: e39204a053bbf266
     infrastructure: b7a3ccd32f8141bb
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: b1cd7284d813f249
     models: ca3d163bab055381

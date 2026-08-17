@@ -340,3 +340,9 @@ cross-cutting:
       stubs) for meaningful changes. Cosmetic changes are silently skipped. The
       designer approves each change before dialogs.md is modified.
     backward-compatible: false
+source-signatures:
+  intents: "sha256:b52c51ecda5d8dbcb1716a4703ee85c12b070b2868c47d1765b4f0463ceadae4"
+  dialogs: "sha256:6392c4aad832c869cb38dcac00d98e61060bd7796ce30554bfac083e142e898f"
+  surface: "sha256:2a0d887171a047c540c1ddd2199d355c3f68073b9ef22bdccef0051b221ca507"
+  infrastructure: "sha256:dbd543aafaad0fc1a324d632df43c41842083280feb35e684407749dee5cd1e9"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

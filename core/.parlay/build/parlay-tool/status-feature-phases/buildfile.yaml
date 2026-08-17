@@ -648,3 +648,9 @@ plan:
         - component/exit-and-stream-discipline
         - cross-cutting/status-command-call-site
         - cross-cutting/cross-root-walk
+source-signatures:
+  intents: "sha256:5e72fe738bf036a886c78d891902f4c326606571a7b20799ca9d2a67dbbcdd27"
+  dialogs: "sha256:bd9a72aada760d40b45c15f4e2dca84b767c1f8b236570df6fd60d57b7c6a76c"
+  surface: "sha256:730c71f680781cb64f18bc19bd1d22a3a79c04bb31d570917d535c72085440e1"
+  infrastructure: "sha256:eaf10e61953116dbe95c57e85114e89c15533cd52127460fbe4091b3efbeed22"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

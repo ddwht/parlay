@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     author-intents:
         content-hash: 0eedf5f52d571df2
@@ -33,15 +34,17 @@ sources:
     dialogs:
         add-feature: dbc22ed22021d9a6
         generate-dialogs-from-intents: 1e27f46cab15338b
-        sync-intents-and-dialogs: 3aabb2434d70ea81
+        sync-intents-and-dialogs: 6915b60c8058f245
         update-dialogs-from-changed-intents: 57d1ec0121826734
     surface-fragments:
-        coverage-report: 796ec4cde7431dd5
+        coverage-report: ed4724e0ee1cd480
         dialog-generation-report: 7023f837ea65a202
         dialog-update-proposals: 49286e6c893a9285
         feature-scaffold-confirmation: 37d45000bfa61252
     infrastructure: dbd543aafaad0fc1
-    surface-yaml: bc4b28987df4d512
+    surface-yaml: 2a0d887171a047c5
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: ddc160700de6b96c
     models: 7bbe64bd10b995a4

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     repair-project-state:
         content-hash: eb81cf58d3c88ec5
@@ -10,11 +11,13 @@ sources:
     intents:
         repair-project-state: 35772524a26c5cad
     dialogs:
-        repair-project-state: 51f6fd44f194bdf3
+        repair-project-state: 68900ce977307721
     surface-fragments:
         repair-report: e5a6506be8ffe4cf
-    infrastructure: 5b7f6df883019932
-    surface-yaml: 1729850b3a0faa56
+    infrastructure: 85a692bfc141f3b9
+    surface-yaml: 9c23aa0d71015d00
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: 4e26004f82ef8736
     models: 70c6d0c473ccc5e4

@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     emit-domain-operations-deprecated-in-authoring-mode:
         content-hash: ef0fa4782c5e1e50
@@ -24,5 +25,7 @@ sources:
         json-validation-mode-for-parlay-validate-type-domain-model: cdd2f77c36d0f228
         machine-usable-element-path-on-every-finding: afc945fbeb375671
     infrastructure: 2b1b30adc6695262
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: e9ee57854130a35e

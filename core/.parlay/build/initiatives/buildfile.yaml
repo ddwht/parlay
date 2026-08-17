@@ -575,3 +575,9 @@ cross-cutting:
       multiple commands enumerate features in a single invocation.
     caching: tree-scan-on-first-access
     backward-compatible: true
+source-signatures:
+  intents: "sha256:0d418013d204fbce98d2d6de92217e2bbfa84e822f2fda1e02c563804c91bf02"
+  dialogs: "sha256:1ff66c878310fb2a37db88d0603abb21abb333d94e001b2db3bee03e1fbf8b39"
+  surface: "sha256:b96f4a91260219e5e39e80b62d454c720e067ad9bd91caebbb0f57824de53083"
+  infrastructure: "sha256:4051a7e2a16f139bc1b66c913ae12f0c5f030e1f28c17cff5c3f3768d3e7112d"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

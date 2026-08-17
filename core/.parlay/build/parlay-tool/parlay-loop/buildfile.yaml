@@ -991,3 +991,9 @@ cross-cutting:
       their agent; actual orchestration lives in the skill content, which
       invokes the pre-defined subagents by name.
     backward-compatible: true
+source-signatures:
+  intents: "sha256:56f10ff497d172617cd257caf38fea976706b82655696100711939258a78b3a0"
+  dialogs: "sha256:e88f21e3cf9b249b21dba58d86b660cb54aa930c5001ae31cb07eaeff3fe61a7"
+  surface: "sha256:53a3e66c0ca77c2a1bc18e3246f3b350192599ebd24bb01e60edde0cea473773"
+  infrastructure: "sha256:d362e635a74c17657e763b4ebc33e71d85cb157ff0dfbb71bc0b92b93f4f4858"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

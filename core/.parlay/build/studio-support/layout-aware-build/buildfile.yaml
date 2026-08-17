@@ -545,3 +545,9 @@ plan:
         - cross-cutting/buildfile-bindings-section
   creates: []
   deletes: []
+source-signatures:
+  intents: "sha256:84779fb1aea5bbdb1e191bdcc81e336e1d3f14eb95dc4df2e9fe3e71df4e10b4"
+  dialogs: "sha256:9c33ddc21e3140df6ed701fdd8b05e241a39fedfedc77dbd80e6f08a8684d754"
+  surface: "sha256:b884f573cd8794d8a78d673dc14a41394703e0c15b75ff1d1d4db1d9c16826c2"
+  infrastructure: "sha256:8431848e620d1e407ba32a865a1ab3694935fc5ddd16d635b5500fbe7c25de4b"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

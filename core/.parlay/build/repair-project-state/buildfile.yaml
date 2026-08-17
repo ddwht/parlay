@@ -268,3 +268,9 @@ cross-cutting:
       - "repair.skill.md"
       - 'skillTitle["repair"]'
     backward-compatible: true
+source-signatures:
+  intents: "sha256:2a24ff46170f0292dc925fa899814e65acfa0cc107a2fdf872d924471377edf9"
+  dialogs: "sha256:997f0cbbb289b1d012a9d43d7ea89e2b8effcc720c619d9d4245669a1d725a23"
+  surface: "sha256:9c23aa0d71015d0000bba94d7a8a1c1e8152c1abfd9370bb5ed65916bcb26dab"
+  infrastructure: "sha256:85a692bfc141f3b9cf6f3621f908b72f9fbc2f22f4d32d71b0f45c0052d892f6"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

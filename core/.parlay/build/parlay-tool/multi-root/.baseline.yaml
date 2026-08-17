@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     add-a-child-root-to-an-existing-project:
         content-hash: be69a984ceac4477
@@ -49,10 +50,10 @@ intents:
         verify-hash: 74074abefc1a09a0
         objects-hash: 4182036729e1ffa4
     skill-invocation-in-a-multi-root-project:
-        content-hash: 608375a375282f07
-        goal-hash: 6feb81da8954999d
-        constraints-hash: 6fff5bd9f0dde604
-        verify-hash: 4ec0861a9c95c55d
+        content-hash: 5452df320aa347cb
+        goal-hash: 8f93a91d3256e14a
+        constraints-hash: 06e25bf65f84e1f1
+        verify-hash: 22cd6513e76e2e16
         objects-hash: a5ec1be300362c56
     target-a-non-active-root-from-any-cwd:
         content-hash: 74ccd36b7066ee0d
@@ -70,7 +71,7 @@ sources:
         parlay-init-writes-the-correct-topology-shape: bdeab81b80ec9884
         parlay-upgrade-errors-on-bare-parent-topology: 76913e9852fec66a
         single-repo-level-agent-surface-drives-all-roots: 505527f27af300b2
-        skill-invocation-in-a-multi-root-project: 73b371308f81c936
+        skill-invocation-in-a-multi-root-project: a7bbb15ac2056268
         target-a-non-active-root-from-any-cwd: 21419c0b7fd6e453
     dialogs:
         add-a-child-root-to-an-existing-project: e82acecf39722a0d
@@ -80,8 +81,8 @@ sources:
         inherit-resources-from-parent-root: 39a1ed7b503867f8
         parlay-init-writes-the-correct-topology-shape: 5dd04cdeaa9d887c
         parlay-upgrade-errors-on-bare-parent-topology: e339759a339d8e65
-        single-repo-level-agent-surface-drives-all-roots: 2676dafce915eee6
-        skill-invocation-in-a-multi-root-project: d63193f4c6bf33eb
+        single-repo-level-agent-surface-drives-all-roots: 12934f4b575653a7
+        skill-invocation-in-a-multi-root-project: 85499d73fb5d79f5
         target-a-non-active-root-from-any-cwd: 809603df0dd035df
     surface-fragments:
         add-child-root-result: d96192776d074ba8
@@ -110,7 +111,9 @@ sources:
         upgrade-refresh-confirmation: 9d87cb70cd4a6913
         verbose-field-resolution-listing: 058e6a13edbfa55e
     infrastructure: dc63a8991649f66d
-    surface-yaml: 4e5cbd66e6f21f9e
+    surface-yaml: 485cf4ffca22d53f
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: c350b78fb95a7854
     models: d0f7bdfdc207395a

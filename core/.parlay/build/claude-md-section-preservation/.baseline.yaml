@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:09Z"
 intents:
     preserve-user-sections-in-claudemd-during-upgrade:
         content-hash: fffb317ade384a90
@@ -12,6 +13,8 @@ sources:
     dialogs:
         preserve-user-sections-in-claudemd-during-upgrade: 576c91d7b11def14
     infrastructure: ef74a1fb6b5a6f09
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
 buildfile-sections:
     fixtures: a17fba24b03d7a2e
     models: 201a860c5a1087f3

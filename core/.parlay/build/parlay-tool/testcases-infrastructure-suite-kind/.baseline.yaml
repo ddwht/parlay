@@ -1,4 +1,5 @@
-generated-at: "2026-07-23T16:13:50Z"
+schema-version: 3
+generated-at: "2026-08-17T06:53:10Z"
 intents:
     add-an-infrastructure-suite-kind-to-the-v2-testcases-schema:
         content-hash: c69316e1c55b9d3d
@@ -9,3 +10,4 @@ intents:
 sources:
     intents:
         add-an-infrastructure-suite-kind-to-the-v2-testcases-schema: e6629ab6032af85c
+    domain: 56866a325365609d
