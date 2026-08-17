@@ -1,7 +1,30 @@
 # Token-cost reduction — scope the reads, digest the schemas, short-circuit the no-op
 
-Status: PLANNED — target v0.4.x (no behavior change for project state; every
-workstream changes what agents *read*, not what the tool writes).
+Status: IMPLEMENTED (2026-08-18) — target v0.4.x (no behavior change for
+project state; every workstream changes what agents *read*, not what the
+tool writes).
+
+**Measured outcome, per code-phase run on the dogfood core root (42
+features, 22 built):**
+
+| Read | Before | After | Note |
+|---|---|---|---|
+| Buildfiles | 554 KB (22 files) | ~21 KB (1 file) | diff reports 1 of 42 features with work |
+| Testcases | 431 KB (22 files) | ~19 KB (1 file) | generation scoped; execution untouched |
+| Scope probes | — | 15.6 KB | project diff 12.6 KB + merged-routes 3 KB |
+| Schemas (code) | 134.5 KB | 100.5 KB | authoring digests, 25% |
+| **Total** | **~1,120 KB** | **~156 KB** | **~86% less, ≈240k tokens/run** |
+
+The saving grows with project size, which was the point: cost now tracks
+change size rather than project size. WS-C landed at a quarter of its
+projected saving — the schemas turned out to be genuinely dense with
+normative content, recorded in that section.
+
+Also fixed, discovered by dogfooding rather than by design: a bare
+multi-root parent with no `spec/intents/` crashed the migrate-ledger scan,
+and `missing_plan[]` surfaced 9 legacy dogfood buildfiles that predate the
+`plan:` requirement (pre-existing debt, now visible without reading
+anything).
 
 ## Decision
 
