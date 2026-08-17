@@ -392,3 +392,46 @@ R2); matrix golden files pin full `--json` output so any additive field reds the
 Note for the record: r2-sq R1 completed while the safety classifier was briefly unavailable —
 its commit gets extra scrutiny in the judge pass. Reps 2-3 + judges pending (session-limit
 interruption, resumed from cache).
+
+## WP10 final — n=3 complete, judges in (2026-08-17)
+
+**Cost: parity achieved.** Wall-clock across three replicates: sq 10,373s vs ledger 10,435s
+(**+0.6%**; rep-by-rep +5.8% / −15% / +14% — inside noise). Rep-1 tokens +2.5%. The +40% of the
+pre-fix run is gone. Frictions: 106 (sq) vs 91 (ledger), −14%, and different in kind.
+
+**The fixes validated by adversarial reality, 3/3 judges:**
+- **Baseline churn (F2): GONE in ledger** — 2 baseline files touched per commit vs sq's 43
+  timestamp-only rewrites every single commit. WP1's write-if-changed + WP6's per-feature
+  blessing, confirmed at n=3.
+- **Silent provenance corruption: the status quo corrupted ITSELF during the benchmark** —
+  r1-sq's end state carries 225/225 absolute machine-specific code-hash keys (one R5 save
+  flipped the whole ledger non-portable) plus a mass-adopt of 263 entries; the ledger clone
+  stayed 185/185 repo-relative and clean. WP1's boundary checks are the difference between a
+  benchmark artifact and a corrupted project.
+- **`.emitted` trap: gone** (`.emitted.consumed` maintained cleanly across code-authoring
+  commits); **fail-loud narrowing** validated at pre-baseline — sq WARNed-and-committed an
+  under-scoped baseline, ledger refused until given the correct root, no force flag.
+- **R5 reversal: sq leaves no spec-level trace (3/3)** — the `complete` decision and its
+  reversal exist only in git; the ledger's supersedes chain records it and the projection
+  surfaces it.
+
+**Residual backlog (the next improvement round, judge-sourced):**
+1. **P1 is now urgent, 3/3 judges:** stale surface.md in ledger clones is actively
+   self-contradictory (still says `complete`, no quiet/built_at). Retire it in ledger projects
+   (migrate-spec as prerequisite) — the decision was already made; the benchmark just priced
+   the delay.
+2. **Forward supersession links need surfacing beyond check-amendments:** 001 carries no
+   visible superseded_by where readers look (handoff should annotate; files stay immutable).
+3. **Prose mirrors inside buildfile/testcases went stale after the reversal in BOTH variants**
+   (quiet-token descriptions still say `complete`) — L14's full fix (replace-span must sweep
+   embedded prose) remains open; sq's handoff disclosed it, the ledger's did not — add the
+   disclosure to the projection guidance.
+4. Minor: `orphaned_build_dirs` key overloaded at two JSON levels (both variants, inherited
+   wart); two r2 steps ended blocked/partial on feature-gate refusals — honest outcomes, noted
+   for ask-design.
+
+**Bottom line:** the ledger model now matches the status quo on cost, beats it on frictions,
+beats it decisively on record quality, and — the strongest single result of the whole program —
+its state machinery preserved integrity under the exact conditions that corrupted the status
+quo's. Exit criteria for making `ledger: true` the default: met on this evidence, pending the
+residual-backlog items above.
