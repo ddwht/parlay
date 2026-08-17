@@ -40,7 +40,7 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
    - `.parlay/schemas/dialog.schema.md`
    - `.parlay/schemas/blueprint.schema.md`
 
-2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. `prototype-framework:` in config.yaml is deprecated (removed in v0.3); fall back to it only when no adapter-set exists.
+2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. (`prototype-framework:` was removed in v0.3 — nothing reads it; a project without an adapter-set converts via `parlay migrate-config`.)
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary (component types, element types, action types, layout patterns, file conventions).
 
@@ -290,7 +290,7 @@ When `parlay internal check-readiness` returns errors:
 - `no-surface` — surface.md doesn't exist. Suggest running `/parlay-create-artifacts @{feature}` first.
 - `fragment-missing-page` — surface fragment has no Page target. Show which fragment and ask user to add it.
 - `fragment-missing-source` — surface fragment has no Source. Likely a bug in surface generation; regenerate the surface.
-- `no-config` / `no-prototype-framework` — project not initialized. Suggest running `parlay init`.
+- `no-config` / `no-adapter-configured` — project not initialized or no adapter-set slot filled. Suggest `parlay init`, or `parlay migrate-config` for a legacy config.
 
 When `parlay internal check-buildfile @{feature}` returns errors (it emits JSON unconditionally — there is no `--json` flag):
 - `missing-model-reference` — a component references a model that doesn't exist. Either add the model to `models:` or change the input. The error's `context` field shows the component path.

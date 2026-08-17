@@ -285,11 +285,12 @@ func ValidateAgentIdentitySingleSource(parent, child *ProjectConfig, parentPath,
 // When loading a child root's effective configuration, resolve each
 // field independently. ai-agent is parent-only — the resolver never
 // reads it from the child and never inherits it through walk-up beyond
-// the recorded parent. sdd-framework and prototype-framework are
-// child-first with parent fallback. Each effective field carries its
-// source file path so verbose mode can render `<field>: <value> (from
-// <file>)` for direct declarations and `<field>: <value> (inherited
-// from <file>)` for parent-fallback cases.
+// the recorded parent. sdd-framework is child-first with parent
+// fallback. Each effective field carries its source file path so verbose
+// mode can render `<field>: <value> (from <file>)` for direct
+// declarations and `<field>: <value> (inherited from <file>)` for
+// parent-fallback cases. (prototype-framework resolved here too until
+// its v0.3 removal.)
 
 // OriginKind classifies how an effective config field reached its value.
 type OriginKind string
@@ -311,9 +312,8 @@ type FieldOrigin struct {
 // EffectiveConfig is the per-invocation resolved config for the active
 // root. Each field carries its source file and origin for verbose mode.
 type EffectiveConfig struct {
-	AIAgent            FieldOrigin
-	SDDFramework       FieldOrigin
-	PrototypeFramework FieldOrigin
+	AIAgent      FieldOrigin
+	SDDFramework FieldOrigin
 }
 
 // ResolveEffectiveConfig produces the effective config for the active
@@ -341,12 +341,10 @@ func ResolveEffectiveConfig(active *Root) (*EffectiveConfig, error) {
 		if activeCfg == nil {
 			out.AIAgent = FieldOrigin{Origin: OriginNotDeclared}
 			out.SDDFramework = FieldOrigin{Origin: OriginNotDeclared}
-			out.PrototypeFramework = FieldOrigin{Origin: OriginNotDeclared}
 			return out, nil
 		}
 		out.AIAgent = fieldOriginOrEmpty(activeCfg.AIAgent, activeCfgPath)
 		out.SDDFramework = fieldOriginOrEmpty(activeCfg.SDDFramework, activeCfgPath)
-		out.PrototypeFramework = fieldOriginOrEmpty(activeCfg.PrototypeFramework, activeCfgPath)
 		return out, nil
 	}
 
@@ -372,13 +370,6 @@ func ResolveEffectiveConfig(active *Root) (*EffectiveConfig, error) {
 		return c.SDDFramework
 	})
 
-	// prototype-framework: child-first, parent fallback.
-	out.PrototypeFramework = resolveChildFirst(activeCfg, parentCfg, activeCfgPath, parentCfgPath, func(c *ProjectConfig) string {
-		if c == nil {
-			return ""
-		}
-		return c.PrototypeFramework
-	})
 
 	// Cross-validate ai-agent single-source. We do this once the
 	// effective config is assembled, so the error message has both

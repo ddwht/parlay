@@ -154,7 +154,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    - `.parlay/schemas/adapter.schema.md`
    - `.parlay/schemas/blueprint.schema.md`
 
-2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. `prototype-framework:` in config.yaml is deprecated (removed in v0.3); fall back to it only when no adapter-set exists.
+2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. (`prototype-framework:` was removed in v0.3 — nothing reads it; a project without an adapter-set converts via `parlay migrate-config`.)
 
 3. **Load framework adapter** — Read `.parlay/adapters/{framework-slug}.adapter.yaml` for framework-specific vocabulary, file conventions, and patterns.
 

@@ -9,10 +9,8 @@
 // the shared variables to false before exercising the resolver to keep
 // the cases independent.
 //
-// The deprecated --no-studio spelling gets its own cases: it is the whole
-// reason a second package-level bool exists, and a rename that silently
-// stopped honouring the old flag would be indistinguishable from one that
-// honoured it, since both leave the prompt unshown in the common case.
+// The deprecated --no-studio spelling was removed in v0.3; the pin test
+// below asserts the removal so a future edit cannot quietly re-register it.
 
 package commands
 
@@ -24,7 +22,6 @@ import (
 
 func resetNoEditorFlags() {
 	noEditorFlag = false
-	noEditorFlagDeprecated = false
 }
 
 func TestNoEditorFlagHelpTextIsSingleLine(t *testing.T) {
@@ -73,34 +70,17 @@ func TestResolveNoEditor_BothTrueStaysDisabled(t *testing.T) {
 	}
 }
 
-// TestResolveNoEditor_DeprecatedFlagStillHonoured is the regression guard
-// for the rename: a script or muscle-memory invocation still passing
-// --no-studio must suppress the prompt exactly as --no-editor does.
-func TestResolveNoEditor_DeprecatedFlagStillHonoured(t *testing.T) {
-	resetNoEditorFlags()
-	defer resetNoEditorFlags()
-	noEditorFlagDeprecated = true
-	if !resolveNoEditor(false) {
-		t.Errorf("--no-studio=true → expected disable=true")
-	}
-}
-
-// TestNoStudioFlagIsHiddenNotRemoved pins both halves of the deprecation:
-// the flag still parses (removing it would break callers) and it no longer
-// appears in help (leaving it visible would keep teaching the old name).
-func TestNoStudioFlagIsHiddenNotRemoved(t *testing.T) {
+// TestNoStudioFlagIsRemoved pins the v0.3 removal: the deprecated spelling
+// must NOT parse anymore (its deprecation window ended), while --no-editor
+// stays registered on every trio command.
+func TestNoStudioFlagIsRemoved(t *testing.T) {
 	for name, fs := range map[string]*pflag.FlagSet{
 		"create-domain-model": createDomainModelCmdImpl.Flags(),
 		"create-artifacts":    createArtifactsCmdImpl.Flags(),
 		"sync":                syncCmdImpl.Flags(),
 	} {
-		f := fs.Lookup("no-studio")
-		if f == nil {
-			t.Errorf("%s: --no-studio was removed; it must stay registered for callers that still pass it", name)
-			continue
-		}
-		if !f.Hidden {
-			t.Errorf("%s: --no-studio is still visible in help; it should be hidden", name)
+		if fs.Lookup("no-studio") != nil {
+			t.Errorf("%s: --no-studio is still registered; it was removed in v0.3", name)
 		}
 		if fs.Lookup("no-editor") == nil {
 			t.Errorf("%s: --no-editor is not registered", name)

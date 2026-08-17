@@ -260,7 +260,7 @@ var active = &Recorder{}
 // value and the environment.
 //
 // The env var overrides the config in BOTH directions, a deliberate
-// divergence from the no_studio precedent (where flag and config OR
+// divergence from the no_editor precedent (where flag and config OR
 // together). This is a diagnostic mode: "on for this one run" and "off for
 // this one run" are equally wanted, and an OR merge expresses only the
 // first.

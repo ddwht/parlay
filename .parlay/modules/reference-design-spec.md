@@ -43,7 +43,7 @@ Who resolves it depends on where you are running. If you own the user interactio
 
 3. **Load feature surface** — Read `spec/intents/{feature}/surface.md`. Parse fragment names. If the file does not exist, stop and tell the user to create the surface first.
 
-4. **Load adapter** — Resolve the adapter from `.parlay/adapter-set.yaml`'s presentation slot and read `.parlay/adapters/{slug}.adapter.yaml`. Fall back to the deprecated `prototype-framework:` in `.parlay/config.yaml` only when no adapter-set exists. Extract the `design-system:` section to identify which categories have `source: figma`.
+4. **Load adapter** — Resolve the adapter from `.parlay/adapter-set.yaml`'s presentation slot and read `.parlay/adapters/{slug}.adapter.yaml`. (`prototype-framework:` was removed in v0.3 — there is no fallback; a project without an adapter-set converts via `parlay migrate-config`.) Extract the `design-system:` section to identify which categories have `source: figma`.
 
 5. **Read Figma via MCP** — Connect to Figma and read the file/frame at the provided link. Extract:
    - Component hierarchy and naming

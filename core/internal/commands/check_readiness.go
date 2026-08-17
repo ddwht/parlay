@@ -336,7 +336,7 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	}
 
 	// Adapter must be configured
-	pc, err := cfg.LoadProjectConfig()
+	_, err = cfg.LoadProjectConfig()
 	if err != nil {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
@@ -346,17 +346,16 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 		})
 		return issues
 	}
-	// An adapter must be configured for the build stage. This is satisfied by
-	// either the legacy prototype-framework field (deprecated — v0.3 removes
-	// it) or, for adapter-set projects, a parseable adapter-set.yaml with at
-	// least one filled slot. Studio and other multi-target projects carry no
-	// prototype-framework, so requiring it alone would falsely block them.
-	if pc.PrototypeFramework == "" && !hasConfiguredAdapterSet(cfg) {
+	// An adapter must be configured for the build stage: a parseable
+	// adapter-set.yaml with at least one filled slot. (The legacy
+	// prototype-framework: fallback was removed in v0.3; migrate-config
+	// converts old projects.)
+	if !hasConfiguredAdapterSet(cfg) {
 		issues = append(issues, readinessIssue{
 			Severity: "error",
 			Code:     "no-adapter-configured",
-			Message:  "no adapter configured (neither adapter-set.yaml nor prototype-framework)",
-			Fix:      "define .parlay/adapter-set.yaml (recommended) or run `parlay register-adapter <path>`",
+			Message:  "no adapter configured (no adapter-set.yaml with a filled slot)",
+			Fix:      "define .parlay/adapter-set.yaml (recommended) or run `parlay register-adapter <path>`; legacy prototype-framework: configs convert via `parlay migrate-config`",
 		})
 	} else if adapters, _ := filepath.Glob(filepath.Join(cfg.AdaptersPath(), "*.adapter.yaml")); len(adapters) == 0 {
 		// Configuration named an adapter; check one is actually installed.

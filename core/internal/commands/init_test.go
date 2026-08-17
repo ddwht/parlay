@@ -32,9 +32,8 @@ func TestInit_CreatesProjectStructure(t *testing.T) {
 	dir := setupTestDir(t)
 
 	cfg := &config.ProjectConfig{
-		AIAgent:            "Claude Code",
-		SDDFramework:       "GitHub SpecKit",
-		PrototypeFramework: "Angular + Clarity",
+		AIAgent:      "Claude Code",
+		SDDFramework: "GitHub SpecKit",
 	}
 
 	os.MkdirAll(config.ParlayDir, 0755)
@@ -57,9 +56,6 @@ func TestInit_CreatesProjectStructure(t *testing.T) {
 	if loaded.SDDFramework != "GitHub SpecKit" {
 		t.Errorf("SDDFramework = %q, want %q", loaded.SDDFramework, "GitHub SpecKit")
 	}
-	if loaded.PrototypeFramework != "Angular + Clarity" {
-		t.Errorf("PrototypeFramework = %q, want %q", loaded.PrototypeFramework, "Angular + Clarity")
-	}
 
 	// Verify spec/intents/ exists
 	if _, err := os.Stat(filepath.Join(dir, "spec", "intents")); os.IsNotExist(err) {
@@ -71,9 +67,8 @@ func TestInit_ConfigYAMLRoundtrip(t *testing.T) {
 	setupTestDir(t)
 
 	cfg := &config.ProjectConfig{
-		AIAgent:            "Claude Code",
-		SDDFramework:       "GitHub SpecKit",
-		PrototypeFramework: "Angular + Clarity",
+		AIAgent:      "Claude Code",
+		SDDFramework: "GitHub SpecKit",
 	}
 
 	os.MkdirAll(config.ParlayDir, 0755)

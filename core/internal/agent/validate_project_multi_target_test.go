@@ -129,7 +129,10 @@ targets:
 	}
 }
 
-func TestValidateProjectMultiTarget_PrototypeFrameworkDeprecatedWarning(t *testing.T) {
+// prototype-framework: was removed in v0.3. A config still declaring it gets
+// a hard error pointing at migrate-config — nothing reads the key anymore, so
+// a project relying on it is silently unconfigured without this signal.
+func TestValidateProjectMultiTarget_PrototypeFrameworkUnsupportedError(t *testing.T) {
 	dir := t.TempDir()
 	parlay := filepath.Join(dir, ".parlay")
 	if err := os.MkdirAll(parlay, 0o755); err != nil {
@@ -140,12 +143,12 @@ func TestValidateProjectMultiTarget_PrototypeFrameworkDeprecatedWarning(t *testi
 		t.Fatal(err)
 	}
 	outcomes := ValidateProjectMultiTarget(ModeAuthoring, dir)
-	if !findCode(outcomes, "prototype-framework-deprecated") {
-		t.Errorf("expected prototype-framework-deprecated; got %+v", outcomes)
+	if !findCode(outcomes, "prototype-framework-unsupported") {
+		t.Errorf("expected prototype-framework-unsupported; got %+v", outcomes)
 	}
 	for _, o := range outcomes {
-		if o.Code == "prototype-framework-deprecated" && o.Severity != SeverityWarning {
-			t.Errorf("expected warning severity; got %q", o.Severity)
+		if o.Code == "prototype-framework-unsupported" && o.Severity != SeverityError {
+			t.Errorf("expected error severity; got %q", o.Severity)
 		}
 	}
 }

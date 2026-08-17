@@ -203,9 +203,9 @@ func validateConfigDeprecations(mode ValidationMode, rootPath string) []Validati
 	if shape.PrototypeFramework != "" {
 		outcomes = append(outcomes, ValidationOutcome{
 			Mode:     mode,
-			Code:     "prototype-framework-deprecated",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("%s declares prototype-framework: %q which is deprecated; run `parlay migrate-config` to convert it into .parlay/adapter-set.yaml (removal scheduled for v0.3)", configPath, shape.PrototypeFramework),
+			Code:     "prototype-framework-unsupported",
+			Severity: SeverityError,
+			Message:  fmt.Sprintf("%s declares prototype-framework: %q, which was removed in v0.3 — nothing reads it; run `parlay migrate-config` to convert it into .parlay/adapter-set.yaml", configPath, shape.PrototypeFramework),
 			Fix:      "run `parlay migrate-config`",
 		})
 	}

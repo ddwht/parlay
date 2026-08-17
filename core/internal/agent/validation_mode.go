@@ -119,10 +119,6 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
-	"prototype-framework-deprecated": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
-	},
 
 	// Buildfile deep-validation rules. These previously lived in a second,
 	// private table inside the check-buildfile command, so the two

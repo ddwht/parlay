@@ -111,7 +111,7 @@ Who resolves it depends on where you are running. If you own the user interactio
 
 9. **Register** — On approval:
    - Write each drafted adapter to `.parlay/adapters/{name}.adapter.yaml` (the presentation adapter plus any backend adapters from step 8.5).
-   - **Write `.parlay/adapter-set.yaml`** pinning the topology: one `targets.<kind>` entry per detected layer, each naming its adapter slug and the `root:` it emits into, plus a `links:` block authorizing the cross-kind edges the stack uses (`presentation → application` via `calls`, `application → persistence` via `persists`, etc.). This replaces the deprecated `config.yaml prototype-framework:` field — do not write `prototype-framework:` (it emits `prototype-framework-deprecated` and is removed in v0.3). A frontend-only project still writes `adapter-set.yaml` with a single `presentation` slot.
+   - **Write `.parlay/adapter-set.yaml`** pinning the topology: one `targets.<kind>` entry per detected layer, each naming its adapter slug and the `root:` it emits into, plus a `links:` block authorizing the cross-kind edges the stack uses (`presentation → application` via `calls`, `application → persistence` via `persists`, etc.). This replaces the deprecated `config.yaml prototype-framework:` field — do not write `prototype-framework:` (removed in v0.3; a config declaring it fails validation with `prototype-framework-unsupported`). A frontend-only project still writes `adapter-set.yaml` with a single `presentation` slot.
    - Report completion and suggest next steps: "You can now add features with `/parlay-add-feature` and they'll generate code that fits your existing codebase — each target emitting into its own root."
 
 ## Error Handling

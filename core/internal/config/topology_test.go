@@ -209,7 +209,4 @@ func TestResolveEffectiveConfig_ChildInheritsFromParent(t *testing.T) {
 	if eff.SDDFramework.Value != "parlay-spec" || eff.SDDFramework.Origin != OriginInheritedFrom {
 		t.Errorf("SDDFramework: want parlay-spec inherited; got %+v", eff.SDDFramework)
 	}
-	if eff.PrototypeFramework.Value != "react" || eff.PrototypeFramework.Origin != OriginFrom {
-		t.Errorf("PrototypeFramework: want react from child; got %+v", eff.PrototypeFramework)
-	}
 }

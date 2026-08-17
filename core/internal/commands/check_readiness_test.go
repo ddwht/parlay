@@ -134,7 +134,8 @@ func TestReadiness_BuildFeature_FragmentMissingPage(t *testing.T) {
 	// Need a config for the build-feature stage
 	parlayDir := filepath.Join(dir, ".parlay")
 	os.MkdirAll(parlayDir, 0755)
-	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\nprototype-framework: go-cli\n"), 0644)
+	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\n"), 0644)
+	os.WriteFile(filepath.Join(parlayDir, "adapter-set.yaml"), []byte("name: test-project\ntargets:\n  presentation:\n    adapter: some-ui-adapter\n    root: .\n"), 0644)
 
 	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
 
@@ -174,7 +175,8 @@ func TestReadiness_BuildFeature_Valid(t *testing.T) {
 
 	parlayDir := filepath.Join(dir, ".parlay")
 	os.MkdirAll(parlayDir, 0755)
-	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\nprototype-framework: go-cli\n"), 0644)
+	os.WriteFile(filepath.Join(parlayDir, "config.yaml"), []byte("ai-agent: test\nsdd-framework: test\n"), 0644)
+	os.WriteFile(filepath.Join(parlayDir, "adapter-set.yaml"), []byte("name: test-project\ntargets:\n  presentation:\n    adapter: some-ui-adapter\n    root: .\n"), 0644)
 
 	issues := checkBuildFeatureReadiness(testContext(t), featureDir, "test-feature")
 

@@ -20,10 +20,8 @@
 // exactly one subcommand's flags are ever parsed per process invocation.
 //
 // The flag was called --no-studio until the separate parlay-studio binary
-// was retired. "Studio" no longer names anything a user can install, and
-// the thing being suppressed is the in-process editor, so the flag says
-// that now. --no-studio is still registered and still works; it is hidden
-// from help so it stops teaching the old name to new readers.
+// was retired; the hidden alias survived one deprecation window and was
+// removed in v0.3. Only --no-editor is registered now.
 
 package commands
 
@@ -34,36 +32,22 @@ import "github.com/spf13/cobra"
 // merged with the project config (logical OR) by resolveNoEditor.
 var noEditorFlag bool
 
-// noEditorFlagDeprecated backs the deprecated --no-studio spelling. It is
-// a separate variable rather than a second binding of noEditorFlag because
-// cobra writes a flag's default into its target at registration time, so
-// two registrations sharing one pointer would have the second's default
-// clobber the first's parsed value.
-var noEditorFlagDeprecated bool
-
 // noEditorFlagHelpText is the one-line help text shown next to
 // --no-editor in `parlay <trio> --help`. Shared across all three
 // registrations so the testcase "flag help text is one line" passes
 // against any of them.
 const noEditorFlagHelpText = "skip the open-editor prompt at the end"
 
-// registerNoEditorFlags binds both spellings onto cmd. Callers register
-// through this rather than calling Flags().BoolVar directly, so the
-// deprecated alias cannot be attached to one trio command and forgotten
-// on another.
+// registerNoEditorFlags binds the flag onto cmd. Callers register through
+// this rather than calling Flags().BoolVar directly, so every trio command
+// registers identically.
 func registerNoEditorFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&noEditorFlag, "no-editor", false, noEditorFlagHelpText)
-	cmd.Flags().BoolVar(&noEditorFlagDeprecated, "no-studio", false, noEditorFlagHelpText)
-	// Hidden, not deprecated-with-a-message: cobra prints its deprecation
-	// notice to stdout, which would corrupt the JSON that several of these
-	// commands emit. Hiding it keeps the flag working and keeps it out of
-	// help without writing anything to a stream a caller may be parsing.
-	_ = cmd.Flags().MarkHidden("no-studio")
 }
 
-// resolveNoEditor merges both flag spellings with the project-config
-// opt-out. Logical OR: any source suppresses the prompt; all must be
-// false for the prompt to fire.
+// resolveNoEditor merges the flag with the project-config opt-out.
+// Logical OR: either source suppresses the prompt; both must be false for
+// the prompt to fire.
 func resolveNoEditor(cfgNoEditor bool) bool {
-	return noEditorFlag || noEditorFlagDeprecated || cfgNoEditor
+	return noEditorFlag || cfgNoEditor
 }
