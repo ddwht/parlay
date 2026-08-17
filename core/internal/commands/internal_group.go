@@ -69,10 +69,16 @@ func registerInternalCommands() {
 		scaffoldSeedCmd,
 		checkCompositionCmd,
 		checkAmendmentsCmd,
+		checkAppliedCmd,
 		affectedSetCmd,
 		domainImpactCmd,
 		schemaDigestCmd,
 		emissionGroupsCmd,
+
+		// Refine's step journal — the one write here that is not build
+		// state: it records how far an in-flight refinement got so an
+		// interrupted run resumes instead of restarting.
+		refineJournalCmd,
 		serveCmd,
 	)
 	rootCmd.AddCommand(internalCmd)

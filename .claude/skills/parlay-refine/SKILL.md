@@ -157,6 +157,14 @@ steps 3 and 4:
    lost by resolving after applying, because the decision gate above already
    fixed both texts before either was written.
 
+   **Then journal it:**
+   `parlay internal refine-journal @{feature} --step amendment-written --amendment NNN --ask "{the prose you were given}"`.
+   From here the run is recoverable: a session that dies after this point
+   resumes at the splice with the amendment it already wrote, instead of
+   restarting and minting a duplicate sequence number for the same ask.
+   Stamp each later boundary the same way — the step list below names its
+   own stamp — and step 9 clears the journal.
+
 Step 4 then applies the delta **to contract artifacts only** — step 3's
 altitude table routes "user-visible" to `surface.yaml` (the narrative record
 already happened in 3.5).
@@ -205,6 +213,40 @@ report — which mode ran is part of what was blessed.
    from the prose and the project's features. If two features could plausibly
    own the change, raise an `ambiguity` decision listing them; do not pick the
    likelier one.
+
+1.5. **Pre-flight — is there anything to do?** Run
+   `parlay internal check-applied @{feature}` **before reading any artifact,
+   schema or module.** One call, a few hundred bytes: the drift verdict, the
+   ledger index (frontmatter only — seq, slug, date, trigger, affects, and
+   whether each is applied), and any interrupted run. Two branches end the
+   run here, and both are cheap by construction — you have loaded nothing.
+
+   **Already applied.** `clean_state: true` and an indexed amendment whose
+   `trigger`/`slug`/`affects` describe this same ask: open that one file (the
+   index gives its path) to confirm, then STOP and report
+   "already applied as NNN-{slug} on {date}" with its `## Change` line. Do not
+   re-amend, do not "verify by regenerating", do not improvise a fresh
+   no-op path — the whole point of this step is that eight different agents
+   improvising eight different no-op paths is what it replaces. If the user
+   wants it changed *further*, that is a new refinement of the current text,
+   and it gets its own amendment.
+
+   **Matching is a judgment, not a string compare.** The index is there so
+   the judgment costs frontmatter rather than a loaded context. Same rule as
+   step 2: do not match on lexical overlap. When you are unsure whether the
+   ask is the recorded one, say so and ask — an unnecessary refinement costs
+   a run; a missed contradiction costs the record's honesty.
+
+   **In flight.** `in_flight` present means a previous refinement died
+   mid-run. It names the amendment it wrote and the steps it completed;
+   resume at the first incomplete step rather than restarting. Critically:
+   if `amendment` is set, that file already exists — amend it, never mint a
+   new sequence number for the same ask. Confirm with the user that they
+   want the interrupted run finished (show its `ask`) before continuing.
+
+   **Anything else** — drift, an unapplied tail, integrity findings —
+   proceed with the steps below; those are handled where they already were
+   (step 5's scope, `/parlay-loop`'s gate, doctor's dispositions).
 
 2. **Locate the owning artifact** — Which artifact does this change belong to?
 
@@ -330,6 +372,9 @@ report — which mode ran is part of what was blessed.
    components, new plan rows and new suites, none of which exist yet. Carry
    that fact into step 5.5 and say which it was in your report.
 
+   Journal it once the splice is on disk:
+   `parlay internal refine-journal @{feature} --step splice-applied`.
+
 5. **Scope — the amendment decides how far to look, not the feature name.**
 
    Look at where step 4 actually wrote:
@@ -386,10 +431,18 @@ report — which mode ran is part of what was blessed.
    Re-running the build phase regenerates `testcases.yaml`, which is what makes
    step 10's re-review necessary rather than merely tidy.
 
+   Journal it — whether you rebuilt or skipped:
+   `parlay internal refine-journal @{feature} --step rebuilt`. A skipped
+   step is still a completed one; the journal records where the run GOT TO,
+   not what it chose to do.
+
 6. **Regenerate** — Preserve stable, regenerate dirty, exactly as `generate-code`
    does. Append every file written to `.parlay/build/_project/.emitted`, one
    path per line, as you write it. The manifest is what makes step 9 a scoped
    re-baseline rather than a project-wide one.
+
+   Journal it once the last file is written:
+   `parlay internal refine-journal @{feature} --step emitted`.
 
    **Path format:** each line is the file path as it appears under the walk
    root that step 9 passes as `--source-root`, i.e. the same prefix the code-hash
@@ -414,7 +467,11 @@ report — which mode ran is part of what was blessed.
    deliberately, not by drifting into it.
 
    Tests failing stops the refinement. Raise a `failure` decision with the
-   failures in `context:`. Do not re-baseline.
+   failures in `context:`. Do not re-baseline. **Leave the journal in place** —
+   it is what lets the next invocation pick up at the test step instead of
+   re-doing the amendment and the splice.
+
+   Green suite → `parlay internal refine-journal @{feature} --step tested`.
 
    **Rebuild before smoke-testing.** If you go on to smoke-test the running app
    or a compiled binary — not just the test suite — rebuild it first. Step 6
@@ -440,6 +497,15 @@ report — which mode ran is part of what was blessed.
    "stable". The project baseline records the blessed feature slugs under
    `emitted:` for audit. (See `schema-versioning.schema.md`, "Per-feature
    blessing instants".)
+
+   **Then end the run's recoverable window**, in this order:
+   `parlay internal refine-journal @{feature} --step re-baselined` followed by
+   `parlay internal refine-journal @{feature} --clear`. The save is the
+   commit point — after it the amendment is applied, the code is blessed,
+   and a "resume" would re-do finished work. Clearing last means a crash
+   between the two leaves a journal whose only incomplete step is the one
+   that already succeeded; the next run's pre-flight shows it, and
+   re-running save-build-state on an unchanged tree is a no-op.
 
 10. **Re-review coverage** — but ask the gate what actually needs it first:
     `parlay internal check-review-gate @{feature}` reports `stale_suites` —

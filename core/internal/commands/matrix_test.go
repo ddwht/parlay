@@ -771,7 +771,8 @@ func TestMatrix_SurfaceListCoversTheCheckCommands(t *testing.T) {
 		"check-supports":    "multi-target projects only; every fixture here is presentation-only",
 		"check-write-set":   "guards a codegen write set, which none of these fixtures has",
 		"check-review-gate": "gates the coverage-review artifact, which none of these fixtures has",
-		"check-amendments":  "validates the amendment ledger, which exists only in parlay.ledger projects; every fixture here is flag-off with no amendments/ directory",
+		"check-amendments":  "validates the amendment ledger; no fixture here has an amendments/ directory, so it would report an empty ledger for every row (the flag-era wording of this excuse died with the flag in v0.4 — the reason is the fixtures, not a mode)",
+		"check-applied":     "refine's pre-flight, not a project-health verdict: it answers 'is this ask already done' for one skill. Its drift half delegates to detectDrift, so check-drift (in the matrix) already grades that behaviour and the two cannot disagree; its ledger half needs amendments no fixture has",
 	}
 
 	entries, err := os.ReadDir(packageSourceDir(t))
