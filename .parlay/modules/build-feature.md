@@ -99,14 +99,26 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 ## Steps
 
-1. **Load schemas** — Read these files before generating:
-   - `.parlay/schemas/buildfile.schema.md`
-   - `.parlay/schemas/testcases.schema.md`
-   - `.parlay/schemas/adapter.schema.md`
-   - `.parlay/schemas/surface.schema.md`
-   - `.parlay/schemas/intent.schema.md`
-   - `.parlay/schemas/dialog.schema.md`
-   - `.parlay/schemas/blueprint.schema.md`
+1. **Load schema digests** — Read these files before generating:
+   - `.parlay/schemas/digests/buildfile.digest.md`
+   - `.parlay/schemas/digests/testcases.digest.md`
+   - `.parlay/schemas/digests/adapter.digest.md`
+   - `.parlay/schemas/digests/surface.digest.md`
+   - `.parlay/schemas/digests/intent.digest.md`
+   - `.parlay/schemas/digests/dialog.digest.md`
+   - `.parlay/schemas/digests/blueprint.digest.md`
+
+   Each digest is derived from its schema at deploy time and carries the
+   authoring-normative content — field tables, closed vocabularies, required
+   shapes, invariants — without the schema's rationale and history. You are
+   AUTHORING a buildfile and testcases here, so this is the half you need.
+
+   **Open the full `.parlay/schemas/<name>.schema.md` when** a validator
+   finding routes you there (`.parlay/schemas/DIGEST.md` maps every code to
+   its schema), when the digest does not answer a question you actually have,
+   or when you are changing the schema itself. Do not open one out of
+   caution: the digest is derived, so anything it states is what the schema
+   states.
 
 2. **Load project config** — Read `.parlay/config.yaml` for project settings. Resolve the adapter from `.parlay/adapter-set.yaml` — the presentation slot for UI work, the kind-appropriate slot otherwise. (`prototype-framework:` was removed in v0.3 — nothing reads it; a project without an adapter-set converts via `parlay migrate-config`.)
 

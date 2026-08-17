@@ -4,6 +4,9 @@ File: `spec/intents/<feature-name>/intents.md`
 Contains one or more intent blocks. Starts with an optional feature header.
 
 ## Template
+<!-- parlay:normative -->
+
+
 
 ```
 # <Feature Name>
@@ -31,7 +34,12 @@ Contains one or more intent blocks. Starts with an optional feature header.
 - <Open design question or unresolved uncertainty>
 ```
 
+<!-- /parlay:normative -->
+
 ## Fields
+<!-- parlay:normative -->
+
+
 
 | Field | Required | Parse rule |
 |---|---|---|
@@ -46,6 +54,8 @@ Contains one or more intent blocks. Starts with an optional feature header.
 | Constraints | No | `**Constraints**:` followed by `- ` prefixed lines |
 | Verify | No | `**Verify**:` followed by `- ` prefixed lines. State-based assertions — expected outcomes, observable states, and edge case behaviors. |
 | Questions | No | `**Questions**:` followed by `- ` prefixed lines. Open design questions or unresolved uncertainties. |
+
+<!-- /parlay:normative -->
 
 ## Parsing
 

@@ -1,30 +1,15 @@
-<!--
-parlay-section: cross-cutting
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-component-vocabulary-section
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-tokens-section
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-theme-modes
-parlay-extends: parlay-tool/multi-adapter/adapter-kind-discriminator
-parlay-extends: parlay-tool/multi-adapter/adapter-supports-contract
--->
+# Framework Adapter Schema — authoring digest
 
-# Framework Adapter Schema
+Derived from `adapter.schema.md` at deploy time. Never hand-edit: edit the schema's
+`<!-- parlay:normative -->` blocks and re-run `parlay upgrade`.
 
-File: `.parlay/adapters/<adapter-name>.adapter.yaml`
-Registered via `/parlay register-adapter` or bundled during `/parlay init`.
+This is what you need to AUTHOR the artifact — field tables, closed
+vocabularies, required shapes, invariants. It deliberately omits the
+schema's rationale and history. Open the full schema when a validator
+finding routes you there, when you are changing the schema itself, or
+when you need to know WHY a rule exists rather than what it is.
 
-A framework adapter is a **two-level artifact**:
-
-1. **Framework vocabulary** — maps the surface interaction vocabulary (Shows, Actions, Flows) to framework-specific widgets. This is the baseline, shared across teams using the same framework.
-2. **Team implementation patterns** — composition recipes, conventions, and coding standards that define HOW generated code should be structured. This is team-owned and frequently customized.
-
-Parlay ships adapter TEMPLATES with the widget mappings pre-filled. Teams customize the compositions, conventions, and patterns sections to match their codebase standards. The adapter is the team's "coding standards for generated code" — they own it, version it, and evolve it.
-
-The adapter has no knowledge of the project's domain, features, or data. It answers two questions: "what framework widget implements this interaction?" and "how does our team structure the generated code?"
-
-## Structure
-<!-- parlay:normative -->
-
-
+---
 
 ```yaml
 name: <adapter name — e.g., go-cli, react-antd, angular-clarity, ios-uikit>
@@ -177,12 +162,7 @@ tokens:
       emit-form: <single mode-invariant emit form>
 ```
 
-<!-- /parlay:normative -->
-
-## Section 0: Kind discriminator
-<!-- parlay:normative -->
-
-
+---
 
 Every adapter declares which slot it occupies in the adapter-set topology via the top-level `kind:` field. The closed set is:
 
@@ -197,12 +177,7 @@ A missing `kind:` field is treated as the legacy `presentation` default — pre-
 
 A `kind:` value outside the closed set fails validation with `adapter-kind-unknown` naming the offending value.
 
-<!-- /parlay:normative -->
-
-## Section 0.5: Supports contract
-<!-- parlay:normative -->
-
-
+---
 
 Adapters whose kind is transport, application, or persistence MUST declare a `supports:` block. The block has four sub-keys; each is a list drawn from a closed vocabulary:
 
@@ -214,10 +189,6 @@ Adapters whose kind is transport, application, or persistence MUST declare a `su
 | `errors` | `errors.schema.md` |
 
 The `supports:` block declares which terms **this adapter's layer** can fulfill at codegen time. An adapter lists only what its own layer implements — a persistence adapter lists the data steps (`create-one`, `read-many`, …) and the transaction policy; an application adapter lists orchestration steps (`validate-input`, `authorize`, `return-*`) and the auth policies. It does **not** list terms another layer owns.
-
-<!-- parlay:rationale -->
-During `parlay build-feature`, each operation term is checked by **union coverage** across all filled non-presentation slots: a term passes if **at least one** backend adapter supports it. This is why the two checks are separate — one per-adapter, one project-wide:
-<!-- /parlay:rationale -->
 
 | Code | When it fires |
 |---|---|
@@ -233,31 +204,7 @@ The first four (coverage) are asked once across the union of backend adapters �
 
 Pattern descriptions for non-presentation kinds (e.g., describing how an application adapter wires steps to NestJS controllers) live alongside `supports:` but are AI prompt material, not validator input.
 
-<!-- /parlay:normative -->
-
-## Presentation-only vocabulary
-
-The `shows:`, `actions:`, and `flows:` sections are required ONLY for presentation adapters. Non-presentation adapters (transport, application, persistence) MAY omit them — those vocabularies don't apply to backend layers. The validation rules in section "Validation" below treat presence as required only when `kind:` is `presentation` (or absent).
-
-### `render-support:` — which `appears` levels the adapter can assert
-
-A presentation adapter MAY declare which render-visibility levels it can emit test assertions for. This is the presentation-side twin of a backend adapter's `supports.steps:`: it gates the testcase `appears` step (testcases.schema.md) the way `supports.steps` gates an operation's steps.
-
-```yaml
-render-support:        # optional; presentation kind only
-  - mounted            # can assert a mount point exists
-  - output             # can assert the component produced output
-  - content            # can assert declared content reached the renderer
-```
-
-Each entry is drawn from the closed set `{mounted, output, content}`. **Absence means the adapter supports no level** — `appears` cannot be emitted against it, so `build-feature` compiles every display-shaped criterion to a store-level assertion and stamps the case `coverage: state-only`. This is the default for every adapter that predates the field. As an adapter grows the ability to render-assert a level, listing it here **lifts** those cases from `state-only` to a real `appears` assertion on the next `build-feature` — no per-case edit, because the criterion already records what it needs and the gate now clears.
-
-`render-support:` is a declaration the build phase reads, not a codegen input: the per-framework machinery that actually makes an `appears: content` assertion runnable is adapter-implementation work, out of scope for the vocabulary itself.
-
-## Section 1: Framework vocabulary
-<!-- parlay:normative -->
-
-
+---
 
 ### Shows mapping
 
@@ -294,12 +241,7 @@ Every Flow type from the surface vocabulary must appear in the `flows:` section.
 
 Flows are higher-level than Shows and Actions — they describe how multiple widgets and interactions compose into a coherent user experience. The adapter pattern name should be specific enough that two agents reading it produce structurally similar code.
 
-<!-- /parlay:normative -->
-
-## Section 2: Composition recipes
-<!-- parlay:normative -->
-
-
+---
 
 Compositions describe HOW common widget combinations work together at runtime. They capture the state management and event wiring patterns that the buildfile deliberately does not specify.
 
@@ -336,12 +278,7 @@ Compositions are optional. If no composition matches, the agent uses its own jud
 
 Teams customize compositions to match their codebase patterns. A team that uses Redux would write different state/wiring than a team using React Context. Both are valid — the adapter captures the team's choice so every generated component follows the same pattern.
 
-<!-- /parlay:normative -->
-
-## Section 3: Conventions
-<!-- parlay:normative -->
-
-
+---
 
 Conventions are structured rules that constrain the agent's implementation choices. They reduce variance between agents without requiring a DSL. The agent MUST follow conventions when generating code.
 
@@ -370,12 +307,7 @@ conventions:
 
 Conventions are the most frequently customized section. Teams should review and adjust them during adapter setup. Conventions that are too generic ("write clean code") are useless — each convention should make a SPECIFIC choice that eliminates a decision point for the agent.
 
-<!-- /parlay:normative -->
-
-## Section 4: File conventions
-<!-- parlay:normative -->
-
-
+---
 
 Where generated code goes. `source-root` is the root every other path in this section is relative to; `naming` is the case convention applied to the `{name}` and `{feature}` placeholders; `entry-point` is the file the framework boots from.
 
@@ -450,15 +382,6 @@ means plan derivation is unavailable (see "Absence is not an error" below);
 declaring only `paths:` means shared-code destinations fall back to the source
 root.
 
-<!-- parlay:rationale -->
-**Rooting.** `paths:` templates are relative to `source-root`. `packages:`
-values are written as project-relative directories (they name a location a
-person would `cd` to), which is why the shipped blocks repeat the source-root
-segment. Keep a `packages:` entry consistent with the rest of the adapter: a
-value that contradicts `source-root` sends shared code somewhere the framework
-does not look.
-<!-- /parlay:rationale -->
-
 ### Why templates rather than logic in the tool
 
 Putting per-framework path rules in Go would mean parlay carrying framework knowledge that adapters exist to hold, and every new framework would need a code change rather than a YAML file. A template keeps the knowledge in the adapter, where a team can also change it — moving components from `features/` to `modules/` is then an adapter edit, not a fork.
@@ -467,12 +390,7 @@ Putting per-framework path rules in Go would mean parlay carrying framework know
 
 An adapter with no `paths:` block still works; `plan:` derivation is simply unavailable for it and the agent authors those rows by hand, as before. The same holds per-template: an adapter that declares `component:` but no `seed:` derives component rows and no seed row, and that is a correct answer rather than a gap. Most frameworks have no single boot-time dataset — a CLI reads a file per invocation, a static generator has no runtime at all — so demanding one would be parlay asserting framework knowledge it does not have. Tooling that derives plan rows must therefore treat a missing template as "cannot derive this row" and say so, rather than guessing a path — a guessed path in `plan:` is worse than an absent one, because it reads as an authorized write target.
 
-<!-- /parlay:normative -->
-
-## Section 5: Design system inventory
-<!-- parlay:normative -->
-
-
+---
 
 The design system section is a structured inventory of where each category of design decisions comes from. It tells the agent: for colors, use framework tokens; for motion, check the design-spec; for icons, the framework doesn't define them.
 
@@ -503,23 +421,13 @@ When `source: framework`, the agent uses the framework's token system and never 
 
 Teams can add custom categories beyond the standard set (e.g., `z-index`, `breakpoints`, `opacity`).
 
-<!-- /parlay:normative -->
-
-## Section 6: Design patterns
-<!-- parlay:normative -->
-
-
+---
 
 Framework-level taste, expressed as preferences rather than rules. `patterns.interaction.prefer` and `.avoid` list interaction shapes the framework's design system is built around (and ones that fight it); `information-density` and any further keys carry the same shape.
 
 These inform component selection when the spec leaves room — a multi-step flow with no stated presentation gets a wizard if the adapter prefers `wizard-for-multi-step`. They never override the spec: an `avoid` entry is a tiebreaker, not a veto, and a surface fragment that explicitly calls for a modal gets a modal even under `avoid: [nested-modals]`. Where an adapter's preference and the spec genuinely conflict, that is a decision for the designer, not a silent substitution.
 
-<!-- /parlay:normative -->
-
-## Section 7: Mount strategies
-<!-- parlay:normative -->
-
-
+---
 
 Mount strategies describe HOW to integrate a new component into an existing file. They are used in brownfield projects where pages, routes, and navigation already exist in the source tree.
 
@@ -561,12 +469,7 @@ A component may use both: a composition for its internal wiring, and a mount str
 
 Templates use double-brace syntax: `{{key}}`, `{{label}}`, `{{Component}}`, `{{path}}`, etc. Placeholder names are freeform — the agent fills them from the buildfile component data (component name, route path, page name) and adapter conventions (naming, import style).
 
-<!-- /parlay:normative -->
-
-## Section 8: Component vocabulary
-<!-- parlay:normative -->
-
-
+---
 
 The `componentVocabulary:` section declares the closed list of design-system components an adapter exposes to layouts. It is the runtime source of truth for "what components exist, what variants they have, what properties they accept, and what children they allow." Layouts (and Studio's layout pipeline) validate every component reference, variant, property, and child relationship against this vocabulary.
 
@@ -610,18 +513,9 @@ The `componentVocabulary:` section is optional. Adapters that omit it continue t
 
 ### Companion top-level `vocabulary:` block
 
-<!-- parlay:rationale -->
-**The `vocabulary:` block is retired.** Adapters used to be able to declare a second structured vocabulary alongside `componentVocabulary:` — a snake_case block with `components`, `spacing_tokens`, `color_tokens`, and `layout_containers` — read by the Design Loop's read-back classifier via `parlay internal validate-vocabulary`. The Design Loop skill was retired in 0.2.0, which left that block with no consumer: no skill invoked the command, and an adapter declaring the block got nothing for it. The block, its schema, its loader, and the command are all gone. `componentVocabulary:` and `tokens:` above are the structured vocabulary; there is no second one to keep in sync with them.
-<!-- /parlay:rationale -->
-
 The dual-maintenance hazard that came with two independently-authored vocabularies is gone with the second one. An adapter author declares `componentVocabulary:` and `tokens:` and nothing else; there is no equivalence table to honour and no parity check to satisfy.
 
-<!-- /parlay:normative -->
-
-## Section 9: Design tokens
-<!-- parlay:normative -->
-
-
+---
 
 The `tokens:` section declares the design-system tokens an adapter emits during codegen. Tokens are referenced by name from layouts (e.g., `gap: spacing-lg`, `color: color-status-danger`) and translated to per-framework emit-forms (CSS variables, theme-object key paths, etc.) when code is generated.
 
@@ -677,12 +571,7 @@ This is a rule about **where design-system facts come from**, not a ban on tooli
 
 The `tokens:` section is optional. Adapters that omit it continue to parse and register cleanly. When a layout uses a token-reference against an adapter without `tokens:`, token validation is skipped with a warning rather than failing the build.
 
-<!-- /parlay:normative -->
-
-## Section 10: Toolchain — external skills and MCP servers
-<!-- parlay:normative -->
-
-
+---
 
 Frameworks ship their own tooling: an Angular CLI MCP server, a community `/angular-review` skill, a project's own formatter. Before this section an adapter had **no** extension point for any of it, so a project either forked parlay or did without. `toolchain:` is that extension point.
 
@@ -766,78 +655,3 @@ The runtime half of the contract is enforced as follows: `read-set` (the codegen
 ### Optional section
 
 `toolchain:` is optional, and an adapter without one behaves exactly as before. An adapter *with* one on an agent that has none of the named tools installed also behaves as before, provided every entry is `required: false`.
-
-<!-- /parlay:normative -->
-
-## Versioning
-
-The adapter file has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — this is a **deliberate deferral**, not an oversight. Don't confuse it with the top-level `version:` field, which tracks the *adapter's own* revision (a team-owned value, unrelated to the file *format*), or `componentVocabulary.name`'s `@<version>` suffix, which pins a design-system vocabulary revision. None of the three is a stand-in for the others.
-
-Adapters are hand-authored, team-owned, and long-lived — exactly the profile that would normally call for a migrator chain per the house rule. The reason there isn't one yet: the adapter file *format* has only ever grown additively — `kind:`, `supports:`, `paths:` and `toolchain:` were added as optional-or-kind-conditional sections, and the one removal (`vocabulary:`) took its only consumer with it — so no existing adapter needs rewriting and there is no prior version to migrate from. Adding an unused `schema_version: 1` field now, with no migrator and nothing to gate, would be exactly the kind of premature versioning the house rule warns against. When the adapter format needs its first breaking change, that's the point to add `schema_version:` with a real migrator — following `domain-model.schema.md`'s pattern — rather than before.
-
-## Validation
-
-`parlay validate --type adapter <path>` runs the complete check; `register-adapter` and `parlay init` run the same one before installing. It reports **every** finding at once rather than stopping at the first, and each carries a stable code.
-
-Rules are conditional on `kind:` — a presentation adapter owes the framework vocabulary, a backend adapter owes `supports:`, and neither is asked for the other's.
-
-| Code | Fires when |
-|---|---|
-| `adapter-invalid-yaml` | The file does not parse. |
-| `adapter-name-missing` | No top-level `name:`. |
-| `adapter-name-slug-mismatch` | `name:` disagrees with the filename slug. Resolvers look adapters up by filename, so a mismatch desynchronises resolution from diagnostics. |
-| `adapter-kind-unknown` | `kind:` is outside `{presentation, transport, application, persistence}`. |
-| `adapter-supports-shape-mismatch` | A presentation adapter declares `supports:` (forbidden), or a non-presentation adapter omits it (required). |
-| `adapter-supports-unknown-term` | A `supports.*` entry is outside its closed vocabulary. |
-| `adapter-vocabulary-incomplete` | A presentation adapter is missing `shows:`/`actions:`/`flows:`, or missing terms within them. Every Show, Action and Flow in the surface vocabulary must map to a framework implementation — a missing entry leaves codegen with no widget for a term a designer may legitimately write. `widget: not-applicable` and `requires: custom-implementation` are both valid mappings. |
-| `adapter-vocabulary-unknown-term` | `shows:`/`actions:`/`flows:` declares a term that is not in the surface vocabulary. |
-| `adapter-composition-invalid` | A `compositions:` entry omits `trigger:`, `wiring:` or `description:`. |
-| `adapter-convention-invalid` | A `conventions:` entry omits `rule:` or `applies-to:`. |
-| `adapter-file-conventions-missing` | No `file-conventions:` — nothing can decide where generated code goes. |
-| `adapter-source-root-missing` | No `source-root:`. Not cosmetic: an empty one silently disables toolchain write-set containment. |
-| `adapter-file-conventions-incomplete` | `component-pattern:` or `entry-point:` is absent. |
-| `adapter-naming-unknown` | `naming:` is absent or outside `{kebab-case, snake_case, PascalCase, camelCase}`. Absent is an error because path templates otherwise fall back to kebab-case silently. |
-| `adapter-path-template-invalid` | A `paths.*` template uses a placeholder outside `{feature} {name} {entity} {Feature} {Name} {Entity}` — it would expand to a literal brace, and a path with a brace in it is not a path. |
-| `adapter-packages-invalid` | A `packages:` entry names an empty directory. |
-| `adapter-design-system-source-unknown` | A `design-system:` category's `source:` is outside `{framework, figma, not-defined}`. |
-| `adapter-mount-strategy-invalid` | A mount strategy omits `detection:` or `description:`, or its `template:` contains no `{{placeholder}}`. |
-| `adapter-component-vocabulary-invalid` | Any `componentVocabulary:` rule: `name:` without `@<version>`; a missing or out-of-set `category:`; a container without `allowed-children:`; `type: enum` without `enum-values:`; `type: child-list` without `child-types:`; a duplicate component `type:`; a property type outside `{string, token-reference, enum, boolean, int, child-list}`; or a re-declared universal container field (`direction`, `gap`, `padding`, `alignment`), which belongs to the layout schema. |
-| `adapter-tokens-invalid` | Any `tokens:` rule: no `modes:`; a colour token whose `emit-forms:` misses a declared mode; a `tone:` outside `{neutral, info, warning, danger, success}`; a `use-site:` outside `{heading-page, heading-section, body, caption}`; a missing `emit-form:`; a duplicate token name; or a reused spacing `order:`. |
-| `toolchain-*` | See Section 10's table. `toolchain-source-missing` and `toolchain-stage-unknown` cover the two Required fields there. |
-
-`compositions:`, `conventions:`, `design-system:`, `mount-strategies:`, `componentVocabulary:`, `tokens:` and `toolchain:` are all optional; when present they are validated in full.
-
-**`patterns:` is deliberately not validated.** Section 6 defines it as taste — preferences rather than rules, with further keys permitted — so its value space is open. A closed set would reject correct framework-appropriate values: the bundled `go-cli` adapter uses `error-placement: console` and `confirmation: prompt`, which no browser-framework enum contains.
-
-## Relationship to buildfile
-
-The buildfile references widget names from the adapter, not surface vocabulary terms. When the agent generates a buildfile from a surface + adapter:
-
-1. Read the surface fragment's Shows/Actions/Flow
-2. Look up each term in the adapter to get the framework-specific widget
-3. Write the widget name into the buildfile
-
-The buildfile is fully framework-specific. The surface vocabulary does not appear in it. The adapter is the bridge between the two.
-
-When the agent generates CODE from a buildfile:
-
-1. Read the buildfile's components, elements, and actions (framework-specific widgets)
-2. Check if a composition recipe matches the component's surface terms — if so, follow the recipe's state/wiring pattern
-3. Follow the conventions for all implementation decisions (state management, naming, data flow, error handling)
-4. Write code files following the file-conventions
-
-The buildfile stays small (it describes WHAT). The adapter carries the implementation knowledge (HOW). The testcases verify behavior (CORRECT).
-
-## Ownership model
-
-| Section | Authored by | Customized by | Changes when |
-|---|---|---|---|
-| Shows/Actions/Flows | Parlay (shipped with adapter template) | Rarely — only if team uses different widgets | Framework version upgrade |
-| Compositions | Parlay (ships defaults) | Team (adapts to their patterns) | Team discovers a better pattern |
-| Conventions | Parlay (ships defaults) | Team (enforces their standards) | Team standards evolve |
-| Design system | Parlay (ships defaults for known frameworks) | Team (marks source per category) | Framework upgrade or Figma integration |
-| File conventions | Parlay (ships defaults) | Team (matches their project structure) | Project restructure |
-| Patterns | Parlay (ships defaults) | Team (matches their UX preferences) | Design system changes |
-| Mount strategies | Parlay (ships defaults for known frameworks) | Team (adapts to their codebase integration patterns) | Team discovers new integration patterns or changes page structure |
-| Component vocabulary | Design-system owner (mirrored into the adapter) | Rarely — vocabulary content is intended to be identical across same-design-system adapters | Vocabulary version bump (e.g., clarity@17 → clarity@18) |
-| Design tokens | Design-system owner (mirrored into the adapter) | Per-framework emit-forms; the token set itself is closed by vocabulary version | Vocabulary version bump or per-framework emit-form change |

@@ -1,18 +1,15 @@
-<!--
-parlay-section: cross-cutting
-parlay-feature: parlay-tool/multi-adapter
--->
+# Capabilities Schema — authoring digest
 
-# Capabilities Schema
+Derived from `capabilities.schema.md` at deploy time. Never hand-edit: edit the schema's
+`<!-- parlay:normative -->` blocks and re-run `parlay upgrade`.
 
-File: `spec/intents/<feature>/capabilities.yaml`. The closed-vocabulary backend artifact declaring the operations a feature exposes — commands and queries against domain entities, with input, steps, output shape, and allowed errors.
+This is what you need to AUTHOR the artifact — field tables, closed
+vocabularies, required shapes, invariants. It deliberately omits the
+schema's rationale and history. Open the full schema when a validator
+finding routes you there, when you are changing the schema itself, or
+when you need to know WHY a rule exists rather than what it is.
 
-Operation-shaped content lives here. Architectural prose for boundaries, probes, allowlists, and dependency pins lives in `infrastructure.md` — see `infrastructure.schema.md`. The two artifacts are co-equal and cover orthogonal concerns: `capabilities.yaml` answers "what does the backend do?" and `infrastructure.md` answers "what shape must the codebase hold for those operations to work safely?" Neither artifact is a stand-in for the other; many features have both.
-
-## Structure
-<!-- parlay:normative -->
-
-
+---
 
 ```yaml
 schema_version: 1
@@ -61,22 +58,7 @@ operations:
 | `operations[].policies` | No | Policies the operation enforces. Every entry must come from the `policies.schema.md` closed set. |
 | `operations[].steps` | Yes | Ordered list of steps. Each step's `type:` must come from the `steps.schema.md` closed set. |
 
-<!-- /parlay:normative -->
-
-## Why `source:` exists
-
-Every other artifact records where its content came from. `surface.yaml` fragments carry `source:`, `infrastructure.md` fragments carry `Source:`, and buildfile cross-cutting entries carry one too. `capabilities.yaml` was alone in having none, and the asymmetry was invisible for as long as traceability was only ever walked **forwards** — from intent, to artifact, to buildfile, to test.
-
-The reverse walk is what needs it. Given a change described in a person's words — "the approval step should also notify the requester" — something has to answer *which artifact owns that*. For a surface change the fragment's `source:` answers it. For a backend change there was nothing to answer with, so a backend refinement could not be routed to the operation it belongs to, and the only remaining options were to guess by name-similarity or to re-derive the whole artifact from intents. The first blesses contradictions; the second discards a reviewed document to change one line of it.
-
-**Required on generate, tolerated absent on read.** Every `capabilities.yaml` in existence was written before the field, and erroring on read would fail all of them at once over a fact none could have recorded — the same reasoning `testcases-file-missing` follows. `/parlay-create-artifacts` and the migration commands populate it going forward; a file without it still loads, and the reverse walk degrades to asking rather than failing.
-
-`source:` is traceability, not derivation. It records which intent an operation came from. It does not license the build phase to read intents — the buildfile remains the executable contract, and this field travels into it as data like any other.
-
-## The `input.type` namespace
-<!-- parlay:normative -->
-
-
+---
 
 `input.type` (e.g., `CreateTaskInput`) is **not** a reference into a closed vocabulary the way `subject.entity`/`output.entity` are references into `domain-model.yaml`'s declared entities — those two are cross-checked against the resolved root's domain model and fail with `capabilities-entity-undeclared`, which `input.type` has no equivalent of. There is no `types:` registry anywhere in the parlay artifact set today — `input.type` is a free-form descriptive name, unvalidated by the capabilities validator, that exists purely for human and AI readability when reading the operation. The Go representation (`parser.CapabilityIO.Type`) is a plain string with no cross-reference check.
 
@@ -86,12 +68,7 @@ Concretely:
 - **Where the DTO's actual field shape is declared**: nowhere, structurally. Unlike a domain entity's fields (which `domain-model.schema.md` closes over `DomainField`'s type set), an input DTO's fields are inferred by whoever consumes the capability — `build-feature` when it wires the operation into a buildfile, or an application-layer adapter's codegen — from context: the named entity in `subject`, the operation's `kind`, and the intent that produced the capability. This is a real, current limitation, not an oversight papered over: input shapes are so often a proper *subset* of an entity's fields (a create input omits `id`/`created_at`; an update input might omit most fields the caller isn't changing) that reusing `DomainEntity` directly would either be wrong (claims fields that aren't actually accepted) or require a second, parallel "partial entity" concept this schema doesn't have.
 - **A natural next step, not undertaken here**: a `types:` section paralleling `domain-model.yaml`'s entities — closed field lists per named input DTO — would give `input.type` the same closed-vocabulary treatment `subject.entity` already has. That's new schema surface, not a naming-namespace clarification, so it's out of scope for this consolidation; this section exists so the gap is documented rather than silently assumed away.
 
-<!-- /parlay:normative -->
-
-## Validation rules
-<!-- parlay:normative -->
-
-
+---
 
 The capabilities validator enforces:
 
@@ -107,12 +84,7 @@ The capabilities validator enforces:
 | `capabilities-entity-pending` (warning) | The referenced entity is not in the root model yet, but a feature's `spec/intents/<feature>/domain-model.yaml` contribution proposes it. The finding names the proposing feature. This case used to be indistinguishable from a typo — both graded as errors — so a feature referencing an entity a sibling was about to introduce had to ship a placeholder. Accept the proposing contribution and the reference resolves. |
 | `buildfile-operation-ref-unnormalized` | A downstream buildfile references an operation by bare local id rather than the `@<feature>/operation:<id>` form. |
 
-<!-- /parlay:normative -->
-
-## Policy-step-error tie rules
-<!-- parlay:normative -->
-
-
+---
 
 A `policies:` entry is a claim that the operation enforces something; that claim is only coherent if the operation also has a step that performs the check and an error that reports the check failing. Two of the three closed policies tie to a specific step and error pair:
 
@@ -131,26 +103,6 @@ An operation declaring `auth-required` or `permission-required` without the tied
 
 The reverse is NOT required — an operation may declare an `authorize` step or the `unauthorized`/`forbidden` errors without declaring the corresponding policy (a step or error can exist for reasons the closed policy vocabulary doesn't capture). The tie is one-directional: policy implies step-and-error, not the other way around.
 
-<!-- /parlay:normative -->
-
-## Relationship to blueprint's `authorization.policies`
-
-Capabilities' `policies:` (this closed three-value enum) and `blueprint.yaml`'s `authorization.policies` (named, free-form per-resource rules — see `blueprint.schema.md` Section 3) are related but serve different consumers and are **not** currently tied by a shared identifier:
-
-- Capabilities' `policies:` tells the **backend operation** which enforcement category applies (`auth-required`, `permission-required`, `transaction-required`) — it's what `build-feature` and the application-layer adapter need to know to wire the right guard around the operation's steps.
-- Blueprint's `authorization.policies.<name>` tells the **frontend** which specific business rule governs an action's visibility (e.g., `task-deletion: { controls: "task deletion", rule: "owner or admin" }`) — it's consumed by generated components for show/hide decisions, per `blueprint.schema.md`'s Section 3.
-
-A capability operation declaring `permission-required` says "this needs a permission check" without saying *which* blueprint policy supplies the concrete rule. Linking the two by name (e.g. an optional `policy-ref:` field on the operation) was considered and deferred here rather than added speculatively — nothing in the current pipeline consumes such a link (build-feature wires the backend guard from `policies:` alone; the frontend visibility rule is wired from the blueprint independently), so adding the field now would be an unused wire-contract addition. If a future feature needs the backend operation and the frontend visibility rule to provably reference the same policy, that field is the natural place to add it — this paragraph exists so that addition doesn't have to rediscover the reasoning.
-
-## Normalization
-<!-- parlay:normative -->
-
-
+---
 
 `parser.NormalizeOperationID(feature, id) -> "@feature/operation:id"` is the single sanctioned path that turns the feature-local id into the buildfile-canonical reference. Validators reject any buildfile reference that didn't pass through this function.
-
-<!-- /parlay:normative -->
-
-## Backward compatibility
-
-Features without `capabilities.yaml` continue to work — capability validation walks zero operations. Multi-target rules that consult `capabilities.yaml` short-circuit when the file is absent. The migration commands `parlay migrate-capabilities` and `parlay migrate-domain-operations` produce the file by moving operation-shaped content from `infrastructure.md` and `domain-model.operations` respectively; architectural-prose fragments in `infrastructure.md` are retained in place by design.

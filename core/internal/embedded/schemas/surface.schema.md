@@ -8,6 +8,9 @@ Generation sources:
 - `/parlay create-surface-by-figma ==link==` — from Figma via MCP
 
 ## Template
+<!-- parlay:normative -->
+
+
 
 ```
 # <Feature Name> — Surface
@@ -32,7 +35,12 @@ Generation sources:
 - <Design decisions, reviewer comments, open questions>
 ```
 
+<!-- /parlay:normative -->
+
 ## Fields
+<!-- parlay:normative -->
+
+
 
 | Field | Required | Parse rule |
 |---|---|---|
@@ -51,7 +59,12 @@ Generation sources:
 
 ---
 
+<!-- /parlay:normative -->
+
 ## Interaction Vocabulary
+<!-- parlay:normative -->
+
+
 
 The surface vocabulary is **framework-agnostic**. Every term describes a user intent or an information shape — never a widget, control, or visual treatment. The **adapter** maps each term to a framework-specific implementation.
 
@@ -172,7 +185,12 @@ A fragment may declare at most one Flow. Not every fragment needs a Flow — sim
 
 ---
 
+<!-- /parlay:normative -->
+
 ## Cross-feature composition
+<!-- parlay:normative -->
+
+
 
 Multiple features can target the same page. `/parlay view-page ==page-name==` collects all fragments targeting that page, groups by Region, sorts by Order. Conflicts (same region + same order) are flagged.
 
@@ -180,7 +198,9 @@ Multiple features can target the same page. `/parlay view-page ==page-name==` co
 
 ### `supersedes:` — the composition-level "this replaces that"
 
+<!-- parlay:rationale -->
 `supersedes: @feature/fragment` on a fragment declares that it replaces the named fragment where the two occupy the same `(page, region)`. It is deliberately the **same** concept the amendment ledger uses — one "this replaces that" model at every level, so a cross-feature intent that used to be a doomed hand-edit to a generated file is now durable spec. Codegen routes the *composed* result (the superseding fragment's output in the shared slot), not two parallel files that race to mount.
+<!-- /parlay:rationale -->
 
 Two fragments that both supersede the **same** target are a two-headed chain — the composition forks and no single winner exists, exactly the way two amendments carrying the same sequence number collide. That is an error, reported project-wide.
 
@@ -189,6 +209,8 @@ Two fragments that both supersede the **same** target are a two-headed chain —
 A fragment marked `interactive: false` produces output the user reads but never acts on — a readout, a status line, a rendered mesh. The adapter emits it as **non-hit-testable** output, so a sibling stacked over it cannot silently capture the input meant for something else (the "dead mouse" composition defect). Absent, a fragment is interactive and may capture input. The derived assembly suite (see testcases.schema.md) asserts each declared component is mounted, interactive components are hit-reachable, and `interactive: false` ones are not.
 
 When layout needs to be locked, use `/parlay lock-page` to create a page manifest (see page.schema.md).
+
+<!-- /parlay:normative -->
 
 ## Adapter mapping
 
@@ -223,6 +245,9 @@ Unknown identifiers are errors. Missing Actions is allowed (pure display fragmen
 - Feature-to-fragment hierarchy: from file location
 
 ## Section: YAML form
+<!-- parlay:normative -->
+
+
 
 <!-- parlay-extends: parlay-tool/multi-adapter/surface-yaml-and-migrator -->
 
@@ -277,3 +302,5 @@ Since v0.3 the runtime reads only `surface.yaml`. ANY `surface.md` in a feature 
 | Code | When it fires |
 |---|---|
 | `surface-md-unsupported` | A `surface.md` exists (beside a `.yaml` or alone). Removed as a runtime artifact in v0.3 — migrate and retire it. |
+
+<!-- /parlay:normative -->

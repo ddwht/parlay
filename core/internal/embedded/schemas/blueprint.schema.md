@@ -10,6 +10,9 @@ The blueprint is a **project-level singleton** — one per app, not per feature.
 Every section is optional. A CLI app may have only `navigation.strategy: cli-subcommands`. A simple web app may need only `shells` and `navigation`. Native apps typically use all sections including `platform`.
 
 ## Structure
+<!-- parlay:normative -->
+
+
 
 ```yaml
 app: <application name>
@@ -119,7 +122,12 @@ platform:
       type: <share-extension | today-widget | intent-extension>
 ```
 
+<!-- /parlay:normative -->
+
 ## Section 1: Layout hierarchy (shells)
+<!-- parlay:normative -->
+
+
 
 Shells describe the persistent chrome that wraps groups of pages. A shell has a name, a list of chrome regions (each mapped to a framework widget from the adapter), and a list of pages it wraps.
 
@@ -135,7 +143,12 @@ Shells describe the persistent chrome that wraps groups of pages. A shell has a 
 
 The first shell listed is the default — routes not explicitly assigned to a shell in `navigation.routes` inherit this one.
 
+<!-- /parlay:normative -->
+
 ## Section 2: Navigation
+<!-- parlay:normative -->
+
+
 
 Describes the app's route tree and how routes are wired together.
 
@@ -155,7 +168,12 @@ Describes the app's route tree and how routes are wired together.
 
 Route entries annotate — not duplicate — buildfile routes. The buildfile route says "path `/tasks`, components: [task-board, ...]" (the **what**). The blueprint route says "path `/tasks` uses `app-shell`, requires `auth` guard, is lazy-loaded" (the **how**). Code generation joins on `path`.
 
+<!-- /parlay:normative -->
+
 ## Section 3: Authorization
+<!-- parlay:normative -->
+
+
 
 Describes the app's access control model.
 
@@ -176,7 +194,12 @@ Guards are referenced by name in `navigation.routes[].guard`. They produce route
 
 **Not the same vocabulary as capabilities' `policies:`.** This `authorization.policies` block (named, free-form business rules — `owner or admin`, `task deletion`) is a different vocabulary from `capabilities.yaml`'s closed three-value `policies:` enum (`auth-required`/`permission-required`/`transaction-required`; see `capabilities.schema.md`'s "Policy-step-error tie rules" and "Relationship to blueprint's `authorization.policies`" sections). The two are related in spirit — both are "policy" in the everyday sense — but they're not the same field, don't share an identifier space, and a capability operation declaring `permission-required` does not currently reference a specific entry here by name. Don't conflate the two when reading either schema.
 
+<!-- /parlay:normative -->
+
 ## Section 4: Data architecture
+<!-- parlay:normative -->
+
+
 
 Describes the app's data fetching, caching, and offline strategy.
 
@@ -192,7 +215,12 @@ Describes the app's data fetching, caching, and offline strategy.
 | `prefetch[].route` | Yes | Route path to prefetch for |
 | `prefetch[].data` | Yes | List of data to prefetch |
 
+<!-- /parlay:normative -->
+
 ## Section 5: Error architecture
+<!-- parlay:normative -->
+
+
 
 Describes error boundary placement and HTTP error handling.
 
@@ -209,7 +237,12 @@ Describes error boundary placement and HTTP error handling.
 | `retry.strategy` | No | Retry approach: `none`, `exponential-backoff`, `immediate-once` |
 | `retry.applies-to` | No | Which operations to retry: `reads`, `writes`, `all` |
 
+<!-- /parlay:normative -->
+
 ## Section 6: State architecture
+<!-- parlay:normative -->
+
+
 
 Describes global state slices and how state propagates through the app.
 
@@ -224,7 +257,12 @@ Describes global state slices and how state propagates through the app.
 | `url-state[].param` | Yes | Query parameter name |
 | `url-state[].controls` | Yes | What it drives (e.g., "active tab", "filter preset") |
 
+<!-- /parlay:normative -->
+
 ## Section 7: Platform integration
+<!-- parlay:normative -->
+
+
 
 Native-app-only section for OS-level integration points. Omit entirely for web and CLI apps.
 
@@ -235,6 +273,8 @@ Native-app-only section for OS-level integration points. Omit entirely for web a
 | `background-tasks` | No | Scheduled or event-driven background work |
 | `widgets` | No | Home screen / lock screen widgets |
 | `extensions` | No | App extensions (share sheets, today widgets, Siri intents) |
+
+<!-- /parlay:normative -->
 
 ## Versioning
 

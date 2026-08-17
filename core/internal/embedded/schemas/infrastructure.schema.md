@@ -8,6 +8,9 @@ Architectural prose is the co-equal counterpart to the operation-shaped content 
 Infrastructure fragments are also the behind-the-scenes counterpart to surface fragments. Surface fragments describe what the user sees; infrastructure fragments describe what shape the codebase needs. Both feed the buildfile: surface → `components:`, infrastructure → `cross-cutting:`. All four spec artifacts (surface, capabilities, infrastructure, domain-model) are **framework-agnostic** — concrete file paths, function signatures, and language keywords are resolved at build-feature time by consulting the adapter and scanning the existing source tree.
 
 ## When to use infrastructure.md vs capabilities.yaml
+<!-- parlay:normative -->
+
+
 
 The two artifacts answer different questions about the feature; the choice is not enforced by a validator and the schema does not auto-classify. Use prose judgment, guided by the question the fragment is trying to answer.
 
@@ -18,7 +21,12 @@ Many features have both. A feature that introduces a new operation typically als
 
 Four representative architectural categories are worked through in the examples below: **boundary**, **probe**, **allowlist**, and **dependency pin**. These categories are illustrative, not exhaustive — other architectural concerns also belong in `infrastructure.md`. Authors of new fragments may extend the list freely; the schema is advisory and does not enforce a closed taxonomy.
 
+<!-- /parlay:normative -->
+
 ## Template
+<!-- parlay:normative -->
+
+
 
 ```
 # <Feature Name> — Infrastructure
@@ -40,7 +48,12 @@ Four representative architectural categories are worked through in the examples 
 - <Additional constraints, design decisions, edge cases>
 ```
 
+<!-- /parlay:normative -->
+
 ## Fields
+<!-- parlay:normative -->
+
+
 
 | Field | Required | Parse rule |
 |---|---|---|
@@ -54,7 +67,12 @@ Four representative architectural categories are worked through in the examples 
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines. Additional constraints, design decisions, edge cases. |
 | Deliberately-Specific | No | `**Deliberately-Specific**:` followed by one line of justification. Suppresses the portability lint for this fragment. See "Promoted fragments and deliberate specificity" below. |
 
+<!-- /parlay:normative -->
+
 ## Constraints
+<!-- parlay:normative -->
+
+
 
 - `Affects`, `Behavior`, and `Source` are required on every fragment. Validation errors out if any are missing.
 - `Affects` and `Behavior` are **framework-agnostic**. They must NOT contain: function names or signatures (e.g., `classifyDir(path string)`), file paths with language-specific extensions (e.g., `internal/config/config.go`, `app/models/user.rb`), language keywords that imply implementation (`func`, `def`, `class`, `interface`, `struct`, `impl`, `enum`, `trait`, `module`), or qualified import paths. The portability lint emits warnings (not errors) when it detects these — the file is still valid, but the warnings flag content that should be rephrased in domain terms.
@@ -62,7 +80,12 @@ Four representative architectural categories are worked through in the examples 
 - Concrete `target-files:`, `target-pattern:`, and `introduces:` values do **not** belong in infrastructure.md. They are generated at build-feature time by the adapter bridge (see Buildfile mapping below).
 - Fragment names must be unique within the feature's infrastructure.md.
 
+<!-- /parlay:normative -->
+
 ## Promotion: where a refinement lands
+<!-- parlay:normative -->
+
+
 
 `infrastructure.md` is the promotion target for implementation-shaped refinements — a change stated in a person's words that is real, is architectural, and belongs in the spec rather than only in the code.
 
@@ -79,6 +102,8 @@ Promotion makes that case common rather than rare, and a warning that fires on e
 So a fragment may declare `**Deliberately-Specific**:` with a one-line justification, which suppresses the lint for that fragment. The justification is the point — it is not a mute switch, it is a claim on the record that this fragment names a specific thing because the constraint is about that thing. A reviewer can disagree with it; nobody can disagree with a warning that was never read.
 
 Do not add it to silence a fragment that could have been phrased in domain terms. That trades a warning you would have fixed for a permanent one you have promised not to.
+
+<!-- /parlay:normative -->
 
 ## Worked examples
 
@@ -139,6 +164,9 @@ Four fragments drawn from real architectural categories. Each populates the fiel
 ```
 
 ## Buildfile mapping
+<!-- parlay:normative -->
+
+
 
 Infrastructure fragments are translated into `cross-cutting:` entries by the **adapter bridge** at build-feature time. The translation is not a 1:1 field rename — it is a resolution step that consults the adapter and the existing source tree:
 
@@ -154,6 +182,8 @@ Infrastructure fragments are translated into `cross-cutting:` entries by the **a
 When `Affects:` cannot be resolved to any file in the source tree, build-feature pauses and asks the designer which files are affected — it never guesses.
 
 The same infrastructure.md combined with a different adapter produces different `cross-cutting:` entries appropriate to that adapter's framework. The fragment provides the WHAT (constraint + invariants); the adapter provides the HOW.
+
+<!-- /parlay:normative -->
 
 ## Validation
 

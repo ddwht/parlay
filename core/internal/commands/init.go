@@ -192,6 +192,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := embedded.WriteSchemaDigest(schemasPath); err != nil {
 		return fmt.Errorf("failed to write schema digest: %w", err)
 	}
+	// Per-schema authoring digests — what the build and code phases read
+	// instead of the full schema when authoring an artifact.
+	if _, err := embedded.WriteAuthoringDigests(schemasPath); err != nil {
+		return fmt.Errorf("failed to write authoring digests: %w", err)
+	}
 
 	// Operation: copy-bundled-adapter (if selected)
 	adapterName := ""

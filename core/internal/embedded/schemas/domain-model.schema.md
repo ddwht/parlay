@@ -73,6 +73,9 @@ phase of `studio-support/domain-model-yaml-migration`:
 Changing either decision is a `schema_version` bump.
 
 ## Top-level shape
+<!-- parlay:normative -->
+
+
 
 ```yaml
 schema_version: 1     # required integer; first released value is 1
@@ -91,7 +94,12 @@ chain (`v1 → v2 → ... → binary`); the on-disk file is unchanged.
 Unreachably-old (no migrator chain reaches binary) fails with
 `schema-version-unreachable`.
 
+<!-- /parlay:normative -->
+
 ## `DomainEnum`
+<!-- parlay:normative -->
+
+
 
 ```yaml
 name: OrderStatus
@@ -114,7 +122,12 @@ Presentation metadata (`label`, `tone`) lives on enums deliberately, as
 an exception to the "domain is logic-only" rule, so designers can
 preview rendering without an adapter round-trip.
 
+<!-- /parlay:normative -->
+
 ## `DomainEntity`
+<!-- parlay:normative -->
+
+
 
 ```yaml
 name: Order
@@ -136,7 +149,12 @@ fields:
   and `ref`-typed fields.
 - `fields` (required, may be empty) — list of `DomainField`.
 
+<!-- /parlay:normative -->
+
 ## `DomainField`
+<!-- parlay:normative -->
+
+
 
 ```yaml
 name: status
@@ -209,7 +227,12 @@ would need a new construct (something like a `transitions:` block on
 shape is out of scope for this consolidation; naming the gap explicitly
 is what's in scope.
 
+<!-- /parlay:normative -->
+
 ## `DomainRelationship`
+<!-- parlay:normative -->
+
+
 
 ```yaml
 name: customer-orders
@@ -269,6 +292,8 @@ Only records from each feature's **composing** fixture are counted — the data
 the prototype actually boots with. A scenario fixture describes a state the
 running app never enters, so its records cannot coexist with the seed's.
 
+<!-- /parlay:normative -->
+
 ## `DomainOperation`
 
 ```yaml
@@ -288,6 +313,9 @@ effects:
   check on them.
 
 ## Finding element paths
+<!-- parlay:normative -->
+
+
 
 <!-- parlay-feature: studio-support/structured-domain-model-validation -->
 <!-- parlay-component: cross-cutting/element-path-on-every-finding -->
@@ -325,6 +353,8 @@ failure (`invalid-yaml`), a missing or non-integer `schema_version`
 (`schema-version-newer-than-binary`, `schema-version-unreachable`), and
 the removed-operations-block finding (`domain-operations-unsupported`),
 whose block spans the whole model.
+
+<!-- /parlay:normative -->
 
 ## Error codes
 

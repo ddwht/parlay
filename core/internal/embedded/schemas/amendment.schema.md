@@ -10,6 +10,9 @@ File: `spec/intents/<feature>/amendments/NNN-<slug>.md`. The append-only change 
 An amendment records a refinement to an existing feature: what changed, why, and — machine-readably — which contract artifact entries it touches. The apply step splices the delta into those artifacts and lands the `## Acceptance` bullets as `verify:` entries on them. The founding documents (intents.md, dialogs.md) are frozen at feature birth and are never modified by an amendment.
 
 ## Structure
+<!-- parlay:normative -->
+
+
 
 ```markdown
 ---
@@ -43,9 +46,16 @@ supersedes:
 | `## Why` | No (strongly encouraged) | The reasoning. |
 | `## Acceptance` | Behavior changes: yes | Criteria the apply step lands as `verify:` on the affected entries. Legitimately absent for renames and pure-prose changes. |
 
+<!-- /parlay:normative -->
+
 ## Filename and sequence
+<!-- parlay:normative -->
+
+
 
 `NNN-<slug>.md`, three digits, sequential from `001`. Lexical order equals ledger order in every directory listing. A gap in the sequence is what a compacted ledger legitimately looks like (`amendments/archive/` holds the pre-compaction files); a duplicate is a collision. Files not matching the pattern are invisible to the ledger and reported by `check-amendments`.
+
+<!-- /parlay:normative -->
 
 ## Versioning
 

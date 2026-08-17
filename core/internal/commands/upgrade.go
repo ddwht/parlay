@@ -121,6 +121,20 @@ func deployToRoot(rootPath string) (upgradeResult, error) {
 		schemaCount++
 	}
 
+	// Per-schema authoring digests, deployed and pruned on the same terms as
+	// the schemas they derive from: a digest whose schema was retired is read
+	// as authoritative exactly like a stale schema would be.
+	digestsWritten, err := embedded.WriteAuthoringDigests(schemasPath)
+	if err != nil {
+		return upgradeResult{}, fmt.Errorf("write authoring digests: %w", err)
+	}
+	schemaCount += digestsWritten
+	prunedDigests, err := embedded.PruneStaleAuthoringDigests(schemasPath)
+	if err != nil {
+		return upgradeResult{}, fmt.Errorf("prune authoring digests: %w", err)
+	}
+	prunedSchemas += prunedDigests
+
 	// Re-deploy the phase modules. These are skill sources that no longer
 	// appear on the agent's menu — the driver and the phase subagents load
 	// them by path. They land beside the schemas because the content is

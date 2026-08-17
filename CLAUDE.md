@@ -20,14 +20,25 @@ the one they need. The full CLI is still there — run `parlay --help`.
 
 ## Schema Loading
 
-Read .parlay/schemas/DIGEST.md first. It is derived from the schemas and lists
-every error code the tool can emit and when each fires — 9 KB instead of the
-263 KB corpus. It tells you which schema to open and which mistakes are
-pre-checkable, so you are not discovering validator rules by triggering them.
+Two derived layers sit in front of the schema corpus. Both are generated at
+deploy time from the schemas themselves, so neither can drift from them.
 
-Then load the specific schema you need on demand, and do not keep schema
-content in memory across commands. DIGEST.md is a routing table, not a
-substitute: author an artifact against its own schema.
+**Diagnosing** — read .parlay/schemas/DIGEST.md first. It lists every error
+code the tool can emit and when each fires, in a fraction of the corpus. It
+tells you which schema to open and which mistakes are pre-checkable, so you
+are not discovering validator rules by triggering them.
+
+**Authoring** — read .parlay/schemas/digests/<name>.digest.md. It carries the
+normative half of that schema (field tables, closed vocabularies, required
+shapes, invariants) without the rationale and history, which is what you
+need to WRITE the artifact rather than to understand why it is shaped that
+way.
+
+Open the full .parlay/schemas/<name>.schema.md when a finding routes you
+there, when a digest does not answer a question you actually have, or when
+you are changing the schema itself. Do not open one out of caution — the
+digests are derived, so what they state is what the schema states. Load on
+demand either way, and do not keep schema content in memory across commands.
 
 ## Interactive Questions
 

@@ -1,14 +1,15 @@
-# Testcases Schema
+# Testcases Schema — authoring digest
 
-File: `.parlay/build/<feature-name>/testcases.yaml`
-Generated alongside buildfile.yaml by `/parlay build-feature`. Tool-internal — drives cross-validation and feeds spec generation, never handed off to engineering. Defines property-based tests that verify the prototype matches the buildfile contract.
+Derived from `testcases.schema.md` at deploy time. Never hand-edit: edit the schema's
+`<!-- parlay:normative -->` blocks and re-run `parlay upgrade`.
 
-Tests are specification-level — they verify what the user sees and can do, not implementation details. Any AI agent generating test code from this file must produce tests that pass against a correctly built prototype.
+This is what you need to AUTHOR the artifact — field tables, closed
+vocabularies, required shapes, invariants. It deliberately omits the
+schema's rationale and history. Open the full schema when a validator
+finding routes you there, when you are changing the schema itself, or
+when you need to know WHY a rule exists rather than what it is.
 
-## Structure
-<!-- parlay:normative -->
-
-
+---
 
 ```yaml
 feature: <feature-slug>
@@ -51,12 +52,7 @@ suites:
             expected: <new state value>
 ```
 
-<!-- /parlay:normative -->
-
-## Step types
-<!-- parlay:normative -->
-
-
+---
 
 ### Actions
 
@@ -91,12 +87,7 @@ suites:
 
 **This table is the authoritative list.** The example above abbreviates it, and for a while the two disagreed: the example carried `hidden`/`disabled` that the table omitted, the table carried `class`, `file-exists`, `file-content`, `directory-exists` and `error` that the example omitted, and generated suites used terms from both — so neither list on its own described what the tool produces. `testcases-unknown-term` validates against this table. If a term belongs in the vocabulary, it goes here.
 
-<!-- /parlay:normative -->
-
-## Suite organization
-<!-- parlay:normative -->
-
-
+---
 
 - One suite per component + fixture combination
 - Component name must match a component in buildfile.yaml
@@ -104,12 +95,7 @@ suites:
 - Intent must reference the source intent via `@feature/intent-slug` for traceability
 - Each case tests one behavior or state
 
-<!-- /parlay:normative -->
-
-## Test categories
-<!-- parlay:normative -->
-
-
+---
 
 Tests should cover these categories (derived from buildfile):
 
@@ -121,16 +107,7 @@ Tests should cover these categories (derived from buildfile):
 6. **Navigation** — route changes work as defined
 7. **Edge cases** — derived from acceptance criteria and intent Questions (empty states, error conditions, boundary values)
 
-<!-- /parlay:normative -->
-
-## Where assertions come from
-
-Suite assertions derive from the contract artifacts' `verify:` fields — the operation's `verify:` in capabilities.yaml for operation suites, the fragment's `verify:` in surface.yaml for component suites. There is no fallback since v0.3: an entry without `verify:` means the criteria were never relocated — run `parlay migrate-verify`. The intent **Verify** bullets are history, not a source.
-
-## Criterion-driven cases
-<!-- parlay:normative -->
-
-
+---
 
 A case exists because a criterion demands it. Three per-case fields make that reason machine-checkable rather than prose:
 
@@ -142,12 +119,7 @@ A case exists because a criterion demands it. Three per-case fields make that re
 
 **`coverage:`** — `full` (default) or `state-only`. A display-shaped criterion ("the viewport shows the mesh") whose adapter cannot deliver `appears` yet compiles down to a store-level assertion ("the store holds the mesh"). Stamping `coverage: state-only` records that the downgrade happened, so the coverage reviewer sees a weaker claim instead of a silent one (part E). An unknown value draws `testcases-coverage-unknown`. The stamp **lifts** to `full` the moment the adapter declares support for the level the criterion needs (see § The `appears` step) — the same criterion then compiles to a real `appears` assertion instead of a store proxy.
 
-<!-- /parlay:normative -->
-
-## The `appears` step
-<!-- parlay:normative -->
-
-
+---
 
 A store assertion cannot see composition. The four composition defects the benchmark surfaced — a cache serving a stale mesh, an unmounted component, a dead input, an importer that never presents — all left the store correct; only a render-level fact would have caught them. `appears` is that fact, at three depths:
 
@@ -170,12 +142,7 @@ steps:
 
 **Capability gating.** `appears` is adapter-gated the same way operation steps are (`adapter-supports-missing-step`): a presentation adapter declares which levels it can emit assertions for via `render-support:` (see adapter.schema.md). When the adapter declares the level the criterion needs, `build-feature` emits the `appears` step and the case is `coverage: full`. When it does not — every adapter that predates the field, which is all of them today — the criterion compiles to a store-level assertion and the case is stamped `coverage: state-only`. **The state-only path is the default**: an adapter with no `render-support:` block delivers no `appears` levels, and every display criterion against it downgrades honestly rather than failing.
 
-<!-- /parlay:normative -->
-
-## Derived assembly suite
-<!-- parlay:normative -->
-
-
+---
 
 One suite per page, generated by `build-feature` with **no author in the loop** from what the surface already declares — the composition defects are invisible to any per-component check, so nothing an author writes per feature can catch them. For each page a feature contributes to:
 
@@ -185,31 +152,7 @@ One suite per page, generated by `build-feature` with **no author in the loop** 
 
 The suite is `kind: presentation`, `scope: route`, and derives entirely from the surface + page manifest; it carries no hand-authored expectations. Where the adapter cannot deliver a level yet, the corresponding assertion is stamped `coverage: state-only` exactly as an ordinary case would be.
 
-<!-- /parlay:normative -->
-
-## Determinism contract
-
-Two AI agents reading the same testcases.yaml must produce tests that:
-- Test the same behaviors in the same order
-- Use the same fixtures
-- Verify the same expected outcomes
-- Pass against any prototype correctly built from the same buildfile
-
-The test code may differ (assertion syntax, selector strategy), but the test coverage and expectations must be equivalent.
-
-## Parsing
-
-- YAML structure — standard YAML parsing
-- Component references: match `components` keys in buildfile.yaml
-- Fixture references: match `fixtures` keys in buildfile.yaml
-- Element references: match `elements[].name` in buildfile components
-- Action references: match `actions[].name` in buildfile components
-- Model references: `EntityName.field` dot notation for state verification
-
-## Schema version 2: discriminated suite kinds
-<!-- parlay:normative -->
-
-
+---
 
 <!-- parlay-extends: parlay-tool/multi-adapter/testcases-v2 -->
 
@@ -314,10 +257,6 @@ suites:
 
 The value is **not** decided when authoring testcases.yaml. `parlay internal scaffold-plan` expands the adapter's `file-conventions.paths.test` template once per component and emits the result as a `plan.creates` row; `file:` is that row. This makes three things true at once that were previously independent guesses: the path obeys the project's adapter, the path is inside the plan allowlist codegen enforces, and every component's tests land in the same place.
 
-<!-- parlay:rationale -->
-**Why the field exists.** `build-feature` said "one test suite per component" and named no location. `generate-code` then had to write the file anyway, and its instruction was "tests live at the location the framework expects" — a convention it invented at emission time, invisible to the adapter and to the plan, and not necessarily the same convention the next run would infer. A question left open at the step that owns it does not stay open; it is answered downstream by whoever reaches it first, with less context than the step that should have decided it.
-<!-- /parlay:rationale -->
-
 **Prefer `file:` over a new `kind:`.** The suite `kind:` set is closed at `{presentation, operation}`, and a suite whose code lives in a hand-authored unit is not a third kind of suite — it is an ordinary suite whose file someone else maintains.
 
 #### Citing a hand-authored test
@@ -366,5 +305,3 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
 | `testcases-case-criterion-missing` (warning) | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. Warning while the field lands — every testcases.yaml predates it. |
 | `verify-criterion-uncovered` (warning) | A contract entry (an operation or fragment carrying `verify:`) has no case whose `criterion.ref` discharges it and no `coverage-review.yaml` exemption. Warning while criterion-driven cases land — every testcases.yaml predates `criterion:`. |
-
-<!-- /parlay:normative -->

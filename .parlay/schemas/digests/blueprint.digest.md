@@ -1,18 +1,15 @@
-# Application Blueprint Schema
+# Application Blueprint Schema — authoring digest
 
-File: `.parlay/blueprint.yaml`
-Created during project setup or before first code generation.
+Derived from `blueprint.schema.md` at deploy time. Never hand-edit: edit the schema's
+`<!-- parlay:normative -->` blocks and re-run `parlay upgrade`.
 
-The application blueprint captures **per-app architectural decisions** that are too app-specific for the framework adapter and too cross-cutting for any single feature. The adapter answers "how does our framework work?" — the blueprint answers "how is this app wired together?"
+This is what you need to AUTHOR the artifact — field tables, closed
+vocabularies, required shapes, invariants. It deliberately omits the
+schema's rationale and history. Open the full schema when a validator
+finding routes you there, when you are changing the schema itself, or
+when you need to know WHY a rule exists rather than what it is.
 
-The blueprint is a **project-level singleton** — one per app, not per feature. It is **team-authored** (by the tech lead or architect) and lives in the tool zone (`.parlay/`), not in `spec/intents/`.
-
-Every section is optional. A CLI app may have only `navigation.strategy: cli-subcommands`. A simple web app may need only `shells` and `navigation`. Native apps typically use all sections including `platform`.
-
-## Structure
-<!-- parlay:normative -->
-
-
+---
 
 ```yaml
 app: <application name>
@@ -122,12 +119,7 @@ platform:
       type: <share-extension | today-widget | intent-extension>
 ```
 
-<!-- /parlay:normative -->
-
-## Section 1: Layout hierarchy (shells)
-<!-- parlay:normative -->
-
-
+---
 
 Shells describe the persistent chrome that wraps groups of pages. A shell has a name, a list of chrome regions (each mapped to a framework widget from the adapter), and a list of pages it wraps.
 
@@ -143,12 +135,7 @@ Shells describe the persistent chrome that wraps groups of pages. A shell has a 
 
 The first shell listed is the default — routes not explicitly assigned to a shell in `navigation.routes` inherit this one.
 
-<!-- /parlay:normative -->
-
-## Section 2: Navigation
-<!-- parlay:normative -->
-
-
+---
 
 Describes the app's route tree and how routes are wired together.
 
@@ -168,12 +155,7 @@ Describes the app's route tree and how routes are wired together.
 
 Route entries annotate — not duplicate — buildfile routes. The buildfile route says "path `/tasks`, components: [task-board, ...]" (the **what**). The blueprint route says "path `/tasks` uses `app-shell`, requires `auth` guard, is lazy-loaded" (the **how**). Code generation joins on `path`.
 
-<!-- /parlay:normative -->
-
-## Section 3: Authorization
-<!-- parlay:normative -->
-
-
+---
 
 Describes the app's access control model.
 
@@ -194,12 +176,7 @@ Guards are referenced by name in `navigation.routes[].guard`. They produce route
 
 **Not the same vocabulary as capabilities' `policies:`.** This `authorization.policies` block (named, free-form business rules — `owner or admin`, `task deletion`) is a different vocabulary from `capabilities.yaml`'s closed three-value `policies:` enum (`auth-required`/`permission-required`/`transaction-required`; see `capabilities.schema.md`'s "Policy-step-error tie rules" and "Relationship to blueprint's `authorization.policies`" sections). The two are related in spirit — both are "policy" in the everyday sense — but they're not the same field, don't share an identifier space, and a capability operation declaring `permission-required` does not currently reference a specific entry here by name. Don't conflate the two when reading either schema.
 
-<!-- /parlay:normative -->
-
-## Section 4: Data architecture
-<!-- parlay:normative -->
-
-
+---
 
 Describes the app's data fetching, caching, and offline strategy.
 
@@ -215,12 +192,7 @@ Describes the app's data fetching, caching, and offline strategy.
 | `prefetch[].route` | Yes | Route path to prefetch for |
 | `prefetch[].data` | Yes | List of data to prefetch |
 
-<!-- /parlay:normative -->
-
-## Section 5: Error architecture
-<!-- parlay:normative -->
-
-
+---
 
 Describes error boundary placement and HTTP error handling.
 
@@ -237,12 +209,7 @@ Describes error boundary placement and HTTP error handling.
 | `retry.strategy` | No | Retry approach: `none`, `exponential-backoff`, `immediate-once` |
 | `retry.applies-to` | No | Which operations to retry: `reads`, `writes`, `all` |
 
-<!-- /parlay:normative -->
-
-## Section 6: State architecture
-<!-- parlay:normative -->
-
-
+---
 
 Describes global state slices and how state propagates through the app.
 
@@ -257,12 +224,7 @@ Describes global state slices and how state propagates through the app.
 | `url-state[].param` | Yes | Query parameter name |
 | `url-state[].controls` | Yes | What it drives (e.g., "active tab", "filter preset") |
 
-<!-- /parlay:normative -->
-
-## Section 7: Platform integration
-<!-- parlay:normative -->
-
-
+---
 
 Native-app-only section for OS-level integration points. Omit entirely for web and CLI apps.
 
@@ -273,90 +235,3 @@ Native-app-only section for OS-level integration points. Omit entirely for web a
 | `background-tasks` | No | Scheduled or event-driven background work |
 | `widgets` | No | Home screen / lock screen widgets |
 | `extensions` | No | App extensions (share sheets, today widgets, Siri intents) |
-
-<!-- /parlay:normative -->
-
-## Versioning
-
-The blueprint has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — deferred for the same reason as the adapter file: `blueprint.yaml` is hand-authored, team-owned, and long-lived (exactly the migrator-chain profile), but its top-level shape (the closed `data`/`auth`/`errors`/`state`/`navigation`/`platform` scope) hasn't had a breaking change since it stabilized. There's no prior version to migrate from yet. Add `schema_version:` with a real migrator when the first breaking shape change actually happens, not speculatively now.
-
-## Validation
-
-When a blueprint file is loaded, the tool verifies:
-- Valid YAML syntax
-- Every shell name referenced in `navigation.routes[].shell` exists in `shells:`
-- Every guard name referenced in `navigation.routes[].guard` exists in `authorization.guards:`
-- `navigation.strategy` is one of: `hash`, `browser`, `native-stack`, `native-tab`, `cli-subcommands`
-- `authorization.strategy` (if present) is one of: `role-based`, `permission-based`, `attribute-based`, `none`
-- No duplicate route paths in `navigation.routes`
-- `navigation.default-route` (if present) corresponds to a valid route path
-- Page names in `shells[].wraps` (when not `"all"`) have corresponding `**Page**:` values in at least one feature surface (warning, not error — surfaces may not exist yet)
-
-## Relationship to other artifacts
-
-| Artifact | Relationship |
-|---|---|
-| **Adapter** | Sibling. Adapter says HOW to implement (framework conventions). Blueprint says WHAT to implement at the app level. Both feed into code generation. |
-| **Buildfile** | Consumer. Buildfile routes JOIN with blueprint routes on `path`. Blueprint adds shell, guard, lazy metadata to each route. |
-| **Surface** | Upstream. Surface fragments declare `**Page**:` targets. Blueprint shells reference those page names via `wraps`. |
-| **Page manifest** | Parallel. Page manifest locks fragment ordering within a page. Blueprint assigns the page to a shell. Neither replaces the other. |
-| **Config** | Neighbor in `.parlay/`. Config says which framework. Blueprint says how the app is structured. |
-
-## Ownership model
-
-| Aspect | Owner |
-|---|---|
-| Blueprint content | Tech lead / architect |
-| Blueprint file location | Parlay (always `.parlay/blueprint.yaml`) |
-| When it changes | App structure changes (new shell, new role, data strategy shift) |
-| Effect of change | `parlay internal diff` reports `sections.blueprint: "changed"`, triggering regeneration of cross-cutting files (shells, guards, providers, error boundaries) |
-
-## Pipeline consumption
-
-**build-feature** reads the blueprint for:
-- Guard-related elements: if a route has a guard, the buildfile component may need unauthorized/forbidden elements
-- Role-aware fixtures: if authorization defines roles, fixtures should include users with different roles
-
-**generate-code** reads the blueprint for:
-- Generating shell/layout components from `shells:`
-- Wiring the route tree with strategy, guards, lazy loading, redirects, and 404 handling
-- Placing error boundaries at specified scopes
-- Setting up global state providers from `state.global`
-- Configuring data fetching infrastructure from `data:`
-- Platform integration setup from `platform:` (native only)
-
-The codegen boundary is preserved: the blueprint lives in `.parlay/`, so generate-code never needs to read `spec/intents/`.
-
-## Section: Scope, precedence, and strategy selection
-
-<!-- parlay-extends: parlay-tool/multi-adapter/blueprint-scope-and-precedence -->
-
-### Owned scope
-
-Blueprint's owned scope is closed to: `app`, `shells`, `navigation`, `authorization`, `data`, `errors`, `state`, `platform`. Any other top-level key fails validation.
-
-This list previously read `data, auth, errors, state, navigation, platform` — omitting `app:`, `shells:` and `authorization:`, all three documented in the schema body above and all three present in every real blueprint. Read literally, it declared the standard blueprint invalid. It also wrote `auth` where the body writes `authorization`, and that discrepancy was not confined to prose: the scope validator decoded `auth.strategy`, so on a real blueprint the key was simply absent and the check passed vacuously. Key names in this section are read by code — they must match the body.
-
-Topology — i.e., which adapter occupies which slot, what source roots they emit into, what cross-kind edges are authorized — is **not** in blueprint's scope. Topology lives in `.parlay/adapter-set.yaml`. A blueprint that declares a `targets:` block fails validation with `blueprint-topology-not-allowed`.
-
-### Layered precedence
-
-Settings flow through three layers. Higher layers override lower ones:
-
-```
-blueprint  >  adapter-set  >  adapter default
-```
-
-The validation surface resolves each setting against `blueprint`, `adapter-set`, and `adapter` in that precedence order and attributes every effective setting to the layer that produced it.
-
-### Strategy validation
-
-Every strategy choice — `data.fetching`, `auth.strategy`, `errors.retry`, etc. — must reference a value the relevant adapter declares it supports. Out-of-vocabulary values fail with `blueprint-strategy-unknown`; values within the closed vocabulary that the adapter doesn't support fail with `blueprint-strategy-unsupported`.
-
-| Code | When it fires |
-|---|---|
-| `blueprint-topology-not-allowed` | Blueprint declares `targets:` (topology is not in scope). |
-| `blueprint-strategy-unknown` | A strategy value is outside its closed vocabulary. |
-| `blueprint-strategy-unsupported` | A strategy value is in vocabulary but the relevant adapter does not declare support. |
-| `blueprint-scope-violation` | A top-level key falls outside the closed scope set. |
-| `blueprint-override-conflict` | Two layers attempt to set the same key with conflicting values that the resolver cannot reconcile. |

@@ -162,6 +162,30 @@ Expected effect: ~150 KB → ~30–40 KB of schema context per pipeline run
 (~30–40k tokens), every run, plus the same per-phase saving on the adapter
 double-load (load once, reference).
 
+**Measured after implementation: the estimate above was wrong.** First-pass
+marking gives build 189.6 KB → 148.1 KB (22%, ~10.4k tokens/run) and code
+134.5 KB → 100.5 KB (25%, ~8.5k tokens/run) — real, but a quarter of what
+was projected, not three quarters.
+
+The projection assumed the schemas were mostly rationale with tables
+embedded. They are not. Reading the largest prose paragraphs inside the
+marked sections, most are genuinely normative: plan-integrity validation
+rules, the freshness-gate contract, `owns:` semantics, the `enforced-by:`
+rule, the presentation-only shape. Only a handful are history ("why
+`capabilities` and `infrastructure` were added", "the per-component field
+was called `operations:` in v1"), and those are what the nested
+`parlay:rationale` marker now excludes — 4.2 KB across four schemas.
+
+Getting substantially below this needs a judgment the extractor cannot make:
+which normative rules are *edge-case* normative — real, but needed at
+validation time rather than authoring time, and therefore reachable through
+DIGEST.md's routing instead of resident in every run. That is a per-schema
+editorial pass, and the marker infrastructure is what makes it incremental:
+tightening a schema's fences is a schema edit whose effect is measurable in
+the next `parlay upgrade`. Left as follow-on work rather than rushed here,
+because a fence drawn around a rule an author needed produces an invalid
+artifact — the failure mode digest.go already warns about, inverted.
+
 ## Explicitly out of scope
 
 - Re-litigating ideas the improvement round already rejected: CLI refs

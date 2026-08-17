@@ -4,6 +4,9 @@ File: `spec/intents/<feature-name>/dialogs.md`
 Contains one or more dialog segments separated by `---`.
 
 ## Template
+<!-- parlay:normative -->
+
+
 
 ```
 # <Feature Name> — Dialogs
@@ -20,7 +23,12 @@ System (background): <action not visible to user>
 System (condition: <when>): <conditional response>
 ```
 
+<!-- /parlay:normative -->
+
 ## Turn types
+<!-- parlay:normative -->
+
+
 
 | Turn | Syntax | Content |
 |---|---|---|
@@ -29,7 +37,12 @@ System (condition: <when>): <conditional response>
 | Background | `System (background): <content>` | Action not visible to user — generating, reading, processing |
 | Conditional | `System (condition: <when>): <content>` | Response under a specific condition |
 
+<!-- /parlay:normative -->
+
 ## Content syntax
+<!-- parlay:normative -->
+
+
 
 | Syntax | Meaning |
 |---|---|
@@ -38,7 +51,12 @@ System (condition: <when>): <conditional response>
 | `==text==` | Placeholder — dynamic or variable content |
 | `@reference` | Feature or intent reference |
 
+<!-- /parlay:normative -->
+
 ## Options
+<!-- parlay:normative -->
+
+
 
 Indented lettered list under a system turn:
 
@@ -50,7 +68,12 @@ System: How would you like to resolve this?
 User: Selects A
 ```
 
+<!-- /parlay:normative -->
+
 ## Branching
+<!-- parlay:normative -->
+
+
 
 Single-turn branch — use conditional turns:
 
@@ -68,7 +91,12 @@ User: <alternative action>
 System: <alternative response>
 ```
 
+<!-- /parlay:normative -->
+
 ## Metadata
+<!-- parlay:normative -->
+
+
 
 | Field | Required | Parse rule |
 |---|---|---|
@@ -76,6 +104,8 @@ System: <alternative response>
 | Trigger | No | `**Trigger**:` line content |
 
 Intent-to-dialog traceability is managed by `/parlay sync`, not by manual annotation.
+
+<!-- /parlay:normative -->
 
 ## Parsing
 
