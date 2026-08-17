@@ -87,6 +87,13 @@ Read `.parlay/config.yaml` before step 3. If it carries `ledger: true`, this
 project runs the ledger-and-contract model and two things change about the
 steps below; if not, skip this section entirely — nothing else here applies.
 
+**surface.md does not exist in ledger projects.** If the feature still
+carries one, it is pending retirement — run `parlay migrate-spec --retire-md`
+(then `parlay internal scaffold-signatures @{feature}`) BEFORE amending, and
+never mirror an amendment into a surface.md: surface.yaml is the only
+surface artifact, and a maintained-looking .md that lags the contract is the
+most misleading document a feature can carry.
+
 **The founding documents are frozen.** In a ledger project, `intents.md` and
 `dialogs.md` are the historical record of the feature's founding — never
 written again after first build. Do not splice them, do not re-sync dialogs
@@ -297,6 +304,15 @@ report — which mode ran is part of what was blessed.
    Replacing text in place is structurally inert: a reworded constraint, a
    changed label, a tightened threshold. The set of components the buildfile
    derives does not move, so steps 5–7 as written are correct.
+
+   **Inert for topology is not inert for prose.** The buildfile's
+   `description:` fields and testcases' `expected:`/description text routinely
+   restate the words you just replaced, and skipping the rebuild leaves them
+   asserting the old text — three benchmark replicates out of three shipped
+   internal files still describing a retired label. After a replace-span,
+   grep `.parlay/build/{feature}/buildfile.yaml` and `testcases.yaml` for the
+   replaced literal(s) and splice those occurrences too (tool-internal files;
+   no decision gate needed). Say in the report whether any were found.
 
    **Adding** — a new intent block, a new dialog turn, a new surface fragment,
    a new capability operation — is not inert. New spec elements imply new

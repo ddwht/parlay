@@ -55,7 +55,7 @@ Then detect pending migrations by looking at what is on disk:
 
 | If you find | Migration | Command |
 |---|---|---|
-| `spec/intents/*/surface.md` | surface.md → surface.yaml | `parlay migrate-spec` |
+| `spec/intents/*/surface.md` | surface.md → surface.yaml | `parlay migrate-spec` — and in **ledger projects** a lingering surface.md is not optional debt: it goes stale against the amended surface.yaml and actively misleads (measured 3/3 benchmark replicates). Follow up with `parlay migrate-spec --retire-md` (refuses per-feature when the .md carries fragments the .yaml lacks), then re-stamp `parlay internal scaffold-signatures @{feature}` for each retired feature. |
 | `prototype-framework:` in `.parlay/config.yaml` | legacy config → adapter-set | `parlay migrate-config` |
 | operation-shaped fragments in `infrastructure.md` | infrastructure → capabilities | `parlay migrate-capabilities` |
 | `domain-model.md` (not `.yaml`) | domain model → YAML | `parlay migrate-domain-model` |

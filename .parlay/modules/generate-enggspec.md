@@ -60,7 +60,22 @@ Who resolves it depends on where you are running. If you own the user interactio
      current.
    - **Add a "History" section**: one line per amendment (`NNN <slug> —
      <date> — <trigger>`), so a reader sees how the feature got its shape
-     without opening the ledger.
+     without opening the ledger. **Supersession annotations are mandatory,
+     both directions**: a superseded amendment's line ends with
+     `(superseded by NNN)` and the superseder's with `(supersedes NNN)`.
+     Run `parlay internal check-amendments @{feature}` and use its
+     `superseded_by` map rather than deriving the links by hand — the
+     amendment files themselves are immutable and carry only the backward
+     link, so the projection is where readers get the forward direction.
+   - **Disclose internal-state drift instead of asserting over it**: before
+     stating any current behavior, grep the tool-internal
+     `.parlay/build/{feature}/buildfile.yaml` and `testcases.yaml` for terms
+     the amendments retired. Where the internal files still restate old
+     behavior, add a "Known internal-state drift" note naming file and line
+     rather than silently presenting the contract's answer as if the whole
+     repo agreed. A handoff that asserts `✓ done` while three testcase
+     descriptions still say `complete` is telling the reader less than it
+     knows.
    - **Stamp the header generated-and-regenerable**: this file is a
      projection, never hand-edited, and regenerating it must always be safe.
      Include the `last-applied-amendment` sequence it was generated at, so a

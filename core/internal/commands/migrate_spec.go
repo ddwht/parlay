@@ -25,10 +25,28 @@ var migrateSpecCmd = &cobra.Command{
 	RunE:  runMigrateSpec,
 }
 
+// migrateSpecRetireMD deletes a feature's surface.md once surface.yaml covers
+// it. Off by default: retirement is a deliberate, separate step from
+// conversion, because a dual-surface feature keeps WORKING (ResolveSurfacePath
+// prefers the .yaml) — what it does not keep is truthfulness, since nothing
+// maintains the .md once the .yaml is canonical. The WP10 benchmark measured
+// that cost three replicates out of three: an abandoned surface.md that still
+// described retired behavior. In ledger projects retirement is a
+// prerequisite, not an option — a frozen-looking prose artifact that
+// contradicts the contract is exactly the misleading document the ledger
+// model exists to prevent.
+var migrateSpecRetireMD bool
+
+func init() {
+	migrateSpecCmd.Flags().BoolVar(&migrateSpecRetireMD, "retire-md", false,
+		"Delete surface.md where surface.yaml exists and covers every fragment; refuses per-feature when the .md carries fragments the .yaml lacks")
+}
+
 type specMigrationEntry struct {
 	Feature string `yaml:"feature"`
 	Wrote   string `yaml:"wrote,omitempty"`
 	Skipped string `yaml:"skipped,omitempty"`
+	Retired string `yaml:"retired,omitempty"`
 	Note    string `yaml:"note,omitempty"`
 }
 
@@ -45,13 +63,21 @@ func runMigrateSpec(cmd *cobra.Command, args []string) error {
 	}
 
 	var report []specMigrationEntry
-	migrated, alreadyMigrated := 0, 0
+	migrated, alreadyMigrated, retired := 0, 0, 0
 
 	for _, mdPath := range entries {
 		feature, _ := filepath.Rel(intentsRoot, filepath.Dir(mdPath))
 		yamlPath := filepath.Join(filepath.Dir(mdPath), "surface.yaml")
 
 		if _, err := os.Stat(yamlPath); err == nil {
+			if migrateSpecRetireMD {
+				entry := retireSurfaceMD(feature, mdPath, yamlPath)
+				if entry.Retired != "" {
+					retired++
+				}
+				report = append(report, entry)
+				continue
+			}
 			alreadyMigrated++
 			report = append(report, specMigrationEntry{
 				Feature: feature,
@@ -80,21 +106,60 @@ func runMigrateSpec(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d; already-migrated %d\n", migrated, alreadyMigrated)
+	fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d; already-migrated %d; retired %d\n", migrated, alreadyMigrated, retired)
 	for _, e := range report {
 		switch {
 		case e.Wrote != "":
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s — wrote %s\n", e.Feature, e.Wrote)
+		case e.Retired != "":
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s — retired %s\n", e.Feature, e.Retired)
 		case e.Skipped != "":
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s — %s\n", e.Feature, e.Skipped)
 		case e.Note != "":
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s — %s\n", e.Feature, e.Note)
 		}
 	}
-	if migrated > 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "surface.md left in place — delete after reviewing the YAML and the unrouted-content report.")
+	if migrated > 0 && !migrateSpecRetireMD {
+		fmt.Fprintln(cmd.OutOrStdout(), "surface.md left in place — delete after reviewing the YAML, or re-run with --retire-md.")
+	}
+	if retired > 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "Retired surface.md files were signed into some buildfiles' source-signatures. Re-stamp each affected feature: parlay internal scaffold-signatures @{feature} — a signature naming a now-missing artifact fails the codegen freshness gate.")
 	}
 	return nil
+}
+
+// retireSurfaceMD deletes a feature's surface.md when its surface.yaml covers
+// every fragment the .md declares (matched by slugified name — the .yaml is
+// canonical, so content differences are expected and fine; a fragment the
+// .yaml lacks entirely is not). Refusal is per-feature and names the missing
+// fragments, so a partial project retires everything safe and reports the
+// rest.
+func retireSurfaceMD(feature, mdPath, yamlPath string) specMigrationEntry {
+	mdFragments, err := parser.ParseSurfaceFile(mdPath)
+	if err != nil {
+		return specMigrationEntry{Feature: feature, Note: fmt.Sprintf("retire skipped: legacy parse failed: %v", err)}
+	}
+	yamlFragments, err := parser.ParseSurfaceFile(yamlPath)
+	if err != nil {
+		return specMigrationEntry{Feature: feature, Note: fmt.Sprintf("retire skipped: yaml parse failed: %v", err)}
+	}
+	inYAML := make(map[string]bool, len(yamlFragments))
+	for _, f := range yamlFragments {
+		inYAML[parser.Slugify(f.Name)] = true
+	}
+	var missing []string
+	for _, f := range mdFragments {
+		if !inYAML[parser.Slugify(f.Name)] {
+			missing = append(missing, f.Name)
+		}
+	}
+	if len(missing) > 0 {
+		return specMigrationEntry{Feature: feature, Note: fmt.Sprintf("retire refused: surface.md carries %d fragment(s) surface.yaml lacks: %v — reconcile first", len(missing), missing)}
+	}
+	if err := os.Remove(mdPath); err != nil {
+		return specMigrationEntry{Feature: feature, Note: fmt.Sprintf("retire failed: %v", err)}
+	}
+	return specMigrationEntry{Feature: feature, Retired: mdPath}
 }
 
 func walkSurfaceMDFiles(root string) ([]string, error) {

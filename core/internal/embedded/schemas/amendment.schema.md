@@ -75,6 +75,15 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts. |
 | `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
 
+## Reading the ledger
+
+An amendment file alone is not current truth: files are immutable, so a superseded amendment
+still asserts its retired behavior and carries only whatever `supersedes:` links existed when
+it was written — the forward direction is never in the file. Before relying on any amendment's
+content, run `parlay internal check-amendments <@feature>` and consult its `superseded_by`
+map; the handoff projection renders the same links in its History section. An amendment with a
+`superseded_by` entry is history, not specification.
+
 ## The dirty set
 
 `check-amendments` emits `dirty_set` — the resolvable `affects:` refs of the **unapplied tail** only: amendments whose sequence exceeds the feature baseline's `last-applied-amendment`. Everything at or below that sequence was already folded into generated code when the baseline was saved, so it is not what a rebuild must touch. This is the **declared** counterpart of what `parlay internal diff` **infers** by hashing: consumers scope rebuilds, prompts, and (later) test selection with it, while the hash comparison remains as trust-but-verify. A disagreement between the declared set and the observed diff is a bug signal — in the amendment or in the apply — not something to proceed past.
