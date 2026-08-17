@@ -1,7 +1,13 @@
 # Ledger by default — retire the `ledger:` flag
 
-Status: PLANNED — target v0.4.0 (behavior change for existing projects; not a
-patch on v0.3.0).
+Status: IMPLEMENTED (2026-08-17) — target v0.4.0 (behavior change for
+existing projects; not a patch on v0.3.0). All four stages landed; the
+dogfood roots (core: 42 features, studio: 18) migrated dry-run-clean and
+their `ledger: true` keys are gone. One audit correction discovered during
+implementation: migrate-config has no config-rewrite path (it only creates
+adapter-set.yaml), so the leftover `ledger:` key follows the no_studio
+precedent instead — inert under non-strict decoding, documented in
+config.go.
 
 ## Decision
 

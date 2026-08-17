@@ -300,7 +300,10 @@ func offerLedgerMigration(cmd *cobra.Command, rootPath string) error {
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return err
+		// EOF (e.g. stdin from /dev/null, which stats as a char device
+		// and so passes the TTY probe) is a decline, not a failure —
+		// upgrade never migrates without an explicit yes.
+		line = ""
 	}
 	if strings.TrimSpace(strings.ToLower(line)) != "y" {
 		fmt.Fprintln(out, "  Skipped — run `parlay migrate-ledger` when ready; until then check-drift reports these as ledger_integrity.")
