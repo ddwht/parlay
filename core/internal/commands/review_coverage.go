@@ -223,8 +223,8 @@ func reviewerIdentity() string {
 // reporting the term as uncovered with no way to discharge it.
 //
 // A suite with no source_refs falls back to the suite name, which is no
-// worse than the old behaviour and keeps legacy v1 testcases reviewable:
-// those carry no source_refs at all, so there is no term to key on.
+// worse than the old behaviour and keeps suites without source_refs
+// reviewable — there is no term to key on for those.
 func exemptionsForSuite(suiteName string, sourceRefs []string, reason string) []parser.CoverageExemption {
 	terms := sourceRefs
 	if len(terms) == 0 {

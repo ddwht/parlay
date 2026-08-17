@@ -64,10 +64,10 @@ The review is recorded by `parlay review-coverage <feature>`.
 
 ## Recording exemptions
 
-Interactively, declining a suite prompts for a reason and records one exemption **per term that suite covered** (its `source_refs:`), because that is what the gate consults. A legacy v1 suite carries no `source_refs:` and falls back to being keyed on its own name — the only term available.
+Interactively, declining a suite prompts for a reason and records one exemption **per term that suite covered** (its `source_refs:`), because that is what the gate consults. A suite with no `source_refs:` falls back to being keyed on its own name — the only term available.
 
 Non-interactively, `--exempt <suite>:<item>=<reason>` pre-records one, and is repeatable. A suite whose every covered term is exempted this way is not prompted for; a suite with only *some* terms exempted still is, since the rest remain undecided. Parsing splits on the first `=` and the first `:` before it, so a reason may contain either character — `report-suite:@f/operation:submit=covered by the engine: see ADR-4` records the item as `@f/operation:submit` and keeps the reason whole.
 
 ## Backward compatibility
 
-Presentation-only projects (no non-presentation slot in `.parlay/adapter-set.yaml`) skip the gate entirely — `parlay generate-code` does not require `coverage-review.yaml` for legacy v1 testcases. Once a project transitions to multi-target mode, the gate activates on the next `parlay generate-code` invocation.
+Presentation-only projects (no non-presentation slot in `.parlay/adapter-set.yaml`) skip the gate entirely — `parlay generate-code` does not require `coverage-review.yaml` there. Once a project transitions to multi-target mode, the gate activates on the next `parlay generate-code` invocation.

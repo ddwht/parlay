@@ -75,15 +75,15 @@ exit: 0
 }
 
 === validate --type domain-model --json
-verdict: satisfied
-exit: 0
+verdict: violated
+exit: 1
 [
   {
-    "code": "domain-operations-deprecated",
-    "message": "domain-model.yaml carries a populated deprecated 'operations:' block; the top-level operations: field is deprecated in favor of per-feature capabilities.yaml",
+    "code": "domain-operations-unsupported",
+    "message": "domain-model.yaml carries a populated 'operations:' block, which was removed in v0.3 — operations live in per-feature capabilities.yaml",
     "context": "\u003cdomain-model\u003e",
     "fix": "migrate the operations: block via `parlay migrate-domain-operations`",
-    "severity": "warning"
+    "severity": "error"
   }
 ]
 

@@ -48,7 +48,7 @@ operations:
 | `operations` | Yes | List of capability operations. May be empty for presentation-only features. |
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
 | `operations[].source` | Required on generate, tolerated absent on read | Comma-separated `@feature/intent-slug` traceability references — the same shape `surface.yaml`'s `fragments[].source` uses. See "Why `source:` exists" below. |
-| `operations[].verify` | No | Acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets by `/parlay-create-artifacts` on generate and by `parlay migrate-verify` for pre-existing artifacts. Testcase derivation reads these first and falls back to the intent bullets only when the field is absent. |
+| `operations[].verify` | No | Acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets by `/parlay-create-artifacts` on generate and by `parlay migrate-verify` for pre-existing artifacts. Testcase derivation reads these; since v0.3 there is no intent-bullet fallback — a missing verify: means run `parlay migrate-verify`. |
 | `operations[].rationale` | No | One line of provenance prose — why the operation exists. Never validated beyond being a string. |
 | `operations[].kind` | Yes | One of the values in `operation-kinds.schema.md`. |
 | `operations[].subject` | Yes | The primary entity the operation acts on. |
@@ -64,7 +64,7 @@ Every other artifact records where its content came from. `surface.yaml` fragmen
 
 The reverse walk is what needs it. Given a change described in a person's words — "the approval step should also notify the requester" — something has to answer *which artifact owns that*. For a surface change the fragment's `source:` answers it. For a backend change there was nothing to answer with, so a backend refinement could not be routed to the operation it belongs to, and the only remaining options were to guess by name-similarity or to re-derive the whole artifact from intents. The first blesses contradictions; the second discards a reviewed document to change one line of it.
 
-**Required on generate, tolerated absent on read.** Every `capabilities.yaml` in existence was written before the field, and erroring on read would fail all of them at once over a fact none could have recorded — the same reasoning `buildfile-models-deprecated` and `testcases-file-missing` follow. `/parlay-create-artifacts` and the migration commands populate it going forward; a file without it still loads, and the reverse walk degrades to asking rather than failing.
+**Required on generate, tolerated absent on read.** Every `capabilities.yaml` in existence was written before the field, and erroring on read would fail all of them at once over a fact none could have recorded — the same reasoning `testcases-file-missing` follows. `/parlay-create-artifacts` and the migration commands populate it going forward; a file without it still loads, and the reverse walk degrades to asking rather than failing.
 
 `source:` is traceability, not derivation. It records which intent an operation came from. It does not license the build phase to read intents — the buildfile remains the executable contract, and this field travels into it as data like any other.
 

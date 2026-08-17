@@ -171,7 +171,7 @@ The canonical, versioned YAML form of a parlay project's domain model.
 | Code | Fires when |
 |---|---|
 | `domain-duplicate-name` | Two enums, two entities, or an entity and an enum share a name. |
-| `domain-operations-deprecated` | A populated top-level `operations:` block is present; migrate it with `parlay migrate-domain-operations`. |
+| `domain-operations-unsupported` | A populated top-level `operations:` block is present — removed in v0.3; migrate it with `parlay migrate-domain-operations`. |
 | `enum-key-mismatch` | A field whose `type:` names an enum carries a missing or mismatched `enum:` companion key. |
 | `enum-name-collides-with-scalar-type` | An enum is named after a built-in field type (`uuid`, `string`, `int`, `float`, `bool`, `datetime`, `ref`), so `type: <name>` cannot be resolved unambiguously. |
 | `enum-tone-outside-closed-set` | A `tone:` is outside `{neutral, info, warning, danger, success}`. |
@@ -254,9 +254,9 @@ Generated alongside buildfile.yaml by `/parlay build-feature`.
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |
 | `testcases-operation-uncovered` | A canonical operation has no covering `kind: operation` suite. |
 | `testcases-source-refs-missing` | A new v2 suite lacks `source_refs:`. |
-| `testcases-source-refs-missing-legacy` | A legacy v1 suite was loaded as v2 presentation; auto-populated source_refs would be approximate. |
 | `testcases-suite-kind-unknown` | A suite declares `kind:` outside `{presentation, operation}`. |
 | `testcases-unknown-term` | A `cases[].steps[]` entry uses an `action:` outside `{render, click, input, select, navigate, wait, appears}`, a `verify:` outside `{element, state, route,… |
+| `testcases-v1-unsupported` | A suite has no `kind:` — the v1 shape was removed in v0.3; regenerate via `/parlay-build-feature`. |
 | `verify-criterion-uncovered` | A contract entry (an operation or fragment carrying `verify:`) has no case whose `criterion.ref` discharges it and no `coverage-review.yaml` exemption. |
 
 ## Schemas with no diagnostics of their own

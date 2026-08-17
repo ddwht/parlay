@@ -358,20 +358,14 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 			criteriaCovered[ref] = true
 		}
 
-		// Discriminator check.
+		// Discriminator check. The v1 shape (no kind:) stopped being
+		// accepted in v0.3 — its policy has always been regenerate, so the
+		// fix is one build-feature run, and continuing to half-load it as
+		// presentation kept a shim alive that no gate ever exercised.
 		kind := suite.Kind
 		if kind == "" {
-			// Legacy v1 — load as presentation. If source_refs is empty AND no
-			// intent string, surface the legacy warning.
-			if len(suite.SourceRefs) == 0 {
-				if suite.Intent == "" {
-					outcomes = append(outcomes, NewOutcome(mode, "testcases-source-refs-missing-legacy",
-						fmt.Sprintf("%s: legacy v1 suite %q has neither source_refs nor intent — auto-population would be approximate", path, suite.Name)))
-				} else {
-					outcomes = append(outcomes, NewOutcome(mode, "testcases-source-refs-missing-legacy",
-						fmt.Sprintf("%s: legacy v1 suite %q auto-populated source_refs from intent string — regenerate v2 testcases to clear this warning", path, suite.Name)))
-				}
-			}
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-v1-unsupported",
+				fmt.Sprintf("%s: suite %q has no kind: — the v1 testcases shape was removed in v0.3; re-run /parlay-build-feature to regenerate the v2 form", path, suite.Name)))
 			continue
 		}
 

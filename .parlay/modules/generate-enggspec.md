@@ -32,7 +32,7 @@ Who resolves it depends on where you are running. If you own the user interactio
    - `spec/intents/{feature}/surface.yaml` (if exists)
    - `spec/intents/{feature}/capabilities.yaml` (if exists)
    - `spec/intents/{feature}/infrastructure.md` (if exists)
-   - `<activeRoot>/domain-model.yaml` (if exists — the project's one canonical domain model, not per-feature) or legacy `spec/intents/{feature}/domain-model.md`
+   - `<activeRoot>/domain-model.yaml` (if exists — the project's one canonical domain model, not per-feature)
    - `.parlay/build/{feature}/buildfile.yaml` (if exists — tool-internal)
    - `.parlay/build/{feature}/testcases.yaml` (if exists — tool-internal; project the observable-behavior assertions into the spec's Acceptance Criteria section)
 

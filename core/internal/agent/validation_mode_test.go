@@ -6,11 +6,13 @@ package agent
 
 import "testing"
 
-func TestRuleSeverity_DomainOperationsDeprecatedDiffersByMode(t *testing.T) {
-	if got := RuleSeverity("domain-operations-deprecated", ModeAuthoring); got != SeverityWarning {
+func TestRuleSeverity_ModeSplitEntryDiffersByMode(t *testing.T) {
+	// no-intents is the surviving mode-split entry (warning while authoring,
+	// error at build); it pins the per-mode dispatch the table exists for.
+	if got := RuleSeverity("no-intents", ModeAuthoring); got != SeverityWarning {
 		t.Errorf("authoring: got %q, want warning", got)
 	}
-	if got := RuleSeverity("domain-operations-deprecated", ModeBuild); got != SeverityError {
+	if got := RuleSeverity("no-intents", ModeBuild); got != SeverityError {
 		t.Errorf("build: got %q, want error", got)
 	}
 }
@@ -25,7 +27,7 @@ func TestRuleSeverity_DefaultsToError(t *testing.T) {
 }
 
 func TestNewOutcome_AppliesRuleSeverity(t *testing.T) {
-	o := NewOutcome(ModeAuthoring, "domain-operations-deprecated", "msg")
+	o := NewOutcome(ModeAuthoring, "capabilities-source-missing", "msg")
 	if o.Severity != SeverityWarning {
 		t.Errorf("severity: got %q, want warning", o.Severity)
 	}

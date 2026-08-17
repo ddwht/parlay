@@ -541,8 +541,8 @@ func ValidateDomainModelStructuredMode(path string, content []byte, mode Validat
 	// parlay-component: cross-cutting/emit-domain-operations-deprecated
 	if len(dm.Operations) > 0 {
 		errors = append(errors, ValidationError{
-			Code:    "domain-operations-deprecated",
-			Message: "domain-model.yaml carries a populated deprecated 'operations:' block; the top-level operations: field is deprecated in favor of per-feature capabilities.yaml",
+			Code:    "domain-operations-unsupported",
+			Message: "domain-model.yaml carries a populated 'operations:' block, which was removed in v0.3 — operations live in per-feature capabilities.yaml",
 			Context: wholeModelPathToken,
 			Fix:     "migrate the operations: block via `parlay migrate-domain-operations`",
 		})

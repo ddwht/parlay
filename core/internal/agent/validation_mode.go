@@ -49,17 +49,9 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
-	"domain-operations-deprecated": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityError,
-	},
 	"capabilities-not-closed-form": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,
-	},
-	"testcases-source-refs-missing-legacy": {
-		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
 	},
 	// Warning in both modes for now, on the same reasoning that once
 	// governed buildfile-models (since removed): every testcases.yaml in existence

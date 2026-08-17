@@ -40,7 +40,10 @@ suites:
 	}
 }
 
-func TestValidateTestcasesV2_LegacyV1Warning(t *testing.T) {
+// The v1 shape (a suite without kind:) stopped being accepted in v0.3 — the
+// policy has always been regenerate, so the only correct response is a hard
+// error pointing at build-feature.
+func TestValidateTestcasesV2_V1ShapeUnsupported(t *testing.T) {
 	content := []byte(`schema_version: 2
 feature: f
 suites:
@@ -49,12 +52,12 @@ suites:
     intent: legacy intent
 `)
 	outcomes := ValidateTestcasesV2(ModeAuthoring, TestcasesV2Input{Path: "test", Content: content})
-	if !findCode(outcomes, "testcases-source-refs-missing-legacy") {
-		t.Errorf("missing testcases-source-refs-missing-legacy; got %+v", outcomes)
+	if !findCode(outcomes, "testcases-v1-unsupported") {
+		t.Errorf("missing testcases-v1-unsupported; got %+v", outcomes)
 	}
 	for _, o := range outcomes {
-		if o.Code == "testcases-source-refs-missing-legacy" && o.Severity != SeverityWarning {
-			t.Errorf("legacy warning should be SeverityWarning; got %v", o.Severity)
+		if o.Code == "testcases-v1-unsupported" && o.Severity != SeverityError {
+			t.Errorf("v1 shape must be an error since v0.3; got %v", o.Severity)
 		}
 	}
 }

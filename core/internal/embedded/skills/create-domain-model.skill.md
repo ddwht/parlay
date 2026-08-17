@@ -78,7 +78,7 @@ Analyze all features in the active root and write a single
    enums: []
    entities: []
    relationships: []
-   operations: []
+   
    ```
 
    - **Per-feature `domain-model.md`** is **never** emitted — not as
@@ -125,7 +125,7 @@ Analyze all features in the active root and write a single
       enums: []
       entities: []
       relationships: []
-      operations: []
+      
       ```
 
       The stub MUST validate cleanly via

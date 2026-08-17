@@ -5,7 +5,7 @@
 // Tests for the structured domain-model validation feature:
 //   - intent 2: machine-usable element path on every finding
 //     (dotted paths + the whole-model token, determinism, no blank path)
-//   - intent 3: emit domain-operations-deprecated (authoring warning /
+//   - intent 3: emit domain-operations-unsupported (authoring warning /
 //     build error, empty-vs-populated block, read-only detection)
 //
 // The CLI-level intent 1 behavior (--json, stdin, exit codes, human path)
@@ -229,53 +229,43 @@ func TestStructuredDMV_TwoViolationsExactlyTwo(t *testing.T) {
 }
 
 // ============================================================================
-// Intent 3 — emit domain-operations-deprecated
+// Intent 3 — emit domain-operations-unsupported
 // ============================================================================
 
-// populated operations block in authoring mode emits one warning finding,
-// whose fix names parlay migrate-domain-operations.
-func TestStructuredDMV_OperationsAuthoringWarning(t *testing.T) {
-	errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeAuthoring)
-	if n := countCode(errs, "domain-operations-deprecated"); n != 1 {
-		t.Fatalf("expected exactly 1 domain-operations-deprecated, got %d: %s", n, errSummary(errs))
-	}
-	f, _ := findingWithCode(errs, "domain-operations-deprecated")
-	if f.Severity != string(SeverityWarning) {
-		t.Errorf("expected warning severity in authoring mode, got %q", f.Severity)
-	}
-	if !strings.Contains(f.Fix, "parlay migrate-domain-operations") {
-		t.Errorf("fix should name parlay migrate-domain-operations, got %q", f.Fix)
-	}
-	if f.Context != wholeModelPathToken {
-		t.Errorf("expected whole-model token, got %q", f.Context)
-	}
-}
-
-// same model in build mode emits the code at error severity (fails the build).
-func TestStructuredDMV_OperationsBuildError(t *testing.T) {
-	errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeBuild)
-	f, ok := findingWithCode(errs, "domain-operations-deprecated")
-	if !ok {
-		t.Fatalf("expected domain-operations-deprecated in build mode, got: %s", errSummary(errs))
-	}
-	if f.Severity != string(SeverityError) {
-		t.Errorf("expected error severity in build mode (fails the build), got %q", f.Severity)
+// A populated operations block errors in EVERY mode since v0.3 — the field
+// was removed, and the fix names the migrator out.
+func TestStructuredDMV_OperationsUnsupportedError(t *testing.T) {
+	for _, mode := range []ValidationMode{ModeAuthoring, ModeBuild} {
+		errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), mode)
+		if n := countCode(errs, "domain-operations-unsupported"); n != 1 {
+			t.Fatalf("%s: expected exactly 1 domain-operations-unsupported, got %d: %s", mode, n, errSummary(errs))
+		}
+		f, _ := findingWithCode(errs, "domain-operations-unsupported")
+		if f.Severity != string(SeverityError) {
+			t.Errorf("%s: expected error severity (field removed), got %q", mode, f.Severity)
+		}
+		if !strings.Contains(f.Fix, "parlay migrate-domain-operations") {
+			t.Errorf("fix should name parlay migrate-domain-operations, got %q", f.Fix)
+		}
+		if f.Context != wholeModelPathToken {
+			t.Errorf("expected whole-model token, got %q", f.Context)
+		}
 	}
 }
 
 // model with no operations block emits no finding.
 func TestStructuredDMV_NoOperationsNoFinding(t *testing.T) {
 	errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvCleanModel), ModeAuthoring)
-	if countCode(errs, "domain-operations-deprecated") != 0 {
-		t.Errorf("clean model must not emit domain-operations-deprecated: %s", errSummary(errs))
+	if countCode(errs, "domain-operations-unsupported") != 0 {
+		t.Errorf("clean model must not emit domain-operations-unsupported: %s", errSummary(errs))
 	}
 }
 
 // model with an empty operations block emits no finding.
 func TestStructuredDMV_EmptyOperationsNoFinding(t *testing.T) {
 	errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvEmptyOperations), ModeAuthoring)
-	if countCode(errs, "domain-operations-deprecated") != 0 {
-		t.Errorf("empty operations block must not emit domain-operations-deprecated: %s", errSummary(errs))
+	if countCode(errs, "domain-operations-unsupported") != 0 {
+		t.Errorf("empty operations block must not emit domain-operations-unsupported: %s", errSummary(errs))
 	}
 }
 
@@ -293,7 +283,7 @@ func TestStructuredDMV_ReadOnlyDetection(t *testing.T) {
 
 // ============================================================================
 // The legacy 2-arg entry point is gone, along with the boolean that made it
-// different. It suppressed domain-operations-deprecated so that
+// different. It suppressed domain-operations-unsupported so that
 // ValidateDomainModel — which failed on any finding regardless of severity —
 // would not reject every project carrying a legacy operations: block. The
 // severity filter moved to the command layer, so the suppression has nothing left
@@ -307,22 +297,22 @@ func TestStructuredDMV_ReadOnlyDetection(t *testing.T) {
 func TestStructuredDMV_DeprecationEmittedOnEveryPath(t *testing.T) {
 	for _, mode := range []ValidationMode{ModeAuthoring, ModeBuild} {
 		errs := ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), mode)
-		if countCode(errs, "domain-operations-deprecated") != 1 {
-			t.Errorf("mode %q: want exactly one domain-operations-deprecated, got: %s", mode, errSummary(errs))
+		if countCode(errs, "domain-operations-unsupported") != 1 {
+			t.Errorf("mode %q: want exactly one domain-operations-unsupported, got: %s", mode, errSummary(errs))
 		}
 	}
 
-	// And the severity still differs by mode, which is what makes it safe to emit
-	// on both: a warning while authoring, a failure at build time.
+	// Since v0.3 the severity is error in EVERY mode — the field is removed,
+	// not deprecated, so authoring gets the same hard stop the build does.
 	authoring, _ := findingWithCode(
 		ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeAuthoring),
-		"domain-operations-deprecated")
-	if authoring.Severity != string(SeverityWarning) {
-		t.Errorf("authoring severity = %q, want warning", authoring.Severity)
+		"domain-operations-unsupported")
+	if authoring.Severity != string(SeverityError) {
+		t.Errorf("authoring severity = %q, want error", authoring.Severity)
 	}
 	build, _ := findingWithCode(
 		ValidateDomainModelStructuredMode("m.yaml", []byte(dmvWithOperations), ModeBuild),
-		"domain-operations-deprecated")
+		"domain-operations-unsupported")
 	if build.Severity != string(SeverityError) {
 		t.Errorf("build severity = %q, want error", build.Severity)
 	}

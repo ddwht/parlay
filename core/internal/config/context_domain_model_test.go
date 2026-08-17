@@ -190,12 +190,3 @@ func TestLoadDomainModel_BadYamlSurfacesError(t *testing.T) {
 	}
 }
 
-func TestLegacyDomainModelMarkdownPath(t *testing.T) {
-	dir := t.TempDir()
-	c := &Context{Root: Root{Path: dir, Kind: RootKindStandalone}}
-	got := c.LegacyDomainModelMarkdownPath()
-	want := filepath.Join(dir, "domain-model.md")
-	if got != want {
-		t.Errorf("LegacyDomainModelMarkdownPath = %q, want %q", got, want)
-	}
-}

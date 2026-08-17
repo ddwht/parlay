@@ -206,18 +206,14 @@ func TestValidateDMVJSON_UnparseableStableCode(t *testing.T) {
 	}
 }
 
-// findings under --json carry authoring-mode severity — and a warning-only
-// model still exits 0.
-//
-// This is the carve-out that keeps the new exit rule usable for authoring:
-// the exit code follows blocking findings, on the same rule the human path
-// has always used, so a deprecation notice does not fail the caller. Without
-// it, every model still carrying the old operations block would start failing
-// the two skills that write models, which is not what a deprecation means.
+// findings under --json carry authoring-mode severity. Since v0.3 the
+// operations: block is a removal error in every mode, so the model that
+// used to be the warning-only example now correctly exits non-zero — the
+// exit code still follows blocking findings, exactly as the human path does.
 func TestValidateDMVJSON_AuthoringSeverity(t *testing.T) {
 	cmd, out := newDMVCmd(dmvWithOperations)
-	if err := runValidateDomainModelJSON(cmd, "-"); err != nil {
-		t.Fatalf("a warning-only model must still exit 0, got: %v", err)
+	if err := runValidateDomainModelJSON(cmd, "-"); err == nil {
+		t.Fatalf("a model carrying the removed operations: block must exit non-zero")
 	}
 	var findings []agent.ValidationError
 	if jerr := json.Unmarshal(out.Bytes(), &findings); jerr != nil {
@@ -225,14 +221,14 @@ func TestValidateDMVJSON_AuthoringSeverity(t *testing.T) {
 	}
 	var found bool
 	for _, f := range findings {
-		if f.Code == "domain-operations-deprecated" {
+		if f.Code == "domain-operations-unsupported" {
 			found = true
-			if f.Severity != "warning" {
-				t.Errorf("expected authoring-mode warning severity, got %q", f.Severity)
+			if f.Severity != "error" {
+				t.Errorf("expected error severity (field removed in v0.3), got %q", f.Severity)
 			}
 		}
 	}
 	if !found {
-		t.Errorf("expected a domain-operations-deprecated finding, got: %s", out.String())
+		t.Errorf("expected a domain-operations-unsupported finding, got: %s", out.String())
 	}
 }

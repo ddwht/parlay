@@ -85,21 +85,15 @@ operations:
 `
 	errs := ValidateDomainModelStructuredMode("domain-model.yaml", []byte(yaml), ModeAuthoring)
 
-	// This fixture carries a legacy operations: block, so authoring mode reports
-	// domain-operations-deprecated at warning severity. It used to report nothing:
-	// the entry point this test called suppressed the diagnostic, which is the
-	// suppression removed with the emitDeprecation boolean. Nothing about the
-	// model changed — the tool stopped being quiet about it.
-	if n := countCode(errs, "domain-operations-deprecated"); n != 1 {
-		t.Errorf("want one domain-operations-deprecated for a model with operations:, got %d: %s", n, errSummary(errs))
+	// This fixture carries a legacy operations: block, which since v0.3 is a
+	// hard error in every mode — the field was removed, and only the
+	// migrator reads it.
+	if n := countCode(errs, "domain-operations-unsupported"); n != 1 {
+		t.Errorf("want one domain-operations-unsupported for a model with operations:, got %d: %s", n, errSummary(errs))
 	}
-
-	// What "valid" means here is no error-severity finding. A warning must not
-	// make an otherwise well-formed model fail.
-	for _, e := range errs {
-		if e.Severity != string(SeverityWarning) {
-			t.Errorf("unexpected %s-severity finding on a well-formed model: [%s] %s", e.Severity, e.Code, e.Message)
-		}
+	f, _ := findingWithCode(errs, "domain-operations-unsupported")
+	if f.Severity != string(SeverityError) {
+		t.Errorf("severity = %q, want error — the field is removed, not deprecated", f.Severity)
 	}
 }
 

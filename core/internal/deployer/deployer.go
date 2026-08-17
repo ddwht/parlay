@@ -42,7 +42,7 @@ Three-zone layout — strict ownership:
   - **surface.yaml** — visible output, page assemblies, dialog turns
   - **capabilities.yaml** — operation-shaped backend behavior (closed-vocabulary commands and queries)
   - **infrastructure.md** — architectural prose for boundaries, probes, allowlists, dependency pins, and other concerns that do not reduce to operations
-  - **domain-model.yaml** (or domain-model.md) — entities, relationships, and shared vocabulary
+  - **domain-model.yaml** — entities, relationships, and shared vocabulary
   - Plus *.page.md for per-page layouts. A feature picks whichever artifacts it needs; capabilities.yaml and infrastructure.md are co-equal, not stand-ins for each other.
 - **spec/handoff/<feature>/** (engineering output): specification.md
 - **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing

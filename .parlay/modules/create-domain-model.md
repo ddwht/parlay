@@ -85,7 +85,7 @@ Who resolves it depends on where you are running. If you own the user interactio
    enums: []
    entities: []
    relationships: []
-   operations: []
+   
    ```
 
    - **Per-feature `domain-model.md`** is **never** emitted — not as
@@ -132,7 +132,7 @@ Who resolves it depends on where you are running. If you own the user interactio
       enums: []
       entities: []
       relationships: []
-      operations: []
+      
       ```
 
       The stub MUST validate cleanly via

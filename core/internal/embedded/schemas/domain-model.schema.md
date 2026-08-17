@@ -79,7 +79,7 @@ schema_version: 1     # required integer; first released value is 1
 enums:        []      # optional list of DomainEnum
 entities:     []      # optional list of DomainEntity
 relationships: []     # optional list of DomainRelationship
-operations:   []      # optional list of DomainOperation
+operations:   []      # REMOVED in v0.3 — a populated block fails; see below
 ```
 
 `schema_version` is **required** and **must be an integer**. Never
@@ -323,7 +323,7 @@ used for findings that are not attributable to a single element — parse
 failure (`invalid-yaml`), a missing or non-integer `schema_version`
 (`missing-schema-version`), a newer-than-binary or unreachable version
 (`schema-version-newer-than-binary`, `schema-version-unreachable`), and
-the deprecated-operations-block finding (`domain-operations-deprecated`),
+the removed-operations-block finding (`domain-operations-unsupported`),
 whose block spans the whole model.
 
 ## Error codes
@@ -351,7 +351,7 @@ conformance suite that holds documented codes and emitted codes together.
 | `operation-input-field-not-found` | A deprecated-block operation's `input` names a field the subject entity does not declare. |
 | `enum-name-collides-with-scalar-type` | An enum is named after a built-in field type (`uuid`, `string`, `int`, `float`, `bool`, `datetime`, `ref`), so `type: <name>` cannot be resolved unambiguously. The closed field-type set is the union of the scalars and the declared enum names, and a union is only well defined when the halves are disjoint. |
 | `domain-duplicate-name` | Two enums, two entities, or an entity and an enum share a name. The lookup tables are keyed by name, so the later declaration silently replaces the earlier one. |
-| `domain-operations-deprecated` | A populated top-level `operations:` block is present; migrate it with `parlay migrate-domain-operations`. Build mode fails; authoring mode warns. |
+| `domain-operations-unsupported` | A populated top-level `operations:` block is present — removed in v0.3; migrate it with `parlay migrate-domain-operations`. Error in every mode. |
 
 ## Read-path precedence
 
@@ -375,18 +375,13 @@ both `.md` and `.yaml` has the YAML as the sole live source.
 - Newer-than-binary YAML refuses to load with an actionable error
   pointing at `parlay upgrade`.
 
-## Deprecated: `operations:` field
+## Removed: `operations:` field (v0.3)
 
 <!-- parlay-extends: parlay-tool/multi-adapter/domain-model-operations-deprecation -->
 
-The top-level `operations:` field is **deprecated** in favor of per-feature `spec/intents/<feature>/capabilities.yaml`. The new artifact carries the full closed-vocabulary contract (`kind`, `subject`, `input`, `output`, `errors`, `policies`, `steps`); the legacy `operations:` field cannot express most of those terms.
+The top-level `operations:` field was removed in v0.3 in favor of per-feature `spec/intents/<feature>/capabilities.yaml`, which carries the full closed-vocabulary contract (`kind`, `subject`, `input`, `output`, `errors`, `policies`, `steps`) the legacy field could not express.
 
-| Mode | Severity |
-|---|---|
-| authoring (`parlay validate`) | warning |
-| build (`parlay build-feature`, `parlay generate-code`) | error |
-
-Validation surfaces `domain-operations-deprecated` whenever `operations:` is non-empty. `parlay build-feature` stops consuming the field for routing or codegen; the value is preserved in the file but ignored.
+Validation surfaces `domain-operations-unsupported` (error, every mode) whenever `operations:` is non-empty. Only `parlay migrate-domain-operations` still reads the field — as the conversion path out.
 
 ### Migration
 

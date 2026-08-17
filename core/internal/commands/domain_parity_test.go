@@ -109,7 +109,7 @@ relationships:
     to: Customer
     cardinality: sideways
 `,
-	"domain-operations-deprecated": `schema_version: 1
+	"domain-operations-unsupported": `schema_version: 1
 entities:
   - name: Order
     fields:

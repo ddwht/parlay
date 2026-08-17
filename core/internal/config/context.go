@@ -256,19 +256,6 @@ func (c *Context) DomainModelPath() string {
 	return filepath.Join(c.Root.Path, DomainModelFile)
 }
 
-// LegacyDomainModelMarkdownPath returns the path to the pre-migration
-// domain-model.md (if any) at the active root. The post-migration
-// world treats this file as historical-only — it is never parsed,
-// never merged, never consulted as a fallback by tooling. Exposed so
-// migrate-domain-model and diagnostics can surface it without
-// hard-coding the filename.
-func (c *Context) LegacyDomainModelMarkdownPath() string {
-	if c == nil {
-		return ""
-	}
-	return filepath.Join(c.Root.Path, "domain-model.md")
-}
-
 // --- Domain-model read-path precedence ---
 //
 // parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
