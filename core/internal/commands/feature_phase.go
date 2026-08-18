@@ -76,11 +76,21 @@ func computeFeaturePhaseAtPaths(featurePath, buildPath string) FeaturePhase {
 	if config.IsAuthoredUnit(featurePath) {
 		return PhaseHandAuthored
 	}
-	// done — buildfile present (and everything below). The engineering
+	// done — the build phase COMPLETE (and everything below). The engineering
 	// spec under spec/handoff/<feature>/specification.md is intentionally
 	// NOT consulted; build is the terminal tracked phase.
+	//
+	// Complete means both files, not just the buildfile. The build phase emits
+	// buildfile.yaml and testcases.yaml, and this rung used to ask only for the
+	// first — so a run that died between them reported `done`. That is exactly
+	// what a headless driver does when it ends its turn waiting for a phase
+	// subagent that will never report back: buildfile written, testcases not,
+	// no generated code, exit 0, and a status ladder calling it finished. The
+	// one signal that could have contradicted the exit code agreed with it
+	// instead.
 	buildfile := filepath.Join(buildPath, "buildfile.yaml")
 	hasBuild := fileExistsAt(buildfile)
+	hasTestcases := fileExistsAt(filepath.Join(buildPath, "testcases.yaml"))
 
 	hasSurface := parser.ResolveSurfacePath(featurePath) != ""
 	hasInfra := fileExistsAt(filepath.Join(featurePath, "infrastructure.md")) ||
@@ -90,7 +100,7 @@ func computeFeaturePhaseAtPaths(featurePath, buildPath string) FeaturePhase {
 	hasDialogs := fileExistsAt(filepath.Join(featurePath, "dialogs.md"))
 
 	// Walk the ladder top-down, requiring every lower rung as well.
-	if hasBuild && hasArtifacts && hasDialogs {
+	if hasBuild && hasTestcases && hasArtifacts && hasDialogs {
 		return PhaseDone
 	}
 	if hasBuild {

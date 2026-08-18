@@ -116,19 +116,46 @@ func TestComputeFeaturePhase_PlusBuildfileNoArtifacts(t *testing.T) {
 }
 
 func TestComputeFeaturePhase_AllFourPreTerminal(t *testing.T) {
-	// stage/full fixture — intents + dialogs + surface + buildfile.
-	// `done` is reached at buildfile presence; the engineering spec
-	// under spec/handoff/ is intentionally NOT consulted.
+	// stage/full fixture — intents + dialogs + surface + both build files.
+	// `done` is reached when the build phase is COMPLETE, which means
+	// testcases.yaml as well as buildfile.yaml; the engineering spec under
+	// spec/handoff/ is intentionally NOT consulted.
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "full")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "full", "buildfile.yaml"))
+	writeFile(t, filepath.Join(root, ".parlay", "build", "full", "testcases.yaml"))
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "full")
 	if got != PhaseDone {
 		t.Fatalf("full: want %q, got %q", PhaseDone, got)
+	}
+}
+
+// TestComputeFeaturePhase_BuildfileWithoutTestcasesIsNotDone is the
+// regression test for a run that stopped mid-build and was reported as
+// finished.
+//
+// A headless single-turn driver ends its turn to wait for a phase subagent
+// that never reports back. What lands on disk is a valid buildfile.yaml, no
+// testcases.yaml and no generated code — and the run exits 0. `parlay status`
+// was the one thing positioned to contradict that exit code, and it said
+// `done`, because this rung asked only for the buildfile. Two independent
+// signals agreeing that a broken run succeeded is how the failure stayed
+// invisible.
+func TestComputeFeaturePhase_BuildfileWithoutTestcasesIsNotDone(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeIntents(t, root, "halfbuilt")
+	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeFile(t, filepath.Join(dir, "surface.md"))
+	writeFile(t, filepath.Join(root, ".parlay", "build", "halfbuilt", "buildfile.yaml"))
+
+	got := ComputeFeaturePhase(rootCtxAt(root), "halfbuilt")
+	if got != PhaseBuild {
+		t.Fatalf("buildfile without testcases: want %q, got %q", PhaseBuild, got)
 	}
 }
 
@@ -162,6 +189,7 @@ func TestComputeFeaturePhase_NoSideEffectsAcrossManyCalls(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "looped", "buildfile.yaml"))
+	writeFile(t, filepath.Join(root, ".parlay", "build", "looped", "testcases.yaml"))
 
 	rc := rootCtxAt(root)
 	out := captureStdout(t, func() {
@@ -213,13 +241,25 @@ func TestComputeFeaturePhase_ReturnsOnlyExportedConstants(t *testing.T) {
 		func() {
 			writeFile(t, filepath.Join(root, ".parlay", "build", "ladder", "buildfile.yaml"))
 		},
+		// The terminal rung needs testcases.yaml too. Without this step the
+		// walk stops at PhaseBuild and the exhaustive check quietly stops
+		// covering PhaseDone — still passing, since membership is all it
+		// asserts, while testing one case fewer than it claims to.
+		func() {
+			writeFile(t, filepath.Join(root, ".parlay", "build", "ladder", "testcases.yaml"))
+		},
 	}
+	var last FeaturePhase
 	for i, step := range steps {
 		step()
 		got := ComputeFeaturePhase(rc, "ladder")
 		if !allowed[got] {
 			t.Fatalf("step %d returned out-of-set value %q", i, got)
 		}
+		last = got
+	}
+	if last != PhaseDone {
+		t.Fatalf("the full ladder should end at %q, got %q — the walk no longer reaches the terminal rung", PhaseDone, last)
 	}
 }
 
@@ -244,11 +284,12 @@ func TestComputeFeaturePhase_PerRoot_SameNameTwoRoots(t *testing.T) {
 	// core/widget — intents only.
 	writeIntents(t, core, "widget")
 
-	// studio/widget — full pipeline through buildfile.
+	// studio/widget — full pipeline through a COMPLETE build.
 	dir := writeIntents(t, studio, "widget")
 	writeFile(t, filepath.Join(dir, "dialogs.md"))
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(studio, ".parlay", "build", "widget", "buildfile.yaml"))
+	writeFile(t, filepath.Join(studio, ".parlay", "build", "widget", "testcases.yaml"))
 
 	if got := ComputeFeaturePhase(rootCtxAt(core), "widget"); got != PhaseIntents {
 		t.Fatalf("core/widget: want %q, got %q", PhaseIntents, got)
