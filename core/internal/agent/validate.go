@@ -158,6 +158,20 @@ func ValidateBlueprint(path string, content []byte) error {
 		return err
 	}
 
+	// The closed-key check is shared with the project pass rather than
+	// reimplemented. Without this call the two validators answered
+	// differently about the same file: `--project` rejected a top-level key
+	// this path silently ignored, because this one decodes into a typed
+	// struct with plain Unmarshal and unknown keys simply land nowhere. An
+	// author had no way to tell which answer was authoritative, and
+	// blueprint-topology-not-allowed — documented for both — could only ever
+	// fire on one of them.
+	for _, o := range ValidateBlueprintScope(ModeBuild, path, content) {
+		if o.Severity == SeverityError {
+			return fmt.Errorf("[%s] %s", o.Code, o.Message)
+		}
+	}
+
 	var bp struct {
 		App        string `yaml:"app"`
 		Navigation *struct {
@@ -185,7 +199,8 @@ func ValidateBlueprint(path string, content []byte) error {
 		} `yaml:"data"`
 		Errors *struct {
 			Retry *struct {
-				Strategy string `yaml:"strategy"`
+				Strategy  string `yaml:"strategy"`
+				AppliesTo string `yaml:"applies-to"`
 			} `yaml:"retry"`
 		} `yaml:"errors"`
 	}
@@ -238,29 +253,68 @@ func ValidateBlueprint(path string, content []byte) error {
 			value string
 			vocab map[string]bool
 		}{"data.fetching", bp.Data.Fetching, ClosedSetDataFetching})
-		// data.caching.strategy is deliberately NOT gated here. The Go
-		// closed set (ClosedSetDataCaching) is {none, per-route, shared}
-		// — cache *scope* — while blueprint.schema.md:186 documents
-		// {none, in-memory, local-storage, service-worker} — cache
-		// *location*. Two different concepts share one key, and gating on
-		// either would reject blueprints written against the other. A
-		// blueprint authored straight from the schema table (caching.
-		// strategy: in-memory) fails the Go set, so enforcing it would
-		// break valid projects. Resolve the vocabulary conflict first,
-		// then gate.
+		// data.caching.strategy is gated now. It was not, and the comment
+		// here said why: a rival Go set named {none, per-route, shared} —
+		// cache *scope* — against the schema's {none, in-memory,
+		// local-storage, service-worker} — cache *location*. Gating on
+		// either rejected blueprints written against the other, so the key
+		// was left open pending a decision.
+		//
+		// The decision is made: the rival set is deleted. The schema table
+		// is what a blueprint author reads and writes against, so it wins,
+		// and there is no longer a second vocabulary to be wrong about.
+		if bp.Data.Caching != nil {
+			closedSets = append(closedSets, struct {
+				path  string
+				value string
+				vocab map[string]bool
+			}{"data.caching.strategy", bp.Data.Caching.Strategy, ClosedSetDataCachingStrategy})
+		}
+		if bp.Data.Offline != nil {
+			closedSets = append(closedSets, struct {
+				path  string
+				value string
+				vocab map[string]bool
+			}{"data.offline.strategy", bp.Data.Offline.Strategy, ClosedSetDataOfflineStrategy})
+		}
 	}
+	if bp.Errors != nil && bp.Errors.Retry != nil {
+		closedSets = append(closedSets, struct {
+			path  string
+			value string
+			vocab map[string]bool
+		}{"errors.retry.strategy", bp.Errors.Retry.Strategy, ClosedSetErrorsRetryStrategy})
+		closedSets = append(closedSets, struct {
+			path  string
+			value string
+			vocab map[string]bool
+		}{"errors.retry.applies-to", bp.Errors.Retry.AppliesTo, ClosedSetErrorsRetryAppliesTo})
+	}
+	// Delegate to ValidateBlueprintStrategy rather than re-deciding here.
+	// Inlining the comparison is what gave blueprint-strategy-unknown two
+	// implementations in the first place, and it left the documented
+	// blueprint-strategy-unsupported with none that any command could reach:
+	// the helper carrying it was called only from a gate that has since been
+	// deleted for being inert.
+	//
+	// adapterSupport is nil — this path has no adapter in scope, and nil means
+	// "no adapter", not "supports nothing". The supports half stays dormant
+	// until a caller that knows the adapter passes one; that is a narrower gap
+	// than an unreachable validator, and a visible one.
 	for _, c := range closedSets {
 		if c.value == "" || len(c.vocab) == 0 {
 			continue
 		}
-		if !c.vocab[c.value] {
+		for _, o := range ValidateBlueprintStrategy(ModeBuild, c.path, c.value, c.vocab, nil) {
+			if o.Severity != SeverityError {
+				continue
+			}
 			allowed := make([]string, 0, len(c.vocab))
 			for k := range c.vocab {
 				allowed = append(allowed, k)
 			}
 			sort.Strings(allowed)
-			return fmt.Errorf("blueprint-strategy-unknown: %s = %q is outside the closed vocabulary (%s)",
-				c.path, c.value, strings.Join(allowed, ", "))
+			return fmt.Errorf("%s: %s (allowed: %s)", o.Code, o.Message, strings.Join(allowed, ", "))
 		}
 	}
 

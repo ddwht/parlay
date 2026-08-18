@@ -1179,14 +1179,17 @@ data:
 	}
 }
 
-// TestValidateBlueprint_CachingVocabularyNotGated documents a deliberate
-// omission. The Go closed set for data.caching.strategy is
-// {none, per-route, shared} (cache scope) while blueprint.schema.md:186
-// documents {none, in-memory, local-storage, service-worker} (cache
-// location). Gating on either rejects blueprints written against the
-// other, so the key stays ungated until the conflict is resolved. This
-// test fails if someone gates it without reconciling the vocabularies.
-func TestValidateBlueprint_CachingVocabularyNotGated(t *testing.T) {
+// TestValidateBlueprint_CachingVocabularyReconciled replaces
+// TestValidateBlueprint_CachingVocabularyNotGated, which existed to hold the
+// key open while two vocabularies competed for it: a Go set of
+// {none, per-route, shared} (cache scope) against the schema's
+// {none, in-memory, local-storage, service-worker} (cache location). It ended
+// with "resolve the vocabulary conflict first, then gate."
+//
+// Resolved: the rival set is deleted, the schema's wins, and the key is gated.
+// Both halves are asserted here — a schema-shaped value passes, and an invented
+// one is now rejected rather than sailing through to codegen.
+func TestValidateBlueprint_CachingVocabularyReconciled(t *testing.T) {
 	schemaShaped := []byte(`app: x
 data:
   fetching: on-mount
@@ -1195,5 +1198,80 @@ data:
 `)
 	if err := ValidateBlueprint("bp.yaml", schemaShaped); err != nil {
 		t.Errorf("a blueprint authored straight from the schema table was rejected: %v", err)
+	}
+
+	// The old Go vocabulary. It must NOT be accepted now — if it is, the
+	// rival set has grown back.
+	oldGoVocab := []byte(`app: x
+data:
+  caching:
+    strategy: per-route
+`)
+	err := ValidateBlueprint("bp.yaml", oldGoVocab)
+	if err == nil {
+		t.Fatal("data.caching.strategy: per-route accepted — the retired cache-scope vocabulary is back")
+	}
+	if !strings.Contains(err.Error(), "blueprint-strategy-unknown") {
+		t.Errorf("error does not carry the documented code: %v", err)
+	}
+}
+
+// TestValidateBlueprint_RetryVocabularyIsTheStrategyNotTheScope pins the other
+// half of the same mistake. The retired ClosedSetErrorsRetry held
+// {none, reads, writes, all} — the vocabulary of errors.retry.applies-to —
+// while the key it claimed to gate, errors.retry.strategy, takes
+// {none, exponential-backoff, immediate-once}. Had it ever run, it would have
+// rejected every legal strategy and accepted none.
+func TestValidateBlueprint_RetryVocabularyIsTheStrategyNotTheScope(t *testing.T) {
+	schemaShaped := []byte(`app: x
+errors:
+  retry:
+    strategy: exponential-backoff
+    applies-to: writes
+`)
+	if err := ValidateBlueprint("bp.yaml", schemaShaped); err != nil {
+		t.Errorf("schema-shaped retry block rejected: %v", err)
+	}
+
+	swapped := []byte(`app: x
+errors:
+  retry:
+    strategy: writes
+`)
+	if err := ValidateBlueprint("bp.yaml", swapped); err == nil {
+		t.Fatal("errors.retry.strategy: writes accepted — applies-to's vocabulary is gating strategy again")
+	}
+}
+
+// TestValidateBlueprint_StrategyGateSurvivesACompleteBlueprint is the
+// regression test for why three wrong vocabularies went unnoticed for so long.
+// The retired gate decoded data.caching and errors.retry as strings; the schema
+// documents both as maps. A blueprint that filled in either section failed the
+// unmarshal, and an `err == nil` guard then skipped every strategy check in
+// silence — including the one that was correct. Completeness must not disable
+// validation.
+func TestValidateBlueprint_StrategyGateSurvivesACompleteBlueprint(t *testing.T) {
+	complete := []byte(`app: x
+navigation:
+  strategy: browser
+authorization:
+  strategy: role-based
+data:
+  fetching: telepathy
+  caching:
+    strategy: in-memory
+  offline:
+    strategy: read-only-cache
+errors:
+  retry:
+    strategy: exponential-backoff
+    applies-to: all
+`)
+	err := ValidateBlueprint("bp.yaml", complete)
+	if err == nil {
+		t.Fatal("data.fetching: telepathy accepted in a fully-populated blueprint — the strategy gate switched itself off again")
+	}
+	if !strings.Contains(err.Error(), "blueprint-strategy-unknown") {
+		t.Errorf("wrong failure: %v", err)
 	}
 }

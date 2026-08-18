@@ -94,10 +94,13 @@ var knownUnimplementedCodes = map[string]string{
 
 // Scope note: this test asserts a documented code is *reachable in source*,
 // not that it fires on the right input. A code emitted behind a condition
-// that never matches still passes here — e.g. blueprint-strategy-unknown is
-// present in the source yet does not fire for an out-of-vocabulary
-// data.fetching value. Behavioural coverage belongs in the per-validator
-// tests; this is the cheap structural floor beneath them.
+// that never matches still passes here. The example this note used to give —
+// blueprint-strategy-unknown, present in source but never firing for an
+// out-of-vocabulary data.fetching value — has since been fixed and is now
+// covered behaviourally in validate_test.go. The gap the note describes is
+// real regardless of whether an instance of it is currently outstanding:
+// behavioural coverage belongs in the per-validator tests, and this is the
+// cheap structural floor beneath them.
 
 func repoSchemaCodes(t *testing.T) map[string][]string {
 	t.Helper()

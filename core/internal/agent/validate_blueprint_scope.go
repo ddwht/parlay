@@ -1,27 +1,58 @@
 // parlay-feature: parlay-tool/multi-adapter
 // parlay-component: blueprint-scope-and-precedence
 //
-// Pins blueprint's owned scope to {data, auth, errors, state, navigation,
-// platform}, rejects topology declarations (which belong in adapter-set),
-// and validates strategy choices against the relevant adapter's declared
-// support.
+// Pins blueprint's owned scope to the set blueprint.schema.md's "Owned scope"
+// section documents, rejects topology declarations (which belong in
+// adapter-set), and validates strategy choices against the relevant adapter's
+// declared support.
 
 package agent
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+// blueprintAllowedScope is the closed set of top-level blueprint keys.
+//
+// This MUST equal the list in blueprint.schema.md's "Owned scope" section;
+// TestConformance_BlueprintScopeMatchesSchema asserts the equality. It did not
+// once: the schema was corrected to {app, shells, navigation, authorization,
+// data, errors, state, platform} and this map was not, so `validate --project`
+// rejected `shells:` and `authorization:` — both documented in the schema body,
+// both accepted by `validate --type blueprint`. Whichever validator you
+// happened to run decided whether your blueprint was correct.
+//
+// The `auth` spelling in the old set was not merely cosmetic. The strategy
+// gate below decoded `auth.strategy` while every real blueprint writes
+// `authorization:`, so the key was simply absent and the closed-vocab check
+// passed vacuously — it had never once fired on a real file.
 var blueprintAllowedScope = map[string]bool{
-	"app":        true, // app: header is informational; allowed but unused
-	"data":       true,
-	"auth":       true,
-	"errors":     true,
-	"state":      true,
-	"navigation": true,
-	"platform":   true,
+	"app":           true, // app: header is informational; allowed but unused
+	"shells":        true,
+	"navigation":    true,
+	"authorization": true,
+	"data":          true,
+	"errors":        true,
+	"state":         true,
+	"platform":      true,
+}
+
+// blueprintScopeList renders the closed set for an error message.
+//
+// Derived from the map rather than typed out beside it. The literal that used
+// to sit in the message omitted `app`, which the map allowed — so the sentence
+// naming the closed scope could disagree with the check that produced it.
+func blueprintScopeList() string {
+	keys := make([]string, 0, len(blueprintAllowedScope))
+	for k := range blueprintAllowedScope {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return "{" + strings.Join(keys, ", ") + "}"
 }
 
 // Closed strategy vocabularies per architecture §5.4. These are the values
@@ -39,41 +70,67 @@ var ClosedSetDataFetching = map[string]bool{
 	"none":                   true,
 }
 
-// ClosedSetDataCaching — data.caching strategy values.
-var ClosedSetDataCaching = map[string]bool{
-	"none":      true,
-	"per-route": true,
-	"shared":    true,
+// The other three closed sets that used to live here — ClosedSetDataCaching,
+// ClosedSetAuthStrategy, ClosedSetErrorsRetry — are gone, along with the
+// strategy gate in ValidateBlueprintScope that was their only caller. All
+// three named a different concept from the one the schema documents:
+//
+//	setting                 this file said            blueprint.schema.md says
+//	data.caching            {none, per-route,         .strategy: {none, in-memory,
+//	                         shared} — cache scope     local-storage, service-worker}
+//	                                                   — cache location
+//	auth.strategy           {none, session, jwt,      authorization.strategy:
+//	                         oauth2} — authn           {role-based, permission-based,
+//	                         mechanism                 attribute-based, none} — authz model
+//	errors.retry            {none, reads, writes,     .retry.strategy: {none,
+//	                         all}                      exponential-backoff,
+//	                                                   immediate-once}
+//
+// Renaming the keys without correcting the vocabularies would have been worse
+// than leaving them: the gate would finally have fired, and rejected every
+// blueprint written from the schema table. `role-based` is not in
+// {none, session, jwt, oauth2}.
+//
+// ValidateBlueprint (validate.go) already decodes these at the shapes the
+// schema documents and gates them against the documented vocabularies. It is
+// the single owner now. This file keeps the closed-KEY check; that one has no
+// second implementation.
+//
+// The replacements below carry the schema's vocabularies, and their names say
+// which node they gate — the old names said `DataCaching` for a value living
+// at data.caching.strategy, which is part of how the shape drifted unnoticed.
+
+// ClosedSetDataCachingStrategy — data.caching.strategy values
+// (blueprint.schema.md § Section 4). Cache location, not cache scope.
+var ClosedSetDataCachingStrategy = map[string]bool{
+	"none":           true,
+	"in-memory":      true,
+	"local-storage":  true,
+	"service-worker": true,
 }
 
-// ClosedSetAuthStrategy — auth.strategy values.
-var ClosedSetAuthStrategy = map[string]bool{
-	"none":    true,
-	"session": true,
-	"jwt":     true,
-	"oauth2":  true,
+// ClosedSetDataOfflineStrategy — data.offline.strategy values.
+var ClosedSetDataOfflineStrategy = map[string]bool{
+	"none":              true,
+	"read-only-cache":   true,
+	"optimistic-writes": true,
 }
 
-// ClosedSetErrorsRetry — errors.retry policy values.
-var ClosedSetErrorsRetry = map[string]bool{
-	"none":   true,
+// ClosedSetErrorsRetryStrategy — errors.retry.strategy values. The old
+// ClosedSetErrorsRetry held {none, reads, writes, all}, which is the
+// vocabulary of the sibling key errors.retry.applies-to — so it would have
+// rejected every legal strategy and accepted none of them.
+var ClosedSetErrorsRetryStrategy = map[string]bool{
+	"none":                true,
+	"exponential-backoff": true,
+	"immediate-once":      true,
+}
+
+// ClosedSetErrorsRetryAppliesTo — errors.retry.applies-to values.
+var ClosedSetErrorsRetryAppliesTo = map[string]bool{
 	"reads":  true,
 	"writes": true,
 	"all":    true,
-}
-
-// blueprintStrategySettings names every (path, vocabulary) pair the
-// scope-and-precedence validator walks. The closed-vocab gate fires for
-// every entry; the supports gate is the caller's responsibility (it has
-// to know which adapter is in scope for the setting).
-var blueprintStrategySettings = []struct {
-	path  string
-	vocab map[string]bool
-}{
-	{"data.fetching", ClosedSetDataFetching},
-	{"data.caching", ClosedSetDataCaching},
-	{"auth.strategy", ClosedSetAuthStrategy},
-	{"errors.retry", ClosedSetErrorsRetry},
 }
 
 // ValidateBlueprintScope ensures the blueprint declares only top-level keys
@@ -96,54 +153,22 @@ func ValidateBlueprintScope(mode ValidationMode, path string, content []byte) []
 	for key := range raw {
 		if !blueprintAllowedScope[key] {
 			outcomes = append(outcomes, NewOutcome(mode, "blueprint-scope-violation",
-				fmt.Sprintf("%s: top-level key %q is outside the closed scope {data, auth, errors, state, navigation, platform}", path, key)))
+				fmt.Sprintf("%s: top-level key %q is outside the closed scope %s", path, key, blueprintScopeList())))
 		}
 	}
 
-	// Closed-vocab gate per architecture §5.4. We re-decode the raw blueprint
-	// into a typed shape so we can read the strategy values without losing
-	// type fidelity.
-	var typed struct {
-		Data struct {
-			Fetching string `yaml:"fetching"`
-			Caching  string `yaml:"caching"`
-		} `yaml:"data"`
-		Auth struct {
-			Strategy string `yaml:"strategy"`
-		} `yaml:"auth"`
-		Errors struct {
-			Retry string `yaml:"retry"`
-		} `yaml:"errors"`
-	}
-	if err := yaml.Unmarshal(content, &typed); err == nil {
-		strategyValues := map[string]string{
-			"data.fetching": typed.Data.Fetching,
-			"data.caching":  typed.Data.Caching,
-			"auth.strategy": typed.Auth.Strategy,
-			"errors.retry":  typed.Errors.Retry,
-		}
-		// Delegate rather than re-implement. This loop used to inline the
-		// closed-vocab comparison, which meant blueprint-strategy-unknown had
-		// two implementations and ValidateBlueprintStrategy — the documented
-		// one — was called from nowhere. Its supports half was therefore dead
-		// code, and blueprint-strategy-unsupported could never fire even
-		// though blueprint.schema.md documents it.
-		//
-		// adapterSupport is nil because the scope check has no adapter in
-		// scope; the supports half stays inert until a caller that knows the
-		// adapter passes one. That is a narrower gap than a whole unreachable
-		// validator, and an honest one.
-		for _, s := range blueprintStrategySettings {
-			value := strategyValues[s.path]
-			if value == "" {
-				continue
-			}
-			for _, o := range ValidateBlueprintStrategy(mode, s.path, value, s.vocab, nil) {
-				o.Message = fmt.Sprintf("%s: %s", path, o.Message)
-				outcomes = append(outcomes, o)
-			}
-		}
-	}
+	// The closed-vocab strategy gate that used to sit here is gone; see the
+	// table above the closed sets. Two independent bugs made it inert, which
+	// is why the wrong vocabularies survived: it decoded data.caching as a
+	// string and errors.retry as a string, but the schema documents both as
+	// maps (data.caching.strategy, errors.retry.strategy). Any blueprint that
+	// actually used either section failed the unmarshal, and the `err == nil`
+	// guard then skipped the ENTIRE block in silence — including the
+	// data.fetching check, which was correct. A gate that switches itself off
+	// when the file gets more complete is worse than no gate; nothing reported
+	// that validation had been skipped.
+	//
+	// ValidateBlueprint owns strategy validation now, at the documented shapes.
 
 	return outcomes
 }
