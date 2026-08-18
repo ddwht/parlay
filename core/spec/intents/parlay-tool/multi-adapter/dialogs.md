@@ -354,7 +354,7 @@ System: Validation passes. The resolved-value report attributes every setting to
 #### Branch: Blueprint key outside the owned scope
 
 User: Sets a setting under `blueprint.deployment.region: us-west-2`.
-System (background): `deployment` is not in blueprint's owned scope (data/auth/errors/state/navigation/platform).
+System (background): `deployment` is not in blueprint's owned scope (app/shells/navigation/authorization/data/errors/state/platform).
 System: Emits `blueprint-scope-violation` naming the offending path. Fix message: `blueprint owns only the listed scopes; deployment-related concerns belong elsewhere`.
 
 ---

@@ -299,7 +299,7 @@ Designate `react-nest-prisma` as the **v1 first preset**: the stack the tool's r
 - A strategy that the relevant adapter does not declare support for fails with `blueprint-strategy-unsupported` even if the value is in the closed set
 - A canonical operation error that no layer maps to a transport response or a presentation surface fails with `error-no-mapping` — silence is not a default
 - Blueprint remains optional; a project with no `blueprint.yaml` uses adapter defaults at every layer
-- Settings outside the owned scope (data/auth/errors/state/navigation/platform) are rejected with `blueprint-scope-violation` — blueprint is not a free-form override sheet
+- Settings outside the owned scope (app/shells/navigation/authorization/data/errors/state/platform, per blueprint.schema.md's "Owned scope" section) are rejected with `blueprint-scope-violation` — blueprint is not a free-form override sheet
 
 **Verify**:
 - A blueprint setting `data.fetching: stale-while-revalidate` against a presentation adapter that supports it builds clean

@@ -3,46 +3,15 @@ app: parlay
 navigation:
   strategy: cli-subcommands
 
-# --- Deployer architecture ---
-# Parlay supports multiple AI agents through a deployer registry.
-# Each deployer packages the same embedded skills into agent-specific format.
-# Changes to skills, skill titles, or CLAUDE.md template affect ALL deployers.
-
-deployers:
-  registry: core/internal/deployer/deployer.go
-  shared:
-    - skill-sources: core/internal/embedded/skills/*.skill.md
-    - skill-titles: core/internal/deployer/claude.go:skillTitle()
-    - schemas: core/internal/embedded/schemas/*.schema.md
-  agents:
-    claude-code:
-      deployer: core/internal/deployer/claude.go
-      output:
-        - skills: .claude/skills/parlay-*/SKILL.md
-        - project-config: CLAUDE.md (with parlay:begin/end markers)
-      features:
-        - YAML frontmatter on each skill (name, description)
-        - CLAUDE.md section preservation via HTML comment markers
-        - AskUserQuestion tool for interactive prompts
-    cursor:
-      deployer: core/internal/deployer/cursor.go
-      output:
-        - skills: .cursor/skills/parlay-*/SKILL.md
-        - project-config: .cursor/rules/parlay.mdc (alwaysApply rule)
-      features:
-        - YAML frontmatter on each skill (name, description)
-        - MDC format with alwaysApply flag
-    generic:
-      deployer: core/internal/deployer/generic.go
-      output:
-        - instructions: AGENT_INSTRUCTIONS.md (single file, all skills concatenated)
-      features:
-        - No per-skill files — everything in one markdown document
-        - Hardcoded CLI command list (must be updated when commands change)
-
-  # Cross-cutting rules for deployer changes:
-  # - Adding/removing a skill: affects all deployers via embedded skills list
-  # - Adding/removing a skill title: update skillTitle() in claude.go (shared by Claude + Cursor)
-  # - Adding/removing a CLI command: update generic.go hardcoded list AND root.go registration
-  # - Changing CLAUDE.md template: edit writeCLAUDEmd in claude.go
-  # - Changing Cursor rule template: edit writeCursorProjectRule in cursor.go
+# The `deployers:` block that used to sit here now lives at
+# core/spec/intents/parlay-tool/agent-integration/infrastructure.md.
+#
+# Blueprint's owned scope is closed to app, shells, navigation, authorization,
+# data, errors, state and platform; `deployers:` was outside it under that list
+# and under the one that preceded it. It validated only because the scope check
+# runs on the multi-target project pass and core/ has no adapter-set.yaml, so it
+# was never reached — `parlay validate --type blueprint` on this file now
+# rejects an out-of-scope key, which is how the block was found.
+#
+# It described a boundary and the cross-cutting rules for changing it, which is
+# what infrastructure.md is for.
