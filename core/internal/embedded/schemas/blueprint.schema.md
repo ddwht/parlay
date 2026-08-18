@@ -278,7 +278,7 @@ Native-app-only section for OS-level integration points. Omit entirely for web a
 
 ## Versioning
 
-The blueprint has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — deferred for the same reason as the adapter file: `blueprint.yaml` is hand-authored, team-owned, and long-lived (exactly the migrator-chain profile), but its top-level shape (the closed `data`/`auth`/`errors`/`state`/`navigation`/`platform` scope) hasn't had a breaking change since it stabilized. There's no prior version to migrate from yet. Add `schema_version:` with a real migrator when the first breaking shape change actually happens, not speculatively now.
+The blueprint has no `schema_version:` field (see `schema-versioning.schema.md` for the house rule) — deferred for the same reason as the adapter file: `blueprint.yaml` is hand-authored, team-owned, and long-lived (exactly the migrator-chain profile), but its top-level shape (the closed scope listed under "Owned scope" below) hasn't had a breaking change since it stabilized. There's no prior version to migrate from yet. Add `schema_version:` with a real migrator when the first breaking shape change actually happens, not speculatively now.
 
 ## Validation
 
@@ -335,7 +335,9 @@ The codegen boundary is preserved: the blueprint lives in `.parlay/`, so generat
 
 Blueprint's owned scope is closed to: `app`, `shells`, `navigation`, `authorization`, `data`, `errors`, `state`, `platform`. Any other top-level key fails validation.
 
-This list previously read `data, auth, errors, state, navigation, platform` — omitting `app:`, `shells:` and `authorization:`, all three documented in the schema body above and all three present in every real blueprint. Read literally, it declared the standard blueprint invalid. It also wrote `auth` where the body writes `authorization`, and that discrepancy was not confined to prose: the scope validator decoded `auth.strategy`, so on a real blueprint the key was simply absent and the check passed vacuously. Key names in this section are read by code — they must match the body.
+This list previously read `data, auth, errors, state, navigation, platform` — omitting `app:`, `shells:` and `authorization:`, all three documented in the schema body above. Read literally, it declared the standard blueprint invalid. It also wrote `auth` where the body writes `authorization`, and that discrepancy was not confined to prose: the scope validator decoded `auth.strategy`, so on a real blueprint the key was simply absent and the check passed vacuously.
+
+Correcting this section was not enough on its own, and the gap is worth recording. The list was fixed here and the validator's map was not, so for a while the schema documented one closed set and `validate --project` enforced another — which is how a blueprint written from this page came to fail validation with two `blueprint-scope-violation` errors while `validate --type blueprint` called the same file clean. Key names in this section are read by code. `TestConformance_BlueprintScopeMatchesSchema` now parses this list and asserts set equality with `blueprintAllowedScope`, in both directions, because a prose instruction that code must match prose is not enforcement.
 
 Topology — i.e., which adapter occupies which slot, what source roots they emit into, what cross-kind edges are authorized — is **not** in blueprint's scope. Topology lives in `.parlay/adapter-set.yaml`. A blueprint that declares a `targets:` block fails validation with `blueprint-topology-not-allowed`.
 
@@ -351,7 +353,7 @@ The validation surface resolves each setting against `blueprint`, `adapter-set`,
 
 ### Strategy validation
 
-Every strategy choice — `data.fetching`, `auth.strategy`, `errors.retry`, etc. — must reference a value the relevant adapter declares it supports. Out-of-vocabulary values fail with `blueprint-strategy-unknown`; values within the closed vocabulary that the adapter doesn't support fail with `blueprint-strategy-unsupported`.
+Every strategy choice — `data.fetching`, `authorization.strategy`, `errors.retry.strategy`, etc. — must reference a value the relevant adapter declares it supports. Out-of-vocabulary values fail with `blueprint-strategy-unknown`; values within the closed vocabulary that the adapter doesn't support fail with `blueprint-strategy-unsupported`.
 
 | Code | When it fires |
 |---|---|
