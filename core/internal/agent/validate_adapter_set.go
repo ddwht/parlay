@@ -26,10 +26,26 @@ var adapterKindClosedSet = map[string]bool{
 }
 
 // adapterFileShape is the minimal projection of an adapter file used for
-// kind-mismatch validation. We only need the kind: field; everything else
-// stays in the framework-vocabulary validation path.
+// kind-mismatch and root-override validation.
 type adapterFileShape struct {
-	Kind string `yaml:"kind"`
+	Kind            string `yaml:"kind"`
+	FileConventions struct {
+		SourceRoot string `yaml:"source-root"`
+	} `yaml:"file-conventions"`
+}
+
+// normalizeRoot makes two spellings of the same directory comparable.
+// "src/", "src", and "./src" are one place; the adapters and presets that ship
+// today disagree about the trailing slash, and the adapter-set schema does not
+// pin it.
+func normalizeRoot(p string) string {
+	p = strings.TrimSpace(p)
+	p = strings.TrimPrefix(p, "./")
+	p = strings.Trim(p, "/")
+	if p == "" {
+		return "."
+	}
+	return p
 }
 
 // ValidateAdapterSet validates the structural shape of .parlay/adapter-set.yaml.
@@ -84,9 +100,50 @@ func ValidateAdapterSet(mode ValidationMode, path string, content []byte) []Vali
 			outcomes = append(outcomes, NewOutcome(mode, "adapter-set-kind-mismatch",
 				fmt.Sprintf("targets.%s references adapter %q whose kind is %q (slot expects %q)", slotKind, target.Adapter, actualKind, slotKind)))
 		}
+
+		outcomes = append(outcomes, checkRootOverrideIsLossless(mode, slotKind, target, shape)...)
 	}
 
 	return outcomes
+}
+
+// checkRootOverrideIsLossless catches a target root that silently discards the
+// framework's source directory.
+//
+// `targets.<kind>.root` REPLACES the adapter's own `source-root` during plan
+// derivation. That is lossless only when `source-root` names a project
+// location, which is how the backend adapters use it: nestjs declares
+// `source-root: apps/api` and carries `src/` inside its path templates, so
+// swapping the project location leaves the framework's directory intact.
+//
+// The presentation adapters do the opposite. react-antd declares
+// `source-root: "src/"` — the framework's directory, not a project location —
+// and its templates start at `features/…`. Replacing that with `apps/web`
+// deletes the `src/` from every derived path, so the flagship preset emits
+// React components to `apps/web/features/…` when the app builds from
+// `apps/web/src/`. tsconfig's `include: ["src"]` means the files are not
+// merely misplaced: they are outside the TypeScript project, so nothing type
+// checks them and the build stays green by not seeing them at all.
+//
+// One field carries two incompatible meanings and nothing forced a choice.
+// Fixing that is a model change; this is the diagnostic that stops the silent
+// version happening in the meantime, and it fires on exactly the broken case —
+// a root that differs from the source-root it replaces. Where the two agree
+// (every backend slot; react-antd-only, whose `root: src` happens to match)
+// the substitution loses nothing and this stays quiet.
+func checkRootOverrideIsLossless(mode ValidationMode, slotKind string, target parser.AdapterSetTarget, shape adapterFileShape) []ValidationOutcome {
+	sourceRoot := normalizeRoot(shape.FileConventions.SourceRoot)
+	root := normalizeRoot(target.Root)
+	if sourceRoot == "." || root == "." || sourceRoot == root {
+		return nil
+	}
+	return []ValidationOutcome{NewOutcome(mode, "adapter-root-override-lossy",
+		fmt.Sprintf("targets.%s.root %q replaces adapter %q's source-root %q, which is a different directory — "+
+			"every derived path loses %q. If %q is the framework's source directory rather than a project location, "+
+			"the templates that assume it will emit outside the build. Move the framework directory into the adapter's "+
+			"path templates, or set root: to the same directory the adapter declares.",
+			slotKind, target.Root, target.Adapter, shape.FileConventions.SourceRoot,
+			shape.FileConventions.SourceRoot, shape.FileConventions.SourceRoot))}
 }
 
 // resolveAdapterPath turns an adapter slug into the on-disk path relative

@@ -40,6 +40,19 @@ The validator enforces:
 | `adapter-set-duplicate-kind` | Two entries declare the same kind. |
 | `adapter-set-adapter-missing` | `targets.<kind>.adapter` references a slug with no `.parlay/adapters/<slug>.adapter.yaml`. |
 | `adapter-set-kind-mismatch` | The adapter referenced from a slot declares a different `kind:` than the slot the project assigns it to. |
+| `adapter-root-override-lossy` | `targets.<kind>.root` names a different directory than the adapter's `source-root`, which it replaces — so every derived path loses that directory. |
+
+### `root:` replaces `source-root`, and that is only safe one way
+
+`targets.<kind>.root` substitutes for the adapter's `file-conventions.source-root` during plan derivation. Whether that loses information depends on which of two things the adapter put in `source-root`, and nothing forces a choice:
+
+- **A project location** — `nestjs-application` declares `source-root: apps/api` and carries `src/` inside its path templates. Swapping the project location leaves the framework's directory intact. Lossless.
+- **A framework convention directory** — `react-antd` declares `source-root: "src/"` and its templates start at `features/…`. Replacing that with `apps/web` deletes `src/` from every derived path, so components land at `apps/web/features/…` while the app builds from `apps/web/src/`. With `tsconfig`'s `include: ["src"]` the files are not merely misplaced, they are outside the TypeScript project — not type-checked, not bundled, and the build stays green by not seeing them.
+
+`adapter-root-override-lossy` fires when the two directories differ, which is exactly the second case. Until the underlying ambiguity is resolved in the adapter model, the fix is one of:
+
+- move the framework's directory into the adapter's `paths:` templates and leave `source-root` naming the project location; or
+- set `root:` to the same directory the adapter declares, when the adapter's `source-root` really is where code should land.
 
 ## Link enforcement
 

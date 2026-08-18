@@ -17,7 +17,12 @@ name: parlay-editor
 targets:
   presentation:
     adapter: react-vite-radix-tailwind
-    root: internal/editor/ui
+    # internal/editor/ui/src, not internal/editor/ui: root replaces the
+    # adapter's source-root outright, so it has to name the directory the
+    # adapter's path templates are relative to. Naming the package directory
+    # instead dropped src/ from every path this slot would derive — the same
+    # shape adapter-root-override-lossy now reports.
+    root: internal/editor/ui/src
   application:
     adapter: go-studio-app
     root: internal/editor

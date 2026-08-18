@@ -330,16 +330,16 @@ design-system:
     usage: "Use flex or grid utilities. Page-level layout: flex flex-col h-screen with header/main/footer. Sidebars: fixed-width column with overflow handling."
 
 file-conventions:
-  source-root: "studio/internal/ui/src/"
+  source-root: "internal/editor/ui/src/"
   component-pattern: "feature-modules"
   naming: "PascalCase"
-  entry-point: "studio/internal/ui/src/main.tsx"
+  entry-point: "internal/editor/ui/src/main.tsx"
   packages:
-    components: "studio/internal/ui/src/components/"
-    features: "studio/internal/ui/src/features/"
-    models: "studio/internal/ui/src/types/"
-    hooks: "studio/internal/ui/src/hooks/"
-    utils: "studio/internal/ui/src/lib/"
+    components: "internal/editor/ui/src/components/"
+    features: "internal/editor/ui/src/features/"
+    models: "internal/editor/ui/src/types/"
+    hooks: "internal/editor/ui/src/hooks/"
+    utils: "internal/editor/ui/src/lib/"
 
 patterns:
   interaction:
