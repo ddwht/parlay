@@ -39,7 +39,11 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "internal/editor/"
+  # The adapter-set pins this slot to root: internal/editor, which is the
+  # project location and therefore substitutes for project-root. Go has no
+  # conventional inner source directory here, so source-root is ".".
+  project-root: "internal/editor"
+  source-root: "."
   component-pattern: "internal-package-per-subsystem"
   naming: "snake_case"
   entry-point: "core/internal/commands/domain_edit.go"

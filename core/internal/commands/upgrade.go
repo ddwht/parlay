@@ -242,6 +242,12 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "  Note: ledger migration scan skipped (%v)\n", err)
 	}
 
+	// parlay-feature: parlay-tool/multi-adapter
+	// parlay-component: adapter-emit-base-resolution
+	if err := reportLegacySourceRootAdapters(cmd, adapterSearchRoots(rootPath)); err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "  Note: source-root split check skipped (%v)\n", err)
+	}
+
 	return nil
 }
 
@@ -337,6 +343,126 @@ func offerLedgerMigration(cmd *cobra.Command, rootPath string) error {
 		}
 	}
 	return nil
+}
+
+// reportLegacySourceRootAdapters names project adapters that still fold the
+// project location and the framework's directory into one source-root field.
+//
+// Report, never rewrite — unlike the kind: opt-in above, which can infer its
+// answer from the presence of a supports: block. There is no such signal here.
+// `source-root: "src/"` is a framework directory in a single-package app and a
+// project location in a repo whose code genuinely lives at ./src, and the file
+// itself does not say which. The kind: prompt already established the rule for
+// this situation: when it cannot infer, it skips the file and says what the
+// author has to decide (upgrade.go, "add its kind: … by hand"). Guessing would
+// relocate generated code on someone's next run, which is precisely the failure
+// the split exists to end.
+//
+// Silence would be worse than a note, though. Legacy files keep their old
+// behaviour exactly, so nothing breaks and nothing announces that a better
+// shape now exists — and the destructive subset is only reported when a
+// validation happens to run.
+func reportLegacySourceRootAdapters(cmd *cobra.Command, roots []string) error {
+	var legacy []string
+	for _, rootPath := range roots {
+		adaptersDir := filepath.Join(rootPath, ".parlay", "adapters")
+		entries, err := os.ReadDir(adaptersDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".adapter.yaml") {
+				continue
+			}
+			full := filepath.Join(adaptersDir, e.Name())
+			content, err := os.ReadFile(full)
+			if err != nil {
+				continue
+			}
+			if hasFileConventionKey(content, "source-root") && !hasFileConventionKey(content, "project-root") {
+				legacy = append(legacy, full)
+			}
+		}
+	}
+	if len(legacy) == 0 {
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%d adapter file(s) predate file-conventions.project-root:\n", len(legacy))
+	for _, name := range legacy {
+		fmt.Fprintf(out, "  - %s\n", name)
+	}
+	fmt.Fprint(out, ""+
+		"\nThey keep working unchanged: without project-root:, an adapter-set target's root:\n"+
+		"replaces source-root exactly as before.\n\n"+
+		"Splitting them is worth doing when a target root: names a different directory than\n"+
+		"the adapter's source-root — that substitution drops the framework's directory from\n"+
+		"every derived path, which is how generated code lands outside the build. Run\n"+
+		"`parlay validate --project` to see whether any of yours is in that shape; it reports\n"+
+		"adapter-root-override-lossy per slot.\n\n"+
+		"  project-root:  the deployable project location (\".\", apps/web) — root: replaces this\n"+
+		"  source-root:   the framework's directory inside it (src/, src/app/, cmd/) — never replaced\n\n"+
+		"Path templates hang off both; packages: and entry-point: off project-root alone.\n"+
+		"Nothing is rewritten for you: whether your source-root names a package or a framework\n"+
+		"directory is not derivable from the file, and guessing would move where your code is\n"+
+		"generated.\n")
+	return nil
+}
+
+// adapterSearchRoots lists every root whose .parlay/adapters/ this upgrade
+// should look at: the repo-level root plus any registered child roots.
+//
+// Adapters resolve child-first with parent fallback, so in a multi-root project
+// they overwhelmingly live in the children — this repo keeps all of its under
+// core/ and studio/, and none at the repo level. Reporting only on rootPath
+// would have made the note structurally incapable of firing here.
+//
+// The sibling kind: opt-in above still scans rootPath alone and therefore has
+// the same blind spot. Left as-is deliberately: it REWRITES files, and widening
+// what a rewrite touches is not a change to make while passing through.
+func adapterSearchRoots(rootPath string) []string {
+	roots := []string{rootPath}
+	// Same enumeration offerLedgerMigration uses, and for the same reason:
+	// reading roots.yaml off the repo root works whichever root is active,
+	// where the active context's Index is only populated when the active root
+	// IS the parent. The first version of this used the context and therefore
+	// found nothing when run from inside a child.
+	if idx, err := config.LoadRootsIndex(rootPath); err == nil {
+		for _, child := range idx.Children {
+			if child.Path != "" {
+				roots = append(roots, child.Path)
+			}
+		}
+	}
+	return roots
+}
+
+// hasFileConventionKey reports whether content declares the given key nested
+// one level under file-conventions:. Line-based for the same reason
+// hasKindField is: a malformed adapter is validated elsewhere, and an upgrade
+// note must not be the thing that fails on it.
+func hasFileConventionKey(content []byte, key string) bool {
+	inBlock := false
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+		if !indented {
+			inBlock = strings.HasPrefix(trimmed, "file-conventions:")
+			continue
+		}
+		if inBlock && strings.HasPrefix(trimmed, key+":") {
+			return true
+		}
+	}
+	return false
 }
 
 // offerAdapterKindOptIn scans .parlay/adapters/ under rootPath for adapter

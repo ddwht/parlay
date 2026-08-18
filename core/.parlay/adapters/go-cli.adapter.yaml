@@ -236,6 +236,10 @@ design-system:
     usage: "Use tabwriter for any tabular data. Keep output scannable — one item per line."
 
 file-conventions:
+  # project-root is the deployable project location; source-root is the
+  # framework's directory inside it. core/ is single-target, so the project
+  # location is the root itself.
+  project-root: "."
   source-root: "internal/commands/"
   component-pattern: one-file-per-command
   naming: snake_case

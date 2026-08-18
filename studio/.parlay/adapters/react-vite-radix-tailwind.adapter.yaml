@@ -330,7 +330,12 @@ design-system:
     usage: "Use flex or grid utilities. Page-level layout: flex flex-col h-screen with header/main/footer. Sidebars: fixed-width column with overflow handling."
 
 file-conventions:
-  source-root: "internal/editor/ui/src/"
+  # internal/editor/ui is the Vite package; src/ is Vite's convention inside
+  # it. Folded into one field these read as a single path, which is how this
+  # file came to name studio/internal/ui/src — a directory deleted when the
+  # studio module was absorbed — while the adapter-set pinned the package.
+  project-root: "internal/editor/ui"
+  source-root: "src"
   component-pattern: "feature-modules"
   naming: "PascalCase"
   entry-point: "internal/editor/ui/src/main.tsx"
