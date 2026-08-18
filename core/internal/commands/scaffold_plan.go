@@ -51,13 +51,31 @@ type adapterPaths struct {
 }
 
 type adapterFileConventions struct {
-	SourceRoot string       `yaml:"source-root"`
-	Naming     string       `yaml:"naming"`
-	Paths      adapterPaths `yaml:"paths"`
+	// ProjectRoot is the deployable project location an adapter-set target's
+	// root: replaces. Absent means legacy single-field behaviour; see emitBase.
+	ProjectRoot string       `yaml:"project-root"`
+	SourceRoot  string       `yaml:"source-root"`
+	Naming      string       `yaml:"naming"`
+	Paths       adapterPaths `yaml:"paths"`
+}
+
+// emitBase resolves where this adapter's templates are rooted, for a given
+// adapter-set target root (empty for a single-target project).
+func (fc adapterFileConventions) emitBase(targetRoot string) string {
+	return emitBase(fc.ProjectRoot, fc.SourceRoot, targetRoot)
 }
 
 type adapterForPlan struct {
 	FileConventions adapterFileConventions `yaml:"file-conventions"`
+	// targetRoot is the adapter-set target root this adapter was resolved
+	// for, empty for a single-target project. Not a YAML field — it comes
+	// from the topology, not the adapter file.
+	//
+	// derivePlanTargets used to communicate it by overwriting
+	// FileConventions.SourceRoot, which is why the replacement semantics were
+	// invisible at the call sites that consumed it: nothing downstream could
+	// tell a declared source-root from a substituted one.
+	targetRoot string `yaml:"-"`
 	// Toolchain is the adapter's Section-10 external-skill/MCP block. Additive:
 	// the plan derivers ignore it; toolchain-plan reads it so multi-target
 	// resolution (adaptersForProject) surfaces it per kind for free.
@@ -181,7 +199,7 @@ func expandTemplate(tmpl, feature, name, entity, naming string) (string, error) 
 func derivePlanCreates(feature string, components []string, entities []string, ad adapterForPlan) derivedPlan {
 	fc := ad.FileConventions
 	naming := fc.Naming
-	root := fc.SourceRoot
+	root := fc.emitBase(ad.targetRoot)
 
 	var out derivedPlan
 	seen := map[string]int{} // path -> index in out.Creates, for merging sources
@@ -396,7 +414,7 @@ func derivePlanTargets(feature string, presComponents []string, hasOperations bo
 		if !ok {
 			continue
 		}
-		ad.FileConventions.SourceRoot = tgt.Root
+		ad.targetRoot = tgt.Root
 		switch kind {
 		case "presentation":
 			ents := entities
@@ -444,7 +462,7 @@ func deriveApplicationPlan(feature string, hasOperations bool, ad adapterForPlan
 			out.Undecidable = append(out.Undecidable, err.Error())
 			continue
 		}
-		out.Creates = append(out.Creates, planEntry{Path: path.Join(fc.SourceRoot, p), Sources: []string{"section/operations"}})
+		out.Creates = append(out.Creates, planEntry{Path: path.Join(fc.emitBase(ad.targetRoot), p), Sources: []string{"section/operations"}})
 	}
 	return out
 }
@@ -477,7 +495,7 @@ func deriveTransportPlan(feature string, hasOperations bool, ad adapterForPlan) 
 			out.Undecidable = append(out.Undecidable, err.Error())
 			continue
 		}
-		full := path.Join(fc.SourceRoot, p)
+		full := path.Join(fc.emitBase(ad.targetRoot), p)
 		dup := false
 		for _, e := range out.Creates {
 			if e.Path == full {

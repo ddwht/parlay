@@ -255,7 +255,7 @@ func declaredPlanPaths(cfg *config.Context, args []string) (map[string]bool, []s
 // declaration at registration; this admits the emission).
 func toolchainWriteSetRegions(cfg *config.Context) []string {
 	var regions []string
-	addEntry := func(e agent.ToolchainEntry, targetRoot string) {
+	addEntry := func(e agent.ToolchainEntry, projectRoot, sourceRoot, targetRoot string) {
 		if e.Authority != "mutating" || !slices.Contains(e.Phase, "code") {
 			return
 		}
@@ -264,8 +264,8 @@ func toolchainWriteSetRegions(cfg *config.Context) []string {
 			if region == "" {
 				continue
 			}
-			if targetRoot != "" {
-				region = normalizeWriteSetPath(path.Join(targetRoot, region))
+			if base := writeSetRebase(projectRoot, targetRoot); base != "" {
+				region = normalizeWriteSetPath(path.Join(base, region))
 			}
 			regions = append(regions, region)
 		}
@@ -277,11 +277,13 @@ func toolchainWriteSetRegions(cfg *config.Context) []string {
 			for kind, ad := range adapters {
 				if ad.Toolchain != nil {
 					root := as.Targets[kind].Root
+					pr := ad.FileConventions.ProjectRoot
+					sr := ad.FileConventions.SourceRoot
 					for _, e := range ad.Toolchain.MCP {
-						addEntry(e, root)
+						addEntry(e, pr, sr, root)
 					}
 					for _, e := range ad.Toolchain.Skills {
-						addEntry(e, root)
+						addEntry(e, pr, sr, root)
 					}
 				}
 			}
@@ -296,10 +298,10 @@ func toolchainWriteSetRegions(cfg *config.Context) []string {
 			var ad adapterForPlan
 			if yaml.Unmarshal(data, &ad) == nil && ad.Toolchain != nil {
 				for _, e := range ad.Toolchain.MCP {
-					addEntry(e, "")
+					addEntry(e, ad.FileConventions.ProjectRoot, ad.FileConventions.SourceRoot, "")
 				}
 				for _, e := range ad.Toolchain.Skills {
-					addEntry(e, "")
+					addEntry(e, ad.FileConventions.ProjectRoot, ad.FileConventions.SourceRoot, "")
 				}
 			}
 		}
@@ -438,4 +440,27 @@ func (o *writeSetOutput) recordExempt(reason string) {
 		o.ExemptByReason = map[string]int{}
 	}
 	o.ExemptByReason[reason]++
+}
+
+// writeSetRebase resolves the prefix a toolchain write-set glob is rebased
+// under.
+//
+// Write-set globs INCLUDE the adapter's source-root — ValidateToolchain's
+// globWithinRoot requires it, so `write-set: ["src/**"]` accompanies
+// `source-root: "src/"`. What varies is only the project location in front of
+// it, which is exactly what an adapter-set target root replaces.
+//
+// That makes prefixing correct here and substitution correct in plan
+// derivation, for the same adapter, without the two contradicting each other:
+// the plan joins base + template where the template is source-root-relative,
+// and this joins base + glob where the glob is source-root-inclusive. Both
+// land under the same directory. They did not before — the plan replaced while
+// this prefixed, so for react-antd under root apps/web the plan wrote
+// apps/web/features/** while this authorized apps/web/src/**, a region nothing
+// ever wrote to.
+func writeSetRebase(projectRoot, targetRoot string) string {
+	if targetRoot != "" {
+		return targetRoot
+	}
+	return projectRoot
 }

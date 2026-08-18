@@ -61,7 +61,7 @@ through it is a guess.
    | `presentation` | `shows:` / `actions:` / `flows:` covering the whole surface vocabulary | `supports:` |
    | `transport` / `application` / `persistence` | `supports:` (operation kinds, steps, policies, errors) | `shows:` / `actions:` / `flows:` are not asked for |
 
-   Every kind needs `name:`, `file-conventions:` (with `source-root`,
+   Every kind needs `name:`, `file-conventions:` (with `project-root` and `source-root`,
    `component-pattern`, `naming`, `entry-point`), and a `name:` matching the
    filename slug.
 
@@ -94,7 +94,7 @@ through it is a guess.
 5. **Write `file-conventions:`** — the part that decides where generated code
    goes:
    - **`paths:`** — one template per artifact kind, **relative to
-     `source-root`**, using only `{feature}` `{name}` `{entity}` `{Feature}`
+     `project-root` + `source-root`**, using only `{feature}` `{name}` `{entity}` `{Feature}`
      `{Name}` `{Entity}`. This is what makes `plan:` derivable. Omitting it is
      allowed and means plan derivation is unavailable for this adapter —
      which is a real cost, so only do it deliberately.

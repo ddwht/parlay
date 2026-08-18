@@ -93,6 +93,7 @@ type AdapterConvention struct {
 //     hooks, utils live"). No paths template expresses this, which is why
 //     `parlay simplify` needs it to place an extracted helper.
 type AdapterFileConventions struct {
+	ProjectRoot      string            `yaml:"project-root"`
 	SourceRoot       string            `yaml:"source-root"`
 	ComponentPattern string            `yaml:"component-pattern,omitempty"`
 	Naming           string            `yaml:"naming"`

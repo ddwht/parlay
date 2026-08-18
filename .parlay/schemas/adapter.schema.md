@@ -91,12 +91,13 @@ conventions:
 # --- Section 4: File conventions (team-customizable) ---
 
 file-conventions:
-  source-root: <where generated code lives — e.g., "src/", "cmd/", "app/">
+  project-root: <the deployable project location — "." for a single-package repo, "apps/web" in a monorepo. An adapter-set target's root: substitutes for THIS field>
+  source-root: <the framework's conventional source directory — e.g., "src/", "src/app/", "cmd/". Never replaced by the topology>
   component-pattern: <how components map to files — e.g., "one-file-per-component", "feature-modules">
   naming: <file naming convention — e.g., "kebab-case", "snake_case", "PascalCase">
   entry-point: <main file — e.g., "main.go", "main.ts", "App.tsx">
   paths:
-    component: <path template, source-root-relative — e.g., "features/{feature}/{name}/{name}.component.ts">
+    component: <path template, relative to project-root + source-root — e.g., "features/{feature}/{name}/{name}.component.ts">
     component-extras: [<further templates the same component emits — e.g., "features/{feature}/{name}/{name}.component.html">]
     test: <path template for a component's test — e.g., "features/{feature}/{name}/{name}.component.spec.ts">
     model: <path template for one domain entity — e.g., "core/domain/{entity}.ts">
@@ -392,13 +393,26 @@ Where generated code goes. `source-root` is the root every other path in this se
 | `{entity}` | a domain-model entity name, in `naming` case (`model` template only) |
 | `{Name}`, `{Entity}` | the same values in PascalCase, for frameworks that name files after types |
 
-All templates are relative to `source-root`. A template is a plain string substitution — no conditionals, no fallbacks. If a framework needs two files per component (a TypeScript class and an HTML template, say), list the second and any further ones in `component-extras:` rather than encoding a branch.
+All templates are relative to `project-root` + `source-root` (the emit base). `packages:` and `entry-point:` are relative to `project-root` alone, which is why they spell the framework directory out. A template is a plain string substitution — no conditionals, no fallbacks. If a framework needs two files per component (a TypeScript class and an HTML template, say), list the second and any further ones in `component-extras:` rather than encoding a branch.
 
 `component-pattern` stays, and stays an enum: it still tells the agent how to *group* what it writes, which `paths:` deliberately does not express. The two are complementary — one is grouping strategy, the other is destination.
 
 **Backend (non-presentation) path keys.** A presentation adapter is component-driven, so its templates key off `{name}`. An `application` adapter is *feature*-driven — one module/controller/service trio per parlay feature — so it declares `service:`, `controller:`, and `module:`, each keyed off `{feature}` (no `{name}`). A `persistence` adapter is *entity*-driven: its `model:` template names the shared schema file (e.g. `prisma/schema.prisma`) and, carrying no `{entity}` placeholder, expands to the same path for every entity, which the plan deriver collapses to one shared row. `parlay internal scaffold-plan` derives per-target rows from these keys via `derivePlanTargets`.
 
-**Root override in a multi-target project.** When `.parlay/adapter-set.yaml` pins a target to a `root:`, that root replaces the adapter's own `source-root` for plan derivation — the topology, not the adapter, decides where each target emits. So the same `nestjs-application` adapter (`source-root: apps/api`) emits under whatever backend root the adapter-set names, and a presentation adapter's `src/…` templates land under the presentation root (`apps/web`).
+**Root override in a multi-target project.** When `.parlay/adapter-set.yaml` pins a target to a `root:`, that root substitutes for the adapter's **`project-root`** — and only that. `source-root` is untouched. The topology decides where a slot's *project* sits; the framework decides its internal directory, and the topology has no opinion about it.
+
+So `emit base = (target root, else project-root) + source-root`, and:
+
+| Adapter | `project-root` | `source-root` | with `root: apps/web` | standalone |
+|---|---|---|---|---|
+| `react-antd` | `.` | `src/` | `apps/web/src/` | `src/` |
+| `angular-clarity` | `.` | `src/app/` | `apps/web/src/app/` | `src/app/` |
+| `nestjs-application` | `apps/api` | `src` | `apps/api/src/` | `apps/api/src/` |
+| `prisma-postgres` | `apps/api` | `.` | `apps/api/` | `apps/api/` |
+
+This paragraph used to say `root:` replaced `source-root` outright, and illustrated it with "a presentation adapter's `src/…` templates" — which presentation adapters do not have. Their `src/` was in `source-root`, so the substitution deleted it: `react-antd` pinned to `apps/web` derived `apps/web/features/…` while the app built from `apps/web/src/`, outside `tsconfig`'s `include` and therefore invisible to the build. One field was carrying both a project location and a framework directory, and the substitution was only ever correct for the first.
+
+**Legacy adapters.** An adapter that declares no `project-root:` keeps the old single-field behaviour exactly — `root:` replaces `source-root` — so nothing relocates because parlay was upgraded. `adapter-root-override-lossy` (see `adapter-set.schema.md`) reports the shapes where that old behaviour discards a directory, which is the signal to split the field.
 
 ### `paths.seed` — where the composed runtime seed lands
 

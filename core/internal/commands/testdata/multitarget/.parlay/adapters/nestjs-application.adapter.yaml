@@ -40,19 +40,20 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "apps/api"
+  project-root: "apps/api"
+  source-root: "src"
   component-pattern: "module-controller-service"
   naming: "kebab-case"
   entry-point: "apps/api/src/main.ts"
   # An application adapter is operation-driven, not component-driven: one
   # module/controller/service trio per parlay feature, keyed off {feature}.
   # These templates are joined against the adapter-set target's root: (which
-  # overrides source-root for multi-target projects), so the same trio lands
+  # substitutes for project-root in multi-target projects), so the same trio lands
   # under whichever backend root the topology pins.
   paths:
-    service: "src/{feature}/{feature}.service.ts"
-    controller: "src/{feature}/{feature}.controller.ts"
-    module: "src/{feature}/{feature}.module.ts"
+    service: "{feature}/{feature}.service.ts"
+    controller: "{feature}/{feature}.controller.ts"
+    module: "{feature}/{feature}.module.ts"
 
 # --- Conventions ---
 conventions:

@@ -40,19 +40,31 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "apps/api"
+  # project-root is the deployable project location; an adapter-set target's
+  # root: replaces THIS field and nothing else. source-root is the framework's
+  # conventional directory and is never replaced, because it is a property of
+  # the framework rather than of where the project sits.
+  #
+  # paths: below are relative to project-root + source-root. packages: and
+  # entry-point: are relative to project-root alone (they name the package's
+  # own layout, which is why they already spell the framework directory out).
+  project-root: "apps/api"
+  source-root: "src"
   component-pattern: "module-controller-service"
   naming: "kebab-case"
-  entry-point: "apps/api/src/main.ts"
+  entry-point: "src/main.ts"
   # An application adapter is operation-driven, not component-driven: one
   # module/controller/service trio per parlay feature, keyed off {feature}.
-  # These templates are joined against the adapter-set target's root: (which
-  # overrides source-root for multi-target projects), so the same trio lands
-  # under whichever backend root the topology pins.
+  # These templates are joined against project-root + source-root, and an
+  # adapter-set target's root: substitutes for project-root, so the same trio
+  # lands under whichever backend root the topology pins. src/ used to sit in
+  # each template because source-root held the project location; it is
+  # source-root's job now, which is what lets a presentation adapter keep its
+  # framework directory through the same substitution.
   paths:
-    service: "src/{feature}/{feature}.service.ts"
-    controller: "src/{feature}/{feature}.controller.ts"
-    module: "src/{feature}/{feature}.module.ts"
+    service: "{feature}/{feature}.service.ts"
+    controller: "{feature}/{feature}.controller.ts"
+    module: "{feature}/{feature}.module.ts"
 
 # --- Conventions ---
 conventions:

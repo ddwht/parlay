@@ -11,6 +11,13 @@ Analyze an existing codebase and draft the framework adapter(s) it needs — wit
 
 - `source-root`: Path to the existing source code (e.g., `src/`, `cmd/`, `app/`)
 
+The drafted adapter records that as **two** fields, and the split matters most here because the drafter is guessing at someone else's layout:
+
+- `project-root` — the deployable project location. `.` for a single-package repo; `apps/web` or `packages/ui` in a monorepo. An adapter-set target's `root:` substitutes for this.
+- `source-root` — the framework's conventional directory *inside* that project: `src/`, `src/app/`, `cmd/`. Never substituted.
+
+Split the argument you were given at the package boundary. `apps/web/src` in a monorepo is `project-root: apps/web` + `source-root: src`; a bare `src/` at the repo root is `project-root: "."` + `source-root: src/`. Guessing this wrong is not cosmetic — collapsing both into one field is what made three of the four bundled presets emit outside their own build.
+
 <!-- parlay:active-root-aware -->
 <!-- parlay:expand-active-root -->
 
@@ -37,7 +44,7 @@ Analyze an existing codebase and draft the framework adapter(s) it needs — wit
    - `component-pattern`: detect from directory layout — `feature-modules` (directories per feature), `one-file-per-component` (flat), `atomic` (atoms/molecules/organisms)
    - `naming`: detect from existing filenames — `PascalCase`, `kebab-case`, `snake_case`
    - `entry-point`: find main/App/index file (e.g., `src/App.tsx`, `cmd/root.go`, `src/main.ts`)
-   - **`paths:` templates** — derive one per artifact kind from the layout you just detected (`component`, `test`, and whichever of `model`/`service`/`types`/`feature-routes`/`routes` the tree actually has), written **relative to `source-root`** with `{feature}`/`{name}`/`{entity}` placeholders. This is what makes `plan:` derivable; an adapter without it generates a feature whose plan has to be hand-written, and every hand-written plan has drifted from what codegen emitted.
+   - **`paths:` templates** — derive one per artifact kind from the layout you just detected (`component`, `test`, and whichever of `model`/`service`/`types`/`feature-routes`/`routes` the tree actually has), written **relative to `project-root` + `source-root`** (so they start below the framework directory, not with it) with `{feature}`/`{name}`/`{entity}` placeholders. This is what makes `plan:` derivable; an adapter without it generates a feature whose plan has to be hand-written, and every hand-written plan has drifted from what codegen emitted.
    - **`packages:`** — the shared-code directories (`components`, `hooks`, `utils`, `core`) if the tree has them. Distinct from `paths:`: it names where reusable code lives, which is what `parlay simplify` needs to place an extracted helper.
    - Update the adapter's `file-conventions:` section with detected values
 
@@ -76,7 +83,8 @@ Analyze an existing codebase and draft the framework adapter(s) it needs — wit
    Framework: <detected framework>
 
    File conventions:
-     source-root: <detected>
+     project-root: <detected package location, or ".">
+     source-root: <detected framework directory inside it>
      component-pattern: <detected>
      naming: <detected>
      entry-point: <detected>

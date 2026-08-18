@@ -36,10 +36,21 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "apps/api"
+  # project-root is the deployable project location; an adapter-set target's
+  # root: replaces THIS field and nothing else. source-root is the framework's
+  # conventional directory and is never replaced, because it is a property of
+  # the framework rather than of where the project sits.
+  #
+  # paths: below are relative to project-root + source-root. packages: and
+  # entry-point: are relative to project-root alone (they name the package's
+  # own layout, which is why they already spell the framework directory out).
+  project-root: "apps/api"
+  # "." because prisma/ is a sibling of the source tree, not a source
+  # directory: the schema is the whole emission and it lives at the package root.
+  source-root: "."
   component-pattern: "schema-and-repository"
   naming: "kebab-case"
-  entry-point: "apps/api/prisma/schema.prisma"
+  entry-point: "prisma/schema.prisma"
   # A persistence adapter is entity-driven: every domain entity becomes one
   # Prisma model in a single shared schema file. The model template carries no
   # {entity} placeholder on purpose — expanding it per entity yields the same

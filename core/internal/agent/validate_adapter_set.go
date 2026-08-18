@@ -30,7 +30,8 @@ var adapterKindClosedSet = map[string]bool{
 type adapterFileShape struct {
 	Kind            string `yaml:"kind"`
 	FileConventions struct {
-		SourceRoot string `yaml:"source-root"`
+		ProjectRoot string `yaml:"project-root"`
+		SourceRoot  string `yaml:"source-root"`
 	} `yaml:"file-conventions"`
 }
 
@@ -132,6 +133,14 @@ func ValidateAdapterSet(mode ValidationMode, path string, content []byte) []Vali
 // (every backend slot; react-antd-only, whose `root: src` happens to match)
 // the substitution loses nothing and this stays quiet.
 func checkRootOverrideIsLossless(mode ValidationMode, slotKind string, target parser.AdapterSetTarget, shape adapterFileShape) []ValidationOutcome {
+	// An adapter that declares project-root has opted into the split model:
+	// root: substitutes for project-root and leaves source-root alone, so
+	// nothing is lost and there is nothing to warn about. This check is only
+	// about the legacy one-field shape, where the substitution is destructive
+	// precisely when the two names disagree.
+	if strings.TrimSpace(shape.FileConventions.ProjectRoot) != "" {
+		return nil
+	}
 	sourceRoot := normalizeRoot(shape.FileConventions.SourceRoot)
 	root := normalizeRoot(target.Root)
 	if sourceRoot == "." || root == "." || sourceRoot == root {

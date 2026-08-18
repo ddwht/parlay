@@ -9,4 +9,11 @@ name: angular-clarity-only
 targets:
   presentation:
     adapter: angular-clarity
-    root: src
+    # "." — root names the deployable project location, and a single-package
+    # app's is the repo itself. It used to say "src", which is the framework's
+    # source directory: substituting that for the adapter's source-root made
+    # react-antd's src/ collapse onto itself and dropped angular's app/
+    # entirely, so angular-clarity-only emitted to src/features/ instead of
+    # src/app/features/. react-antd-only was correct only because "src" and
+    # its adapter's source-root happened to be the same string.
+    root: "."

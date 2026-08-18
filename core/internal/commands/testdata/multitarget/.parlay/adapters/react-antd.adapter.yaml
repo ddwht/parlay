@@ -339,16 +339,24 @@ design-system:
     usage: "Use Ant layout components for page structure. Col span for grid-based layouts. Space/Flex for inline arrangement. Do not use raw CSS grid/flexbox for page layout."
 
 file-conventions:
+  # This fixture must mirror the SHIPPED react-antd adapter, not a convenient
+  # variant of it. It used to carry src/ inside the templates with no
+  # project-root, which is not the adapter any user has — so the multi-target
+  # plan test asserted the correct path apps/web/src/features/... against an
+  # adapter shape that did not exist, and the shipped one (templates without
+  # src/) silently derived apps/web/features/... instead. The bug was covered
+  # by a green test the whole time.
+  project-root: "."
   source-root: "src/"
   component-pattern: feature-modules
   naming: PascalCase
   entry-point: "src/App.tsx"
-  # paths: makes plan.creates derivable for the presentation target. In a
-  # multi-target project these templates are joined against the adapter-set
-  # presentation root: (apps/web), which overrides source-root above.
+  # paths: makes plan.creates derivable for the presentation target. They are
+  # relative to project-root + source-root; the adapter-set presentation root:
+  # (apps/web) substitutes for project-root only, so src/ survives it.
   paths:
-    component: "src/features/{feature}/{Name}.tsx"
-    test: "src/features/{feature}/{Name}.test.tsx"
+    component: "features/{feature}/{Name}.tsx"
+    test: "features/{feature}/{Name}.test.tsx"
   packages:
     components: "src/components/"
     features: "src/features/"

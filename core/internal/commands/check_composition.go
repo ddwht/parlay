@@ -11,6 +11,7 @@ import (
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -581,5 +582,21 @@ func sharedStorePath(cfg *config.Context) (string, bool) {
 	if ad.FileConventions.Paths.Store == "" {
 		return "", true
 	}
-	return path.Join(ad.FileConventions.SourceRoot, ad.FileConventions.Paths.Store), false
+	// Resolve against the presentation slot's target root, not the adapter's
+	// own source-root alone. This joined source-root directly and ignored the
+	// adapter-set entirely, so in a multi-target project it looked for the
+	// store at src/app/core/state/… while the plan wrote it under apps/web —
+	// a file that composition could never find because it was never told
+	// where the topology puts it.
+	return path.Join(ad.FileConventions.emitBase(presentationTargetRoot(cfg)), ad.FileConventions.Paths.Store), false
+}
+
+// presentationTargetRoot is the adapter-set root pinned to the presentation
+// slot, or "" when the project has no adapter-set.
+func presentationTargetRoot(cfg *config.Context) string {
+	as, err := parser.ParseAdapterSet(cfg.AdapterSetPath())
+	if err != nil {
+		return ""
+	}
+	return as.Targets["presentation"].Root
 }

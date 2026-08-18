@@ -36,7 +36,8 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "apps/api"
+  project-root: "apps/api"
+  source-root: "."
   component-pattern: "schema-and-repository"
   naming: "kebab-case"
   entry-point: "apps/api/prisma/schema.prisma"

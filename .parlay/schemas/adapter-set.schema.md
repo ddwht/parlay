@@ -12,10 +12,10 @@ File: `.parlay/adapter-set.yaml`. Pins which adapter occupies each adapter-kind 
 ```yaml
 name: <project-name>
 targets:
-  presentation: { adapter: <adapter-slug>, root: <source-root> }
-  transport:    { adapter: <adapter-slug>, root: <source-root> }
-  application:  { adapter: <adapter-slug>, root: <source-root> }
-  persistence:  { adapter: <adapter-slug>, root: <source-root> }
+  presentation: { adapter: <adapter-slug>, root: <project location — e.g. apps/web, or "." > }
+  transport:    { adapter: <adapter-slug>, root: <project location — e.g. apps/api> }
+  application:  { adapter: <adapter-slug>, root: <project location — e.g. apps/api> }
+  persistence:  { adapter: <adapter-slug>, root: <project location — e.g. apps/api> }
 links:
   - { from: presentation, relation: calls,      to: transport }
   - { from: transport,    relation: dispatches, to: application }
@@ -27,7 +27,7 @@ links:
 | `name` | Yes | Project name; used in deployer output and error messages. |
 | `targets` | Yes | Map keyed by adapter kind. Permitted keys: `presentation`, `transport`, `application`, `persistence`. Each entry: `{ adapter, root }`. |
 | `targets.<kind>.adapter` | Yes | The adapter slug — must reference a real `.parlay/adapters/<slug>.adapter.yaml`. |
-| `targets.<kind>.root` | Yes | Source root the chosen adapter emits into. Must not collide with another target's root. |
+| `targets.<kind>.root` | Yes | The **project location** this slot emits into — `apps/web`, `apps/api`, or `.` for a single-package repo. It substitutes for the adapter's `project-root`, NOT for its `source-root`: the framework's own source directory survives. (For a legacy adapter declaring no `project-root`, it replaces `source-root` outright — see `adapter-root-override-lossy`.) Must not collide with another target's root. |
 | `links` | No | List of cross-kind relations. Each entry: `{ from, relation, to }`. Allowed relations: `calls`, `dispatches`, `persists`. |
 
 ## Validation rules
@@ -40,19 +40,26 @@ The validator enforces:
 | `adapter-set-duplicate-kind` | Two entries declare the same kind. |
 | `adapter-set-adapter-missing` | `targets.<kind>.adapter` references a slug with no `.parlay/adapters/<slug>.adapter.yaml`. |
 | `adapter-set-kind-mismatch` | The adapter referenced from a slot declares a different `kind:` than the slot the project assigns it to. |
-| `adapter-root-override-lossy` | `targets.<kind>.root` names a different directory than the adapter's `source-root`, which it replaces — so every derived path loses that directory. |
+| `adapter-root-override-lossy` | A **legacy** adapter (no `project-root:`) is pinned to a `root:` naming a different directory than its `source-root`, which it replaces — so every derived path loses that directory. Adapters declaring `project-root:` cannot hit this. |
 
-### `root:` replaces `source-root`, and that is only safe one way
+### What `root:` replaces
 
-`targets.<kind>.root` substitutes for the adapter's `file-conventions.source-root` during plan derivation. Whether that loses information depends on which of two things the adapter put in `source-root`, and nothing forces a choice:
+`root:` names a **project location** and substitutes for the adapter's `file-conventions.project-root`. The adapter's `source-root` — the framework's own directory, `src/`, `src/app/`, `cmd/` — is left alone, because where a project sits and how a framework arranges its insides are different facts and the topology only knows the first.
 
-- **A project location** — `nestjs-application` declares `source-root: apps/api` and carries `src/` inside its path templates. Swapping the project location leaves the framework's directory intact. Lossless.
-- **A framework convention directory** — `react-antd` declares `source-root: "src/"` and its templates start at `features/…`. Replacing that with `apps/web` deletes `src/` from every derived path, so components land at `apps/web/features/…` while the app builds from `apps/web/src/`. With `tsconfig`'s `include: ["src"]` the files are not merely misplaced, they are outside the TypeScript project — not type-checked, not bundled, and the build stays green by not seeing them.
+```
+emit base = (targets.<kind>.root, else the adapter's project-root) + the adapter's source-root
+```
 
-`adapter-root-override-lossy` fires when the two directories differ, which is exactly the second case. Until the underlying ambiguity is resolved in the adapter model, the fix is one of:
+| Slot | adapter `project-root` | adapter `source-root` | `root:` | emits into |
+|---|---|---|---|---|
+| presentation | `.` | `src/` | `apps/web` | `apps/web/src/` |
+| presentation | `.` | `src/app/` | `.` | `src/app/` |
+| application | `apps/api` | `src` | `apps/api` | `apps/api/src/` |
+| persistence | `apps/api` | `.` | `apps/api` | `apps/api/` |
 
-- move the framework's directory into the adapter's `paths:` templates and leave `source-root` naming the project location; or
-- set `root:` to the same directory the adapter declares, when the adapter's `source-root` really is where code should land.
+**Why this is two fields.** It used to be one: `root:` replaced `source-root` outright. That is lossless only when `source-root` holds a project location, which is how the backend adapters used it — `nestjs-application` declared `source-root: apps/api` with `src/` inside its templates. Presentation adapters used it the other way, `source-root: "src/"` with templates starting at `features/…`, so the substitution deleted the framework's directory: `react-antd` pinned to `apps/web` derived `apps/web/features/…` while the app built from `apps/web/src/`. With `tsconfig`'s `include: ["src"]` those files were not merely misplaced — they were outside the TypeScript project, so nothing type-checked them, nothing bundled them, and the build stayed green by not seeing them. Three of the four bundled presets were wrong; the fourth was right only because its `root` happened to equal its `source-root`.
+
+**Legacy adapters.** One declaring no `project-root:` keeps the old replace-`source-root` behaviour exactly, so upgrading parlay never relocates an existing project's output. `adapter-root-override-lossy` reports the shapes where that behaviour discards a directory — a signal to split the field, not a silent change of destination.
 
 ## Link enforcement
 

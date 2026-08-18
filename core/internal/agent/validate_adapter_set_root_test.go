@@ -17,15 +17,24 @@ import (
 	"github.com/ddwht/parlay/core/internal/parser"
 )
 
-// presetExpectation records whether a preset's presentation slot survives the
-// root override. The three marked lossy are the reported bug; react-antd-only
-// survives by coincidence, its `root: src` happening to equal react-antd's
-// `source-root: "src/"`.
+// presetExpectation records whether a preset's presentation slot loses the
+// framework's source directory to the root override.
+//
+// All four are false now. Three of them were true — react-nest-prisma,
+// angular-nest-prisma and angular-clarity-only were the reported defect, and
+// react-antd-only passed only because its `root: src` happened to equal
+// react-antd's `source-root: "src/"`. Every bundled adapter now declares
+// project-root, so root: substitutes for the project location and leaves the
+// framework directory alone; there is nothing left to lose.
+//
+// The map stays rather than collapsing to a loop, because the interesting
+// assertion is per-preset and the next adapter added here should have to
+// state which column it belongs in.
 var presetExpectations = map[string]bool{
-	"react-nest-prisma":    true,  // root apps/web vs source-root src/     — loses src/
-	"angular-nest-prisma":  true,  // root apps/web vs source-root src/app/ — loses src/app/
-	"angular-clarity-only": true,  // root src      vs source-root src/app/ — loses app/
-	"react-antd-only":      false, // root src      vs source-root src/     — identical
+	"react-nest-prisma":    false, // project-root apps/web + source-root src/
+	"angular-nest-prisma":  false, // project-root apps/web + source-root src/app/
+	"angular-clarity-only": false, // project-root "."      + source-root src/app/
+	"react-antd-only":      false, // project-root "."      + source-root src/
 }
 
 // stagePreset copies a bundled preset and the adapters it pins into a temp

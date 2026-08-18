@@ -33,15 +33,25 @@ supports:
 
 # --- File conventions ---
 file-conventions:
-  source-root: "apps/api"
+  # project-root is the deployable project location; an adapter-set target's
+  # root: replaces THIS field and nothing else. source-root is the framework's
+  # conventional directory and is never replaced, because it is a property of
+  # the framework rather than of where the project sits.
+  #
+  # paths: below are relative to project-root + source-root. packages: and
+  # entry-point: are relative to project-root alone (they name the package's
+  # own layout, which is why they already spell the framework directory out).
+  project-root: "apps/api"
+  source-root: "src"
   component-pattern: "one-file-per-route"
   naming: "kebab-case"
-  entry-point: "apps/api/src/openapi.yaml"
+  entry-point: "src/openapi.yaml"
   # A transport adapter is route-driven: one route table per feature plus the
-  # shared spec the whole API exposes. Templates are relative to source-root.
+  # shared spec the whole API exposes. Templates are relative to project-root +
+  # source-root.
   paths:
-    feature-routes: "src/routes/{feature}.routes.ts"
-    routes: "src/openapi.yaml"
+    feature-routes: "routes/{feature}.routes.ts"
+    routes: "openapi.yaml"
 
 # --- Conventions ---
 conventions:
