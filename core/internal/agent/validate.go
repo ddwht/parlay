@@ -426,6 +426,40 @@ func ResolveBuildfileRoutes(content []byte) ([]BuildfileRoute, error) {
 	return out, nil
 }
 
+// BuildfileCrossCutting is one cross-cutting entry's IDENTITY and footprint —
+// never its transform prose. The prose is what makes these entries large (238
+// KB across the dogfood root), and an index exists precisely so a caller can
+// decide which few entries matter before paying for any of them.
+type BuildfileCrossCutting struct {
+	ID            string
+	Source        string
+	TargetFiles   []string
+	TargetCreates []string
+	TargetPattern string
+}
+
+// ResolveBuildfileCrossCutting returns a buildfile's cross-cutting entries in
+// index form. Member of the ResolveBuildfile* family for the same reason as
+// its siblings: one reader, so two callers cannot disagree about what a
+// buildfile declares.
+func ResolveBuildfileCrossCutting(content []byte) ([]BuildfileCrossCutting, error) {
+	var bf deepBuildfile
+	if err := yaml.Unmarshal(content, &bf); err != nil {
+		return nil, err
+	}
+	out := make([]BuildfileCrossCutting, 0, len(bf.CrossCutting))
+	for _, e := range bf.CrossCutting {
+		out = append(out, BuildfileCrossCutting{
+			ID:            e.ID,
+			Source:        e.Source,
+			TargetFiles:   e.TargetFiles,
+			TargetCreates: e.TargetCreates,
+			TargetPattern: e.TargetPattern,
+		})
+	}
+	return out, nil
+}
+
 // BuildfileDeclaresPlan reports whether buildfile content carries a
 // non-empty plan: section — the executable contract for which files the
 // feature touches. Generate-code hard-stops without one.

@@ -137,6 +137,38 @@ Stages:
    cross-feature contradiction the scoped set cannot explain, the agent
    widens to the *named* feature's buildfile — an explicit escalation,
    never a silent fallback to load-everything.
+
+**Cross-feature audit (added after review — three real hazards, all fixed).**
+Narrowing the read-set is only safe where every whole-project fact has a
+project-wide source. Auditing each one against the module found three places
+where it did not, two of them regressions this workstream would have
+introduced:
+
+- **The entry point.** Step 14 said "regenerate the entry point from
+  `buildfile.routes`". From a scoped read-set that writes a dispatch table
+  containing only the loaded feature's routes — silently deleting every
+  other feature's. Now points at `merged-routes`.
+- **Cross-cutting merges.** Step 14.7 processed "each entry in the merged
+  buildfile". A stable feature's merge into a shared file that this run
+  regenerates would be dropped, because its buildfile was never opened. New
+  `parlay internal cross-cutting-index --target <path>` answers "whose
+  merges land in the files I just rewrote", resolving `target-pattern`
+  against the files' real content so the answer is exact (usually empty). It
+  carries identity and targets only — the 238 KB of transform prose across
+  the dogfood root is what it exists to avoid loading.
+- **Emission order.** Step 11.5 told the agent to hand-build the
+  cross-feature dependency graph from loaded buildfiles — an edge points at
+  the feature that *creates* a file, which under scoping is frequently one
+  not loaded. `parlay internal emission-groups` already computed this
+  project-wide in Go and the module simply never called it; it does now.
+  (Pre-existing disconnect, promoted to a correctness issue by scoping.)
+
+Checked and sound without change: seed/fixtures (`scaffold-seed` computes
+across all features), models and store (from the project-scoped
+`domain-model.yaml`), route conflicts (`merged-routes` reports them),
+external type resolution (greps source, not buildfiles), composition
+(`check-composition`). Test *generation* is scoped; test *execution* is not,
+so a stale generated suite fails loudly rather than passing silently.
 4. **Fallback preserved.** No project baseline (first generation) or a diff
    that errors → the current full-load path, verbatim.
 5. Tests: conformance pins for `merged-routes` and the new diff field; a

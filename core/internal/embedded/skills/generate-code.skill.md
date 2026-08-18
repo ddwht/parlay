@@ -197,9 +197,13 @@ Concretely:
 
    Exempt does not mean unbounded: a write still has to be one of these two marker-bearing categories, at the path the adapter's `file-conventions` dictate. Anything else remains a violation. **Neither exemption reaches into the hand-authored denylist from step 11.4** — that check runs first and wins. Record every exempt write in the run summary so the set stays auditable — if a file is being written repeatedly under an exemption, that is a signal `build-feature` should be emitting a plan row for it instead.
 
-   **Cross-feature dependency graph (project-pass mode).** When multiple buildfiles are loaded, build the cross-feature dependency graph in this same step: every `plan.modifies` path that matches another feature's `plan.creates` path adds an edge from the modifying feature to the creating feature. Validate the graph is acyclic; on cycle, surface `plan-create-modify-cycle` and stop without writing any files. The construction is mechanical — same algorithm `parlay validate --project` uses — and it catches the same authoring mistakes the validator would catch upstream.
+   **Cross-feature dependency graph (project-pass mode).** Run `parlay internal emission-groups`. It reads every feature's build state in Go — not just the buildfiles you loaded — and returns the dependency graph already scheduled: `waves` (features grouped so every wave's creates precede the next wave's modifies), `shared_paths`, and `cycles`. On a non-empty `cycles`, surface `plan-create-modify-cycle` and stop without writing any files.
 
-11.5.5. **Order features topologically for emission** — After the allowlist is locked and the dependency graph is validated (step 11.5), sort the loaded features into topological order such that creates always run before the modifies they satisfy. The ordering is a **stable topological sort**: feature-slug alphabetization breaks ties so re-running the same project pass produces byte-identical emission order. The runtime invariant: every path appearing in BOTH another feature's `plan.creates` AND this feature's `plan.modifies` is emitted by the producing feature first.
+   **Do not build this graph by hand from the buildfiles you loaded.** An edge runs from a modifying feature to the feature that creates the file, and with a scoped read-set the creating feature is frequently one you did not load — so a hand-built graph is missing exactly the edges that matter, and it is missing them silently. The command exists to answer this project-wide; this step is a call, not a construction.
+
+11.5.5. **Order features topologically for emission** — take the order from `emission-groups`' `waves` (step 11.5). Creates run before the modifies they satisfy; the sort is stable, with feature-slug alphabetization breaking ties, so re-running the same project pass produces byte-identical emission order. The runtime invariant: every path appearing in BOTH another feature's `plan.creates` AND this feature's `plan.modifies` is emitted by the producing feature first.
+
+   You emit only the features step 4 scoped, but you order them within the project-wide schedule — a scoped run may sit in a later wave than a feature it never touches, and the modifies/creates rule still holds because the producing file is already on disk from the run that created it.
 
    In single-feature invocations the topological order is trivial — there is one node and no edges; the order is the identity. In project-pass mode with N features and a DAG of dependencies, emission walks the features in topological order; the strict-target rule (step 14.7) still applies AT EMISSION TIME for each feature — by the time a modifying feature runs, the topological order guarantees the file is on disk.
 
@@ -309,7 +313,7 @@ Concretely:
       - **The migration invariant when a project adopts a store: preserve the feature-level accessor surface; change only what backs it.** Per-suite test code addresses the feature's own API, so keeping that API and swapping its backing keeps every existing suite green. Move the entity state to the store, leave genuine view state (sort order, which row is expanded, wizard step) feature-local, and keep the feature's hydrate entry point's signature — it becomes a delegating write-through.
       - Boot the store from the composed seed, not from a per-feature fixture. That is what makes the prototype tell one story from any entry point.
       - If the adapter declares no `paths.store`, skip this. Most frameworks have no shared runtime between user actions and its absence is not a gap; `parlay internal check-composition` will note any cross-feature assertion that consequently cannot hold.
-    - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from `buildfile.routes`. Mark it with `parlay-section: routes`.
+    - If `sections.routes` is `"changed"` or `"new"`: regenerate the entry point from **`parlay internal merged-routes`** (step 5's table), never from the `routes:` of the buildfiles you happen to have loaded. The entry point is a whole-project file: writing it from a scoped read-set would silently delete every route belonging to a feature this run did not touch. The merged table is computed across all buildfiles in Go precisely so this file can be regenerated correctly from a narrow read. Mark it with `parlay-section: routes`.
     - If `sections.blueprint` is `"changed"` or `"new"`: regenerate the cross-cutting blueprint-derived files:
       - **Shell components**: One layout component per shell in `blueprint.shells`. Mark each with `parlay-section: shell-{name}`.
       - **Guard components**: One route guard per guard in `blueprint.authorization.guards`. Mark each with `parlay-section: guard-{name}`.
@@ -405,9 +409,18 @@ Concretely:
 
    Tier 1 diffs are typically small (1-3 files, a few lines each — adding tabs, panels, section, route entries, menu items). Tier 2 diffs are typically larger (a new function plus a dispatch line plus flag declarations) but still additive — the agent does not rewrite existing logic, it layers new logic alongside.
 
-14.7. **Process cross-cutting entries** — If any feature's buildfile has a `cross-cutting:` section, process each entry here — AFTER component generation (step 12–14) and brownfield mount (step 14.5), but BEFORE tests (step 15). This ensures infrastructure changes are in place when tests exercise the components that depend on them.
+14.7. **Process cross-cutting entries** — process these AFTER component generation (step 12–14) and brownfield mount (step 14.5), but BEFORE tests (step 15). This ensures infrastructure changes are in place when tests exercise the components that depend on them.
 
-   For each `cross-cutting:` entry in the merged buildfile:
+   **Which entries.** Two sets, and the second is what keeps a scoped read-set honest:
+
+   1. The `cross-cutting:` entries of the features you loaded at step 4 — this run changed them, so they are (re-)applied.
+   2. **Entries belonging to features you did NOT load, whose targets this run regenerated wholesale.** Run `parlay internal cross-cutting-index --target <path>` once with every project-scoped file step 14 just rewrote (models, seed, store, the entry point, blueprint-derived files). It answers with the entries whose targets — explicit paths, or a `target-pattern` it resolves against those files' actual content — land in what you rewrote, carrying id, feature, targets and the buildfile path, but never the transform prose. For each hit, open **that entry's** buildfile, read its `Behavior:`/`transform:`, and re-apply it.
+
+   Run it AFTER writing the files, so a `target-pattern` resolves against real content. An unreadable path (a file this run creates fresh) keeps every pattern entry in the answer — the safe direction, and a signal to check rather than a bug.
+
+   Skipping set 2 is a silent data-loss bug, not an optimisation: feature A's middleware merged into the entry point, feature B's change regenerates that entry point, and A's infrastructure disappears from a run that reported success. The index exists so this costs a lookup instead of every buildfile — on a project where no unloaded feature targets a regenerated file, which is the common case, it costs nothing at all.
+
+   For each entry in scope:
 
    1. **Resolve targets**: if the entry has `target-files:`, use the explicit paths. If it has `target-pattern:`, grep the source tree under `file-conventions.source-root` to find matching files. If zero files match, warn but don't error (the pattern may be ahead of the codebase). If the entry has both, resolve both and take the union.
 

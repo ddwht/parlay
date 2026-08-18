@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 
 	"github.com/ddwht/parlay/core/internal/agent"
@@ -144,6 +145,171 @@ func computeMergedRoutes(cfg *config.Context) (*mergedRoutesOutput, error) {
 
 	applyBlueprintNavigation(cfg, out)
 	return out, nil
+}
+
+// ---------------------------------------------------------------------
+// The cross-cutting index.
+// ---------------------------------------------------------------------
+
+var crossCuttingIndexCmd = &cobra.Command{
+	Use:   "cross-cutting-index",
+	Short: "Index every feature's cross-cutting entries by id and target, without their transform prose (JSON)",
+	Args:  cobra.NoArgs,
+	RunE:  runCrossCuttingIndex,
+}
+
+// crossCuttingIndexTargets filters the index to entries touching the named
+// paths. The unfiltered index is ~70 KB on a mature project — better than the
+// 238 KB of prose it stands in for, but still not something to load every
+// run. The actual question a caller has is narrow ("I regenerated these three
+// files; whose merges did I overwrite?"), and answering exactly that question
+// usually returns nothing at all.
+var crossCuttingIndexTargets []string
+
+func init() {
+	crossCuttingIndexCmd.Flags().StringArrayVar(&crossCuttingIndexTargets, "target", nil,
+		"Only report entries whose targets include this path (repeatable). Without it, the whole index is emitted.")
+}
+
+// crossCuttingIndexEntry is one entry's identity and footprint.
+type crossCuttingIndexEntry struct {
+	ID      string `json:"id"`
+	Feature string `json:"feature"`
+	Source  string `json:"source,omitempty"`
+	// Targets is target-files + target-creates, the paths this entry writes
+	// or merges into. TargetPattern is reported separately because it
+	// resolves against the source tree at generation time, not here.
+	Targets       []string `json:"targets,omitempty"`
+	TargetPattern string   `json:"target_pattern,omitempty"`
+	// Buildfile is where to read this entry's transform prose from, when the
+	// caller decides it needs it. The whole point of the index is that this
+	// is usually not needed.
+	Buildfile string `json:"buildfile"`
+}
+
+type crossCuttingIndexOutput struct {
+	Entries []crossCuttingIndexEntry `json:"entries"`
+	// ByTarget maps a target path to the entry ids that write it — the
+	// lookup a caller actually performs: "I am about to regenerate this
+	// file; whose merges land in it?"
+	ByTarget     map[string][]string `json:"by_target,omitempty"`
+	FeaturesRead int                 `json:"features_read"`
+}
+
+func runCrossCuttingIndex(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
+	features, err := cfg.AllFeatures()
+	if err != nil {
+		return fmt.Errorf("discover features: %w", err)
+	}
+	sort.Strings(features)
+
+	wanted := map[string]bool{}
+	for _, t := range crossCuttingIndexTargets {
+		wanted[filepath.ToSlash(filepath.Clean(t))] = true
+	}
+
+	out := crossCuttingIndexOutput{Entries: []crossCuttingIndexEntry{}, ByTarget: map[string][]string{}}
+	for _, slug := range features {
+		path := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		out.FeaturesRead++
+		entries, err := agent.ResolveBuildfileCrossCutting(data)
+		if err != nil {
+			continue
+		}
+		rel, relErr := filepath.Rel(cfg.Root.Path, path)
+		if relErr != nil {
+			rel = path
+		}
+		for _, e := range entries {
+			targets := append(append([]string{}, e.TargetFiles...), e.TargetCreates...)
+			sort.Strings(targets)
+			if len(wanted) > 0 &&
+				!targetsIntersect(targets, wanted) &&
+				!patternMatchesAny(cfg, e.TargetPattern, wanted) {
+				continue
+			}
+			out.Entries = append(out.Entries, crossCuttingIndexEntry{
+				ID:            e.ID,
+				Feature:       slug,
+				Source:        e.Source,
+				Targets:       targets,
+				TargetPattern: e.TargetPattern,
+				Buildfile:     filepath.ToSlash(rel),
+			})
+			for _, t := range targets {
+				if len(wanted) > 0 && !wanted[filepath.ToSlash(filepath.Clean(t))] {
+					continue
+				}
+				out.ByTarget[t] = append(out.ByTarget[t], e.ID)
+			}
+		}
+	}
+	for t := range out.ByTarget {
+		sort.Strings(out.ByTarget[t])
+	}
+
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	return nil
+}
+
+// targetsIntersect reports whether any of an entry's targets is one of the
+// paths the caller asked about. Compared on cleaned slash-form so
+// "./src/app.go" and "src/app.go" are the same file.
+func targetsIntersect(targets []string, wanted map[string]bool) bool {
+	for _, t := range targets {
+		if wanted[filepath.ToSlash(filepath.Clean(t))] {
+			return true
+		}
+	}
+	return false
+}
+
+// patternMatchesAny resolves a cross-cutting entry's target-pattern against
+// the specific files the caller asked about.
+//
+// The pattern selects files by CONTENT (`rootCmd.AddCommand\(`), not by path,
+// so it cannot be decided from the index alone — and leaving every
+// pattern-carrying entry in the filtered result made the filter useless: on
+// the dogfood root it returned 30-odd entries for a question with one real
+// answer. Resolving it here costs reading the handful of files the caller
+// named, and returns an exact answer instead of a haystack.
+//
+// Unreadable file or uncompilable pattern → true, the safe direction: an
+// entry the index cannot rule out is one the caller should look at, and the
+// cost of an extra look is a read, while the cost of a wrong exclusion is a
+// silently dropped merge.
+func patternMatchesAny(cfg *config.Context, pattern string, wanted map[string]bool) bool {
+	if pattern == "" {
+		return false
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return true
+	}
+	for path := range wanted {
+		data, err := os.ReadFile(filepath.Join(cfg.Root.Path, filepath.FromSlash(path)))
+		if err != nil {
+			// The file may be about to be created by this run rather than
+			// already on disk; the entry stays in scope.
+			return true
+		}
+		if re.Match(data) {
+			return true
+		}
+	}
+	return false
 }
 
 // applyBlueprintNavigation joins the blueprint's navigation block onto the

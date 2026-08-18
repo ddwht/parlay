@@ -204,3 +204,139 @@ plan:
 		t.Error("an empty plan: is not a declared plan")
 	}
 }
+
+// ---------------------------------------------------------------------
+// The cross-cutting index — the guard that keeps a scoped read-set from
+// silently dropping another feature's merge.
+// ---------------------------------------------------------------------
+
+func crossCuttingBuildfile(feature string, entries string) string {
+	return "feature: " + feature + "\nadapter: go-cli\n" +
+		"plan:\n  creates:\n    - path: src/" + feature + ".go\n      sources: [\"component:view\"]\n" +
+		"cross-cutting:\n" + entries
+}
+
+func runCrossCuttingIndex_(t *testing.T, targets ...string) crossCuttingIndexOutput {
+	t.Helper()
+	resetFlagsAfterTest(t, crossCuttingIndexCmd.Flags())
+	// StringArrayVar APPENDS on Parse, so a value left by an earlier test
+	// would accumulate here and silently widen (or, when it survives into an
+	// unfiltered call, narrow) the filter. Clear it explicitly.
+	crossCuttingIndexTargets = nil
+	var flags []string
+	for _, tg := range targets {
+		flags = append(flags, "--target", tg)
+	}
+	if err := crossCuttingIndexCmd.Flags().Parse(flags); err != nil {
+		t.Fatal(err)
+	}
+	cmd := testCommandWithContext(t, testContext(t))
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	if err := runCrossCuttingIndex(cmd, nil); err != nil {
+		t.Fatalf("cross-cutting-index: %v", err)
+	}
+	var out crossCuttingIndexOutput
+	if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+		t.Fatalf("decode index %q: %v", buf.String(), err)
+	}
+	return out
+}
+
+// TestCrossCuttingIndex_FindsWhoTargetsARegeneratedFile is the scenario the
+// index exists for: feature A merged into a shared file, feature B's change
+// regenerates it, and A's merge must be re-applied even though this run never
+// loaded A's buildfile.
+func TestCrossCuttingIndex_FindsWhoTargetsARegeneratedFile(t *testing.T) {
+	dir := setupTestDir(t)
+	featureWithIntents(t, dir, "middleware-feature")
+	featureWithIntents(t, dir, "unrelated")
+	writeFixtureFile(t, dir, ".parlay/build/middleware-feature/buildfile.yaml",
+		crossCuttingBuildfile("middleware-feature",
+			"  - id: auth-middleware\n    source: \"@middleware-feature/protect\"\n    target-files: [\"src/entrypoint.go\"]\n    transform: \"wrap the router in auth\"\n"))
+	writeFixtureFile(t, dir, ".parlay/build/unrelated/buildfile.yaml",
+		crossCuttingBuildfile("unrelated",
+			"  - id: log-setup\n    source: \"@unrelated/log\"\n    target-files: [\"src/logging.go\"]\n    transform: \"add a logger\"\n"))
+
+	out := runCrossCuttingIndex_(t, "src/entrypoint.go")
+
+	if len(out.Entries) != 1 || out.Entries[0].ID != "auth-middleware" {
+		t.Fatalf("expected exactly the entry targeting the regenerated file, got %+v", out.Entries)
+	}
+	if out.Entries[0].Feature != "middleware-feature" {
+		t.Errorf("entry must name the feature to widen to, got %q", out.Entries[0].Feature)
+	}
+	if out.Entries[0].Buildfile == "" {
+		t.Error("entry must name the buildfile holding its transform prose")
+	}
+	if ids := out.ByTarget["src/entrypoint.go"]; len(ids) != 1 || ids[0] != "auth-middleware" {
+		t.Errorf("by_target lookup = %v", ids)
+	}
+	if _, leaked := out.ByTarget["src/logging.go"]; leaked {
+		t.Error("by_target must be filtered to the asked-about paths")
+	}
+}
+
+// TestCrossCuttingIndex_CarriesNoTransformProse pins the index's whole
+// economy: 238 KB of transform prose across the dogfood root is exactly what
+// it must not emit.
+func TestCrossCuttingIndex_CarriesNoTransformProse(t *testing.T) {
+	dir := setupTestDir(t)
+	featureWithIntents(t, dir, "verbose")
+	writeFixtureFile(t, dir, ".parlay/build/verbose/buildfile.yaml",
+		crossCuttingBuildfile("verbose",
+			"  - id: big\n    source: \"@verbose/x\"\n    target-files: [\"src/a.go\"]\n    transform: \"UNIQUE_PROSE_MARKER a very long description of the merge\"\n"))
+
+	out := runCrossCuttingIndex_(t)
+	blob, _ := json.Marshal(out)
+	if strings.Contains(string(blob), "UNIQUE_PROSE_MARKER") {
+		t.Error("the index must carry identity and targets only — transform prose is what it exists to avoid loading")
+	}
+	if len(out.Entries) != 1 {
+		t.Fatalf("unfiltered index must list every entry, got %d", len(out.Entries))
+	}
+}
+
+// TestCrossCuttingIndex_ResolvesTargetPatternAgainstTheFile pins the filter's
+// precision. A target-pattern selects files by CONTENT, so leaving every
+// pattern-carrying entry in the result made the filter useless — it returned
+// a haystack for a question with one answer.
+func TestCrossCuttingIndex_ResolvesTargetPatternAgainstTheFile(t *testing.T) {
+	dir := setupTestDir(t)
+	featureWithIntents(t, dir, "matcher")
+	featureWithIntents(t, dir, "nonmatcher")
+	writeFixtureFile(t, dir, "src/entrypoint.go", "package main\n\nfunc register() { rootCmd.AddCommand(x) }\n")
+	writeFixtureFile(t, dir, ".parlay/build/matcher/buildfile.yaml",
+		crossCuttingBuildfile("matcher",
+			"  - id: hits\n    source: \"@matcher/x\"\n    target-pattern: \"rootCmd\\\\.AddCommand\\\\(\"\n    transform: \"register\"\n"))
+	writeFixtureFile(t, dir, ".parlay/build/nonmatcher/buildfile.yaml",
+		crossCuttingBuildfile("nonmatcher",
+			"  - id: misses\n    source: \"@nonmatcher/x\"\n    target-pattern: \"NoSuchSymbolAnywhere\"\n    transform: \"nothing\"\n"))
+
+	out := runCrossCuttingIndex_(t, "src/entrypoint.go")
+
+	var ids []string
+	for _, e := range out.Entries {
+		ids = append(ids, e.ID)
+	}
+	if len(ids) != 1 || ids[0] != "hits" {
+		t.Errorf("pattern must be resolved against the file's content; got %v", ids)
+	}
+}
+
+// TestCrossCuttingIndex_UnreadableTargetKeepsPatternEntries — a file this run
+// is about to CREATE is not on disk yet, so a pattern cannot be ruled out.
+// Erring toward reporting costs a read; erring the other way drops a merge.
+func TestCrossCuttingIndex_UnreadableTargetKeepsPatternEntries(t *testing.T) {
+	dir := setupTestDir(t)
+	featureWithIntents(t, dir, "matcher")
+	writeFixtureFile(t, dir, ".parlay/build/matcher/buildfile.yaml",
+		crossCuttingBuildfile("matcher",
+			"  - id: hits\n    source: \"@matcher/x\"\n    target-pattern: \"anything\"\n    transform: \"t\"\n"))
+
+	out := runCrossCuttingIndex_(t, "src/not-created-yet.go")
+	if len(out.Entries) != 1 {
+		t.Errorf("a pattern entry must survive when the target cannot be read yet, got %+v", out.Entries)
+	}
+}

@@ -71,6 +71,7 @@ func registerInternalCommands() {
 		checkAmendmentsCmd,
 		checkAppliedCmd,
 		mergedRoutesCmd,
+		crossCuttingIndexCmd,
 		affectedSetCmd,
 		domainImpactCmd,
 		schemaDigestCmd,
