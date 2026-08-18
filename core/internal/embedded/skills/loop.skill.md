@@ -113,6 +113,8 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 `--non-interactive` is for callers with nobody to ask: CI, a scheduled run, a batch over several features. It changes what the driver does with a decision request, and nothing else — the phases still raise every decision they would have raised, and the same work lands on disk.
 
+**It does not make the loop survive a headless driver.** The flag is about who answers a question, not about whether the driver is alive to receive one. `claude -p --non-interactive` stops at the first phase-group boundary exactly as `claude -p` does, because ending the turn to await a subagent is what the driver does in both modes. That is a liveness problem and step 4 handles it. Naming CI here without saying so is what sent a CI author to `claude -p` and a buildfile with no code beside it.
+
 **Two decisions get answered from their own `default:`.** `phase-boundary` and `override` are the advancement decisions: one option is the recommendation and the rest are the user electing to intervene. Taking the recommendation is what the flag asked for. Read the id from the block's `default:` field — do not infer it from the option order, and do not fall back to "the first option" when the field is absent. A phase that should have declared a default and did not is a bug in that phase, and the correct response is the abort below, not a guess that happens to work.
 
 **Three decisions abort the run.** `ambiguity`, `overwrite`, and `failure` have no safe default, for the reasons the decision protocol gives: the cheapest reading of an ambiguity is exactly what the protocol forbids, either answer to an overwrite destroys something, and proceeding past a failed suite is what CI exists to prevent. On any of the three, do not answer it. Emit a single-line JSON envelope on stderr and end the loop with **exit 11** — the same code and shape `--ambiguity-as-signal` uses, so a CI wrapper needs no second convention:
@@ -159,7 +161,19 @@ A phase that emits a decision request must have left the filesystem in a coheren
    (founding docs freeze at first build); this loop's business here is new
    features, whose birth is unchanged.
 
-4. **Detect subagent support** — Check whether the `parlay-designer`, `parlay-build`, and `parlay-code` subagents are available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command). If available, use them. If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.
+4. **Detect subagent support, then session liveness** — Two questions, and the second one is the one that gets missed.
+
+   First: are the `parlay-designer`, `parlay-build`, and `parlay-code` subagents available (on Claude Code, via the Agent tool by name; on Cursor, via the `/parlay-{name}` slash command)? If not, choose **inline degradation** (above) or **fresh-session handoff** (step 8) — inline when the project is small enough to fit, handoff otherwise.
+
+   Second, and only if they are: **will this session still be running when a background subagent reports back?** Delegating a phase-group means ending the turn and waiting for a completion notification. That works when something re-invokes the driver when the notification arrives. It does not work in a single-turn headless driver — `claude -p` with no wrapper that continues the session — because the process exits when the turn ends. The subagent is killed mid-phase, not paused: the next run redoes the work it had already done.
+
+   The failure is quiet, which is why it needs checking rather than discovering. The run exits 0 with a valid `buildfile.yaml`, no `testcases.yaml` and no generated code, and the last assistant message says the phase agent is working and will report back. Nothing says the pipeline stopped.
+
+   So when the driver cannot be re-invoked across turns, do not take the subagent rung even though subagents exist. Take **fresh-session handoff** (step 8): it prints an exact resume command and exits deliberately, which is the same shape a single-turn caller needs anyway. Prefer **inline degradation** instead when the whole feature plausibly fits one context — it finishes in the single turn rather than requiring the caller to drive the next one.
+
+   If you cannot tell which kind of session you are in, say so and take the handoff rung. It costs a resume command; the alternative costs a run that reports success without generating code.
+
+   A CI caller needs to know this: `claude -p` alone stops at the first phase-group boundary. Either continue the session until it stops doing work, or run the phases inline.
 
 5. **Enter the designer phase-group** (if starting phase is intents, dialogs, or artifacts):
    - Invoke the `parlay-designer` subagent with the feature reference, the starting phase, and `--non-interactive` when it was passed.

@@ -750,6 +750,46 @@ func TestConformance_DriverDocumentsNonInteractiveMode(t *testing.T) {
 	}
 }
 
+// TestConformance_DriverDocumentsHeadlessLimits pins the answer to a defect
+// that cost a benchmark run its code phase.
+//
+// The driver delegates each phase-group to a background subagent and ends its
+// turn to await the completion notification. Step 4 branched on whether
+// subagents were AVAILABLE, which under `claude -p` they are — so the driver
+// took the subagent rung, dispatched, ended the turn, and the process exited.
+// Exit 0, a valid buildfile, no testcases, no generated code, and a closing
+// message saying the phase agent would report back.
+//
+// Availability was never the question that mattered. Liveness was. The skill
+// must keep saying so, because the failure is silent from the caller's side
+// and the docs are the only place it can be learned before it happens.
+func TestConformance_DriverDocumentsHeadlessLimits(t *testing.T) {
+	skills, err := ReadAllSkills()
+	if err != nil {
+		t.Fatalf("ReadAllSkills: %v", err)
+	}
+	var driver string
+	for _, s := range skills {
+		if s.Name == "loop" {
+			driver = string(s.Content)
+		}
+	}
+	if driver == "" {
+		t.Fatal("the loop driver skill is missing from the embedded set")
+	}
+
+	for _, required := range []string{
+		"claude -p",             // the invocation that breaks
+		"fresh-session handoff", // the rung to take instead
+	} {
+		if !strings.Contains(driver, required) {
+			t.Errorf("loop.skill.md does not mention %q — a CI author cannot learn "+
+				"from the docs that a single-turn headless driver stops at the first "+
+				"phase-group boundary, and the run's own exit code will not tell them", required)
+		}
+	}
+}
+
 // TestConformance_NoSkillDocumentsAnInertFlag guards a specific correction, and
 // the general habit behind it. generate-code documented a --non-interactive flag
 // it "silently accepted for compatibility" with no observable effect — a promise
