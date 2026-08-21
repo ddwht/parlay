@@ -134,7 +134,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 `kind` is `blocked` rather than the decision's own kind because the envelope reports the run's outcome, not the decision's category; `decision` carries the category. Print the phase's `question` and `options` verbatim — the point of the envelope is that whoever reads the CI log can see the choice they need to make without re-running anything.
 
-**What does not change.** Gap analysis still runs and still reports; critical gaps are surfaced in the log even though the boundary is auto-answered, because a gap the run advanced past is exactly what a later reader needs to find. Readiness ERRORs at the build boundary are still hard blocks — they were never acknowledgeable interactively either, so there is nothing for the flag to relax. The domain-model editor offer (step 11) is skipped entirely: it opens a browser and blocks on a human, which unattended means hanging forever.
+**What does not change.** Gap analysis still runs and still reports; critical gaps are surfaced in the log even though the boundary is auto-answered, because a gap the run advanced past is exactly what a later reader needs to find. `parlay internal gate --stage build` blockers at the build boundary are still hard blocks — they were never acknowledgeable interactively either, so there is nothing for the flag to relax. The domain-model editor offer (step 11) is skipped entirely: it opens a browser and blocks on a human, which unattended means hanging forever.
 
 **Thread the flag into the phase subagents.** They raise the decisions, so they need to know a human will not see them — a phase aware of the mode declares its `default:` and, where it has a choice, prefers reporting a condition over raising a decision nobody can answer. Pass it in the subagent prompt alongside the feature reference and starting phase.
 
@@ -195,7 +195,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
-   - Run `parlay internal check-readiness --stage build-feature @{feature-ref}`. **Errors are hard blocks** — not acknowledgeable; route the user back to the artifacts phase. Warnings are informational.
+   - Run `parlay internal gate @{feature-ref} --stage build`. This is one command and one exit code where there used to be a bare check-readiness: the gate aggregates check-readiness (including the `unapplied-amendments` error), the ledger's integrity findings, its unapplied tail, and the amendment ledger's own validation — the drift and ledger findings the driver previously only saw at planning time (step 3). **A non-zero exit is a hard block** — not acknowledgeable; surface its `blockers[]` and route the user back to the artifacts phase, or to `/parlay-refine` when a blocker names the ledger tail (`unapplied-amendments`). `warnings[]` are informational, exactly as readiness warnings were.
    - Invoke the `parlay-build` subagent with the feature reference, and `--non-interactive` when it was passed.
    - At the end it returns a `phase-boundary` decision; the driver prompts.
 
@@ -297,7 +297,8 @@ The driver — never a phase — uses AskUserQuestion for:
 - NEVER run phases backward — forward only.
 - NEVER silently overwrite designer-authored files (intents.md, dialogs.md) — per CLAUDE.md file-ownership rules.
 - NEVER create a new feature without explicit user confirmation — zero matches must prompt, never auto-create.
-- NEVER advance past a `parlay internal check-readiness` ERROR at the build boundary — errors are hard blocks; only warnings are acknowledgeable.
+- NEVER advance a phase-group boundary without a passing `parlay internal gate` for the target stage. The designer→build boundary is gated by the driver's own `parlay internal gate @{feature} --stage build` call (step 6); the build→code and code→done boundaries are gated by the injected **Step 0 — Gate** inside the build and code modules, which report a `failure` decision on a non-zero exit. A gate's `blockers[]` are hard blocks — not acknowledgeable; only `warnings[]` are.
+- NEVER advance past a `parlay internal gate --stage build` blocker at the build boundary — a blocker is a hard block; only warnings are acknowledgeable. (This subsumes the former bare check-readiness ERROR rule: the gate includes check-readiness and then some.)
 - NEVER treat opening the domain-model editor as an answer to the boundary question — re-ask after the editor session ends, or the loop advances on a confirmation nobody gave.
 - NEVER answer an `ambiguity`, `overwrite`, or `failure` decision from a default, under any flag. Abort with the envelope and exit 11. A flag that says "do not ask me" is not a flag that says "guess for me".
 - NEVER infer a missing `default:` under `--non-interactive` — a phase that omitted one on an advancement decision is a bug in that phase, and taking the first option hides it behind a run that happened to work.

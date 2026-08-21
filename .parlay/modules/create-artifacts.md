@@ -93,6 +93,16 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
 
+1.5. **Amendment pre-flight — this module authors artifacts at birth only.** Run `parlay internal check-applied @{feature}` before analyzing anything. This module derives the four contract artifacts from the founding documents (`intents.md`, `dialogs.md`). That is only correct at birth, before the founding docs freeze. Once a feature has been built, the founding docs are frozen and the contract artifacts are the current truth — regenerating them here from `intents.md`/`dialogs.md` would silently revert every amendment the ledger has since applied, because the founding docs never absorbed them.
+
+   So stop, and do not author, when EITHER holds:
+   - the feature has a non-empty `amendments/` ledger (`check-applied` returns any entries in `amendments`), or
+   - `ComputeFeaturePhase` reports phase ≥ build (a buildfile exists — the founding docs are frozen). `check-applied`'s `has_baseline: true` is the cheap signal for this.
+
+   Return a `kind: impasse` decision block (see **Asking the user**) routing the change to `/parlay-refine`: post-birth change to a contract goes through the amendment ledger, one amendment at a time, not through a wholesale re-derivation from frozen founding docs. Name what you found — the ledger entries or the baseline — in `context:`, and offer `refine` (hand off to `/parlay-refine`) and `explain` (the user believes this genuinely is a fresh feature) as options. No `default:` — silently regenerating over an amended contract is exactly the data loss this guard exists to prevent, so an unattended run must abort rather than pick one.
+
+   Proceed only when the feature is at birth: no ledger, no baseline. That is the state this module is for.
+
 2. **Analyze intents for artifact signals** — For each intent, classify which artifact (or combination of artifacts) it contributes to. The classification is based on what the intent DESCRIBES, not on persona names (which are project-specific). The four artifacts are co-equal — an architectural intent flows to `infrastructure.md` directly, not via `capabilities.yaml`, and vice versa.
 
    **Surface signals** (the intent describes visible output):
@@ -198,4 +208,4 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
 - `no-dialogs` — dialogs.md doesn't exist. Warn that the decision will be based on intents only (less signal). Ask whether to proceed or scaffold dialogs first.
-- `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip.
+- `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip. **But first re-check the step 1.5 pre-flight:** if this feature has a ledger or a baseline, regenerating is not an overwrite the designer should be offered — it silently reverts every applied amendment, because the fresh artifacts derive from frozen founding docs that never absorbed the ledger. In that state the answer is not regenerate-vs-skip; it is `/parlay-refine`, and step 1.5 has already stopped with the impasse. Only offer regenerate-vs-skip for a feature genuinely still at birth.

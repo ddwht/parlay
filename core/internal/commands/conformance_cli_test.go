@@ -303,6 +303,8 @@ var buildfileReaderAllowlist = map[string]string{
 
 	"commands/check_buildfile.go": "autoDiscoverAdapter is a thin adapter/adapter-set/targets shape probe used to pick the v1-vs-v2 validation path; the buildfile body itself is handed to the agent validator (agent/validate.go), the canonical reader above.",
 
+	"commands/gate.go": "buildfileSignatures reads only top-level source-signatures:, which stays top-level in v2 (a whole-file freshness block, never a component or route). The freshness gate compares its recorded hashes against computeSourceSignatures; no fragment section is touched.",
+
 	"commands/merged_routes.go": "the own struct here decodes the BLUEPRINT's navigation.routes for the shell/guard join, not a buildfile — the detector matches it only because the same file names buildfile.yaml. Every buildfile route it emits comes from agent.ResolveBuildfileRoutes, and the plan:-presence field it feeds comes from agent.BuildfileDeclaresPlan; this file has no buildfile struct of its own.",
 }
 

@@ -85,6 +85,15 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	slug := parser.FeatureSlug(args[0])
+	out := computeCheckAmendments(cfg, slug)
+	return emitCheckAmendmentsJSON(cmd, out)
+}
+
+// computeCheckAmendments validates a feature's amendment ledger and returns
+// the structured result, performing no I/O to stdout and no process exit.
+// Both the cobra command (via emitCheckAmendmentsJSON) and the gate aggregator
+// call this, so the ledger-integrity logic has exactly one home.
+func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOutput {
 	featDir := cfg.FeaturePath(slug)
 
 	out := checkAmendmentsOutput{
@@ -114,7 +123,7 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 		out.Issues = append(out.Issues, amendmentIssue{
 			Severity: "error", Code: "amendment-not-parseable", Message: err.Error(),
 		})
-		return emitCheckAmendmentsJSON(cmd, out)
+		return out
 	}
 
 	// Files in the ledger directory that match no accepted name are worth
@@ -245,7 +254,7 @@ func runCheckAmendments(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return emitCheckAmendmentsJSON(cmd, out)
+	return out
 }
 
 // reportStrayAmendmentFiles names files in amendments/ that the loader

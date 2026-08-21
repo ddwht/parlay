@@ -225,6 +225,15 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	// Build-feature requires everything create-surface requires
 	issues = append(issues, checkCreateSurfaceReadiness(featurePath)...)
 
+	// A recorded amendment that never reached the contract is a hard block on
+	// building: the buildfile would be generated from artifacts the ledger tail
+	// was supposed to change and did not. check-drift already computes the
+	// tail, but only the loop driver reads check-drift and only at planning
+	// time; surfacing it as a readiness error puts a mechanical stop at both
+	// choke points that run check-readiness — the loop's designer->build
+	// boundary and build-feature's own step 6 — with no skill edits.
+	issues = append(issues, checkUnappliedAmendments(cfg, slug, featurePath)...)
+
 	// At least one of surface.md or infrastructure.md must exist. The
 	// "at-least-one" gate is the same gate that ComputeFeaturePhase
 	// applies when promoting a feature to PhaseArtifacts. We still
@@ -373,6 +382,37 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	}
 
 	return issues
+}
+
+// checkUnappliedAmendments returns the unapplied-amendments readiness error
+// when the feature's amendment ledger has entries beyond the baseline's
+// last-applied-amendment. It reuses detectDrift's UnappliedAmendments (which
+// derives the tail from detectLedgerFindings / Baseline.LastAppliedAmendment)
+// rather than re-deriving it, so this gate and check-drift cannot disagree.
+//
+// The refine in-flight exception: a refinement legitimately rebuilds the
+// buildfile WHILE its ledger tail is mid-application (refine step 5.5), so an
+// active refine journal means the dirty tail is sanctioned work, not a stale
+// state to block. In WS1 the presence of ANY journal suppresses the error; the
+// gate command (WS2b) refines this to the splice-applied-or-later downgrade,
+// but readiness stays coarse deliberately — it is the pre-flight, and a false
+// negative here (letting a mid-refine build through) is caught again by the
+// gate the driver runs at the boundary.
+func checkUnappliedAmendments(cfg *config.Context, slug, featurePath string) []readinessIssue {
+	if journal, err := loadRefineJournal(cfg, slug); err == nil && journal != nil {
+		return nil
+	}
+	drift, err := detectDrift(cfg, slug, featurePath)
+	if err != nil || drift == nil || len(drift.UnappliedAmendments) == 0 {
+		return nil
+	}
+	return []readinessIssue{{
+		Severity: "error",
+		Code:     "unapplied-amendments",
+		Message: fmt.Sprintf("%d amendment(s) recorded but not yet applied to the contract artifacts: %s",
+			len(drift.UnappliedAmendments), strings.Join(drift.UnappliedAmendments, ", ")),
+		Fix: "run /parlay-refine to apply the ledger tail",
+	}}
 }
 
 // hasConfiguredAdapterSet reports whether the active root carries a parseable

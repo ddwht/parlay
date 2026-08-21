@@ -22,6 +22,12 @@ type SkillEntry struct {
 	Description string
 	Content     []byte
 	Surface     Surface
+	// GateStage, when non-empty, is the phase-gate boundary this module sits
+	// at (from the source's `gate-stage:` frontmatter). Its presence causes
+	// ReadAllSkills to inject the Step 0 gate block into the deployed body —
+	// see gateStepExpansion. Empty for every module that has no boundary to
+	// gate (add-feature, scaffold-dialogs, create-artifacts, …).
+	GateStage string
 }
 
 // Surface says where a skill belongs on the agent surface.
@@ -137,6 +143,31 @@ const feedbackExpansion = "## Recording what happened (feedback mode)\n\n" +
 	"**`retry` and `improvised` are the two the log exists for.** A validator that teaches by rejection looks exactly like one that teaches by documentation unless the retries are counted, and an agent that guessed a convention leaves no other trace at all — the run passes, and the guess surfaces later as an inconsistency nobody can date. Recording them is not an admission of failure; it is the only way the gap that forced them gets closed.\n\n" +
 	"**Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. The CLI hashes it before writing, so the value never appears in the log. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for."
 
+// gateMarker is where a phase module wants its injected "Step 0 — Gate" block
+// to land. Unlike the other markers it is stage-parameterized: the block runs
+// `parlay internal gate --stage <X>` where X is the module's `gate-stage:`
+// frontmatter value, so the expansion is a function of the stage rather than a
+// constant. A module that declares `gate-stage:` but omits this marker still
+// gets the block — ReadAllSkills prepends it — so no module author, present or
+// future, can write a gated phase that forgets the gate. That is the same
+// property the decision-protocol marker buys, one layer up: the deployer writes
+// the load-bearing instruction in, and it cannot be left out by hand.
+const gateMarker = "<!-- parlay:expand-gate -->"
+
+// gateStepExpansion renders the uniform Step 0 gate block for a given stage.
+// The gate is a pure recomputation, so the instruction is simply "run it, and
+// stop if it blocks" — the driver, not this phase, decides what to do about a
+// blocker.
+func gateStepExpansion(stage string) string {
+	return "## Step 0 — Gate\n\n" +
+		"This step is injected at deploy time and runs before every other step in this module. Gate the phase boundary before doing any work in it. For the feature this phase acts on, run:\n\n" +
+		"```\n" +
+		"parlay internal gate @{feature} --stage " + stage + "\n" +
+		"```\n\n" +
+		"(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **pure recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict and writes nothing, so re-running it after a fix re-derives the answer with no stale state to clear.\n\n" +
+		"**If any invocation exits non-zero, stop.** Do not proceed to the steps below, and do not quietly fix-and-retry: each entry in the gate's `blockers[]` names its own `fix`, and resolving a blocker is the driver's call, not this phase's. Surface the blockers as a `failure` decision request (see **Asking the user**) with them in `context:`, and let the driver decide. A passing gate (exit zero) is the only condition under which the rest of this module runs."
+}
+
 const coEqualArtifactsMarker = "<!-- parlay:expand-co-equal-artifacts -->"
 
 const coEqualArtifactsExpansion = "the four spec artifacts are co-equal — `surface.yaml` (or legacy `surface.md`), `capabilities.yaml`, `infrastructure.md`, and the project's `domain-model.yaml` — none is a stand-in for another"
@@ -163,17 +194,17 @@ func expandMarkers(content []byte) []byte {
 // re-declaring it. A file with no leading `---` frontmatter block
 // returns an empty description and the content unchanged, so malformed
 // input degrades gracefully rather than panicking.
-func parseSkillFrontmatter(content []byte) (description string, surface Surface, body []byte) {
+func parseSkillFrontmatter(content []byte) (description string, surface Surface, gateStage string, body []byte) {
 	surface = SurfaceCommand
 	const open = "---\n"
 	s := string(content)
 	if !strings.HasPrefix(s, open) {
-		return "", surface, content
+		return "", surface, "", content
 	}
 	rest := s[len(open):]
 	closeIdx := strings.Index(rest, "\n---")
 	if closeIdx == -1 {
-		return "", surface, content
+		return "", surface, "", content
 	}
 	frontmatter := rest[:closeIdx]
 	after := rest[closeIdx+len("\n---"):]
@@ -194,8 +225,11 @@ func parseSkillFrontmatter(content []byte) (description string, surface Surface,
 				surface = SurfaceModule
 			}
 		}
+		if v, ok := strings.CutPrefix(line, "gate-stage:"); ok {
+			gateStage = strings.Trim(strings.TrimSpace(v), `"`)
+		}
 	}
-	return description, surface, []byte(after)
+	return description, surface, gateStage, []byte(after)
 }
 
 // ReadAllSkills returns all embedded skill files: name, frontmatter
@@ -221,15 +255,37 @@ func ReadAllSkills() ([]SkillEntry, error) {
 		if len(name) > 9 {
 			name = name[:len(name)-9] // remove ".skill.md"
 		}
-		description, surface, body := parseSkillFrontmatter(data)
+		description, surface, gateStage, body := parseSkillFrontmatter(data)
+		content := expandMarkers(body)
+		if gateStage != "" {
+			content = injectGateStep(content, gateStage)
+		}
 		skills = append(skills, SkillEntry{
 			Name:        name,
 			Description: description,
-			Content:     expandMarkers(body),
+			Content:     content,
 			Surface:     surface,
+			GateStage:   gateStage,
 		})
 	}
 	return skills, nil
+}
+
+// injectGateStep places the Step 0 gate block into a module body. It replaces
+// the gateMarker where the author put one; when the marker is absent it
+// prepends the block instead, so declaring `gate-stage:` is sufficient on its
+// own to get the gate — an author cannot declare the stage and then omit the
+// instruction. Runs after expandMarkers so the injected block is final text,
+// never itself re-scanned for markers.
+func injectGateStep(content []byte, stage string) []byte {
+	block := []byte(gateStepExpansion(stage))
+	if bytes.Contains(content, []byte(gateMarker)) {
+		return bytes.ReplaceAll(content, []byte(gateMarker), block)
+	}
+	out := append([]byte{}, block...)
+	out = append(out, "\n\n"...)
+	out = append(out, content...)
+	return out
 }
 
 // CommandSkills returns the subset that belongs on the agent's skill menu.

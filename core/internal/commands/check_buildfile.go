@@ -52,6 +52,14 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	slug := parser.FeatureSlug(args[0])
+	return emitCheckBuildfileOutput(cmd, computeCheckBuildfile(cfg, slug))
+}
+
+// computeCheckBuildfile validates a feature's already-emitted buildfile against
+// the live source tree and returns the structured result, with no stdout I/O
+// and no process exit. Shared by the cobra command and the gate aggregator so
+// the plan-integrity / adapter-vocab checks are not reimplemented.
+func computeCheckBuildfile(cfg *config.Context, slug string) checkBuildfileOutput {
 	bfPath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
 
 	output := checkBuildfileOutput{
@@ -73,7 +81,7 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 				Context:  cfg.FeaturePath(slug),
 				Fix:      "no action — declare the unit's sources in authored.yaml, which is already done",
 			})
-			return emitCheckBuildfileOutput(cmd, output)
+			return output
 		}
 		output.Issues = append(output.Issues, checkBuildfileIssue{
 			Severity: "error",
@@ -82,7 +90,7 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 			Context:  bfPath,
 			Fix:      fmt.Sprintf("run /parlay-build-feature @%s to generate it", slug),
 		})
-		return emitCheckBuildfileOutput(cmd, output)
+		return output
 	}
 
 	// Auto-discover the adapter so vocab validation runs without the
@@ -106,7 +114,7 @@ func runCheckBuildfile(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	return emitCheckBuildfileOutput(cmd, output)
+	return output
 }
 
 // autoDiscoverAdapter reads the buildfile's `adapter:` field and resolves
