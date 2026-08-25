@@ -172,6 +172,8 @@ fragments:
       source: '@test-feature/some-intent'
       page: dashboard
       region: main
+      verify:
+        - "the fragment shows the data"
 `
 	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
@@ -213,6 +215,8 @@ fragments:
       source: '@test-feature/some-intent'
       page: dashboard
       region: main
+      verify:
+        - "the fragment shows the data"
 `
 	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 
@@ -266,6 +270,8 @@ fragments:
       source: '@test-feature/some-intent'
       page: dashboard
       region: main
+      verify:
+        - "the fragment shows the data"
 `
 	os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0644)
 

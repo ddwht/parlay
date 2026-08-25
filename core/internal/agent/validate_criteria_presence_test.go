@@ -125,22 +125,43 @@ func TestValidateCriteriaPresence_OperationWithoutCriteria(t *testing.T) {
 	}
 }
 
-// All three are warnings. Grading the aggregate an error would make readiness
-// convert it into a gate blocker, stopping every project authored under the old
-// routing rule before its owner had any way forward.
-func TestValidateCriteriaPresence_AllWarnings(t *testing.T) {
+// Severity, per code and per mode. Only the aggregate blocks, and only in build
+// mode — a per-entry vacancy may be a structural fragment or a UI-only-acceptance
+// operation, judgement calls no exemption machinery records, while a surface
+// where nothing states a criterion cannot be anything but the defect.
+func TestValidateCriteriaPresence_SeverityByCodeAndMode(t *testing.T) {
 	in := CriteriaPresenceInput{
 		HasSurface: true,
 		Fragments:  []parser.Fragment{{Name: "Customers list"}},
 		Operations: []parser.CapabilityOperation{{ID: "customer.purge"}},
 	}
-	out := ValidateCriteriaPresence(ModeBuild, in)
-	if len(out) == 0 {
-		t.Fatal("expected findings")
+	want := map[ValidationMode]map[string]Severity{
+		ModeAuthoring: {
+			"surface-fragment-no-criteria":     SeverityWarning,
+			"capability-operation-no-criteria": SeverityWarning,
+			"feature-surface-no-criteria":      SeverityWarning,
+		},
+		ModeBuild: {
+			"surface-fragment-no-criteria":     SeverityWarning,
+			"capability-operation-no-criteria": SeverityWarning,
+			// Readiness turns this into a gate blocker.
+			"feature-surface-no-criteria": SeverityError,
+		},
 	}
-	for _, o := range out {
-		if o.Severity != SeverityWarning {
-			t.Errorf("%s severity = %q, want warning", o.Code, o.Severity)
+	for mode, expected := range want {
+		seen := map[string]Severity{}
+		for _, o := range ValidateCriteriaPresence(mode, in) {
+			seen[o.Code] = o.Severity
+		}
+		for code, sev := range expected {
+			got, ok := seen[code]
+			if !ok {
+				t.Errorf("%s: %s did not fire", mode, code)
+				continue
+			}
+			if got != sev {
+				t.Errorf("%s: %s severity = %q, want %q", mode, code, got, sev)
+			}
 		}
 	}
 }

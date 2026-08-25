@@ -477,7 +477,7 @@ func criteriaPresenceIssues(featurePath string, fragments []parser.Fragment) []r
 		}
 		switch o.Code {
 		case "surface-fragment-no-criteria", "feature-surface-no-criteria":
-			issue.Fix = "add the owning intent's presentation claims to the fragment's verify:, or run /parlay-refine to route them; `parlay migrate-verify --fragments` can seed them for a project that predates relocation"
+			issue.Fix = "add the owning intent's presentation claims to the fragment's verify: (see /parlay-create-artifacts § Routing acceptance criteria), or run /parlay-refine where the split needs design judgement; `parlay migrate-verify --fragments` seeds a draft you must then review — it cannot tell a UI claim from a contract one"
 		case "capability-operation-no-criteria":
 			issue.Fix = "add the owning intent's contract claims to the operation's verify:, or run `parlay migrate-verify`"
 		}

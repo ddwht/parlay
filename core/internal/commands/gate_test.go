@@ -7,6 +7,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -189,19 +190,71 @@ func TestSweepFeatures_IntentsOnlyIsNotYetGated(t *testing.T) {
 	}
 }
 
-// The build gate reports criteria vacancy and still passes.
+// A wholly vacant surface BLOCKS the designer->build boundary, and the
+// per-fragment findings ride along as warnings that say where.
 //
-// Both halves matter. Reporting it is the point: the vacancy is invisible to
-// every downstream coverage walker, which ask whether STATED criteria are
-// discharged. Passing is the transition policy — grading the aggregate an
-// error would convert it into a blocker here and stop every feature authored
-// under the pre-v0.5.x routing rule before its owner had any way forward.
-func TestGate_Build_CriteriaVacancyWarnsWithoutBlocking(t *testing.T) {
+// The aggregate is the only one that blocks. It shipped as a warning on the
+// reasoning that an error would stop projects with no way forward; the way
+// forward now exists (`migrate-verify --fragments`, plus a routing rule that
+// tells the designer to author them), and the benchmark showed a warning stops
+// nothing — the agent diagnosed this exact condition, tried migrate-verify,
+// and shipped 21 criterion-less cases anyway.
+func TestGate_Build_TotalCriteriaVacancyBlocks(t *testing.T) {
 	dir := setupTestDir(t)
 	featureDir := setupLedgerFeature(t, dir)
+	writeGateSurface(t, featureDir, false)
 
-	// The observed shape: every intent covered by an operation carrying
-	// criteria, every fragment left with none.
+	out, err := computeGate(testContext(t), "my-feature", gateStageBuild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "feature-surface-no-criteria") {
+		t.Errorf("a wholly vacant surface did not block the boundary; blockers: %+v", out.Blockers)
+	}
+	if out.Passed {
+		t.Error("gate passed with an empty presentation contract")
+	}
+	if !gateHasCode(out.Warnings, "surface-fragment-no-criteria") {
+		t.Errorf("the per-fragment findings did not ride along to say where; warnings: %+v", out.Warnings)
+	}
+	if gateHasCode(out.Blockers, "surface-fragment-no-criteria") {
+		t.Error("a per-fragment finding blocked; only the aggregate may")
+	}
+}
+
+// Partial vacancy locates without stopping. A single fragment without criteria
+// may be structural or assembly-only — a judgement a reviewer makes, and one no
+// exemption machinery exists to record — so it must not hold up the boundary.
+func TestGate_Build_PartialCriteriaVacancyDoesNotBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+	writeGateSurface(t, featureDir, true)
+
+	out, err := computeGate(testContext(t), "my-feature", gateStageBuild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gateHasCode(out.Blockers, "feature-surface-no-criteria") {
+		t.Error("the aggregate fired while one fragment still states criteria")
+	}
+	if !gateHasCode(out.Warnings, "surface-fragment-no-criteria") {
+		t.Errorf("the vacant fragment was not reported; warnings: %+v", out.Warnings)
+	}
+	for _, b := range out.Blockers {
+		if strings.Contains(b.Code, "no-criteria") {
+			t.Errorf("partial vacancy produced a blocker: %+v", b)
+		}
+	}
+}
+
+// writeGateSurface lays down a two-fragment surface; firstHasCriteria decides
+// whether the presentation contract is partially or wholly vacant.
+func writeGateSurface(t *testing.T, featureDir string, firstHasCriteria bool) {
+	t.Helper()
+	first := ""
+	if firstHasCriteria {
+		first = "    verify:\n      - \"the list shows each customer\"\n"
+	}
 	surface := `feature: my-feature
 fragments:
   - name: Customers list
@@ -209,7 +262,7 @@ fragments:
     source: "@my-feature/browse-customers"
     page: customers
     region: main
-  - name: Customer detail
+` + first + `  - name: Customer detail
     shows: detail-of-one-item
     source: "@my-feature/browse-customers"
     page: customers
@@ -228,19 +281,5 @@ operations:
 	}
 	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"), []byte(capabilities), 0o644); err != nil {
 		t.Fatal(err)
-	}
-
-	out, err := computeGate(testContext(t), "my-feature", gateStageBuild)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !gateHasCode(out.Warnings, "surface-fragment-no-criteria") {
-		t.Errorf("the build gate did not report the vacant fragments; warnings: %+v", out.Warnings)
-	}
-	if !gateHasCode(out.Warnings, "feature-surface-no-criteria") {
-		t.Errorf("the build gate did not report the vacant surface; warnings: %+v", out.Warnings)
-	}
-	if gateHasCode(out.Blockers, "surface-fragment-no-criteria") || gateHasCode(out.Blockers, "feature-surface-no-criteria") {
-		t.Errorf("criteria vacancy blocked the gate; it must warn while projects migrate: %+v", out.Blockers)
 	}
 }

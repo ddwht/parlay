@@ -238,9 +238,13 @@ A fragment with no `verify:` is reported at the designer→build boundary, and a
 | Code | Fires when |
 |---|---|
 | `surface-fragment-no-criteria` (warning) | A fragment carries no `verify:` at all. Nothing states what it must do, so every presentation case written against it cites nothing. |
-| `feature-surface-no-criteria` (warning) | The feature has fragments and **none** of them carries `verify:` — the presentation contract is empty as a whole. The per-fragment code locates partial vacancy; this one reports total vacancy. |
+| `feature-surface-no-criteria` | The feature has fragments and **none** of them carries `verify:` — the presentation contract is empty as a whole. **Blocks the designer→build boundary.** |
 
-Both are **warnings**, and deliberately so: readiness converts a build-mode error into a *gate blocker*, which would stop every project authored under the pre-v0.5.x routing rule at the boundary before its owner had any way forward. The transition is handled where it degrades gracefully instead — `/parlay-build-feature` omits a suite whose source entry has no criteria and reports the omission, rather than emitting cases that cite nothing.
+**Only the aggregate blocks.** A single fragment without criteria may be structural or assembly-only — a judgement a reviewer makes, and one no exemption machinery records — so the per-fragment code locates partial vacancy without stopping anyone. A surface where *nothing* states a criterion cannot be any of those: it guarantees that every presentation case the build phase writes cites nothing.
+
+The aggregate shipped as a warning, on the reasoning that erroring would stop every project authored under the pre-v0.5.x routing rule before its owner had a way forward. Both halves of that stopped holding. The way forward exists — `parlay migrate-verify --fragments` seeds the criteria for review, and the routing rule above tells the designer to author them — and a warning was observed not to stop anything: a build agent met this exact condition, diagnosed it, tried `migrate-verify`, found it could not help (it routes to operations first), and emitted four test files of criterion-less cases anyway.
+
+Partial vacancy still reaches the build phase, so `/parlay-build-feature` omits a suite whose source entry has no criteria and reports the omission rather than emitting cases that cite nothing.
 
 Why this needs its own check: the coverage walkers ask whether *stated* criteria are discharged. An entry stating none discharges nothing and demands nothing, so it is coverage-complete by vacancy — the absence is invisible, and only non-discharge is visible.
 

@@ -60,9 +60,15 @@ reported as "no criteria": a fragment with no verify: has nothing for a
 presentation case to cite, and no downstream check reports it, since the
 coverage walkers ask whether stated criteria are discharged and these state
 none. --fragments copies an operation-covered intent's bullets onto the
-fragments sourcing it as well — duplicating rather than routing, so review the
-result; this command cannot tell a presentation claim from a contract claim.
-Authoring them properly is /parlay-refine's job.
+fragments sourcing it as well.
+
+--fragments SEEDS A DRAFT, it does not fix the gap. This command relocates text
+and cannot tell a presentation claim ("the list shows each customer's name")
+from a contract claim ("rejects a duplicate email"), so it will attach
+backend-shaped criteria to UI fragments. Read and rewrite what it produces:
+unreviewed, those criteria demand display cases that cannot be written honestly,
+and the build phase will write vacuous ones to discharge them. Where the split
+needs real design judgement, /parlay-refine is the authoritative route.
 
 Bullets already present on an entry are never added twice, so the command is
 idempotent with or without --fragments. Legacy surface.md files are not
@@ -78,7 +84,7 @@ func init() {
 	migrateVerifyCmd.Flags().BoolVar(&migrateVerifyDryRun, "dry-run", false,
 		"Print the would-be routing for every feature; touch nothing on disk")
 	migrateVerifyCmd.Flags().BoolVar(&migrateVerifyFragments, "fragments", false,
-		"Also copy an operation-covered intent's bullets onto the fragments sourcing it (duplicates rather than routes; review the result)")
+		"Seed a DRAFT of fragment criteria by copying an operation-covered intent's bullets across; you must review and rewrite them — this cannot tell a UI claim from a contract one")
 }
 
 func runMigrateVerify(cmd *cobra.Command, args []string) error {
@@ -199,7 +205,8 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(out, "stated criteria are discharged, and these state none. This routing sends an")
 		fmt.Fprintln(out, "intent's bullets to the operations that cover it first, so an operation-covered")
 		fmt.Fprintln(out, "intent leaves its fragments empty. Author the presentation claims via")
-		fmt.Fprintln(out, "/parlay-refine, or re-run with --fragments to copy the bullets across and review them.")
+		fmt.Fprintln(out, "/parlay-refine, or re-run with --fragments to seed a draft you then review —")
+		fmt.Fprintln(out, "it copies bullets mechanically and cannot tell a UI claim from a contract one.")
 	}
 	return nil
 }

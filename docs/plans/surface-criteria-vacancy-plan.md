@@ -1,6 +1,7 @@
 # Surface Criteria Vacancy — Fix Plan (benchmark finding #7)
 
-**Status:** implemented, 2026-08-25. Written and peer-reviewed the same day; the
+**Status:** implemented, 2026-08-25; both open decisions closed the same day
+(see *Open decisions*). Written and peer-reviewed the same day; the
 review located a prerequisite defect (WS 0) the first draft not only missed but
 contradicted. Landed as `3d6bab3` (WS 0), `784b4a6` (WS A+B), `978dd64` (WS C),
 `3e25a05` (cross-kind), `0d0d23f` (WS D) here, and `506050d` in
@@ -294,8 +295,12 @@ adding one is more machinery than this transition needs.
 
 **B7. No exemption machinery yet.** State the default invariant — a generated
 fragment or operation is expected to carry criteria — warn on exceptions, and
-let telemetry show whether structural or UI-only-acceptance entries make the
-warning noisy. If they do, the exemption belongs **upstream on the contract
+find out from real projects' artifacts whether structural or UI-only-acceptance
+entries make the warning noisy. (Not from feedback telemetry: it is opt-in, off
+by default, local rather than phoned home, and counts outcomes produced rather
+than surfaced.) The absence of that machinery is also why only the aggregate
+blocks: with no way to record "this fragment is structural", a per-fragment
+error would have no honest escape. If they do, the exemption belongs **upstream on the contract
 entry** (an explicit `criteria_exempt: {reason: …}`), not in
 `coverage-review.yaml`: that file lives under `.parlay/build/<feature>/`, so it
 does not exist at the designer→build boundary where the vacancy is found, and
@@ -433,17 +438,50 @@ unenforced.
 
 ## Open decisions
 
-1. **When does `feature-surface-no-criteria` graduate to an error?** Warning
-   for the first release, with option-B degradation, is settled (B2, B6). The
-   trigger for promotion is not:
-   a telemetry threshold, a version gate, or a manual call after the migration
-   window. Note that "just run `migrate-verify`" is not an adequate answer for
-   an affected project — the migrator splices operations first and, without
-   `--fragments`, preserves the exact fragment vacancy at issue.
-2. **Does `--fragments` duplication belong in the tool at all**, or should a
-   project re-run `/parlay-refine` and have the designer split the claims by
-   shape? The flag is faster; the refine is more accurate. Recommended: ship
-   the flag, document it as a starting point that still needs review.
+1. ~~When does `feature-surface-no-criteria` graduate to an error?~~
+   **Decided 2026-08-25: it graduates now.** `ModeBuild` error, `ModeAuthoring`
+   warning; the two per-entry codes stay warnings in both modes, so partial
+   vacancy locates without blocking and total vacancy blocks.
+
+   Two things settled it. The evidence the warning-first position was waiting
+   for already existed: in the observed run the agent met this condition,
+   diagnosed it, tried `migrate-verify`, found it could not help, and emitted
+   four test files of criterion-less cases anyway — a warning stopped nothing.
+   And the cost that justified waiting is absent here: the affected population
+   is a few projects, all the owner's own, so blocking cannot strand anyone
+   whose remedy has not reached them.
+
+   The remedy also now exists, which it did not when the run was observed:
+   `--fragments` seeds the criteria and the routing rule tells the designer to
+   author them. Blocking means "stop and use the remedy" rather than "stop".
+
+   *A note on the trigger this section used to offer.* "Graduate on telemetry"
+   was not a usable option and should not be proposed again without checking:
+   `parlay-feedback` is opt-in and off by default, writes to `.parlay/feedback/`
+   locally rather than phoning home (so a human must send it), and records
+   outcomes **produced** rather than surfaced — the presence codes fire on both
+   the readiness and the validate path, so any threshold read off that log
+   double-counts. What would actually inform a question like this is a one-off
+   look at real projects' artifacts, not a monitoring programme.
+2. ~~Does `--fragments` duplication belong in the tool at all?~~
+   **Decided 2026-08-25: it stays, framed as draft seeding.** Not "faster but
+   less accurate" — it produces a draft a human must review, and it is never
+   the authoritative fix. It relocates text and cannot tell a presentation
+   claim from a contract one, so it will attach backend-shaped criteria to UI
+   fragments; unreviewed, those demand display cases that cannot be written
+   honestly and the build phase writes vacuous ones to discharge them.
+
+   Routing every backfill through `/parlay-refine` was rejected as
+   disproportionate *and* as ledger pollution: refine appends a permanent,
+   never-editable amendment to the feature's design history, regenerates code
+   and runs the full suite — per feature. Backfilling criteria is a tool
+   migration, not a product decision, and the ledger exists to record why the
+   product changed. `/parlay-refine` remains the route where the split needs
+   genuine design judgement.
+
+   The wording is deliberately identical in the command help, the readiness
+   fix text, `build-feature`, and `surface.schema.md`: seeds a draft, requires
+   review, never the fix.
 
 ## Explicitly out of scope
 

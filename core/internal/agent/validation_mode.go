@@ -104,17 +104,20 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
-	// The criteria-presence findings (validate_criteria_presence.go). Warnings
-	// in both modes for the first release, and this one is not merely the usual
-	// backward-compatibility grace: readiness converts a ModeBuild error into a
-	// GATE BLOCKER, so grading the aggregate an error would stop every legacy
-	// all-vacant surface at the boundary before its owner had any way forward.
+	// The criteria-presence findings (validate_criteria_presence.go).
 	//
-	// The transition is handled where it can be handled gracefully instead:
-	// build-feature omits a suite whose source entry has no criteria and reports
-	// the omission, rather than emitting cases that cite nothing. Warning here
-	// plus an unconditional hard stop there would have been the same breaking
-	// change arriving later and reported worse.
+	// Only the AGGREGATE blocks. A single entry without criteria may be a
+	// structural or assembly-only fragment, or an operation whose whole
+	// acceptance is UI-visible — judgement calls a reviewer can make, and ones
+	// we deliberately ship no exemption machinery for. A surface where NOTHING
+	// states a criterion cannot be any of those: it is the defect, and it
+	// guarantees that every presentation case the build phase writes cites
+	// nothing.
+	//
+	// So the per-entry codes locate partial vacancy without stopping anyone,
+	// and the aggregate stops the designer->build boundary. build-feature's
+	// omit-the-suite degradation stays load-bearing for the partial case even
+	// though total vacancy no longer reaches it.
 	"surface-fragment-no-criteria": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
@@ -123,9 +126,25 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// Blocking in build mode, which readiness converts into a gate blocker.
+	//
+	// It shipped as a warning on the reasoning that an error would stop every
+	// project authored under the old routing rule before its owner had any way
+	// forward. Both halves of that have since failed. The way forward exists —
+	// `parlay migrate-verify --fragments` seeds the criteria, and the routing
+	// rule now tells the designer to author them — and the benchmark showed the
+	// warning does not stop anything: the agent hit this condition, diagnosed
+	// it, tried migrate-verify, found it could not help (it routes to operations
+	// first), and shipped four test files of criterion-less cases anyway.
+	//
+	// A warning here asks a reader to notice a wall of output mid-run. This
+	// project's own gate doctrine is that an invariant which matters is
+	// recomputed, not prompted — the routing rule and the omit-the-suite rule
+	// are both skill prose, so this is the only place the invariant is enforced
+	// rather than requested.
 	"feature-surface-no-criteria": {
 		ModeAuthoring: SeverityWarning,
-		ModeBuild:     SeverityWarning,
+		ModeBuild:     SeverityError,
 	},
 	// A presentation case citing an operation criterion it never invokes.
 	// Warning with the rest of the criterion family, and for the same reason:
