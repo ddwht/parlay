@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -29,6 +30,17 @@ import (
 )
 
 var migrateVerifyDryRun bool
+
+// migrateVerifyFragments opts into duplicating an operation-covered intent's
+// bullets onto the fragments that source it.
+//
+// Off by default, and it must stay off by default: the migrator is a textual
+// relocator and cannot tell a presentation claim from a contract claim, so a
+// contract-shaped bullet copied onto a fragment demands a display case that
+// cannot be written honestly — and the build phase will write a vacuous one to
+// discharge it. The flag is for a project that would rather review duplicated
+// criteria than author them from scratch; the accurate fix is /parlay-refine.
+var migrateVerifyFragments bool
 
 var migrateVerifyCmd = &cobra.Command{
 	Use:   "migrate-verify",
@@ -42,9 +54,20 @@ no operation covers land on every surface.yaml fragment that sources them.
 An intent whose bullets match no operation and no fragment is reported as
 unrouted and left where it is — intents.md is never modified.
 
-Entries that already have verify: are skipped, so the command is idempotent.
-Legacy surface.md files are not rewritten (they are themselves pending
-migration to surface.yaml; run that first).
+Because operations are routed first, a feature whose every intent produces an
+operation ends the run with every fragment still empty. Those fragments are
+reported as "no criteria": a fragment with no verify: has nothing for a
+presentation case to cite, and no downstream check reports it, since the
+coverage walkers ask whether stated criteria are discharged and these state
+none. --fragments copies an operation-covered intent's bullets onto the
+fragments sourcing it as well — duplicating rather than routing, so review the
+result; this command cannot tell a presentation claim from a contract claim.
+Authoring them properly is /parlay-refine's job.
+
+Bullets already present on an entry are never added twice, so the command is
+idempotent with or without --fragments. Legacy surface.md files are not
+rewritten (they are themselves pending migration to surface.yaml; run that
+first).
 
 Use --dry-run to preview the routing without writing anything.`,
 	Args: cobra.NoArgs,
@@ -54,6 +77,8 @@ Use --dry-run to preview the routing without writing anything.`,
 func init() {
 	migrateVerifyCmd.Flags().BoolVar(&migrateVerifyDryRun, "dry-run", false,
 		"Print the would-be routing for every feature; touch nothing on disk")
+	migrateVerifyCmd.Flags().BoolVar(&migrateVerifyFragments, "fragments", false,
+		"Also copy an operation-covered intent's bullets onto the fragments sourcing it (duplicates rather than routes; review the result)")
 }
 
 func runMigrateVerify(cmd *cobra.Command, args []string) error {
@@ -73,7 +98,7 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(out, "(dry run — no files written)")
 	}
 
-	totalOps, totalFrags, totalUnrouted := 0, 0, 0
+	totalOps, totalFrags, totalUnrouted, totalVacant := 0, 0, 0, 0
 	for _, featDir := range featureDirs {
 		feature, _ := filepath.Rel(intentsRoot, featDir)
 
@@ -98,17 +123,33 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("%s: %w", feature, err)
 		}
 
-		// Only intents no operation covered fall through to the surface.
+		// Only intents no operation covered fall through to the surface —
+		// unless --fragments, which sends every intent's bullets to both sides.
+		//
+		// This routing rule is why a full-stack feature could end up with no
+		// presentation criteria at all: every intent produced an operation, so
+		// every intent was "covered", so nothing reached the fragments. The
+		// authoring fix is in /parlay-create-artifacts, which now routes by what
+		// a claim asserts; this flag is the retrofit for artifacts already
+		// written under the old rule.
 		remaining := map[string][]string{}
 		for slug, b := range bullets {
-			if !covered[slug] {
+			if migrateVerifyFragments || !covered[slug] {
 				remaining[slug] = b
 			}
 		}
-		fragsAttached, err := spliceVerifyIntoSurfaceYAML(filepath.Join(featDir, "surface.yaml"), remaining, covered)
+		surfacePath := filepath.Join(featDir, "surface.yaml")
+		fragsAttached, err := spliceVerifyIntoSurfaceYAML(surfacePath, remaining, covered)
 		if err != nil {
 			return fmt.Errorf("%s: %w", feature, err)
 		}
+
+		// Projected vacancy: fragments that will still carry no verify: when
+		// this run finishes. Computed from the same in-memory routing the
+		// splice used, NOT by re-reading the file — under --dry-run nothing is
+		// written, so a re-read returns pre-splice state and would name every
+		// fragment the real run would have filled.
+		vacant := projectedVacantFragments(surfacePath, remaining)
 
 		var unrouted []string
 		for slug := range bullets {
@@ -117,7 +158,7 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if opsAttached+fragsAttached == 0 && len(unrouted) == 0 {
+		if opsAttached+fragsAttached == 0 && len(unrouted) == 0 && len(vacant) == 0 {
 			continue
 		}
 		fmt.Fprintf(out, "  %s\n", feature)
@@ -130,14 +171,56 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 		for _, slug := range unrouted {
 			fmt.Fprintf(out, "    unrouted: %s (no operation or fragment sources it)\n", slug)
 		}
+		for _, name := range vacant {
+			fmt.Fprintf(out, "    no criteria: fragment %q still carries no verify:\n", name)
+		}
 		totalOps += opsAttached
 		totalFrags += fragsAttached
 		totalUnrouted += len(unrouted)
+		totalVacant += len(vacant)
 	}
 
-	fmt.Fprintf(out, "Operations gaining verify: %d\nFragments gaining verify: %d\nUnrouted intents (bullets left in intents.md only): %d\n",
-		totalOps, totalFrags, totalUnrouted)
+	fmt.Fprintf(out, "Operations gaining verify: %d\nFragments gaining verify: %d\nUnrouted intents (bullets left in intents.md only): %d\nFragments still without criteria: %d\n",
+		totalOps, totalFrags, totalUnrouted, totalVacant)
+	if totalVacant > 0 && !migrateVerifyFragments {
+		fmt.Fprintln(out, "\nA fragment with no verify: has nothing for a presentation case to cite, and")
+		fmt.Fprintln(out, "nothing downstream reports it as missing — the coverage walkers ask whether")
+		fmt.Fprintln(out, "stated criteria are discharged, and these state none. This routing sends an")
+		fmt.Fprintln(out, "intent's bullets to the operations that cover it first, so an operation-covered")
+		fmt.Fprintln(out, "intent leaves its fragments empty. Author the presentation claims via")
+		fmt.Fprintln(out, "/parlay-refine, or re-run with --fragments to copy the bullets across and review them.")
+	}
 	return nil
+}
+
+// projectedVacantFragments names the fragments that will carry no verify: once
+// this run's routing is applied — the fragment names, in file order.
+//
+// It takes the routed bullets rather than reading the post-splice file for the
+// reason --dry-run makes unavoidable: with nothing written, the file still
+// shows the pre-splice state.
+func projectedVacantFragments(path string, routed map[string][]string) []string {
+	frags, err := parser.LoadSurfaceYAML(path)
+	if err != nil {
+		return nil
+	}
+	var vacant []string
+	for _, f := range frags {
+		if len(f.Verify) > 0 {
+			continue
+		}
+		gains := false
+		for _, slug := range slugsFromSourceRefs(f.Source) {
+			if len(routed[slug]) > 0 {
+				gains = true
+				break
+			}
+		}
+		if !gains {
+			vacant = append(vacant, f.Name)
+		}
+	}
+	return vacant
 }
 
 // walkIntentFeatureDirs returns every directory under root that contains an
@@ -182,7 +265,7 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 	// line in the file, because yaml preserves list order, `source:` appears
 	// only on operations in this artifact, and operations without the key
 	// contribute no line (so they are excluded here too).
-	var inserts [][]string
+	var inserts []verifyInsert
 	for _, op := range caps.Operations {
 		if op.Source == "" {
 			continue
@@ -197,7 +280,7 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 				}
 			}
 		}
-		inserts = append(inserts, merged)
+		inserts = append(inserts, verifyInsert{NewBlock: dedupeBullets(nil, merged)})
 	}
 	return spliceAfterSourceLines(path, inserts)
 }
@@ -216,9 +299,10 @@ func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, cover
 	if err != nil {
 		return 0, err
 	}
-	var inserts [][]string
+	var inserts []verifyInsert
 	for _, f := range frags {
 		if f.Source == "" {
+			inserts = append(inserts, verifyInsert{})
 			continue
 		}
 		slugs := slugsFromSourceRefs(f.Source)
@@ -226,21 +310,67 @@ func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, cover
 		for _, s := range slugs {
 			if b, ok := bullets[s]; ok {
 				covered[s] = true
-				if len(f.Verify) == 0 {
-					merged = append(merged, b...)
-				}
+				merged = append(merged, b...)
 			}
 		}
-		inserts = append(inserts, merged)
+		// De-duplicated against what the fragment already carries, which is what
+		// keeps a second run a no-op now that a non-empty entry is merged into
+		// rather than skipped wholesale. Skipping was the old idempotence; with
+		// merging, de-duplication has to supply it.
+		merged = dedupeBullets(f.Verify, merged)
+		if len(f.Verify) == 0 {
+			inserts = append(inserts, verifyInsert{NewBlock: merged})
+			continue
+		}
+		inserts = append(inserts, verifyInsert{Append: merged})
 	}
 	return spliceAfterSourceLines(path, inserts)
 }
 
-// spliceAfterSourceLines walks the file, and after the i-th line whose first
-// key is `source:`, inserts a verify: block with inserts[i] (skipping empty
-// entries). The verify: key sits at the same indent as source:, bullets two
-// deeper. Returns how many blocks were inserted.
-func spliceAfterSourceLines(path string, inserts [][]string) (int, error) {
+// dedupeBullets drops bullets already present in `existing`, and any repeated
+// within `add` itself. Comparison uses the same canonicalization criterion
+// identity uses, so the migrator and the coverage walker agree about when two
+// bullets are the same bullet.
+func dedupeBullets(existing, add []string) []string {
+	seen := make(map[string]bool, len(existing))
+	for _, e := range existing {
+		seen[agent.CanonicalCriterionText(e)] = true
+	}
+	var out []string
+	for _, b := range add {
+		key := agent.CanonicalCriterionText(b)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, b)
+	}
+	return out
+}
+
+// verifyInsert is what one contract entry gets from a migration pass.
+//
+// Two kinds, because an entry with no verify: needs a whole block written after
+// its source: line, while an entry that already has one needs its missing
+// bullets merged into the block it has. The original migrator only had the
+// first: it skipped an entry carrying any verify: wholesale, which is what made
+// it idempotent and also what made `--fragments` impossible to express — a
+// fragment with one criterion could never gain a second.
+type verifyInsert struct {
+	// NewBlock writes a fresh verify: block after the entry's source: line.
+	NewBlock []string
+	// Append merges bullets into the entry's existing verify: block.
+	Append []string
+}
+
+func (v verifyInsert) empty() bool { return len(v.NewBlock) == 0 && len(v.Append) == 0 }
+
+// spliceAfterSourceLines walks the file and applies inserts[i] to the i-th
+// entry, keyed on the i-th line whose first key is `source:`. A new block's
+// verify: key sits at the same indent as source:, bullets two deeper; an append
+// lands after the last bullet of the entry's existing verify: block. Returns
+// how many entries were touched.
+func spliceAfterSourceLines(path string, inserts []verifyInsert) (int, error) {
 	if len(inserts) == 0 {
 		return 0, nil
 	}
@@ -252,26 +382,76 @@ func spliceAfterSourceLines(path string, inserts [][]string) (int, error) {
 	var outLines []string
 	occurrence := 0
 	attached := 0
+
+	// Append state, live between an entry's source: line and the end of the
+	// verify: block it owns.
+	var pending []string
+	pendingIndent := ""
+	inVerifyBlock := false
+
+	// flushPending emits the queued bullets at the current block's bullet
+	// indent. Called when the existing verify: block ends — at the first line
+	// that is not one of its bullets, or at EOF.
+	flushPending := func() {
+		for _, b := range pending {
+			outLines = append(outLines, pendingIndent+"  - "+yamlScalar(b))
+		}
+		attached++
+		pending = nil
+		inVerifyBlock = false
+	}
+
 	for _, line := range lines {
-		outLines = append(outLines, line)
 		trimmed := strings.TrimLeft(line, " ")
+		indentOf := line[:len(line)-len(trimmed)]
+
+		// Close an open append before writing the line that ends the block.
+		//
+		// A bullet of THIS block is a "- " line indented deeper than the entry.
+		// The indent test is not decoration: the next entry in the list is also
+		// a "- " line, so testing the dash alone swallows it and the queued
+		// bullets land inside the following fragment.
+		if inVerifyBlock && !(strings.HasPrefix(trimmed, "- ") && len(indentOf) > len(pendingIndent)) {
+			flushPending()
+		}
+		// A new list item ends the entry. If its verify: block never appeared,
+		// the queued bullets are dropped rather than written somewhere wrong.
+		if pending != nil && !inVerifyBlock && strings.HasPrefix(trimmed, "- ") && len(indentOf) <= len(pendingIndent) {
+			pending = nil
+		}
+		if pending != nil && !inVerifyBlock && strings.HasPrefix(trimmed, "verify:") {
+			inVerifyBlock = true
+		}
+
+		outLines = append(outLines, line)
+
 		isSource := strings.HasPrefix(trimmed, "source:") || strings.HasPrefix(trimmed, "- source:")
 		if !isSource {
 			continue
 		}
-		if occurrence < len(inserts) && len(inserts[occurrence]) > 0 {
-			indent := line[:len(line)-len(trimmed)]
+		if occurrence < len(inserts) && !inserts[occurrence].empty() {
+			indent := indentOf
 			if strings.HasPrefix(trimmed, "- ") {
 				// List-item form `- source:`: sibling keys align two deeper.
 				indent += "  "
 			}
-			outLines = append(outLines, indent+"verify:")
-			for _, b := range inserts[occurrence] {
-				outLines = append(outLines, indent+"  - "+yamlScalar(b))
+			ins := inserts[occurrence]
+			if len(ins.NewBlock) > 0 {
+				outLines = append(outLines, indent+"verify:")
+				for _, b := range ins.NewBlock {
+					outLines = append(outLines, indent+"  - "+yamlScalar(b))
+				}
+				attached++
+			} else {
+				pending = ins.Append
+				pendingIndent = indent
+				inVerifyBlock = false
 			}
-			attached++
 		}
 		occurrence++
+	}
+	if inVerifyBlock {
+		flushPending()
 	}
 	if attached == 0 {
 		return 0, nil

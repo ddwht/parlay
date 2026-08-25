@@ -108,11 +108,17 @@ fragments:
 
 func runVerifyMigration(t *testing.T, dryRun bool) string {
 	t.Helper()
+	return runVerifyMigrationWith(t, dryRun, false)
+}
+
+func runVerifyMigrationWith(t *testing.T, dryRun, fragments bool) string {
+	t.Helper()
 	var buf bytes.Buffer
 	cmd := testCommandWithContext(t, testContext(t))
 	cmd.SetOut(&buf)
 	migrateVerifyDryRun = dryRun
-	defer func() { migrateVerifyDryRun = false }()
+	migrateVerifyFragments = fragments
+	defer func() { migrateVerifyDryRun = false; migrateVerifyFragments = false }()
 	if err := runMigrateVerify(cmd, nil); err != nil {
 		t.Fatalf("runMigrateVerify: %v", err)
 	}
@@ -245,5 +251,149 @@ func TestMigrateVerify_UnroutedIntentReported(t *testing.T) {
 	out := runVerifyMigration(t, false)
 	if !strings.Contains(out, "unrouted: nobody-sources-this") {
 		t.Errorf("intent with no artifact entry should be reported unrouted; got:\n%s", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WS C — the migration path for artifacts written under the old routing rule.
+// ---------------------------------------------------------------------------
+
+// The report a project written under the old rule needs: the routing leaves the
+// Create Form fragment with no criteria, because its intent is covered by an
+// operation and operations are routed first. Nothing said so before — the run
+// looked fully migrated.
+func TestMigrateVerify_ReportsProjectedVacancy(t *testing.T) {
+	dir := setupTestDir(t)
+	writeVerifyFixture(t, dir)
+
+	out := runVerifyMigration(t, false)
+	if !strings.Contains(out, `no criteria: fragment "Create Form"`) {
+		t.Errorf("the vacancy report did not name the fragment left empty:\n%s", out)
+	}
+	if strings.Contains(out, `no criteria: fragment "Thing List"`) {
+		t.Errorf("a fragment that gained criteria was reported vacant:\n%s", out)
+	}
+	if !strings.Contains(out, "Fragments still without criteria: 1") {
+		t.Errorf("summary count missing or wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "--fragments") {
+		t.Errorf("the report does not say what to do about it:\n%s", out)
+	}
+}
+
+// The dry-run correctness the projection exists for. --dry-run writes nothing,
+// so a report that re-read the file would see pre-splice state and name every
+// fragment — including the one the real run fills.
+func TestMigrateVerify_VacancyReportIsCorrectUnderDryRun(t *testing.T) {
+	dir := setupTestDir(t)
+	writeVerifyFixture(t, dir)
+
+	dry := runVerifyMigration(t, true)
+	if strings.Contains(dry, `no criteria: fragment "Thing List"`) {
+		t.Errorf("--dry-run reported a fragment the run would have filled:\n%s", dry)
+	}
+	if !strings.Contains(dry, "Fragments still without criteria: 1") {
+		t.Errorf("--dry-run vacancy count disagrees with the real run:\n%s", dry)
+	}
+	// And it really did touch nothing.
+	for _, f := range mustLoadSurface(t, filepath.Join(dir, "spec", "intents", "verify-fixture", "surface.yaml")) {
+		if len(f.Verify) > 0 {
+			t.Errorf("--dry-run wrote verify: to fragment %q", f.Name)
+		}
+	}
+}
+
+// --fragments copies an operation-covered intent's bullets onto the fragments
+// sourcing it, which the default routing deliberately does not.
+func TestMigrateVerify_FragmentsFlagFillsOperationCoveredFragments(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	runVerifyMigrationWith(t, false, true)
+
+	frags := mustLoadSurface(t, filepath.Join(featDir, "surface.yaml"))
+	for _, f := range frags {
+		if len(f.Verify) == 0 {
+			t.Errorf("fragment %q still has no verify: under --fragments", f.Name)
+		}
+	}
+	// The operations keep theirs — this duplicates, it does not move.
+	caps := mustParseCapabilities(t, filepath.Join(featDir, "capabilities.yaml"))
+	if len(caps.Operations[0].Verify) == 0 {
+		t.Error("--fragments moved the operation's criteria instead of copying them")
+	}
+}
+
+// Idempotence under merge. Skipping a non-empty entry wholesale used to supply
+// this for free; now that a non-empty entry is merged into, de-duplication has
+// to supply it instead.
+func TestMigrateVerify_FragmentsFlagIsIdempotent(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	surfacePath := filepath.Join(featDir, "surface.yaml")
+
+	runVerifyMigrationWith(t, false, true)
+	afterFirst, err := os.ReadFile(surfacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runVerifyMigrationWith(t, false, true)
+	afterSecond, err := os.ReadFile(surfacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(afterFirst, afterSecond) {
+		t.Errorf("a second --fragments run changed the file:\n--- first ---\n%s\n--- second ---\n%s", afterFirst, afterSecond)
+	}
+}
+
+// The merge itself: a fragment that already carries one criterion gains the
+// missing one rather than being skipped wholesale. Under the old splice a
+// fragment with any verify: could never gain a second bullet.
+func TestMigrateVerify_MergesIntoExistingVerifyBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	surfacePath := filepath.Join(featDir, "surface.yaml")
+
+	// Give the Create Form fragment one of its intent's two bullets.
+	seeded := `feature: verify-fixture
+fragments:
+    - actions: invoke
+      name: Create Form
+      order: 1
+      page: things
+      region: main
+      shows: form
+      source: '@verify-fixture/create-the-thing'
+      verify:
+        - Creating a thing returns its id.
+    - actions: select-one
+      name: Thing List
+      order: 2
+      page: things
+      region: main
+      shows: data-list, empty-state
+      source: '@verify-fixture/browse-the-things'
+`
+	if err := os.WriteFile(surfacePath, []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runVerifyMigrationWith(t, false, true)
+
+	frags := mustLoadSurface(t, surfacePath)
+	var createForm parser.Fragment
+	for _, f := range frags {
+		if f.Name == "Create Form" {
+			createForm = f
+		}
+	}
+	if len(createForm.Verify) != 2 {
+		t.Fatalf("Create Form verify: = %v, want both bullets merged", createForm.Verify)
+	}
+	joined := strings.Join(createForm.Verify, "\n")
+	if !strings.Contains(joined, "returns its id") || !strings.Contains(joined, "conflict") {
+		t.Errorf("merge lost or duplicated a bullet: %v", createForm.Verify)
 	}
 }
