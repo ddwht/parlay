@@ -365,11 +365,18 @@ type verifyInsert struct {
 
 func (v verifyInsert) empty() bool { return len(v.NewBlock) == 0 && len(v.Append) == 0 }
 
-// spliceAfterSourceLines walks the file and applies inserts[i] to the i-th
-// entry, keyed on the i-th line whose first key is `source:`. A new block's
-// verify: key sits at the same indent as source:, bullets two deeper; an append
-// lands after the last bullet of the entry's existing verify: block. Returns
-// how many entries were touched.
+// spliceAfterSourceLines applies inserts[i] to the i-th contract entry, keyed
+// on the i-th line whose first key is `source:`. A new block's verify: key sits
+// at the same indent as source:, bullets two deeper; an append lands after the
+// last bullet of the entry's existing verify: block. Returns how many entries
+// were touched.
+//
+// Two passes, because one is not enough. A single forward scan from the source:
+// line finds a verify: block only when it comes AFTER source: — and YAML key
+// order is arbitrary, so a hand-authored fragment listing verify: first had its
+// merged bullets silently dropped while the run still counted the entry as
+// touched. Locating each entry's line range first makes the position of
+// verify: within it irrelevant.
 func spliceAfterSourceLines(path string, inserts []verifyInsert) (int, error) {
 	if len(inserts) == 0 {
 		return 0, nil
@@ -379,82 +386,67 @@ func spliceAfterSourceLines(path string, inserts []verifyInsert) (int, error) {
 		return 0, err
 	}
 	lines := strings.Split(string(content), "\n")
-	var outLines []string
-	occurrence := 0
-	attached := 0
 
-	// Append state, live between an entry's source: line and the end of the
-	// verify: block it owns.
-	var pending []string
-	pendingIndent := ""
-	inVerifyBlock := false
-
-	// flushPending emits the queued bullets at the current block's bullet
-	// indent. Called when the existing verify: block ends — at the first line
-	// that is not one of its bullets, or at EOF.
-	flushPending := func() {
-		for _, b := range pending {
-			outLines = append(outLines, pendingIndent+"  - "+yamlScalar(b))
-		}
-		attached++
-		pending = nil
-		inVerifyBlock = false
+	// Pass 1: for each source: occurrence, where the entry's keys are indented,
+	// and where an append would land.
+	type site struct {
+		sourceLine  int // index of the source: line
+		keyIndent   string
+		appendAfter int // index of the last bullet of an existing verify: block, or -1
 	}
-
-	for _, line := range lines {
+	var sites []site
+	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
-		indentOf := line[:len(line)-len(trimmed)]
-
-		// Close an open append before writing the line that ends the block.
-		//
-		// A bullet of THIS block is a "- " line indented deeper than the entry.
-		// The indent test is not decoration: the next entry in the list is also
-		// a "- " line, so testing the dash alone swallows it and the queued
-		// bullets land inside the following fragment.
-		if inVerifyBlock && !(strings.HasPrefix(trimmed, "- ") && len(indentOf) > len(pendingIndent)) {
-			flushPending()
-		}
-		// A new list item ends the entry. If its verify: block never appeared,
-		// the queued bullets are dropped rather than written somewhere wrong.
-		if pending != nil && !inVerifyBlock && strings.HasPrefix(trimmed, "- ") && len(indentOf) <= len(pendingIndent) {
-			pending = nil
-		}
-		if pending != nil && !inVerifyBlock && strings.HasPrefix(trimmed, "verify:") {
-			inVerifyBlock = true
-		}
-
-		outLines = append(outLines, line)
-
-		isSource := strings.HasPrefix(trimmed, "source:") || strings.HasPrefix(trimmed, "- source:")
-		if !isSource {
+		if !strings.HasPrefix(trimmed, "source:") && !strings.HasPrefix(trimmed, "- source:") {
 			continue
 		}
-		if occurrence < len(inserts) && !inserts[occurrence].empty() {
-			indent := indentOf
-			if strings.HasPrefix(trimmed, "- ") {
-				// List-item form `- source:`: sibling keys align two deeper.
-				indent += "  "
-			}
-			ins := inserts[occurrence]
-			if len(ins.NewBlock) > 0 {
-				outLines = append(outLines, indent+"verify:")
-				for _, b := range ins.NewBlock {
-					outLines = append(outLines, indent+"  - "+yamlScalar(b))
-				}
-				attached++
-			} else {
-				pending = ins.Append
-				pendingIndent = indent
-				inVerifyBlock = false
-			}
+		rawIndent := line[:len(line)-len(trimmed)]
+		keyIndent := rawIndent
+		if strings.HasPrefix(trimmed, "- ") {
+			// List-item form `- source:`: sibling keys align two deeper.
+			keyIndent += "  "
 		}
-		occurrence++
+		sites = append(sites, site{sourceLine: i, keyIndent: keyIndent, appendAfter: findVerifyBulletEnd(lines, entryBounds(lines, i, keyIndent), keyIndent)})
 	}
-	if inVerifyBlock {
-		flushPending()
+
+	// Pass 2: emit.
+	insertAfter := map[int][]string{} // line index -> lines to emit after it
+	attached := 0
+	for occ, ins := range inserts {
+		if occ >= len(sites) || ins.empty() {
+			continue
+		}
+		st := sites[occ]
+		if len(ins.NewBlock) > 0 {
+			block := []string{st.keyIndent + "verify:"}
+			for _, b := range ins.NewBlock {
+				block = append(block, st.keyIndent+"  - "+yamlScalar(b))
+			}
+			insertAfter[st.sourceLine] = block
+			attached++
+			continue
+		}
+		// An append with no verify: block to append to would be a lie about
+		// what happened, so it is skipped and not counted rather than written
+		// somewhere arbitrary.
+		if st.appendAfter < 0 {
+			continue
+		}
+		var block []string
+		for _, b := range ins.Append {
+			block = append(block, st.keyIndent+"  - "+yamlScalar(b))
+		}
+		insertAfter[st.appendAfter] = block
+		attached++
 	}
 	if attached == 0 {
 		return 0, nil
+	}
+
+	outLines := make([]string, 0, len(lines)+attached)
+	for i, line := range lines {
+		outLines = append(outLines, line)
+		outLines = append(outLines, insertAfter[i]...)
 	}
 	if !migrateVerifyDryRun {
 		if err := os.WriteFile(path, []byte(strings.Join(outLines, "\n")), 0o644); err != nil {
@@ -462,6 +454,63 @@ func spliceAfterSourceLines(path string, inserts []verifyInsert) (int, error) {
 		}
 	}
 	return attached, nil
+}
+
+// entryBounds returns the line index one past the end of the contract entry
+// owning the key at line `from`, indented at keyIndent.
+//
+// An entry ends at the next list item shallower than its own keys: for both the
+// `- name:` / `  source:` layout and the `- source:` layout, the next entry's
+// dash sits at less than keyIndent, while a verify: bullet sits deeper.
+func entryBounds(lines []string, from int, keyIndent string) int {
+	for i := from + 1; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if !strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		if len(lines[i])-len(trimmed) < len(keyIndent) {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+// findVerifyBulletEnd locates the last bullet of the verify: block belonging to
+// the entry spanning [from, to), or -1 when the entry has none. The block is
+// found anywhere in the entry rather than only after source:.
+func findVerifyBulletEnd(lines []string, to int, keyIndent string) int {
+	// Walk the whole entry; the caller passes the end and the entry's start is
+	// implied by the previous entry's end, so scan from the first line that
+	// belongs to this indent level.
+	start := to - 1
+	for start > 0 {
+		trimmed := strings.TrimLeft(lines[start-1], " ")
+		if strings.HasPrefix(trimmed, "- ") && len(lines[start-1])-len(trimmed) < len(keyIndent) {
+			break
+		}
+		start--
+	}
+	verifyAt := -1
+	for i := start; i < to; i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if trimmed == "verify:" && len(lines[i])-len(trimmed) == len(keyIndent) {
+			verifyAt = i
+			break
+		}
+	}
+	if verifyAt < 0 {
+		return -1
+	}
+	last := verifyAt
+	for i := verifyAt + 1; i < to; i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if strings.HasPrefix(trimmed, "- ") && len(lines[i])-len(trimmed) > len(keyIndent) {
+			last = i
+			continue
+		}
+		break
+	}
+	return last
 }
 
 // slugsFromSourceRefs parses a comma-separated `@feature/intent-slug` list

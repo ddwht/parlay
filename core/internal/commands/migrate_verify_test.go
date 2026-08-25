@@ -397,3 +397,113 @@ fragments:
 		t.Errorf("merge lost or duplicated a bullet: %v", createForm.Verify)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Splice layout edges. The merge path walks YAML as text, so the layouts it can
+// meet are the ones worth pinning: a single forward scan from source: gets two
+// of these wrong.
+// ---------------------------------------------------------------------------
+
+func spliceFixture(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "surface.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// YAML key order is arbitrary, and a hand-authored fragment may list verify:
+// before source:. A forward-only scan finds no block, drops the merged bullets,
+// and still counts the entry as touched — silent loss reported as success.
+func TestSplice_VerifyBeforeSourceStillMerges(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      verify:
+        - existing one
+      source: '@f/one'
+    - name: B
+      source: '@f/two'
+      page: p
+`)
+	attached, err := spliceAfterSourceLines(p, []verifyInsert{
+		{Append: []string{"added one"}},
+		{NewBlock: []string{"fresh"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attached != 2 {
+		t.Errorf("attached = %d, want 2", attached)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "added one") {
+		t.Errorf("the appended bullet was dropped:\n%s", got)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("fragment A verify: = %v, want both bullets", frags[0].Verify)
+	}
+}
+
+// Other keys between source: and verify:, which is the ordinary generated
+// layout once page/region are present.
+func TestSplice_MergesAcrossInterveningKeys(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      page: p
+      region: main
+      verify:
+        - existing one
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"added one"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("verify: = %v, want the bullet merged into the existing block", frags[0].Verify)
+	}
+}
+
+// The last entry ends at EOF with no trailing newline.
+func TestSplice_MergesAtEOFWithoutTrailingNewline(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+        - existing one`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"added one"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("verify: = %v, want the bullet merged at EOF", frags[0].Verify)
+	}
+}
+
+// An append against an entry with no verify: block writes nothing and counts
+// nothing, rather than guessing at a position.
+func TestSplice_AppendWithNoBlockIsNotCounted(t *testing.T) {
+	body := `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      page: p
+`
+	p := spliceFixture(t, body)
+	attached, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"orphan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attached != 0 {
+		t.Errorf("attached = %d, want 0 — there was no block to append to", attached)
+	}
+	got, _ := os.ReadFile(p)
+	if string(got) != body {
+		t.Errorf("the file was rewritten anyway:\n%s", got)
+	}
+}
