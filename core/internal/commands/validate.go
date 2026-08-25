@@ -1169,11 +1169,16 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// Feature = the build path's parent, relative to BuildRoot(). A path that
 	// is not under BuildRoot (a standalone file handed by absolute path, say)
 	// yields no feature, and the walkers stay quiet.
-	abs, err := filepath.Abs(path)
+	// Symlinks resolved on both sides, for the reason criteriaPresenceInputs
+	// documents: on macOS /tmp is a symlink to /private/tmp, so a file named
+	// through one against a root resolved through the other yields "../../.."
+	// and the feature fails to resolve — disabling both coverage walkers with
+	// no sign they were skipped.
+	abs, err := resolvePath(path)
 	if err != nil {
 		return in
 	}
-	feature, err := filepath.Rel(pctx.BuildRoot(), filepath.Dir(abs))
+	feature, err := filepath.Rel(resolvedOrSelf(pctx.BuildRoot()), filepath.Dir(abs))
 	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
 		return in
 	}

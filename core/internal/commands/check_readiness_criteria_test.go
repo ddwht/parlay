@@ -151,3 +151,30 @@ func TestValidate_CriteriaPresenceSkipsUnresolvablePaths(t *testing.T) {
 		t.Error("a path outside the intents tree resolved to a feature")
 	}
 }
+
+// The same symlink hazard in the sibling gatherer. A caller-supplied path is
+// the only one at risk — the other Rel-against-root sites compare paths derived
+// from walking the root itself, so both sides come from one source.
+func TestValidate_TestcasesCoverageInputsResolveThroughSymlinks(t *testing.T) {
+	dir := setupTestDir(t)
+	setupLedgerFeature(t, dir)
+	cmd := testCommandWithContext(t, testContext(t))
+
+	buildDir := testContext(t).BuildPath("my-feature")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tcPath := filepath.Join(buildDir, "testcases.yaml")
+	if err := os.WriteFile(tcPath, []byte("schema_version: 2\nfeature: my-feature\nsuites: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCriteriaFeature(t, filepath.Join(dir, "spec", "intents", "my-feature"), "", populatedCapabilities)
+
+	in := testcasesCoverageInputs(cmd, tcPath)
+	if len(in.CanonicalOperations) != 1 {
+		t.Errorf("operations not derived (%d) — the feature failed to resolve from the path", len(in.CanonicalOperations))
+	}
+	if len(in.Criteria) != 1 {
+		t.Errorf("criteria not derived (%d)", len(in.Criteria))
+	}
+}

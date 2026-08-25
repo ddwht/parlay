@@ -1127,3 +1127,85 @@ suites:
 		t.Error("the cross-kind rule fired on an operation suite citing its own operation")
 	}
 }
+
+// A legacy file — cases citing refs with no text — must report the cause once
+// per citation, not once per citation PLUS once per bullet on the entry. Every
+// testcases.yaml written before criterion identity is in this state, so the
+// multiplier would land on exactly the projects least able to act on it.
+func TestValidateTestcasesV2_TextlessCitationDoesNotAlsoReportEveryBullet(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: operation
+    operation: "@expenses/operation:report.submit"
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: stores the report
+        criterion:
+          ref: "@expenses/operation:report.submit"
+        steps:
+          - verify: text
+            target: report-store
+`)
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: content,
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},
+			{Ref: "@expenses/operation:report.submit", Text: "rejects a duplicate"},
+			{Ref: "@expenses/operation:report.submit", Text: "emits an audit row"},
+		},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if !findCode(outcomes, "testcases-criterion-text-missing") {
+		t.Fatalf("the cause was not reported: %+v", outcomes)
+	}
+	for _, o := range outcomes {
+		if o.Code == "verify-criterion-uncovered" {
+			t.Errorf("a bullet on the text-less entry was also reported uncovered, multiplying one cause: %q", o.Message)
+		}
+	}
+}
+
+// The suppression is scoped to the entry actually cited without a text. A
+// different entry's uncovered bullets must still be reported.
+func TestValidateTestcasesV2_TextlessSuppressionIsScopedToItsEntry(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: operation
+    operation: "@expenses/operation:report.submit"
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: stores the report
+        criterion:
+          ref: "@expenses/operation:report.submit"
+        steps:
+          - verify: text
+            target: report-store
+`)
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: content,
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+		},
+	}
+	var uncovered []string
+	for _, o := range ValidateTestcasesV2(ModeBuild, in) {
+		if o.Code == "verify-criterion-uncovered" {
+			uncovered = append(uncovered, o.Message)
+		}
+	}
+	if len(uncovered) != 1 {
+		t.Fatalf("expected the untouched fragment's bullet reported, got %d: %v", len(uncovered), uncovered)
+	}
+	if !strings.Contains(uncovered[0], "fragment:submit") {
+		t.Errorf("wrong entry reported: %q", uncovered[0])
+	}
+}

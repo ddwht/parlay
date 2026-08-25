@@ -562,15 +562,26 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 	// Reporting every citation as unknown there would be an artifact of the
 	// missing input rather than a fact about the file — the same reasoning
 	// TestcasesV2Input documents for the empty-input case.
+	//
+	// textlessEntries are entries some case cites without a text. Their bullets
+	// are deliberately NOT also reported uncovered: the citation genuinely
+	// discharges nothing, but the cause is already named once by
+	// testcases-criterion-text-missing, and repeating it per bullet turns one
+	// actionable fact into N+1 warnings. Every testcases.yaml written before
+	// criterion identity is in exactly this state, so that multiplier lands on
+	// precisely the projects with the least to gain from it. Nothing is hidden
+	// permanently: once the rebuild writes texts, any real gap surfaces.
+	textlessEntries := make(map[string]bool)
 	for _, c := range cited {
 		if len(in.Criteria) == 0 {
-			continue
+			break
 		}
 		switch {
 		case !declaredRefs[c.Ref]:
 			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-ref-unknown",
 				fmt.Sprintf("%s: a case cites criterion.ref %q, which no contract entry declares — check the ref against capabilities.yaml and surface.yaml", path, c.Ref)))
 		case c.Text == "":
+			textlessEntries[c.Ref] = true
 			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-text-missing",
 				fmt.Sprintf("%s: a case cites %q with no criterion.text — the text pins which of that entry's verify: bullets the case discharges, and without it coverage cannot be counted per criterion", path, c.Ref)))
 		case !declaredPairs[c]:
@@ -587,6 +598,9 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 	for _, c := range in.Criteria {
 		key := CriterionRef{Ref: c.Ref, Text: CanonicalCriterionText(c.Text)}
 		if criteriaCovered[key] || in.ExemptCriteria.Excuses(c) || reportedUncovered[key] {
+			continue
+		}
+		if textlessEntries[c.Ref] {
 			continue
 		}
 		reportedUncovered[key] = true
