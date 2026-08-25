@@ -67,7 +67,7 @@ operations:
 
 An operation with no `verify:` is reported at the designer→build boundary, and at `parlay validate --type capabilities`:
 
-| code | condition |
+| Code | Fires when |
 |---|---|
 | `capability-operation-no-criteria` (warning) | An operation carries no `verify:` at all. Nothing states its contract, so its operation suite has nothing to discharge. |
 

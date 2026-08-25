@@ -1,8 +1,15 @@
 # Surface Criteria Vacancy — Fix Plan (benchmark finding #7)
 
-**Status:** proposed, peer-reviewed. Written 2026-08-25; revised the same day
-after a review pass with Codex, which located a prerequisite defect (WS 0) the
-first draft not only missed but contradicted.
+**Status:** implemented, 2026-08-25. Written and peer-reviewed the same day; the
+review located a prerequisite defect (WS 0) the first draft not only missed but
+contradicted. Landed as `3d6bab3` (WS 0), `784b4a6` (WS A+B), `978dd64` (WS C),
+`3e25a05` (cross-kind), `0d0d23f` (WS D) here, and `506050d` in
+`parlay-benchmark` (WS E).
+
+One item in WS D has no automated form: B6's degradation — build-feature
+omitting a criteria-less suite and reporting it — is skill prose executed by an
+agent, so it is asserted by the graded batch's metrics rather than by a Go test.
+The gate half of it (vacancy warns without blocking) is covered.
 **Source:** `parlay-benchmark/docs/findings.md` §7 — "A surface fragment with no
 `verify:` is a silent hole that surfaces as a test defect", observed on
 `feature/phase-gates` (`ba01878`) in the 2026-08-25 Phase-0 batch.

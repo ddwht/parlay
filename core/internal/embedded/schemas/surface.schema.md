@@ -235,7 +235,7 @@ Unknown identifiers are errors. Missing Actions is allowed (pure display fragmen
 
 A fragment with no `verify:` is reported at the designer→build boundary, and at `parlay validate --type surface`:
 
-| code | condition |
+| Code | Fires when |
 |---|---|
 | `surface-fragment-no-criteria` (warning) | A fragment carries no `verify:` at all. Nothing states what it must do, so every presentation case written against it cites nothing. |
 | `feature-surface-no-criteria` (warning) | The feature has fragments and **none** of them carries `verify:` — the presentation contract is empty as a whole. The per-fragment code locates partial vacancy; this one reports total vacancy. |

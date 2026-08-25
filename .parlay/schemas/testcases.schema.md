@@ -344,7 +344,7 @@ Text comparison is normalized **narrowly**: surrounding whitespace and line endi
 
 Four diagnostics come out of this walker:
 
-| code | condition | fix |
+| Code | Fires when | Fix |
 |---|---|---|
 | `verify-criterion-uncovered` (warning) | a declared bullet no case discharges | write the case, or exempt the bullet |
 | `testcases-criterion-ref-unknown` (warning) | a case cites a ref no contract entry declares | correct the ref against `capabilities.yaml` / `surface.yaml` |
