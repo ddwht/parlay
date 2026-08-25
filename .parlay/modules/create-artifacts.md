@@ -176,11 +176,40 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 5. **Create the artifacts**:
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.yaml, validate)
-     - **Populate `verify:` on each fragment** (YAML form) with the acceptance criteria from the owning intent's **Verify** bullets that describe visible behavior — but only for intents no capabilities operation covers; an intent that produces an operation carries its criteria there instead. This is what testcase derivation reads; there is no fallback — a fragment whose criteria never land here has none.
+     - **Populate `verify:` on each fragment** (YAML form) with the owning intent's presentation claims, following **Routing acceptance criteria** below. Operation coverage of the intent does **not** exempt a fragment: an intent that produces an operation still contributes its presentation claims here. This is what testcase derivation reads for presentation suites; there is no fallback — a fragment whose criteria never land here has none, and every case written against it will cite nothing.
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
      - **Set `source:` on every operation** to the `@{feature}/{intent-slug}` refs it came from, the same way a surface fragment carries one. This is the only record of which intent an operation implements, and it is what lets a later change described in prose be routed to the operation that owns it. An operation without it can be found only by name similarity, which misses renames and matches things that merely sound alike.
-     - **Populate `verify:` on every operation** with the owning intent's **Verify** bullets that describe the operation's contract (input validation, side-effects, output shape, allowed errors). The acceptance criteria live on the operation from birth — testcase derivation reads them from here, not from intents.md.
+     - **Populate `verify:` on every operation** with the owning intent's contract claims, following **Routing acceptance criteria** below. The acceptance criteria live on the operation from birth — testcase derivation reads them from here, not from intents.md.
    - **If infrastructure**: guide the designer to author `infrastructure.md` — show the fragment format, the field set (Name, Source intent, Affects, Behavior, Invariants), and a worked example drawn from the matching architectural category (boundary, probe, allowlist, dependency pin)
+
+   **Routing acceptance criteria.** An intent's **Verify** bullets are split
+   between the fragments and the operations that source that intent. Route
+   **atomic claims, not whole bullets**: a real bullet routinely packs a
+   stimulus, a backend result and a piece of visible evidence into one
+   sentence, and routing the sentence by its dominant flavour either places it
+   arbitrarily or duplicates it wholesale.
+
+   1. Extract the independently testable claims from the bullet.
+   2. A claim about **user-observable presentation or output**, attributable to
+      a specific fragment, goes on that fragment.
+   3. A claim about the **transport-independent contract** — input validation,
+      state change, output shape, allowed errors — goes on the operation.
+   4. A sentence carrying both is **rewritten into separate criteria**, one per
+      destination. Never relocate the same sentence verbatim to both places: a
+      contract-shaped claim sitting on a fragment demands a display case that
+      cannot be written honestly, and the build phase will write a vacuous one
+      to discharge it.
+
+   *Whether an operation covers the intent is not an input to this.* Routing by
+   operation coverage is what produced features specified to have zero
+   presentation criteria: every intent produced an operation, so every claim
+   went to the operation, so every presentation case had nothing to cite.
+
+   **"Visible" does not imply a fragment.** A CLI or TUI feature with no
+   surface artifact has observable output and no fragment to carry it; there
+   its output claims stay on the operation. The rule places presentation claims
+   on a fragment *when the feature has fragments*, not wherever something is
+   observable.
    - **If domain-model**: write what this feature needs into the **feature's own** `spec/intents/{feature}/domain-model.yaml` — a *contribution*. Do **not** edit the project's root `domain-model.yaml` from a feature phase.
      - The contribution uses the same schema as the root model and holds **only what this feature proposes** — the new entities, the new fields on existing entities, the new enum values, the new relationships. It is not a copy of the root with edits.
      - The root model stays the source of truth. A contribution is a proposal: the loop reports it at the artifacts→build boundary, names which other features it affects, and the designer accepts it there. Editing the root directly from a feature phase is how one feature's need silently becomes every other feature's problem.

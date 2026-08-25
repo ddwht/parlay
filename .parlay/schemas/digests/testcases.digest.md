@@ -111,7 +111,7 @@ Tests should cover these categories (derived from buildfile):
 
 A case exists because a criterion demands it. Three per-case fields make that reason machine-checkable rather than prose:
 
-- **`criterion:`** — `{ref, text}`. `ref` cites the `verify:` entry the case discharges, in `@<feature>/<kind>:<name>` form (`kind` is `operation` or `fragment`); `text` pins the criterion's wording so a later edit to the contract shows up as drift here. A case in a v2 suite with no `criterion:` draws `testcases-case-criterion-missing` — a **warning** while the field lands, because every testcases.yaml predates it.
+- **`criterion:`** — `{ref, text}`. `ref` names the contract entry, in `@<feature>/<kind>:<name>` form (`kind` is `operation` or `fragment`); `text` pins **which of that entry's `verify:` bullets** the case discharges, and a later edit to the contract shows up here as `testcases-criterion-text-drift`. Both halves are load-bearing: the pair is the criterion's identity, and a `ref` with no `text` cannot say which bullet it covers (`testcases-criterion-text-missing`). A case in a v2 suite with no `criterion:` at all draws `testcases-case-criterion-missing` — a **warning** while the field lands, because every testcases.yaml predates it.
 - **`exercises:`** — the targets the case's steps must mutate. If a case declares `exercises:` and none of those targets appears as a step `target:`, the case acts on nothing it claims to and draws `testcases-case-vacuous`. This is what makes a ceremony test — one that satisfies a coverage count while asserting nothing — unauthorable rather than merely detectable.
 - **`observes:`** — the targets the case's expectations read. If a `verify:` step reads a `target:` outside the declared `observes:`, the case asserts on something its declaration does not admit and draws `testcases-case-claims-unmet`. The declaration and the mechanics cannot silently diverge.
 
@@ -275,11 +275,28 @@ The operation walker's subjects are fed from the feature's `capabilities.yaml`, 
 
 ### Criterion coverage walker
 
-The operation walker asks whether a *suite* exists per operation; the criterion walker asks whether a *case* exists per stated acceptance criterion. Every contract entry that carries a `verify:` list — an operation in `capabilities.yaml`, a fragment in `surface.yaml` — must be discharged by at least one case whose `criterion.ref` cites it, in `@<feature>/<kind>:<name>` form (`kind` is `operation` or `fragment`). The walker fires `verify-criterion-uncovered` for each entry that no case discharges and that `coverage-review.yaml` does not exempt.
+The operation walker asks whether a *suite* exists per operation; the criterion walker asks whether a *case* exists per stated acceptance criterion. Every **`verify:` bullet** a contract entry carries — an operation in `capabilities.yaml`, a fragment in `surface.yaml` — must be discharged by at least one case citing it, and that citation is the **pair** `criterion.ref` + `criterion.text`: the ref names the entry, in `@<feature>/<kind>:<name>` form (`kind` is `operation` or `fragment`), and the text pins which of that entry's bullets the case discharges.
 
-This is the coverage half of the criterion-driven design (§ Criterion-driven cases): cases are derived 1:1 from `verify:` entries, and this walker holds that derivation to account — a criterion the contract states but no case discharges is a gap in the suite, not in the contract. An entry may be excused by a `coverage-review.yaml` exemption whose `item:` is the criterion ref, the same human-review exemption the coverage-review gate honors.
+**Criterion identity is the (ref, text) pair, not the ref.** The ref alone cannot be an identity, because an entry with five `verify:` bullets has one ref: counting coverage by ref meant a single case marked all five discharged, and "cases come 1:1 from `verify:` entries" was unenforceable in the direction that mattered. Identity is text rather than an index or hash because the contract this file already states is that a wording edit invalidates the case citing the old wording — an index would survive the re-wording that is precisely the drift worth surfacing.
 
-`verify-criterion-uncovered` is a **warning** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. It graduates to an error once projects have rebuilt with criterion-carrying cases.
+Text comparison is normalized **narrowly**: surrounding whitespace and line endings only. It does not lowercase, collapse internal whitespace, or strip punctuation, since each of those can merge two materially distinct claims and report coverage the tests do not have.
+
+Four diagnostics come out of this walker:
+
+| code | condition | fix |
+|---|---|---|
+| `verify-criterion-uncovered` (warning) | a declared bullet no case discharges | write the case, or exempt the bullet |
+| `testcases-criterion-ref-unknown` (warning) | a case cites a ref no contract entry declares | correct the ref against `capabilities.yaml` / `surface.yaml` |
+| `testcases-criterion-text-missing` (warning) | a case cites a ref with no text | rebuild with `parlay build-feature`; this is what every pre-bullet-coverage file looks like |
+| `testcases-criterion-text-drift` (warning) | a case cites a known entry with a text matching none of its current bullets | the contract was reworded after the case was written, or the criterion was invented |
+
+A fifth, `verify-criterion-duplicate`, reports the contract rather than the testcases file: two identical bullets on one entry are indistinguishable under text identity and cannot be discharged separately, so they are an authoring defect to fix rather than a case to index around.
+
+A bullet may be excused by a `coverage-review.yaml` exemption. An exemption whose `item:` is the ref and whose `criterion_text:` is the bullet excuses exactly that bullet; an exemption with `item:` alone is **entry-wide**, which is how every exemption written before bullet-level coverage has to be read, since none could have recorded a text.
+
+All five are **warnings** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. They graduate to errors once projects have rebuilt with criterion-carrying cases.
+
+When no contract resolves at all, the citation checks are suppressed: with nothing declared every citation would look unknown, which is a fact about the missing input rather than about the file.
 
 ### Source refs requirement
 
@@ -304,4 +321,8 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 | `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
 | `testcases-case-criterion-missing` (warning) | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. Warning while the field lands — every testcases.yaml predates it. |
-| `verify-criterion-uncovered` (warning) | A contract entry (an operation or fragment carrying `verify:`) has no case whose `criterion.ref` discharges it and no `coverage-review.yaml` exemption. Warning while criterion-driven cases land — every testcases.yaml predates `criterion:`. |
+| `verify-criterion-uncovered` (warning) | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-review.yaml` exemption. Counted per bullet, not per entry. Warning while criterion-driven cases land — every testcases.yaml predates `criterion:`. |
+| `testcases-criterion-ref-unknown` (warning) | A case cites a `criterion.ref` no contract entry declares. |
+| `testcases-criterion-text-missing` (warning) | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. What every file written before bullet-level coverage looks like; the fix is a rebuild. |
+| `testcases-criterion-text-drift` (warning) | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |
+| `verify-criterion-duplicate` (warning) | A contract entry declares the same `verify:` bullet twice. Two identical bullets cannot be discharged separately; fix the contract rather than indexing around them. |

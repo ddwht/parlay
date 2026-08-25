@@ -188,3 +188,59 @@ func TestSweepFeatures_IntentsOnlyIsNotYetGated(t *testing.T) {
 		t.Errorf("an intents-only feature has no boundary to gate yet; row=%+v", rows[0])
 	}
 }
+
+// The build gate reports criteria vacancy and still passes.
+//
+// Both halves matter. Reporting it is the point: the vacancy is invisible to
+// every downstream coverage walker, which ask whether STATED criteria are
+// discharged. Passing is the transition policy — grading the aggregate an
+// error would convert it into a blocker here and stop every feature authored
+// under the pre-v0.5.x routing rule before its owner had any way forward.
+func TestGate_Build_CriteriaVacancyWarnsWithoutBlocking(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+
+	// The observed shape: every intent covered by an operation carrying
+	// criteria, every fragment left with none.
+	surface := `feature: my-feature
+fragments:
+  - name: Customers list
+    shows: list-of-items
+    source: "@my-feature/browse-customers"
+    page: customers
+    region: main
+  - name: Customer detail
+    shows: detail-of-one-item
+    source: "@my-feature/browse-customers"
+    page: customers
+    region: aside
+`
+	capabilities := `feature: my-feature
+operations:
+  - id: customer.list
+    kind: query
+    source: "@my-feature/browse-customers"
+    verify:
+      - "returns customers in name order"
+`
+	if err := os.WriteFile(filepath.Join(featureDir, "surface.yaml"), []byte(surface), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"), []byte(capabilities), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(testContext(t), "my-feature", gateStageBuild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Warnings, "surface-fragment-no-criteria") {
+		t.Errorf("the build gate did not report the vacant fragments; warnings: %+v", out.Warnings)
+	}
+	if !gateHasCode(out.Warnings, "feature-surface-no-criteria") {
+		t.Errorf("the build gate did not report the vacant surface; warnings: %+v", out.Warnings)
+	}
+	if gateHasCode(out.Blockers, "surface-fragment-no-criteria") || gateHasCode(out.Blockers, "feature-surface-no-criteria") {
+		t.Errorf("criteria vacancy blocked the gate; it must warn while projects migrate: %+v", out.Blockers)
+	}
+}

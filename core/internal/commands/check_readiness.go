@@ -333,6 +333,13 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 		}
 	}
 
+	// Criteria presence. An entry carrying no verify: is invisible to every
+	// coverage walker downstream — they check whether stated criteria are
+	// discharged, and an entry states none — so the boundary is the last place
+	// the omission is cheap. Reported here rather than in the gate because the
+	// gate aggregates this function, so wiring it once covers both.
+	issues = append(issues, criteriaPresenceIssues(featurePath, fragments)...)
+
 	// Open questions are warnings, not errors — agent decides whether to block
 	driftOrQuestions, _ := collectForFeature(cfg, slug)
 	if driftOrQuestions != nil && driftOrQuestions.Count > 0 {
@@ -444,4 +451,37 @@ func isNewSchemaFormat(path string) bool {
 		return false
 	}
 	return strings.Contains(content, "**Affects**:")
+}
+
+// criteriaPresenceIssues runs the criteria-presence walker over a feature's
+// contract and maps its findings into readiness issues.
+//
+// Fragments are passed in rather than re-parsed: the caller has already loaded
+// and validated them, and re-reading would let the two disagree about the same
+// file. capabilities.yaml is loaded here because nothing upstream needed it.
+func criteriaPresenceIssues(featurePath string, fragments []parser.Fragment) []readinessIssue {
+	in := agent.CriteriaPresenceInput{
+		HasSurface: parser.ResolveSurfacePath(featurePath) != "",
+		Fragments:  fragments,
+	}
+	if caps, err := parser.ParseCapabilities(filepath.Join(featurePath, "capabilities.yaml")); err == nil {
+		in.Operations = caps.Operations
+	}
+
+	var issues []readinessIssue
+	for _, o := range agent.ValidateCriteriaPresence(agent.ModeBuild, in) {
+		issue := readinessIssue{
+			Severity: string(o.Severity),
+			Code:     o.Code,
+			Message:  o.Message,
+		}
+		switch o.Code {
+		case "surface-fragment-no-criteria", "feature-surface-no-criteria":
+			issue.Fix = "add the owning intent's presentation claims to the fragment's verify:, or run /parlay-refine to route them; `parlay migrate-verify --fragments` can seed them for a project that predates relocation"
+		case "capability-operation-no-criteria":
+			issue.Fix = "add the owning intent's contract claims to the operation's verify:, or run `parlay migrate-verify`"
+		}
+		issues = append(issues, issue)
+	}
+	return issues
 }

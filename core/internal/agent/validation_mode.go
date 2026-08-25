@@ -104,6 +104,29 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// The criteria-presence findings (validate_criteria_presence.go). Warnings
+	// in both modes for the first release, and this one is not merely the usual
+	// backward-compatibility grace: readiness converts a ModeBuild error into a
+	// GATE BLOCKER, so grading the aggregate an error would stop every legacy
+	// all-vacant surface at the boundary before its owner had any way forward.
+	//
+	// The transition is handled where it can be handled gracefully instead:
+	// build-feature omits a suite whose source entry has no criteria and reports
+	// the omission, rather than emitting cases that cite nothing. Warning here
+	// plus an unconditional hard stop there would have been the same breaking
+	// change arriving later and reported worse.
+	"surface-fragment-no-criteria": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"capability-operation-no-criteria": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"feature-surface-no-criteria": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// A duplicated verify: bullet is an authoring defect in the CONTRACT, not
 	// in the testcases file being validated, so it warns rather than failing a
 	// file its author may not own.

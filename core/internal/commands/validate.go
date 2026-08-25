@@ -176,7 +176,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// affects resolution) live in `parlay internal check-amendments`.
 		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateAmendment)
 	case "surface":
-		validator = agent.ValidateSurface
+		// The presence walker is cross-artifact — it reads capabilities.yaml
+		// alongside the surface — so it cannot ride inside ValidateSurface,
+		// whose signature sees one file's bytes. Gathered here and reported
+		// beside the per-file result.
+		validator = withCriteriaPresence(cmd, agent.ValidateSurface)
 	case "buildfile":
 		validator = agent.ValidateBuildfile
 	case "blueprint":
@@ -244,9 +248,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// regression run to ship placeholders.
 		entities := declaredCapabilityEntities(cmd)
 		proposed := proposedCapabilityEntities(cmd)
-		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
+		// Presence runs for capabilities too, not only for surface. Wiring it
+		// to one artifact type would make the same cross-artifact condition
+		// appear or vanish depending on which file the author happened to
+		// validate.
+		validator = withCriteriaPresence(cmd, reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
 			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
-		})
+		}))
 	case "coverage-review":
 		// coverage-review validation is hash-aware and needs full inputs;
 		// surface a minimal YAML-shape check here.
@@ -1307,4 +1315,60 @@ func validateDomainModelAdapter(path string, content []byte) error {
 	}
 	return fmt.Errorf("domain-model.yaml validation failed: %d issue(s)\n  %s",
 		len(msgs), strings.Join(msgs, "\n  "))
+}
+
+// withCriteriaPresence wraps a per-file validator so that validating a
+// feature's surface.yaml or capabilities.yaml also reports contract entries
+// carrying no verify: at all.
+//
+// The findings go to stderr as warnings rather than into the wrapped
+// validator's error, because they are facts about the FEATURE's contract
+// rather than about the file's own shape — a fragment missing criteria does
+// not make surface.yaml invalid, and failing the file for it would block a
+// validate the author ran for an unrelated reason.
+//
+// When the file is not under a resolvable feature (a standalone path, no
+// project context), presence is skipped: the walker would have no contract to
+// read and its silence would be an artifact of the missing input.
+func withCriteriaPresence(cmd *cobra.Command, inner func(string, []byte) error) func(string, []byte) error {
+	return func(path string, content []byte) error {
+		if in, ok := criteriaPresenceInputs(cmd, path); ok {
+			for _, o := range agent.ValidateCriteriaPresence(agent.ModeAuthoring, in) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "[WARN] %s: %s\n", o.Code, o.Message)
+			}
+		}
+		return inner(path, content)
+	}
+}
+
+// criteriaPresenceInputs resolves the feature owning path and loads its
+// contract. The bool reports whether a feature resolved at all.
+func criteriaPresenceInputs(cmd *cobra.Command, path string) (agent.CriteriaPresenceInput, bool) {
+	var in agent.CriteriaPresenceInput
+
+	pctx := config.FromCtx(cmd.Context())
+	if pctx == nil {
+		return in, false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return in, false
+	}
+	feature, err := filepath.Rel(pctx.IntentsRoot(), filepath.Dir(abs))
+	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
+		return in, false
+	}
+	featureDir := pctx.FeaturePath(feature)
+
+	in.Feature = feature
+	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
+		in.HasSurface = true
+		if frags, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
+			in.Fragments = frags
+		}
+	}
+	if caps, cErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); cErr == nil {
+		in.Operations = caps.Operations
+	}
+	return in, true
 }
