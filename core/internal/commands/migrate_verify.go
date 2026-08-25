@@ -307,8 +307,8 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 		// The write did not complete successfully, so the tool cannot claim the
 		// intent was routed. Deliberately not "nothing reached disk": os.WriteFile
 		// truncates before it writes, so a failure can leave the file empty or
-		// partial, and a comment promising the file is untouched would send a
-		// reader looking for a recovery step they still need.
+		// partial, and a comment promising the file is untouched would make a
+		// reader skip the recovery step they still need.
 		//
 		// Today every caller aborts on this error and no false output escapes,
 		// but that makes the helper's contract true by the caller's behaviour
@@ -393,8 +393,8 @@ func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, cover
 		// The write did not complete successfully, so the tool cannot claim the
 		// intent was routed. Deliberately not "nothing reached disk": os.WriteFile
 		// truncates before it writes, so a failure can leave the file empty or
-		// partial, and a comment promising the file is untouched would send a
-		// reader looking for a recovery step they still need.
+		// partial, and a comment promising the file is untouched would make a
+		// reader skip the recovery step they still need.
 		//
 		// Today every caller aborts on this error and no false output escapes,
 		// but that makes the helper's contract true by the caller's behaviour

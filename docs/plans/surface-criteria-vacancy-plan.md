@@ -436,7 +436,7 @@ unenforced.
 5. WS D throughout; WS E once a binary carrying WS 0+A+B exists to point
    `expect_fixed_from` at.
 
-## Open decisions
+## Resolved decisions
 
 1. ~~When does `feature-surface-no-criteria` graduate to an error?~~
    **Decided 2026-08-25: it graduates now.** `ModeBuild` error, `ModeAuthoring`
