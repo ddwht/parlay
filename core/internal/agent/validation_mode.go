@@ -127,6 +127,14 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A presentation case citing an operation criterion it never invokes.
+	// Warning with the rest of the criterion family, and for the same reason:
+	// files predating criterion identity cite refs without texts and would
+	// trip this alongside everything else on their first revalidation.
+	"testcases-cross-kind-criterion-unexercised": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// A duplicated verify: bullet is an authoring defect in the CONTRACT, not
 	// in the testcases file being validated, so it warns rather than failing a
 	// file its author may not own.

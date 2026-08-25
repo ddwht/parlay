@@ -137,9 +137,10 @@ type caseCriterion struct {
 // verify: bullets against. It is collected here rather than re-decoded in the
 // caller because the criterion node is already decoded for the missing-ref
 // check.
-func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, cases []map[string]yaml.Node) ([]ValidationOutcome, []CriterionRef) {
+func validateSuiteCases(mode ValidationMode, path, suiteName, suiteKind string, cases []map[string]yaml.Node) ([]ValidationOutcome, []CriterionRef) {
 	var outcomes []ValidationOutcome
 	var criterionRefs []CriterionRef
+	isV2 := suiteKind != ""
 	for i, c := range cases {
 		label := fmt.Sprintf("case %d", i+1)
 		if nameNode, ok := c["name"]; ok {
@@ -157,6 +158,7 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 
 		// A v2 case with no criterion records nothing about why it exists.
 		// Warning while the field lands — every testcases.yaml predates it.
+		var citedRef string
 		if isV2 {
 			var crit caseCriterion
 			if node, ok := c["criterion"]; !ok {
@@ -166,8 +168,9 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
 					fmt.Sprintf("%s: suite %q %s has a criterion: with no ref — the ref cites the @feature/kind:name verify: entry the case discharges", path, suiteName, label)))
 			} else {
+				citedRef = strings.TrimSpace(crit.Ref)
 				criterionRefs = append(criterionRefs, CriterionRef{
-					Ref:  strings.TrimSpace(crit.Ref),
+					Ref:  citedRef,
 					Text: CanonicalCriterionText(crit.Text),
 				})
 			}
@@ -237,6 +240,29 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",
 					fmt.Sprintf("%s: suite %q %s step %d declares neither action: nor verify: — a step either does something or asserts something", path, suiteName, label, j+1)))
 			}
+		}
+
+		// Cross-kind citation: a presentation case may cite an operation's
+		// criterion, but only when it actually invokes that operation.
+		//
+		// The suite's kind need not equal its criterion's owner — an operation
+		// criterion can legitimately be observed end-to-end through the UI. What
+		// this stops is the operation ref used as a SUBSTITUTE for a display
+		// claim the fragment never stated, which is the tempting move when a
+		// fragment carries no verify: at all.
+		//
+		// Only invocation is mechanizable. Whether the criterion is
+		// contract-shaped, and so suitable for the presentation case citing it,
+		// needs classification metadata that criteria do not carry; that half
+		// stays an authoring rule in build-feature and a job for review.
+		//
+		// Membership is exact and deliberately not routed through exercises:.
+		// The vacuity walker below fires only when NO step targets ANY declared
+		// exercise, so listing the operation there proves nothing about the
+		// steps.
+		if SuiteKind(suiteKind) == SuiteKindPresentation && strings.Contains(citedRef, "/operation:") && !stepTargets[citedRef] {
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-cross-kind-criterion-unexercised",
+				fmt.Sprintf("%s: presentation suite %q %s cites the operation criterion %q but no step targets that operation — a presentation case may discharge an operation's criterion only by invoking it, not as a stand-in for a display criterion the fragment never stated", path, suiteName, label, citedRef)))
 		}
 
 		// Vacuity: a case that names things it exercises but touches none of
@@ -416,7 +442,7 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 		// discriminator check and for legacy suites too — putting it after the
 		// `continue` below would have silently exempted every v1 suite, which is
 		// most of what exists in projects today.
-		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind != "", suite.Cases)
+		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind, suite.Cases)
 		outcomes = append(outcomes, caseOutcomes...)
 		for _, ref := range refs {
 			criteriaCovered[ref] = true

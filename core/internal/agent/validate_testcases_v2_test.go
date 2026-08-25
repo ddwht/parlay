@@ -1021,3 +1021,109 @@ func TestValidateTestcasesV2_LegacyExemptionStaysEntryWide(t *testing.T) {
 		t.Error("a legacy ref-only exemption stopped excusing its entry's bullets")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Cross-kind criterion citation. A presentation suite may discharge an
+// operation's criterion, but only by invoking that operation — not as a
+// stand-in for a display criterion the fragment never stated.
+// ---------------------------------------------------------------------------
+
+// The fixture the repo did not have: a case whose step targets a canonical
+// operation ref. Every existing case targets a component name like
+// "submit-button", so the mechanism this check relies on was unexercised as
+// well as unenforced.
+func TestValidateTestcasesV2_PresentationCaseMayInvokeAnOperation(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting through the form stores the report
+        criterion:
+          ref: "@expenses/operation:report.submit"
+          text: "stores the report"
+        exercises: ["@expenses/operation:report.submit"]
+        observes: ["report-store"]
+        steps:
+          - action: click
+            target: "@expenses/operation:report.submit"
+          - verify: text
+            target: report-store
+`)
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if findCode(outcomes, "testcases-cross-kind-criterion-unexercised") {
+		t.Errorf("a presentation case that invokes the operation was rejected: %+v", outcomes)
+	}
+	if findCode(outcomes, "verify-criterion-uncovered") {
+		t.Errorf("the invoked operation criterion was not counted as discharged: %+v", outcomes)
+	}
+}
+
+// The substitution this exists to catch: a fragment states no criteria, so the
+// presentation case reaches for the operation's instead and never touches it.
+func TestValidateTestcasesV2_PresentationCaseCitingAnUninvokedOperation(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: the form renders
+        criterion:
+          ref: "@expenses/operation:report.submit"
+          text: "stores the report"
+        observes: ["title"]
+        steps:
+          - verify: text
+            target: title
+`)
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+	}
+	if !findCode(ValidateTestcasesV2(ModeBuild, in), "testcases-cross-kind-criterion-unexercised") {
+		t.Fatal("a presentation case citing an operation it never invokes was accepted")
+	}
+}
+
+// An operation suite citing its own operation is the ordinary case and must not
+// be caught by the cross-kind rule.
+func TestValidateTestcasesV2_OperationSuiteCitingItsOwnOperation(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: operation
+    operation: "@expenses/operation:report.submit"
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: stores the report
+        criterion:
+          ref: "@expenses/operation:report.submit"
+          text: "stores the report"
+        observes: ["report-store"]
+        steps:
+          - verify: text
+            target: report-store
+`)
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+	}
+	if findCode(ValidateTestcasesV2(ModeBuild, in), "testcases-cross-kind-criterion-unexercised") {
+		t.Error("the cross-kind rule fired on an operation suite citing its own operation")
+	}
+}

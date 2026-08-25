@@ -290,6 +290,14 @@ Four diagnostics come out of this walker:
 | `testcases-criterion-text-missing` (warning) | a case cites a ref with no text | rebuild with `parlay build-feature`; this is what every pre-bullet-coverage file looks like |
 | `testcases-criterion-text-drift` (warning) | a case cites a known entry with a text matching none of its current bullets | the contract was reworded after the case was written, or the criterion was invented |
 
+### Cross-kind citation
+
+A suite's `kind:` need not equal its criterion's owner. A presentation case may discharge an **operation's** criterion — an operation contract can legitimately be observed end-to-end through the UI — but only by **invoking that operation**: one of the case's steps must have the operation's ref as its `target:`. A presentation case citing an operation ref that no step targets draws `testcases-cross-kind-criterion-unexercised` (warning).
+
+What this stops is the operation ref used as a **substitute** for a display criterion the fragment never stated — the tempting move when a fragment carries no `verify:` at all. It compiles every display claim down to a store assertion, permanently and without the `coverage: state-only` stamp that exists to record exactly that downgrade.
+
+Only invocation is checkable. Whether the cited criterion is *contract-shaped*, and so suitable for the presentation case citing it, needs classification metadata criteria do not carry; that half is an authoring rule (`/parlay-build-feature`) and a job for review. Membership is tested directly against the case's step targets rather than through `exercises:`, because the vacuity walker fires only when *no* step targets *any* declared exercise — so listing the operation in `exercises:` proves nothing about the steps.
+
 A fifth, `verify-criterion-duplicate`, reports the contract rather than the testcases file: two identical bullets on one entry are indistinguishable under text identity and cannot be discharged separately, so they are an authoring defect to fix rather than a case to index around.
 
 A bullet may be excused by a `coverage-review.yaml` exemption. An exemption whose `item:` is the ref and whose `criterion_text:` is the bullet excuses exactly that bullet; an exemption with `item:` alone is **entry-wide**, which is how every exemption written before bullet-level coverage has to be read, since none could have recorded a text.
@@ -325,4 +333,5 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 | `testcases-criterion-ref-unknown` (warning) | A case cites a `criterion.ref` no contract entry declares. |
 | `testcases-criterion-text-missing` (warning) | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. What every file written before bullet-level coverage looks like; the fix is a rebuild. |
 | `testcases-criterion-text-drift` (warning) | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |
+| `testcases-cross-kind-criterion-unexercised` (warning) | A presentation case cites an operation's criterion but no step targets that operation — the ref is standing in for a display criterion rather than discharging a contract one. |
 | `verify-criterion-duplicate` (warning) | A contract entry declares the same `verify:` bullet twice. Two identical bullets cannot be discharged separately; fix the contract rather than indexing around them. |
