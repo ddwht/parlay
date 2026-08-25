@@ -1350,11 +1350,15 @@ func criteriaPresenceInputs(cmd *cobra.Command, path string) (agent.CriteriaPres
 	if pctx == nil {
 		return in, false
 	}
-	abs, err := filepath.Abs(path)
+	// Both sides go through EvalSymlinks before Rel. On macOS /tmp is a symlink
+	// to /private/tmp, so a file named through one and a root resolved through
+	// the other produce a Rel of "../../..." and the feature silently fails to
+	// resolve — the check would then skip with no sign it had.
+	abs, err := resolvePath(path)
 	if err != nil {
 		return in, false
 	}
-	feature, err := filepath.Rel(pctx.IntentsRoot(), filepath.Dir(abs))
+	feature, err := filepath.Rel(resolvedOrSelf(pctx.IntentsRoot()), filepath.Dir(abs))
 	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
 		return in, false
 	}
@@ -1371,4 +1375,22 @@ func criteriaPresenceInputs(cmd *cobra.Command, path string) (agent.CriteriaPres
 		in.Operations = caps.Operations
 	}
 	return in, true
+}
+
+// resolvePath makes a path absolute and resolves any symlinks in it.
+func resolvePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return resolvedOrSelf(abs), nil
+}
+
+// resolvedOrSelf resolves symlinks, falling back to the input when it cannot —
+// a path that does not exist yet is not a reason to give up on comparing it.
+func resolvedOrSelf(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
