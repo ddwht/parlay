@@ -297,11 +297,16 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 	}
 	res, err := spliceAfterSourceLines(path, inserts)
 	if err != nil {
-		// Nothing reached disk, so nothing is routed. Today every caller aborts
-		// on this error and no false output escapes, but that makes the
-		// helper's contract true by the caller's behaviour rather than by
-		// construction — and a future caller that tolerates the error to
-		// continue with the next feature would silently inherit the bug.
+		// The write did not complete successfully, so the tool cannot claim the
+		// intent was routed. Deliberately not "nothing reached disk": os.WriteFile
+		// truncates before it writes, so a failure can leave the file empty or
+		// partial, and a comment promising the file is untouched would send a
+		// reader looking for a recovery step they still need.
+		//
+		// Today every caller aborts on this error and no false output escapes,
+		// but that makes the helper's contract true by the caller's behaviour
+		// rather than by construction — and a future caller that tolerates the
+		// error to continue with the next feature would silently inherit the bug.
 		return res, err
 	}
 	markCovered(covered, perEntrySlugs, res)
@@ -309,8 +314,9 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 }
 
 // markCovered records an intent as routed only for entries the splice actually
-// handled. Callers must not call it when the splice returned an error: nothing
-// reached disk, so nothing is routed.
+// handled. Callers must not call it when the splice returned an error: the write
+// did not complete successfully, so no intent can be claimed as routed (the file
+// may also be empty or partial — os.WriteFile truncates before writing).
 //
 // Accounting used to happen while the inserts were being built, before anything
 // was written. An entry the splice then declined — a flow-sequence verify: it
@@ -377,11 +383,16 @@ func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, cover
 	}
 	res, err := spliceAfterSourceLines(path, inserts)
 	if err != nil {
-		// Nothing reached disk, so nothing is routed. Today every caller aborts
-		// on this error and no false output escapes, but that makes the
-		// helper's contract true by the caller's behaviour rather than by
-		// construction — and a future caller that tolerates the error to
-		// continue with the next feature would silently inherit the bug.
+		// The write did not complete successfully, so the tool cannot claim the
+		// intent was routed. Deliberately not "nothing reached disk": os.WriteFile
+		// truncates before it writes, so a failure can leave the file empty or
+		// partial, and a comment promising the file is untouched would send a
+		// reader looking for a recovery step they still need.
+		//
+		// Today every caller aborts on this error and no false output escapes,
+		// but that makes the helper's contract true by the caller's behaviour
+		// rather than by construction — and a future caller that tolerates the
+		// error to continue with the next feature would silently inherit the bug.
 		return res, err
 	}
 	markCovered(covered, perEntrySlugs, res)
