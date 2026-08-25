@@ -98,7 +98,7 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(out, "(dry run — no files written)")
 	}
 
-	totalOps, totalFrags, totalUnrouted, totalVacant := 0, 0, 0, 0
+	totalOps, totalFrags, totalUnrouted, totalVacant, totalFlowSkipped := 0, 0, 0, 0, 0
 	for _, featDir := range featureDirs {
 		feature, _ := filepath.Rel(intentsRoot, featDir)
 
@@ -158,15 +158,22 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if opsAttached+fragsAttached == 0 && len(unrouted) == 0 && len(vacant) == 0 {
+		flowSkipped := append(append([]int{}, opsAttached.FlowSkipped...), fragsAttached.FlowSkipped...)
+		if opsAttached.Attached+fragsAttached.Attached == 0 && len(unrouted) == 0 &&
+			len(vacant) == 0 && len(flowSkipped) == 0 {
 			continue
 		}
 		fmt.Fprintf(out, "  %s\n", feature)
-		if opsAttached > 0 {
-			fmt.Fprintf(out, "    verify: attached to %d operation(s)\n", opsAttached)
+		if opsAttached.Attached > 0 {
+			fmt.Fprintf(out, "    verify: attached to %d operation(s)\n", opsAttached.Attached)
 		}
-		if fragsAttached > 0 {
-			fmt.Fprintf(out, "    verify: attached to %d fragment(s)\n", fragsAttached)
+		if fragsAttached.Attached > 0 {
+			fmt.Fprintf(out, "    verify: attached to %d fragment(s)\n", fragsAttached.Attached)
+		}
+		if len(flowSkipped) > 0 {
+			fmt.Fprintf(out, "    skipped: %d entry(ies) whose verify: is a flow sequence "+
+				"(verify: [a, b]) — bullets cannot be merged into one line-wise; convert it to a block list, or edit it by hand\n",
+				len(flowSkipped))
 		}
 		for _, slug := range unrouted {
 			fmt.Fprintf(out, "    unrouted: %s (no operation or fragment sources it)\n", slug)
@@ -174,14 +181,18 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 		for _, name := range vacant {
 			fmt.Fprintf(out, "    no criteria: fragment %q still carries no verify:\n", name)
 		}
-		totalOps += opsAttached
-		totalFrags += fragsAttached
+		totalOps += opsAttached.Attached
+		totalFrags += fragsAttached.Attached
+		totalFlowSkipped += len(flowSkipped)
 		totalUnrouted += len(unrouted)
 		totalVacant += len(vacant)
 	}
 
 	fmt.Fprintf(out, "Operations gaining verify: %d\nFragments gaining verify: %d\nUnrouted intents (bullets left in intents.md only): %d\nFragments still without criteria: %d\n",
 		totalOps, totalFrags, totalUnrouted, totalVacant)
+	if totalFlowSkipped > 0 {
+		fmt.Fprintf(out, "Entries skipped (flow-sequence verify:): %d\n", totalFlowSkipped)
+	}
 	if totalVacant > 0 && !migrateVerifyFragments {
 		fmt.Fprintln(out, "\nA fragment with no verify: has nothing for a presentation case to cite, and")
 		fmt.Fprintln(out, "nothing downstream reports it as missing — the coverage walkers ask whether")
@@ -253,78 +264,111 @@ func walkIntentFeatureDirs(root string) ([]string, error) {
 // which do not already carry verify:. Marks matched slugs covered — including
 // for operations that already had verify:, since the relocation for those
 // evidently happened.
-func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, covered map[string]bool) (int, error) {
+func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, covered map[string]bool) (spliceResult, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return 0, nil
+		return spliceResult{}, nil
 	}
 	caps, err := parser.ParseCapabilities(path)
 	if err != nil {
-		return 0, err
+		return spliceResult{}, err
 	}
 	// Occurrence-ordered inserts: entry i corresponds to the i-th `source:`
 	// line in the file, because yaml preserves list order, `source:` appears
 	// only on operations in this artifact, and operations without the key
 	// contribute no line (so they are excluded here too).
 	var inserts []verifyInsert
+	var perEntrySlugs [][]string
 	for _, op := range caps.Operations {
 		if op.Source == "" {
 			continue
 		}
 		slugs := slugsFromSourceRefs(op.Source)
-		var merged []string
+		var merged, claimed []string
 		for _, s := range slugs {
 			if b, ok := bullets[s]; ok {
-				covered[s] = true
+				claimed = append(claimed, s)
 				if len(op.Verify) == 0 {
 					merged = append(merged, b...)
 				}
 			}
 		}
-		inserts = append(inserts, verifyInsert{NewBlock: dedupeBullets(nil, merged)})
+		perEntrySlugs = append(perEntrySlugs, claimed)
+		inserts = append(inserts, verifyInsert{Bullets: dedupeBullets(op.Verify, merged)})
 	}
-	return spliceAfterSourceLines(path, inserts)
+	res, err := spliceAfterSourceLines(path, inserts)
+	markCovered(covered, perEntrySlugs, res)
+	return res, err
+}
+
+// markCovered records an intent as routed only for entries the splice actually
+// handled.
+//
+// Accounting used to happen while the inserts were being built, before anything
+// was written. An entry the splice then declined — a flow-sequence verify: it
+// cannot merge into line-wise — still had its intent marked routed, so the
+// bullets went nowhere and the run reported neither an attachment nor an
+// unrouted intent. Marking after the fact keeps a declined entry visible as
+// work still to do.
+func markCovered(covered map[string]bool, perEntrySlugs [][]string, res spliceResult) {
+	skipped := make(map[int]bool, len(res.FlowSkipped))
+	for _, occ := range res.FlowSkipped {
+		skipped[occ] = true
+	}
+	for occ, slugs := range perEntrySlugs {
+		if skipped[occ] {
+			continue
+		}
+		for _, s := range slugs {
+			covered[s] = true
+		}
+	}
 }
 
 // spliceVerifyIntoSurfaceYAML does the same for surface.yaml fragments.
 // Legacy surface.md is deliberately not handled — it is itself pending
 // migration to the YAML form.
-func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, covered map[string]bool) (int, error) {
+func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, covered map[string]bool) (spliceResult, error) {
 	if len(bullets) == 0 {
-		return 0, nil
+		return spliceResult{}, nil
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return 0, nil
+		return spliceResult{}, nil
 	}
 	frags, err := parser.LoadSurfaceYAML(path)
 	if err != nil {
-		return 0, err
+		return spliceResult{}, err
 	}
 	var inserts []verifyInsert
+	var perEntrySlugs [][]string
 	for _, f := range frags {
 		if f.Source == "" {
 			inserts = append(inserts, verifyInsert{})
+			perEntrySlugs = append(perEntrySlugs, nil)
 			continue
 		}
 		slugs := slugsFromSourceRefs(f.Source)
-		var merged []string
+		var merged, claimed []string
 		for _, s := range slugs {
 			if b, ok := bullets[s]; ok {
-				covered[s] = true
+				claimed = append(claimed, s)
 				merged = append(merged, b...)
 			}
 		}
+		perEntrySlugs = append(perEntrySlugs, claimed)
 		// De-duplicated against what the fragment already carries, which is what
 		// keeps a second run a no-op now that a non-empty entry is merged into
 		// rather than skipped wholesale. Skipping was the old idempotence; with
 		// merging, de-duplication has to supply it.
-		merged = dedupeBullets(f.Verify, merged)
-		if len(f.Verify) == 0 {
-			inserts = append(inserts, verifyInsert{NewBlock: merged})
-			continue
-		}
-		inserts = append(inserts, verifyInsert{Append: merged})
+		//
+		// Whether these bullets become a new block or join an existing one is
+		// the splice's call, made from the parsed document. Deciding it here on
+		// len(f.Verify) is what wrote a duplicate `verify:` key into an entry
+		// whose key existed but was empty.
+		inserts = append(inserts, verifyInsert{Bullets: dedupeBullets(f.Verify, merged)})
 	}
-	return spliceAfterSourceLines(path, inserts)
+	res, err := spliceAfterSourceLines(path, inserts)
+	markCovered(covered, perEntrySlugs, res)
+	return res, err
 }
 
 // dedupeBullets drops bullets already present in `existing`, and any repeated
@@ -348,169 +392,223 @@ func dedupeBullets(existing, add []string) []string {
 	return out
 }
 
-// verifyInsert is what one contract entry gets from a migration pass.
+// verifyInsert is the bullets one contract entry gains from a migration pass.
 //
-// Two kinds, because an entry with no verify: needs a whole block written after
-// its source: line, while an entry that already has one needs its missing
-// bullets merged into the block it has. The original migrator only had the
-// first: it skipped an entry carrying any verify: wholesale, which is what made
-// it idempotent and also what made `--fragments` impossible to express — a
-// fragment with one criterion could never gain a second.
+// It carries bullets only. Whether they become a fresh `verify:` block or are
+// merged into an existing one is decided by the splice, from the parsed
+// document — not by the caller from len(entry.Verify). That distinction is the
+// origin of a real defect: `verify: []` and `verify:` both parse to zero
+// bullets while the KEY exists, so a caller deciding on emptiness wrote a
+// second `verify:` key into the entry and the file stopped parsing.
 type verifyInsert struct {
-	// NewBlock writes a fresh verify: block after the entry's source: line.
-	NewBlock []string
-	// Append merges bullets into the entry's existing verify: block.
-	Append []string
+	Bullets []string
 }
 
-func (v verifyInsert) empty() bool { return len(v.NewBlock) == 0 && len(v.Append) == 0 }
+func (v verifyInsert) empty() bool { return len(v.Bullets) == 0 }
 
-// spliceAfterSourceLines applies inserts[i] to the i-th contract entry, keyed
-// on the i-th line whose first key is `source:`. A new block's verify: key sits
-// at the same indent as source:, bullets two deeper; an append lands after the
-// last bullet of the entry's existing verify: block. Returns how many entries
-// were touched.
+// spliceResult reports what a splice did, including what it declined to do.
+type spliceResult struct {
+	Attached int
+	// FlowSkipped are occurrence indices whose verify: is a flow sequence
+	// (`verify: [a, b]`). Line-wise appending cannot express a merge into one,
+	// and rewriting it into block form would reformat bytes the author wrote,
+	// so these are reported rather than silently dropped or guessed at.
+	FlowSkipped []int
+}
+
+// spliceAfterSourceLines adds bullets to the i-th contract entry, keyed on the
+// i-th mapping that carries a `source:` key in document order.
 //
-// Two passes, because one is not enough. A single forward scan from the source:
-// line finds a verify: block only when it comes AFTER source: — and YAML key
-// order is arbitrary, so a hand-authored fragment listing verify: first had its
-// merged bullets silently dropped while the run still counted the entry as
-// touched. Locating each entry's line range first makes the position of
-// verify: within it irrelevant.
-func spliceAfterSourceLines(path string, inserts []verifyInsert) (int, error) {
+// Positions come from the parsed document's line coordinates, not from
+// inferring YAML's shape out of the raw text. Text inference got three layouts
+// wrong, each silently: `verify: []` grew a duplicate key; `verify: [x]` was
+// skipped because the scan matched only a line reading exactly `verify:`; and a
+// block scalar bullet (`- |` with an indented body) had the addition inserted
+// between the marker and its body, folding the original criterion into the new
+// one — that last one still parses, which makes it the worst of the three.
+//
+// The insertion point is one line before the next node that starts outside the
+// verify block. That is what makes block scalars work without understanding
+// them: their body lines contain no node starts, so the next node is whatever
+// follows the whole block.
+func spliceAfterSourceLines(path string, inserts []verifyInsert) (spliceResult, error) {
+	var res spliceResult
 	if len(inserts) == 0 {
-		return 0, nil
+		return res, nil
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return 0, err
+		return res, err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return res, fmt.Errorf("parse %s: %w", path, err)
 	}
 	lines := strings.Split(string(content), "\n")
 
-	// Pass 1: for each source: occurrence, where the entry's keys are indented,
-	// and where an append would land.
-	type site struct {
-		sourceLine  int // index of the source: line
-		keyIndent   string
-		appendAfter int // index of the last bullet of an existing verify: block, or -1
-	}
-	var sites []site
-	for i, line := range lines {
-		trimmed := strings.TrimLeft(line, " ")
-		if !strings.HasPrefix(trimmed, "source:") && !strings.HasPrefix(trimmed, "- source:") {
-			continue
-		}
-		rawIndent := line[:len(line)-len(trimmed)]
-		keyIndent := rawIndent
-		if strings.HasPrefix(trimmed, "- ") {
-			// List-item form `- source:`: sibling keys align two deeper.
-			keyIndent += "  "
-		}
-		sites = append(sites, site{sourceLine: i, keyIndent: keyIndent, appendAfter: findVerifyBulletEnd(lines, entryBounds(lines, i, keyIndent), keyIndent)})
-	}
+	entries := entriesWithSource(&doc)
+	insertAfter := map[int][]string{} // 0-based line index -> lines emitted after it
 
-	// Pass 2: emit.
-	insertAfter := map[int][]string{} // line index -> lines to emit after it
-	attached := 0
 	for occ, ins := range inserts {
-		if occ >= len(sites) || ins.empty() {
+		if occ >= len(entries) || ins.empty() {
 			continue
 		}
-		st := sites[occ]
-		if len(ins.NewBlock) > 0 {
-			block := []string{st.keyIndent + "verify:"}
-			for _, b := range ins.NewBlock {
-				block = append(block, st.keyIndent+"  - "+yamlScalar(b))
+		entry := entries[occ]
+		keyIndent := strings.Repeat(" ", entry.sourceKey.Column-1)
+
+		verifyKey, verifyVal := mappingEntry(entry.node, "verify")
+		if verifyKey == nil {
+			// No key at all: write the whole block after the source: line.
+			block := []string{keyIndent + "verify:"}
+			for _, b := range ins.Bullets {
+				block = append(block, keyIndent+"  - "+yamlScalar(b))
 			}
-			insertAfter[st.sourceLine] = block
-			attached++
+			insertAfter[entry.sourceKey.Line-1] = block
+			res.Attached++
 			continue
 		}
-		// An append with no verify: block to append to would be a lie about
-		// what happened, so it is skipped and not counted rather than written
-		// somewhere arbitrary.
-		if st.appendAfter < 0 {
+		if verifyVal != nil && verifyVal.Style&yaml.FlowStyle != 0 {
+			res.FlowSkipped = append(res.FlowSkipped, occ)
 			continue
 		}
+		// The key exists, block-styled or empty. Bullets append to it; a second
+		// `verify:` key must never be written.
+		at := blockEndLine(&doc, verifyKey, lines)
 		var block []string
-		for _, b := range ins.Append {
-			block = append(block, st.keyIndent+"  - "+yamlScalar(b))
+		for _, b := range ins.Bullets {
+			block = append(block, keyIndent+"  - "+yamlScalar(b))
 		}
-		insertAfter[st.appendAfter] = block
-		attached++
-	}
-	if attached == 0 {
-		return 0, nil
+		insertAfter[at] = append(insertAfter[at], block...)
+		res.Attached++
 	}
 
-	outLines := make([]string, 0, len(lines)+attached)
+	if res.Attached == 0 {
+		return res, nil
+	}
+	outLines := make([]string, 0, len(lines)+res.Attached)
 	for i, line := range lines {
 		outLines = append(outLines, line)
 		outLines = append(outLines, insertAfter[i]...)
 	}
 	if !migrateVerifyDryRun {
 		if err := os.WriteFile(path, []byte(strings.Join(outLines, "\n")), 0o644); err != nil {
-			return 0, err
+			return res, err
 		}
 	}
-	return attached, nil
+	return res, nil
 }
 
-// entryBounds returns the line index one past the end of the contract entry
-// owning the key at line `from`, indented at keyIndent.
+// sourceEntry is one contract entry: the mapping node, and its source: key.
+type sourceEntry struct {
+	node      *yaml.Node
+	sourceKey *yaml.Node
+}
+
+// entriesWithSource returns every mapping carrying a `source:` key, in document
+// order. Walking for the key rather than for a named sequence keeps this
+// artifact-agnostic: capabilities.yaml holds operations, surface.yaml holds
+// fragments, and both are entries with a source.
+func entriesWithSource(n *yaml.Node) []sourceEntry {
+	var out []sourceEntry
+	var walk func(*yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n == nil {
+			return
+		}
+		if n.Kind == yaml.MappingNode {
+			if key, _ := mappingEntry(n, "source"); key != nil {
+				out = append(out, sourceEntry{node: n, sourceKey: key})
+			}
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(n)
+	return out
+}
+
+// mappingEntry returns the key and value nodes for name in a mapping.
+func mappingEntry(n *yaml.Node, name string) (key, value *yaml.Node) {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == name {
+			return n.Content[i], n.Content[i+1]
+		}
+	}
+	return nil, nil
+}
+
+// blockEndLine returns the 0-based index of the last line belonging to the
+// block introduced by key — the line an addition should follow.
 //
-// An entry ends at the next list item shallower than its own keys: for both the
-// `- name:` / `  source:` layout and the `- source:` layout, the next entry's
-// dash sits at less than keyIndent, while a verify: bullet sits deeper.
-func entryBounds(lines []string, from int, keyIndent string) int {
-	for i := from + 1; i < len(lines); i++ {
-		trimmed := strings.TrimLeft(lines[i], " ")
-		if !strings.HasPrefix(trimmed, "- ") {
-			continue
+// It is the line before the next node that starts after the key and is not
+// inside the key's own value. Trailing blank and comment lines are stepped back
+// over so an addition stays tight against the block rather than landing between
+// a comment and the key it documents.
+func blockEndLine(doc *yaml.Node, key *yaml.Node, lines []string) int {
+	inside := map[*yaml.Node]bool{}
+	var mark func(*yaml.Node)
+	mark = func(n *yaml.Node) {
+		if n == nil {
+			return
 		}
-		if len(lines[i])-len(trimmed) < len(keyIndent) {
-			return i
+		inside[n] = true
+		for _, c := range n.Content {
+			mark(c)
 		}
 	}
-	return len(lines)
-}
+	// Everything under the key's value belongs to the block.
+	var owner *yaml.Node
+	var findOwner func(*yaml.Node)
+	findOwner = func(n *yaml.Node) {
+		if n == nil || owner != nil {
+			return
+		}
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				if n.Content[i] == key {
+					owner = n.Content[i+1]
+					return
+				}
+			}
+		}
+		for _, c := range n.Content {
+			findOwner(c)
+		}
+	}
+	findOwner(doc)
+	mark(owner)
 
-// findVerifyBulletEnd locates the last bullet of the verify: block belonging to
-// the entry spanning [from, to), or -1 when the entry has none. The block is
-// found anywhere in the entry rather than only after source:.
-func findVerifyBulletEnd(lines []string, to int, keyIndent string) int {
-	// Walk the whole entry; the caller passes the end and the entry's start is
-	// implied by the previous entry's end, so scan from the first line that
-	// belongs to this indent level.
-	start := to - 1
-	for start > 0 {
-		trimmed := strings.TrimLeft(lines[start-1], " ")
-		if strings.HasPrefix(trimmed, "- ") && len(lines[start-1])-len(trimmed) < len(keyIndent) {
+	next := len(lines) + 1 // 1-based line of the next node outside the block
+	var scan func(*yaml.Node)
+	scan = func(n *yaml.Node) {
+		if n == nil {
+			return
+		}
+		if !inside[n] && n != key && n.Line > key.Line && n.Line < next {
+			next = n.Line
+		}
+		for _, c := range n.Content {
+			scan(c)
+		}
+	}
+	scan(doc)
+
+	end := next - 2 // 0-based index of the line before the next node
+	if end >= len(lines) {
+		end = len(lines) - 1
+	}
+	for end > key.Line-1 {
+		t := strings.TrimSpace(lines[end])
+		if t != "" && !strings.HasPrefix(t, "#") {
 			break
 		}
-		start--
+		end--
 	}
-	verifyAt := -1
-	for i := start; i < to; i++ {
-		trimmed := strings.TrimLeft(lines[i], " ")
-		if trimmed == "verify:" && len(lines[i])-len(trimmed) == len(keyIndent) {
-			verifyAt = i
-			break
-		}
-	}
-	if verifyAt < 0 {
-		return -1
-	}
-	last := verifyAt
-	for i := verifyAt + 1; i < to; i++ {
-		trimmed := strings.TrimLeft(lines[i], " ")
-		if strings.HasPrefix(trimmed, "- ") && len(lines[i])-len(trimmed) > len(keyIndent) {
-			last = i
-			continue
-		}
-		break
-	}
-	return last
+	return end
 }
 
 // slugsFromSourceRefs parses a comma-separated `@feature/intent-slug` list

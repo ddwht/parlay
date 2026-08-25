@@ -1190,6 +1190,7 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// suites' operation: and any operation criterion.ref cite; a capabilities.yaml
 	// with no feature: cannot form a reliable ref, so its operations are skipped.
 	if caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); capErr == nil && caps.Feature != "" {
+		in.ContractResolved = true
 		for _, op := range caps.Operations {
 			if op.ID == "" {
 				continue
@@ -1205,6 +1206,7 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// cited as @<feature>/fragment:<name>.
 	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
 		if fragments, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
+			in.ContractResolved = true
 			for _, f := range fragments {
 				if f.Name == "" || f.Feature == "" {
 					continue

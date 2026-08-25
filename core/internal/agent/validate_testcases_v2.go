@@ -388,6 +388,18 @@ type TestcasesV2Input struct {
 	// walker holds operation-suite coverage against — every operation the
 	// feature's capabilities.yaml declares.
 	CanonicalOperations []string
+	// ContractResolved reports that the feature's contract artifacts were found
+	// and read, whatever they turned out to contain.
+	//
+	// Separate from len(Criteria) > 0, and the distinction is the whole point of
+	// this change. "No contract resolved" and "contract resolved and entirely
+	// vacant" both yield zero criteria, but they are opposite situations: in the
+	// first, a case's citations cannot be judged and reporting them as unknown
+	// would be an artifact of the missing input; in the second — the state the
+	// criteria-presence walker exists to surface — a case citing anything is
+	// citing something the contract does not declare, which is exactly what
+	// wants reporting.
+	ContractResolved bool
 	// Criteria are the individual verify: bullets the feature's contract
 	// declares, each carrying the entry it came from and its own text. Every one
 	// must be discharged by a case whose criterion (ref AND text) matches it, or
@@ -558,10 +570,10 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 		}
 		return cited[i].Text < cited[j].Text
 	})
-	// A feature with no resolvable contract supplies no criteria at all.
-	// Reporting every citation as unknown there would be an artifact of the
-	// missing input rather than a fact about the file — the same reasoning
-	// TestcasesV2Input documents for the empty-input case.
+	// Citation checks run whenever the contract was READ, not whenever it turned
+	// out to be non-empty. A resolved-but-vacant contract is the state this
+	// whole change exists to make visible, and a case citing criteria that
+	// contract does not declare is a miscitation there just as much as anywhere.
 	//
 	// textlessEntries are entries some case cites without a text. Their bullets
 	// are deliberately NOT also reported uncovered: the citation genuinely
@@ -573,7 +585,7 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 	// permanently: once the rebuild writes texts, any real gap surfaces.
 	textlessEntries := make(map[string]bool)
 	for _, c := range cited {
-		if len(in.Criteria) == 0 {
+		if !in.ContractResolved {
 			break
 		}
 		switch {

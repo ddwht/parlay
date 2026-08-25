@@ -304,7 +304,7 @@ A bullet may be excused by a `coverage-review.yaml` exemption. An exemption whos
 
 All five are **warnings** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. They graduate to errors once projects have rebuilt with criterion-carrying cases.
 
-When no contract resolves at all, the citation checks are suppressed: with nothing declared every citation would look unknown, which is a fact about the missing input rather than about the file.
+When no contract resolves at all, the citation checks are suppressed: with nothing declared every citation would look unknown, which is a fact about the missing input rather than about the file. That is keyed on whether the contract was **read**, not on whether it turned out to be non-empty — a contract that resolved and states no criteria anywhere is a real and reportable state (see `surface.schema.md` § Criteria presence), and a case citing criteria it does not declare is a miscitation there like anywhere else.
 
 ### Source refs requirement
 

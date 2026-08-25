@@ -427,15 +427,15 @@ fragments:
       source: '@f/two'
       page: p
 `)
-	attached, err := spliceAfterSourceLines(p, []verifyInsert{
-		{Append: []string{"added one"}},
-		{NewBlock: []string{"fresh"}},
+	res, err := spliceAfterSourceLines(p, []verifyInsert{
+		{Bullets: []string{"added one"}},
+		{Bullets: []string{"fresh"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attached != 2 {
-		t.Errorf("attached = %d, want 2", attached)
+	if res.Attached != 2 {
+		t.Errorf("attached = %d, want 2", res.Attached)
 	}
 	got, _ := os.ReadFile(p)
 	if !strings.Contains(string(got), "added one") {
@@ -459,7 +459,7 @@ fragments:
       verify:
         - existing one
 `)
-	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"added one"}}}); err != nil {
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added one"}}}); err != nil {
 		t.Fatal(err)
 	}
 	frags := mustLoadSurface(t, p)
@@ -476,7 +476,7 @@ fragments:
       source: '@f/one'
       verify:
         - existing one`)
-	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"added one"}}}); err != nil {
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added one"}}}); err != nil {
 		t.Fatal(err)
 	}
 	frags := mustLoadSurface(t, p)
@@ -485,25 +485,125 @@ fragments:
 	}
 }
 
-// An append against an entry with no verify: block writes nothing and counts
-// nothing, rather than guessing at a position.
-func TestSplice_AppendWithNoBlockIsNotCounted(t *testing.T) {
-	body := `feature: f
+// The splice decides block-versus-merge from the parsed document, not from the
+// caller. Bullets for an entry with no verify: key create the block.
+func TestSplice_BulletsCreateAMissingBlock(t *testing.T) {
+	p := spliceFixture(t, `feature: f
 fragments:
     - name: A
       source: '@f/one'
       page: p
-`
-	p := spliceFixture(t, body)
-	attached, err := spliceAfterSourceLines(p, []verifyInsert{{Append: []string{"orphan"}}})
+`)
+	res, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"fresh"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attached != 0 {
-		t.Errorf("attached = %d, want 0 — there was no block to append to", attached)
+	if res.Attached != 1 {
+		t.Errorf("attached = %d, want 1", res.Attached)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 1 {
+		t.Errorf("verify: = %v, want the block created", frags[0].Verify)
+	}
+}
+
+// An entry whose verify: key exists but is EMPTY must be merged into, never
+// given a second key. Deciding on len(Verify) wrote `verify:` twice and the
+// file stopped parsing.
+func TestSplice_EmptyKeyIsMergedNotDuplicated(t *testing.T) {
+	for _, body := range []string{
+		"feature: f\nfragments:\n    - name: A\n      source: '@f/one'\n      verify:\n",
+		"feature: f\nfragments:\n    - name: A\n      source: '@f/one'\n      verify: []\n",
+	} {
+		p := spliceFixture(t, body)
+		if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}}); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := os.ReadFile(p)
+		if strings.Count(string(got), "verify:") != 1 {
+			t.Errorf("a second verify: key was written:\n%s", got)
+		}
+		if _, err := parser.LoadSurfaceYAML(p); err != nil {
+			t.Errorf("result does not parse: %v\n%s", err, got)
+		}
+	}
+}
+
+// A bare `verify:` is a key with a null value. Appending to it completes the
+// key into a block list, which is valid and is what the author left room for —
+// so it is done rather than declined.
+func TestSplice_NullVerifyBecomesABlockList(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+    - name: B
+      source: '@f/two'
+      page: p
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}, {}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 1 || frags[0].Verify[0] != "added" {
+		t.Errorf("fragment A verify: = %v, want the bullet written into the empty key", frags[0].Verify)
+	}
+	if len(frags[1].Verify) != 0 {
+		t.Errorf("fragment B gained %v; the insert was scoped to A", frags[1].Verify)
+	}
+}
+
+// A flow sequence cannot take a line-wise merge. It is reported by occurrence
+// rather than silently dropped, and the file is left byte-identical.
+func TestSplice_FlowSequenceIsReportedNotGuessed(t *testing.T) {
+	body := `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify: [existing one]
+`
+	p := spliceFixture(t, body)
+	res, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Attached != 0 {
+		t.Errorf("attached = %d, want 0", res.Attached)
+	}
+	if len(res.FlowSkipped) != 1 || res.FlowSkipped[0] != 0 {
+		t.Errorf("FlowSkipped = %v, want [0] so the caller can name it", res.FlowSkipped)
 	}
 	got, _ := os.ReadFile(p)
 	if string(got) != body {
-		t.Errorf("the file was rewritten anyway:\n%s", got)
+		t.Errorf("the file was modified:\n%s", got)
+	}
+}
+
+// A block-scalar bullet spans lines its marker does not. An addition must land
+// after the whole scalar; landing between `- |` and its body folds the original
+// criterion into the new one and still parses, which is why it went unnoticed.
+func TestSplice_BlockScalarBulletKeepsItsBody(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+        - |
+          a multi-line
+          criterion body
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Fatalf("verify: = %v, want the original scalar plus the addition", frags[0].Verify)
+	}
+	if !strings.Contains(frags[0].Verify[0], "a multi-line") || !strings.Contains(frags[0].Verify[0], "criterion body") {
+		t.Errorf("the original block scalar was corrupted: %q", frags[0].Verify[0])
+	}
+	if strings.TrimSpace(frags[0].Verify[1]) != "added" {
+		t.Errorf("second bullet = %q, want the addition standing alone", frags[0].Verify[1])
 	}
 }
