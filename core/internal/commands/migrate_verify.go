@@ -296,12 +296,21 @@ func spliceVerifyIntoCapabilities(path string, bullets map[string][]string, cove
 		inserts = append(inserts, verifyInsert{Bullets: dedupeBullets(op.Verify, merged)})
 	}
 	res, err := spliceAfterSourceLines(path, inserts)
+	if err != nil {
+		// Nothing reached disk, so nothing is routed. Today every caller aborts
+		// on this error and no false output escapes, but that makes the
+		// helper's contract true by the caller's behaviour rather than by
+		// construction — and a future caller that tolerates the error to
+		// continue with the next feature would silently inherit the bug.
+		return res, err
+	}
 	markCovered(covered, perEntrySlugs, res)
-	return res, err
+	return res, nil
 }
 
 // markCovered records an intent as routed only for entries the splice actually
-// handled.
+// handled. Callers must not call it when the splice returned an error: nothing
+// reached disk, so nothing is routed.
 //
 // Accounting used to happen while the inserts were being built, before anything
 // was written. An entry the splice then declined — a flow-sequence verify: it
@@ -367,8 +376,16 @@ func spliceVerifyIntoSurfaceYAML(path string, bullets map[string][]string, cover
 		inserts = append(inserts, verifyInsert{Bullets: dedupeBullets(f.Verify, merged)})
 	}
 	res, err := spliceAfterSourceLines(path, inserts)
+	if err != nil {
+		// Nothing reached disk, so nothing is routed. Today every caller aborts
+		// on this error and no false output escapes, but that makes the
+		// helper's contract true by the caller's behaviour rather than by
+		// construction — and a future caller that tolerates the error to
+		// continue with the next feature would silently inherit the bug.
+		return res, err
+	}
 	markCovered(covered, perEntrySlugs, res)
-	return res, err
+	return res, nil
 }
 
 // dedupeBullets drops bullets already present in `existing`, and any repeated
