@@ -96,7 +96,7 @@ fragments:
 	// fragment.
 	gotCrit := map[string]bool{}
 	for _, c := range in.Criteria {
-		gotCrit[c] = true
+		gotCrit[c.Ref] = true
 	}
 	for _, want := range []string{"@expenses/operation:report.submit", "@expenses/fragment:submit-form"} {
 		if !gotCrit[want] {

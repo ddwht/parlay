@@ -1122,10 +1122,13 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // The path lives under .parlay/build/<feature>/, so the feature is the build
 // path's parent relative to the active root's BuildRoot(). From it the feature's
 // capabilities.yaml supplies every canonical operation (the operation walker's
-// subjects) and every operation carrying a verify: list (a criterion the
-// criterion walker requires a case for); surface.yaml supplies every fragment
-// carrying a verify: list; coverage-review.yaml supplies the exemptions a human
-// review recorded.
+// subjects) and every verify: bullet those operations carry; surface.yaml
+// supplies every bullet its fragments carry; coverage-review.yaml supplies the
+// exemptions a human review recorded.
+//
+// Criteria are gathered per BULLET, not per entry. Gathering them per entry —
+// one ref for an operation with five bullets — is what let a single case mark
+// all five discharged.
 //
 // Every resolution failure returns whatever was gathered so far rather than an
 // error. Absence of a domain artifact is a normal state — a feature with no
@@ -1133,6 +1136,20 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // walker it feeds simply reports nothing. Passing empty inputs is not a silent
 // partial: with no declared operations or criteria there is nothing to find
 // uncovered, which is a different answer from reporting everything as covered.
+// criteriaFor expands one contract entry's verify: list into its individual
+// criteria, each carrying the entry's ref and its own text.
+func criteriaFor(ref string, verify []string) []agent.CriterionRef {
+	out := make([]agent.CriterionRef, 0, len(verify))
+	for _, v := range verify {
+		text := agent.CanonicalCriterionText(v)
+		if text == "" {
+			continue
+		}
+		out = append(out, agent.CriterionRef{Ref: ref, Text: text})
+	}
+	return out
+}
+
 func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2Input {
 	in := agent.TestcasesV2Input{Path: path}
 
@@ -1166,9 +1183,7 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 			}
 			ref := parser.NormalizeOperationID(caps.Feature, op.ID)
 			in.CanonicalOperations = append(in.CanonicalOperations, ref)
-			if len(op.Verify) > 0 {
-				in.Criteria = append(in.Criteria, ref)
-			}
+			in.Criteria = append(in.Criteria, criteriaFor(ref, op.Verify)...)
 		}
 	}
 
@@ -1178,10 +1193,11 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
 		if fragments, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
 			for _, f := range fragments {
-				if f.Name == "" || f.Feature == "" || len(f.Verify) == 0 {
+				if f.Name == "" || f.Feature == "" {
 					continue
 				}
-				in.Criteria = append(in.Criteria, fmt.Sprintf("@%s/fragment:%s", f.Feature, f.Name))
+				ref := fmt.Sprintf("@%s/fragment:%s", f.Feature, f.Name)
+				in.Criteria = append(in.Criteria, criteriaFor(ref, f.Verify)...)
 			}
 		}
 	}
@@ -1195,10 +1211,23 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 			if ex.Item == "" {
 				continue
 			}
-			if in.ExemptCriteria == nil {
-				in.ExemptCriteria = make(map[string]bool)
+			// criterion_text: present excuses exactly that bullet; absent is
+			// read as entry-wide. Every exemption written before bullet-level
+			// coverage existed omits it, and none of them could have recorded
+			// one — so the absent form has to keep meaning what it meant, or
+			// upgrading silently narrows exemptions a human already granted.
+			text := agent.CanonicalCriterionText(ex.CriterionText)
+			if text == "" {
+				if in.ExemptCriteria.Entries == nil {
+					in.ExemptCriteria.Entries = make(map[string]bool)
+				}
+				in.ExemptCriteria.Entries[ex.Item] = true
+				continue
 			}
-			in.ExemptCriteria[ex.Item] = true
+			if in.ExemptCriteria.Bullets == nil {
+				in.ExemptCriteria.Bullets = make(map[agent.CriterionRef]bool)
+			}
+			in.ExemptCriteria.Bullets[agent.CriterionRef{Ref: ex.Item, Text: text}] = true
 		}
 	}
 

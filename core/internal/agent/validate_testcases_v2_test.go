@@ -700,15 +700,19 @@ suites:
       - name: submitting the report
         criterion:
           ref: "@expenses/fragment:submit"
+          text: "the title reads Submit"
         steps:
           - verify: text
             target: title
 `)
 	// The contract declares a criterion for an operation no case cites.
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
-		Criteria: []string{"@expenses/operation:report.submit", "@expenses/fragment:submit"},
+		Path:    "test",
+		Content: content,
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/operation:report.submit", Text: "submitting stores the report"},
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+		},
 	}
 	outcomes := ValidateTestcasesV2(ModeBuild, in)
 	if !findCode(outcomes, "verify-criterion-uncovered") {
@@ -747,6 +751,7 @@ suites:
       - name: submitting the report
         criterion:
           ref: "@expenses/fragment:submit"
+          text: "the title reads Submit"
         steps:
           - verify: text
             target: title
@@ -754,7 +759,7 @@ suites:
 	in := TestcasesV2Input{
 		Path:     "test",
 		Content:  content,
-		Criteria: []string{"@expenses/fragment:submit"},
+		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
 	}
 	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
 		t.Error("verify-criterion-uncovered fired on a criterion a case discharges")
@@ -775,12 +780,244 @@ suites:
     cases: []
 `)
 	in := TestcasesV2Input{
-		Path:           "test",
-		Content:        content,
-		Criteria:       []string{"@expenses/operation:report.submit"},
-		ExemptCriteria: map[string]bool{"@expenses/operation:report.submit": true},
+		Path:     "test",
+		Content:  content,
+		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "submitting stores the report"}},
+		ExemptCriteria: ExemptedCriteria{
+			Entries: map[string]bool{"@expenses/operation:report.submit": true},
+		},
 	}
 	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
 		t.Error("verify-criterion-uncovered fired on an exempted criterion")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Criterion identity (WS 0). Coverage used to be counted per contract ENTRY:
+// one ref for an operation with five verify: bullets, so a single citing case
+// marked all five discharged. These hold the walker to bullet granularity.
+// ---------------------------------------------------------------------------
+
+// criterionFixture is a testcases.yaml whose one case cites one criterion.
+func criterionFixture(ref, text string) []byte {
+	return []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "` + ref + `"
+          text: "` + text + `"
+        steps:
+          - verify: text
+            target: title
+`)
+}
+
+// The defect this workstream exists for: an entry with several bullets and one
+// citing case leaves the other bullets uncovered. Under the old per-entry model
+// this reported nothing at all.
+func TestValidateTestcasesV2_CoverageIsPerBulletNotPerEntry(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+			{Ref: "@expenses/fragment:submit", Text: "the button is disabled while saving"},
+			{Ref: "@expenses/fragment:submit", Text: "an error banner names the failing field"},
+		},
+	}
+	var uncovered []ValidationOutcome
+	for _, o := range ValidateTestcasesV2(ModeBuild, in) {
+		if o.Code == "verify-criterion-uncovered" {
+			uncovered = append(uncovered, o)
+		}
+	}
+	if len(uncovered) != 2 {
+		t.Fatalf("expected 2 uncovered bullets on the cited entry, got %d: %+v", len(uncovered), uncovered)
+	}
+	for _, o := range uncovered {
+		if strings.Contains(o.Message, "the title reads Submit") {
+			t.Errorf("the discharged bullet was reported uncovered: %q", o.Message)
+		}
+	}
+}
+
+// A case citing a ref no contract entry declares. Previously invisible: an
+// unknown ref simply marked nothing covered, so it read as a gap elsewhere.
+func TestValidateTestcasesV2_CriterionRefUnknown(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  criterionFixture("@expenses/fragment:typo", "the title reads Submit"),
+		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if !findCode(outcomes, "testcases-criterion-ref-unknown") {
+		t.Fatalf("expected testcases-criterion-ref-unknown; got %+v", outcomes)
+	}
+}
+
+// A case citing a known entry with text matching none of its current bullets.
+// This is the check testcases.schema.md has always described criterion.text as
+// performing, and which it did not perform: the field was decoded and dropped.
+func TestValidateTestcasesV2_CriterionTextDrift(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  criterionFixture("@expenses/fragment:submit", "the heading reads Submit"),
+		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if !findCode(outcomes, "testcases-criterion-text-drift") {
+		t.Fatalf("expected testcases-criterion-text-drift; got %+v", outcomes)
+	}
+	if findCode(outcomes, "testcases-criterion-ref-unknown") {
+		t.Error("drift on a known ref was reported as an unknown ref")
+	}
+}
+
+// A case citing a ref with no text at all — what every pre-WS-0 testcases.yaml
+// looks like. Reported distinctly from drift so the fix ("rebuild") differs
+// from the fix ("the contract was reworded").
+func TestValidateTestcasesV2_CriterionTextMissing(t *testing.T) {
+	content := []byte(`schema_version: 2
+feature: expenses
+suites:
+  - name: submit
+    kind: presentation
+    file: src/x.spec.ts
+    source_refs: ["@expenses/submit"]
+    cases:
+      - name: submitting the report
+        criterion:
+          ref: "@expenses/fragment:submit"
+        steps:
+          - verify: text
+            target: title
+`)
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  content,
+		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if !findCode(outcomes, "testcases-criterion-text-missing") {
+		t.Fatalf("expected testcases-criterion-text-missing; got %+v", outcomes)
+	}
+	if findCode(outcomes, "testcases-criterion-text-drift") {
+		t.Error("a missing text was reported as drift; the two have different fixes")
+	}
+}
+
+// A feature with no resolvable contract supplies no criteria. Every citation
+// would then look unknown, which is a fact about the missing input rather than
+// about the file — the same rule the empty-input walkers already follow.
+func TestValidateTestcasesV2_NoContractSuppressesCitationChecks(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+	}
+	outcomes := ValidateTestcasesV2(ModeBuild, in)
+	if findCode(outcomes, "testcases-criterion-ref-unknown") {
+		t.Errorf("citation checks ran with no contract loaded: %+v", outcomes)
+	}
+}
+
+// Normalization is narrow by design: trim and line endings only. Leading
+// whitespace must not defeat identity, and a case difference must not silently
+// unify two bullets.
+func TestValidateTestcasesV2_CriterionTextNormalization(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:     "test",
+		Content:  criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "  the title reads Submit  "}},
+	}
+	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
+		t.Error("surrounding whitespace defeated criterion identity")
+	}
+
+	// Case differences are preserved: two bullets differing only in
+	// capitalization are two claims, not one.
+	in.Criteria = []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "The title reads Submit"}}
+	if !findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
+		t.Error("normalization lowercased, merging two materially distinct bullets")
+	}
+}
+
+// Two identical bullets on one entry cannot be discharged separately, so they
+// are reported as an authoring defect rather than given an invented index.
+func TestValidateTestcasesV2_DuplicateCriterion(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+		},
+	}
+	var dupes []ValidationOutcome
+	for _, o := range ValidateTestcasesV2(ModeBuild, in) {
+		if o.Code == "verify-criterion-duplicate" {
+			dupes = append(dupes, o)
+		}
+	}
+	if len(dupes) != 1 {
+		t.Fatalf("expected exactly one duplicate finding (per pair, not per occurrence), got %d: %+v", len(dupes), dupes)
+	}
+}
+
+// An exemption naming a text excuses exactly that bullet and leaves the entry's
+// other bullets still requiring a case.
+func TestValidateTestcasesV2_BulletSpecificExemption(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
+			{Ref: "@expenses/fragment:submit", Text: "the button is disabled while saving"},
+			{Ref: "@expenses/fragment:submit", Text: "an error banner names the failing field"},
+		},
+		ExemptCriteria: ExemptedCriteria{
+			Bullets: map[CriterionRef]bool{
+				{Ref: "@expenses/fragment:submit", Text: "the button is disabled while saving"}: true,
+			},
+		},
+	}
+	var uncovered []ValidationOutcome
+	for _, o := range ValidateTestcasesV2(ModeBuild, in) {
+		if o.Code == "verify-criterion-uncovered" {
+			uncovered = append(uncovered, o)
+		}
+	}
+	if len(uncovered) != 1 {
+		t.Fatalf("expected 1 uncovered bullet (one discharged, one exempted), got %d: %+v", len(uncovered), uncovered)
+	}
+	if !strings.Contains(uncovered[0].Message, "an error banner") {
+		t.Errorf("wrong bullet reported: %q", uncovered[0].Message)
+	}
+}
+
+// The compatibility rule: an exemption with no text is entry-wide. Every
+// exemption written before bullet-level coverage omits it and none could have
+// recorded one, so reading absence as "excuses nothing" would silently revoke
+// exemptions a human already granted.
+func TestValidateTestcasesV2_LegacyExemptionStaysEntryWide(t *testing.T) {
+	in := TestcasesV2Input{
+		Path:    "test",
+		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Criteria: []CriterionRef{
+			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},
+			{Ref: "@expenses/operation:report.submit", Text: "rejects a duplicate"},
+			{Ref: "@expenses/operation:report.submit", Text: "emits an audit row"},
+		},
+		ExemptCriteria: ExemptedCriteria{
+			Entries: map[string]bool{"@expenses/operation:report.submit": true},
+		},
+	}
+	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
+		t.Error("a legacy ref-only exemption stopped excusing its entry's bullets")
 	}
 }

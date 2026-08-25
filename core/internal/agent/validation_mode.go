@@ -84,6 +84,33 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// The citation-side companions to verify-criterion-uncovered, all warnings
+	// on the same reasoning: criterion coverage only became bullet-granular in
+	// v0.5.x, so every testcases.yaml written before it cites entries without a
+	// text and would fail all three at once.
+	//
+	// testcases-criterion-text-missing is the transitional one — a case that
+	// cites a ref and no text is exactly what the old model produced, and it
+	// graduates with the rest once projects have rebuilt.
+	"testcases-criterion-ref-unknown": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"testcases-criterion-text-missing": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"testcases-criterion-text-drift": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	// A duplicated verify: bullet is an authoring defect in the CONTRACT, not
+	// in the testcases file being validated, so it warns rather than failing a
+	// file its author may not own.
+	"verify-criterion-duplicate": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// Same reasoning again: required on generate, tolerated absent on
 	// read, because every capabilities.yaml in existence predates the
 	// field. See capabilities.schema.md's "Why `source:` exists".
