@@ -225,6 +225,15 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	// Build-feature requires everything create-surface requires
 	issues = append(issues, checkCreateSurfaceReadiness(featurePath)...)
 
+	// A recorded amendment that never reached the contract is a hard block on
+	// building: the buildfile would be generated from artifacts the ledger tail
+	// was supposed to change and did not. check-drift already computes the
+	// tail, but only the loop driver reads check-drift and only at planning
+	// time; surfacing it as a readiness error puts a mechanical stop at both
+	// choke points that run check-readiness — the loop's designer->build
+	// boundary and build-feature's own step 6 — with no skill edits.
+	issues = append(issues, checkUnappliedAmendments(cfg, slug, featurePath)...)
+
 	// At least one of surface.md or infrastructure.md must exist. The
 	// "at-least-one" gate is the same gate that ComputeFeaturePhase
 	// applies when promoting a feature to PhaseArtifacts. We still
@@ -324,6 +333,13 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 		}
 	}
 
+	// Criteria presence. An entry carrying no verify: is invisible to every
+	// coverage walker downstream — they check whether stated criteria are
+	// discharged, and an entry states none — so the boundary is the last place
+	// the omission is cheap. Reported here rather than in the gate because the
+	// gate aggregates this function, so wiring it once covers both.
+	issues = append(issues, criteriaPresenceIssues(featurePath, fragments)...)
+
 	// Open questions are warnings, not errors — agent decides whether to block
 	driftOrQuestions, _ := collectForFeature(cfg, slug)
 	if driftOrQuestions != nil && driftOrQuestions.Count > 0 {
@@ -375,6 +391,37 @@ func checkBuildFeatureReadiness(cfg *config.Context, featurePath, slug string) [
 	return issues
 }
 
+// checkUnappliedAmendments returns the unapplied-amendments readiness error
+// when the feature's amendment ledger has entries beyond the baseline's
+// last-applied-amendment. It reuses detectDrift's UnappliedAmendments (which
+// derives the tail from detectLedgerFindings / Baseline.LastAppliedAmendment)
+// rather than re-deriving it, so this gate and check-drift cannot disagree.
+//
+// The refine in-flight exception: a refinement legitimately rebuilds the
+// buildfile WHILE its ledger tail is mid-application (refine step 5.5), so an
+// active refine journal means the dirty tail is sanctioned work, not a stale
+// state to block. In WS1 the presence of ANY journal suppresses the error; the
+// gate command (WS2b) refines this to the splice-applied-or-later downgrade,
+// but readiness stays coarse deliberately — it is the pre-flight, and a false
+// negative here (letting a mid-refine build through) is caught again by the
+// gate the driver runs at the boundary.
+func checkUnappliedAmendments(cfg *config.Context, slug, featurePath string) []readinessIssue {
+	if journal, err := loadRefineJournal(cfg, slug); err == nil && journal != nil {
+		return nil
+	}
+	drift, err := detectDrift(cfg, slug, featurePath)
+	if err != nil || drift == nil || len(drift.UnappliedAmendments) == 0 {
+		return nil
+	}
+	return []readinessIssue{{
+		Severity: "error",
+		Code:     "unapplied-amendments",
+		Message: fmt.Sprintf("%d amendment(s) recorded but not yet applied to the contract artifacts: %s",
+			len(drift.UnappliedAmendments), strings.Join(drift.UnappliedAmendments, ", ")),
+		Fix: "run /parlay-refine to apply the ledger tail",
+	}}
+}
+
 // hasConfiguredAdapterSet reports whether the active root carries a parseable
 // adapter-set.yaml with at least one filled target slot. This is the modern
 // replacement for the deprecated prototype-framework field: an adapter-set
@@ -404,4 +451,37 @@ func isNewSchemaFormat(path string) bool {
 		return false
 	}
 	return strings.Contains(content, "**Affects**:")
+}
+
+// criteriaPresenceIssues runs the criteria-presence walker over a feature's
+// contract and maps its findings into readiness issues.
+//
+// Fragments are passed in rather than re-parsed: the caller has already loaded
+// and validated them, and re-reading would let the two disagree about the same
+// file. capabilities.yaml is loaded here because nothing upstream needed it.
+func criteriaPresenceIssues(featurePath string, fragments []parser.Fragment) []readinessIssue {
+	in := agent.CriteriaPresenceInput{
+		HasSurface: parser.ResolveSurfacePath(featurePath) != "",
+		Fragments:  fragments,
+	}
+	if caps, err := parser.ParseCapabilities(filepath.Join(featurePath, "capabilities.yaml")); err == nil {
+		in.Operations = caps.Operations
+	}
+
+	var issues []readinessIssue
+	for _, o := range agent.ValidateCriteriaPresence(agent.ModeBuild, in) {
+		issue := readinessIssue{
+			Severity: string(o.Severity),
+			Code:     o.Code,
+			Message:  o.Message,
+		}
+		switch o.Code {
+		case "surface-fragment-no-criteria", "feature-surface-no-criteria":
+			issue.Fix = "add the owning intent's presentation claims to the fragment's verify: (see /parlay-create-artifacts § Routing acceptance criteria), or run /parlay-refine where the split needs design judgement; `parlay migrate-verify --fragments` seeds a draft you must then review — it cannot tell a UI claim from a contract one"
+		case "capability-operation-no-criteria":
+			issue.Fix = "add the owning intent's contract claims to the operation's verify:, or run `parlay migrate-verify`"
+		}
+		issues = append(issues, issue)
+	}
+	return issues
 }

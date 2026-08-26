@@ -108,11 +108,17 @@ fragments:
 
 func runVerifyMigration(t *testing.T, dryRun bool) string {
 	t.Helper()
+	return runVerifyMigrationWith(t, dryRun, false)
+}
+
+func runVerifyMigrationWith(t *testing.T, dryRun, fragments bool) string {
+	t.Helper()
 	var buf bytes.Buffer
 	cmd := testCommandWithContext(t, testContext(t))
 	cmd.SetOut(&buf)
 	migrateVerifyDryRun = dryRun
-	defer func() { migrateVerifyDryRun = false }()
+	migrateVerifyFragments = fragments
+	defer func() { migrateVerifyDryRun = false; migrateVerifyFragments = false }()
 	if err := runMigrateVerify(cmd, nil); err != nil {
 		t.Fatalf("runMigrateVerify: %v", err)
 	}
@@ -245,5 +251,359 @@ func TestMigrateVerify_UnroutedIntentReported(t *testing.T) {
 	out := runVerifyMigration(t, false)
 	if !strings.Contains(out, "unrouted: nobody-sources-this") {
 		t.Errorf("intent with no artifact entry should be reported unrouted; got:\n%s", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WS C — the migration path for artifacts written under the old routing rule.
+// ---------------------------------------------------------------------------
+
+// The report a project written under the old rule needs: the routing leaves the
+// Create Form fragment with no criteria, because its intent is covered by an
+// operation and operations are routed first. Nothing said so before — the run
+// looked fully migrated.
+func TestMigrateVerify_ReportsProjectedVacancy(t *testing.T) {
+	dir := setupTestDir(t)
+	writeVerifyFixture(t, dir)
+
+	out := runVerifyMigration(t, false)
+	if !strings.Contains(out, `no criteria: fragment "Create Form"`) {
+		t.Errorf("the vacancy report did not name the fragment left empty:\n%s", out)
+	}
+	if strings.Contains(out, `no criteria: fragment "Thing List"`) {
+		t.Errorf("a fragment that gained criteria was reported vacant:\n%s", out)
+	}
+	if !strings.Contains(out, "Fragments still without criteria: 1") {
+		t.Errorf("summary count missing or wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "--fragments") {
+		t.Errorf("the report does not say what to do about it:\n%s", out)
+	}
+}
+
+// The dry-run correctness the projection exists for. --dry-run writes nothing,
+// so a report that re-read the file would see pre-splice state and name every
+// fragment — including the one the real run fills.
+func TestMigrateVerify_VacancyReportIsCorrectUnderDryRun(t *testing.T) {
+	dir := setupTestDir(t)
+	writeVerifyFixture(t, dir)
+
+	dry := runVerifyMigration(t, true)
+	if strings.Contains(dry, `no criteria: fragment "Thing List"`) {
+		t.Errorf("--dry-run reported a fragment the run would have filled:\n%s", dry)
+	}
+	if !strings.Contains(dry, "Fragments still without criteria: 1") {
+		t.Errorf("--dry-run vacancy count disagrees with the real run:\n%s", dry)
+	}
+	// And it really did touch nothing.
+	for _, f := range mustLoadSurface(t, filepath.Join(dir, "spec", "intents", "verify-fixture", "surface.yaml")) {
+		if len(f.Verify) > 0 {
+			t.Errorf("--dry-run wrote verify: to fragment %q", f.Name)
+		}
+	}
+}
+
+// --fragments copies an operation-covered intent's bullets onto the fragments
+// sourcing it, which the default routing deliberately does not.
+func TestMigrateVerify_FragmentsFlagFillsOperationCoveredFragments(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	runVerifyMigrationWith(t, false, true)
+
+	frags := mustLoadSurface(t, filepath.Join(featDir, "surface.yaml"))
+	for _, f := range frags {
+		if len(f.Verify) == 0 {
+			t.Errorf("fragment %q still has no verify: under --fragments", f.Name)
+		}
+	}
+	// The operations keep theirs — this duplicates, it does not move.
+	caps := mustParseCapabilities(t, filepath.Join(featDir, "capabilities.yaml"))
+	if len(caps.Operations[0].Verify) == 0 {
+		t.Error("--fragments moved the operation's criteria instead of copying them")
+	}
+}
+
+// Idempotence under merge. Skipping a non-empty entry wholesale used to supply
+// this for free; now that a non-empty entry is merged into, de-duplication has
+// to supply it instead.
+func TestMigrateVerify_FragmentsFlagIsIdempotent(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	surfacePath := filepath.Join(featDir, "surface.yaml")
+
+	runVerifyMigrationWith(t, false, true)
+	afterFirst, err := os.ReadFile(surfacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runVerifyMigrationWith(t, false, true)
+	afterSecond, err := os.ReadFile(surfacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(afterFirst, afterSecond) {
+		t.Errorf("a second --fragments run changed the file:\n--- first ---\n%s\n--- second ---\n%s", afterFirst, afterSecond)
+	}
+}
+
+// The merge itself: a fragment that already carries one criterion gains the
+// missing one rather than being skipped wholesale. Under the old splice a
+// fragment with any verify: could never gain a second bullet.
+func TestMigrateVerify_MergesIntoExistingVerifyBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	surfacePath := filepath.Join(featDir, "surface.yaml")
+
+	// Give the Create Form fragment one of its intent's two bullets.
+	seeded := `feature: verify-fixture
+fragments:
+    - actions: invoke
+      name: Create Form
+      order: 1
+      page: things
+      region: main
+      shows: form
+      source: '@verify-fixture/create-the-thing'
+      verify:
+        - Creating a thing returns its id.
+    - actions: select-one
+      name: Thing List
+      order: 2
+      page: things
+      region: main
+      shows: data-list, empty-state
+      source: '@verify-fixture/browse-the-things'
+`
+	if err := os.WriteFile(surfacePath, []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runVerifyMigrationWith(t, false, true)
+
+	frags := mustLoadSurface(t, surfacePath)
+	var createForm parser.Fragment
+	for _, f := range frags {
+		if f.Name == "Create Form" {
+			createForm = f
+		}
+	}
+	if len(createForm.Verify) != 2 {
+		t.Fatalf("Create Form verify: = %v, want both bullets merged", createForm.Verify)
+	}
+	joined := strings.Join(createForm.Verify, "\n")
+	if !strings.Contains(joined, "returns its id") || !strings.Contains(joined, "conflict") {
+		t.Errorf("merge lost or duplicated a bullet: %v", createForm.Verify)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Splice layout edges. The merge path walks YAML as text, so the layouts it can
+// meet are the ones worth pinning: a single forward scan from source: gets two
+// of these wrong.
+// ---------------------------------------------------------------------------
+
+func spliceFixture(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "surface.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// YAML key order is arbitrary, and a hand-authored fragment may list verify:
+// before source:. A forward-only scan finds no block, drops the merged bullets,
+// and still counts the entry as touched — silent loss reported as success.
+func TestSplice_VerifyBeforeSourceStillMerges(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      verify:
+        - existing one
+      source: '@f/one'
+    - name: B
+      source: '@f/two'
+      page: p
+`)
+	res, err := spliceAfterSourceLines(p, []verifyInsert{
+		{Bullets: []string{"added one"}},
+		{Bullets: []string{"fresh"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Attached != 2 {
+		t.Errorf("attached = %d, want 2", res.Attached)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "added one") {
+		t.Errorf("the appended bullet was dropped:\n%s", got)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("fragment A verify: = %v, want both bullets", frags[0].Verify)
+	}
+}
+
+// Other keys between source: and verify:, which is the ordinary generated
+// layout once page/region are present.
+func TestSplice_MergesAcrossInterveningKeys(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      page: p
+      region: main
+      verify:
+        - existing one
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added one"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("verify: = %v, want the bullet merged into the existing block", frags[0].Verify)
+	}
+}
+
+// The last entry ends at EOF with no trailing newline.
+func TestSplice_MergesAtEOFWithoutTrailingNewline(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+        - existing one`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added one"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Errorf("verify: = %v, want the bullet merged at EOF", frags[0].Verify)
+	}
+}
+
+// The splice decides block-versus-merge from the parsed document, not from the
+// caller. Bullets for an entry with no verify: key create the block.
+func TestSplice_BulletsCreateAMissingBlock(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      page: p
+`)
+	res, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"fresh"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Attached != 1 {
+		t.Errorf("attached = %d, want 1", res.Attached)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 1 {
+		t.Errorf("verify: = %v, want the block created", frags[0].Verify)
+	}
+}
+
+// An entry whose verify: key exists but is EMPTY must be merged into, never
+// given a second key. Deciding on len(Verify) wrote `verify:` twice and the
+// file stopped parsing.
+func TestSplice_EmptyKeyIsMergedNotDuplicated(t *testing.T) {
+	for _, body := range []string{
+		"feature: f\nfragments:\n    - name: A\n      source: '@f/one'\n      verify:\n",
+		"feature: f\nfragments:\n    - name: A\n      source: '@f/one'\n      verify: []\n",
+	} {
+		p := spliceFixture(t, body)
+		if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}}); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := os.ReadFile(p)
+		if strings.Count(string(got), "verify:") != 1 {
+			t.Errorf("a second verify: key was written:\n%s", got)
+		}
+		if _, err := parser.LoadSurfaceYAML(p); err != nil {
+			t.Errorf("result does not parse: %v\n%s", err, got)
+		}
+	}
+}
+
+// A bare `verify:` is a key with a null value. Appending to it completes the
+// key into a block list, which is valid and is what the author left room for —
+// so it is done rather than declined.
+func TestSplice_NullVerifyBecomesABlockList(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+    - name: B
+      source: '@f/two'
+      page: p
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}, {}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 1 || frags[0].Verify[0] != "added" {
+		t.Errorf("fragment A verify: = %v, want the bullet written into the empty key", frags[0].Verify)
+	}
+	if len(frags[1].Verify) != 0 {
+		t.Errorf("fragment B gained %v; the insert was scoped to A", frags[1].Verify)
+	}
+}
+
+// A flow sequence cannot take a line-wise merge. It is reported by occurrence
+// rather than silently dropped, and the file is left byte-identical.
+func TestSplice_FlowSequenceIsReportedNotGuessed(t *testing.T) {
+	body := `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify: [existing one]
+`
+	p := spliceFixture(t, body)
+	res, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Attached != 0 {
+		t.Errorf("attached = %d, want 0", res.Attached)
+	}
+	if len(res.FlowSkipped) != 1 || res.FlowSkipped[0] != 0 {
+		t.Errorf("FlowSkipped = %v, want [0] so the caller can name it", res.FlowSkipped)
+	}
+	got, _ := os.ReadFile(p)
+	if string(got) != body {
+		t.Errorf("the file was modified:\n%s", got)
+	}
+}
+
+// A block-scalar bullet spans lines its marker does not. An addition must land
+// after the whole scalar; landing between `- |` and its body folds the original
+// criterion into the new one and still parses, which is why it went unnoticed.
+func TestSplice_BlockScalarBulletKeepsItsBody(t *testing.T) {
+	p := spliceFixture(t, `feature: f
+fragments:
+    - name: A
+      source: '@f/one'
+      verify:
+        - |
+          a multi-line
+          criterion body
+`)
+	if _, err := spliceAfterSourceLines(p, []verifyInsert{{Bullets: []string{"added"}}}); err != nil {
+		t.Fatal(err)
+	}
+	frags := mustLoadSurface(t, p)
+	if len(frags[0].Verify) != 2 {
+		t.Fatalf("verify: = %v, want the original scalar plus the addition", frags[0].Verify)
+	}
+	if !strings.Contains(frags[0].Verify[0], "a multi-line") || !strings.Contains(frags[0].Verify[0], "criterion body") {
+		t.Errorf("the original block scalar was corrupted: %q", frags[0].Verify[0])
+	}
+	if strings.TrimSpace(frags[0].Verify[1]) != "added" {
+		t.Errorf("second bullet = %q, want the addition standing alone", frags[0].Verify[1])
 	}
 }

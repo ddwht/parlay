@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 
 	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -52,6 +53,13 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	slug := parser.FeatureSlug(args[0])
+	return emitReviewGateJSON(cmd, computeReviewGate(cfg, slug))
+}
+
+// computeReviewGate verifies the coverage-review.yaml gate for a feature and
+// returns the structured result, with no stdout I/O and no process exit.
+// Shared by the cobra command and the gate aggregator's `done` stage.
+func computeReviewGate(cfg *config.Context, slug string) reviewGateOutput {
 	out := reviewGateOutput{Feature: slug, Issues: []reviewGateIssue{}}
 
 	// Adapter-set gate: presentation-only projects skip coverage-review.
@@ -59,12 +67,12 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 	asContent, err := os.ReadFile(asPath)
 	if err != nil {
 		out.Ready = true
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 	adapterSet, err := parser.ParseAdapterSetBytes(asPath, asContent)
 	if err != nil || !adapterSet.IsMultiTarget() {
 		out.Ready = true
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 
 	buildDir := cfg.BuildPath(slug)
@@ -79,7 +87,7 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 			Code:     "buildfile-not-found",
 			Message:  fmt.Sprintf("read %s: %v", bfPath, err),
 		})
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 	tcContent, err := os.ReadFile(tcPath)
 	if err != nil {
@@ -88,7 +96,7 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 			Code:     "testcases-not-found",
 			Message:  fmt.Sprintf("read %s: %v", tcPath, err),
 		})
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 
 	bfHash, err := agent.CanonicalFormHash(bfContent)
@@ -98,7 +106,7 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 			Code:     "canonical-form-failed",
 			Message:  fmt.Sprintf("hash buildfile: %v", err),
 		})
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 	tcHash, err := agent.CanonicalFormHash(tcContent)
 	if err != nil {
@@ -107,7 +115,7 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 			Code:     "canonical-form-failed",
 			Message:  fmt.Sprintf("hash testcases: %v", err),
 		})
-		return emitReviewGateJSON(cmd, out)
+		return out
 	}
 
 	// Discover the required suites from the on-disk testcases. Coverage
@@ -147,7 +155,7 @@ func runCheckReviewGate(cmd *cobra.Command, args []string) error {
 	}
 
 	out.Ready = len(out.Issues) == 0
-	return emitReviewGateJSON(cmd, out)
+	return out
 }
 
 // requiredSuiteIDs extracts every suite name declared in testcases.yaml.

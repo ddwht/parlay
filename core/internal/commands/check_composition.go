@@ -452,14 +452,29 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	out, err := computeComposition(cfg)
+	if err != nil {
+		return err
+	}
+	buf, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Fprintln(cmd.OutOrStdout(), string(buf))
+	if !out.Coherent {
+		return NewExitCodeError(1)
+	}
+	return nil
+}
 
+// computeComposition validates cross-feature fixture coherence over the whole
+// active root and returns the structured verdict, with no stdout I/O and no
+// process exit. Shared by the cobra command and the gate aggregator.
+func computeComposition(cfg *config.Context) (compositionOutput, error) {
 	// The canonical enumeration — the same one `status` and `diff` use. Doing
 	// it here rather than inside the collector keeps the traversal in one
 	// place across the whole codebase; a second hand-rolled walk is what
 	// produced the bug this replaces.
 	all, err := cfg.AllFeatures()
 	if err != nil {
-		return fmt.Errorf("enumerate features: %w", err)
+		return compositionOutput{}, fmt.Errorf("enumerate features: %w", err)
 	}
 
 	records, contributing, notes := collectFixtureRecords(cfg, all)
@@ -500,20 +515,14 @@ func runCheckComposition(cmd *cobra.Command, args []string) error {
 		findings = append(findings, flowFindings...)
 	}
 
-	out := compositionOutput{
+	return compositionOutput{
 		Features: contributing,
 		Examined: len(all),
 		Records:  len(records),
 		Findings: findings,
 		Notes:    notes,
 		Coherent: len(findings) == 0,
-	}
-	buf, _ := json.MarshalIndent(out, "", "  ")
-	fmt.Fprintln(cmd.OutOrStdout(), string(buf))
-	if !out.Coherent {
-		return NewExitCodeError(1)
-	}
-	return nil
+	}, nil
 }
 
 // spansMultipleFeatures reports whether two different values for the same

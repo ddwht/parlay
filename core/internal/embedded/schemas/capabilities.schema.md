@@ -51,7 +51,7 @@ operations:
 | `operations` | Yes | List of capability operations. May be empty for presentation-only features. |
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
 | `operations[].source` | Required on generate, tolerated absent on read | Comma-separated `@feature/intent-slug` traceability references — the same shape `surface.yaml`'s `fragments[].source` uses. See "Why `source:` exists" below. |
-| `operations[].verify` | No | Acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets by `/parlay-create-artifacts` on generate and by `parlay migrate-verify` for pre-existing artifacts. Testcase derivation reads these; since v0.3 there is no intent-bullet fallback — a missing verify: means run `parlay migrate-verify`. |
+| `operations[].verify` | No | Acceptance criteria, one line each — the owning intent's **contract claims**: input validation, state change, output shape, allowed errors. Transport-independent by construction; a claim about what the user *sees* belongs on the surface fragment that shows it (`surface.schema.md` § Verify), not here. Relocated by `/parlay-create-artifacts` on generate and by `parlay migrate-verify` for pre-existing artifacts. Testcase derivation reads these; since v0.3 there is no intent-bullet fallback — a missing verify: means run `parlay migrate-verify`. |
 | `operations[].rationale` | No | One line of provenance prose — why the operation exists. Never validated beyond being a string. |
 | `operations[].kind` | Yes | One of the values in `operation-kinds.schema.md`. |
 | `operations[].subject` | Yes | The primary entity the operation acts on. |
@@ -62,6 +62,18 @@ operations:
 | `operations[].steps` | Yes | Ordered list of steps. Each step's `type:` must come from the `steps.schema.md` closed set. |
 
 <!-- /parlay:normative -->
+
+## Criteria presence
+
+An operation with no `verify:` is reported at the designer→build boundary, and at `parlay validate --type capabilities`:
+
+| Code | Fires when |
+|---|---|
+| `capability-operation-no-criteria` (warning) | An operation carries no `verify:` at all. Nothing states its contract, so its operation suite has nothing to discharge. |
+
+A **warning**, on the same reasoning as the surface-side codes (`surface.schema.md` § Criteria presence): readiness converts a build-mode error into a gate blocker, and every operation authored before criteria were routed by claim shape would be stopped at once.
+
+The check exists because the coverage walkers structurally cannot see this condition — they ask whether *stated* criteria are discharged, and an operation stating none demands nothing, so it passes by vacancy.
 
 ## Why `source:` exists
 

@@ -36,6 +36,15 @@ type CoverageReview struct {
 type CoverageExemption struct {
 	Suite  string `yaml:"suite"`
 	Item   string `yaml:"item"`
+	// CriterionText narrows an exemption to a single verify: bullet on Item.
+	//
+	// Optional, and its absence is load-bearing rather than a default: an
+	// exemption with no criterion_text: is entry-wide, which is the only way to
+	// read one written before criterion coverage was counted per bullet. Every
+	// exemption in existence omits it and none could have recorded it, so
+	// reading absence as "excuses nothing" would silently revoke exemptions a
+	// human already granted.
+	CriterionText string `yaml:"criterion_text,omitempty"`
 	Reason string `yaml:"reason"`
 }
 

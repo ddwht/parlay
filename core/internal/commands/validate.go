@@ -176,7 +176,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// affects resolution) live in `parlay internal check-amendments`.
 		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateAmendment)
 	case "surface":
-		validator = agent.ValidateSurface
+		// The presence walker is cross-artifact — it reads capabilities.yaml
+		// alongside the surface — so it cannot ride inside ValidateSurface,
+		// whose signature sees one file's bytes. Gathered here and reported
+		// beside the per-file result.
+		validator = withCriteriaPresence(cmd, agent.ValidateSurface)
 	case "buildfile":
 		validator = agent.ValidateBuildfile
 	case "blueprint":
@@ -244,9 +248,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// regression run to ship placeholders.
 		entities := declaredCapabilityEntities(cmd)
 		proposed := proposedCapabilityEntities(cmd)
-		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
+		// Presence runs for capabilities too, not only for surface. Wiring it
+		// to one artifact type would make the same cross-artifact condition
+		// appear or vanish depending on which file the author happened to
+		// validate.
+		validator = withCriteriaPresence(cmd, reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
 			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
-		})
+		}))
 	case "coverage-review":
 		// coverage-review validation is hash-aware and needs full inputs;
 		// surface a minimal YAML-shape check here.
@@ -1122,10 +1130,13 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // The path lives under .parlay/build/<feature>/, so the feature is the build
 // path's parent relative to the active root's BuildRoot(). From it the feature's
 // capabilities.yaml supplies every canonical operation (the operation walker's
-// subjects) and every operation carrying a verify: list (a criterion the
-// criterion walker requires a case for); surface.yaml supplies every fragment
-// carrying a verify: list; coverage-review.yaml supplies the exemptions a human
-// review recorded.
+// subjects) and every verify: bullet those operations carry; surface.yaml
+// supplies every bullet its fragments carry; coverage-review.yaml supplies the
+// exemptions a human review recorded.
+//
+// Criteria are gathered per BULLET, not per entry. Gathering them per entry —
+// one ref for an operation with five bullets — is what let a single case mark
+// all five discharged.
 //
 // Every resolution failure returns whatever was gathered so far rather than an
 // error. Absence of a domain artifact is a normal state — a feature with no
@@ -1133,6 +1144,20 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // walker it feeds simply reports nothing. Passing empty inputs is not a silent
 // partial: with no declared operations or criteria there is nothing to find
 // uncovered, which is a different answer from reporting everything as covered.
+// criteriaFor expands one contract entry's verify: list into its individual
+// criteria, each carrying the entry's ref and its own text.
+func criteriaFor(ref string, verify []string) []agent.CriterionRef {
+	out := make([]agent.CriterionRef, 0, len(verify))
+	for _, v := range verify {
+		text := agent.CanonicalCriterionText(v)
+		if text == "" {
+			continue
+		}
+		out = append(out, agent.CriterionRef{Ref: ref, Text: text})
+	}
+	return out
+}
+
 func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2Input {
 	in := agent.TestcasesV2Input{Path: path}
 
@@ -1144,11 +1169,16 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// Feature = the build path's parent, relative to BuildRoot(). A path that
 	// is not under BuildRoot (a standalone file handed by absolute path, say)
 	// yields no feature, and the walkers stay quiet.
-	abs, err := filepath.Abs(path)
+	// Symlinks resolved on both sides, for the reason criteriaPresenceInputs
+	// documents: on macOS /tmp is a symlink to /private/tmp, so a file named
+	// through one against a root resolved through the other yields "../../.."
+	// and the feature fails to resolve — disabling both coverage walkers with
+	// no sign they were skipped.
+	abs, err := resolvePath(path)
 	if err != nil {
 		return in
 	}
-	feature, err := filepath.Rel(pctx.BuildRoot(), filepath.Dir(abs))
+	feature, err := filepath.Rel(resolvedOrSelf(pctx.BuildRoot()), filepath.Dir(abs))
 	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
 		return in
 	}
@@ -1160,15 +1190,14 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// suites' operation: and any operation criterion.ref cite; a capabilities.yaml
 	// with no feature: cannot form a reliable ref, so its operations are skipped.
 	if caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); capErr == nil && caps.Feature != "" {
+		in.ContractResolved = true
 		for _, op := range caps.Operations {
 			if op.ID == "" {
 				continue
 			}
 			ref := parser.NormalizeOperationID(caps.Feature, op.ID)
 			in.CanonicalOperations = append(in.CanonicalOperations, ref)
-			if len(op.Verify) > 0 {
-				in.Criteria = append(in.Criteria, ref)
-			}
+			in.Criteria = append(in.Criteria, criteriaFor(ref, op.Verify)...)
 		}
 	}
 
@@ -1177,11 +1206,13 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// cited as @<feature>/fragment:<name>.
 	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
 		if fragments, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
+			in.ContractResolved = true
 			for _, f := range fragments {
-				if f.Name == "" || f.Feature == "" || len(f.Verify) == 0 {
+				if f.Name == "" || f.Feature == "" {
 					continue
 				}
-				in.Criteria = append(in.Criteria, fmt.Sprintf("@%s/fragment:%s", f.Feature, f.Name))
+				ref := fmt.Sprintf("@%s/fragment:%s", f.Feature, f.Name)
+				in.Criteria = append(in.Criteria, criteriaFor(ref, f.Verify)...)
 			}
 		}
 	}
@@ -1195,10 +1226,23 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 			if ex.Item == "" {
 				continue
 			}
-			if in.ExemptCriteria == nil {
-				in.ExemptCriteria = make(map[string]bool)
+			// criterion_text: present excuses exactly that bullet; absent is
+			// read as entry-wide. Every exemption written before bullet-level
+			// coverage existed omits it, and none of them could have recorded
+			// one — so the absent form has to keep meaning what it meant, or
+			// upgrading silently narrows exemptions a human already granted.
+			text := agent.CanonicalCriterionText(ex.CriterionText)
+			if text == "" {
+				if in.ExemptCriteria.Entries == nil {
+					in.ExemptCriteria.Entries = make(map[string]bool)
+				}
+				in.ExemptCriteria.Entries[ex.Item] = true
+				continue
 			}
-			in.ExemptCriteria[ex.Item] = true
+			if in.ExemptCriteria.Bullets == nil {
+				in.ExemptCriteria.Bullets = make(map[agent.CriterionRef]bool)
+			}
+			in.ExemptCriteria.Bullets[agent.CriterionRef{Ref: ex.Item, Text: text}] = true
 		}
 	}
 
@@ -1278,4 +1322,82 @@ func validateDomainModelAdapter(path string, content []byte) error {
 	}
 	return fmt.Errorf("domain-model.yaml validation failed: %d issue(s)\n  %s",
 		len(msgs), strings.Join(msgs, "\n  "))
+}
+
+// withCriteriaPresence wraps a per-file validator so that validating a
+// feature's surface.yaml or capabilities.yaml also reports contract entries
+// carrying no verify: at all.
+//
+// The findings go to stderr as warnings rather than into the wrapped
+// validator's error, because they are facts about the FEATURE's contract
+// rather than about the file's own shape — a fragment missing criteria does
+// not make surface.yaml invalid, and failing the file for it would block a
+// validate the author ran for an unrelated reason.
+//
+// When the file is not under a resolvable feature (a standalone path, no
+// project context), presence is skipped: the walker would have no contract to
+// read and its silence would be an artifact of the missing input.
+func withCriteriaPresence(cmd *cobra.Command, inner func(string, []byte) error) func(string, []byte) error {
+	return func(path string, content []byte) error {
+		if in, ok := criteriaPresenceInputs(cmd, path); ok {
+			for _, o := range agent.ValidateCriteriaPresence(agent.ModeAuthoring, in) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "[WARN] %s: %s\n", o.Code, o.Message)
+			}
+		}
+		return inner(path, content)
+	}
+}
+
+// criteriaPresenceInputs resolves the feature owning path and loads its
+// contract. The bool reports whether a feature resolved at all.
+func criteriaPresenceInputs(cmd *cobra.Command, path string) (agent.CriteriaPresenceInput, bool) {
+	var in agent.CriteriaPresenceInput
+
+	pctx := config.FromCtx(cmd.Context())
+	if pctx == nil {
+		return in, false
+	}
+	// Both sides go through EvalSymlinks before Rel. On macOS /tmp is a symlink
+	// to /private/tmp, so a file named through one and a root resolved through
+	// the other produce a Rel of "../../..." and the feature silently fails to
+	// resolve — the check would then skip with no sign it had.
+	abs, err := resolvePath(path)
+	if err != nil {
+		return in, false
+	}
+	feature, err := filepath.Rel(resolvedOrSelf(pctx.IntentsRoot()), filepath.Dir(abs))
+	if err != nil || feature == "." || strings.HasPrefix(feature, "..") {
+		return in, false
+	}
+	featureDir := pctx.FeaturePath(feature)
+
+	in.Feature = feature
+	if surfacePath := parser.ResolveSurfacePath(featureDir); surfacePath != "" {
+		in.HasSurface = true
+		if frags, fErr := parser.ParseSurfaceFile(surfacePath); fErr == nil {
+			in.Fragments = frags
+		}
+	}
+	if caps, cErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); cErr == nil {
+		in.Operations = caps.Operations
+	}
+	return in, true
+}
+
+// resolvePath makes a path absolute and resolves any symlinks in it.
+func resolvePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return resolvedOrSelf(abs), nil
+}
+
+// resolvedOrSelf resolves symlinks, falling back to the input when it cannot —
+// a path that does not exist yet is not a reason to give up on comparing it.
+func resolvedOrSelf(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }

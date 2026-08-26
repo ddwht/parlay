@@ -55,7 +55,7 @@ Generation sources:
 | Supersedes | No | `**Supersedes**:` a single `@feature/fragment` reference this fragment replaces when both occupy the same `(page, region)`. See Cross-feature composition below. |
 | Interactive | No | `**Interactive**:` `true` or `false`. Absent reads as `true` (the fragment may capture input). `false` marks an output-only fragment; the adapter emits it as non-hit-testable output so a sibling cannot silently eat its input. |
 | Notes | No | `**Notes**:` followed by `- ` prefixed lines |
-| Verify | No | YAML form (`fragments[].verify`) only: acceptance criteria, one line each — relocated from the owning intent's **Verify** bullets, carried by the fragment when no capabilities operation covers that intent. Populated by `/parlay-create-artifacts` on generate and `parlay migrate-verify` for pre-existing artifacts; testcase derivation reads these; since v0.3 there is no intent-bullet fallback (`parlay migrate-verify` relocates stragglers). |
+| Verify | No | YAML form (`fragments[].verify`) only: acceptance criteria, one line each — the owning intent's **presentation claims**, those about user-observable output attributable to this fragment. Carried **independently of whether a capabilities operation covers that intent**: an intent that produces an operation still contributes its presentation claims here, while its contract claims go to `operations[].verify`. (Routing by operation coverage — the pre-v0.5.x rule — specified any full-stack feature into having zero presentation criteria.) Populated by `/parlay-create-artifacts` on generate and `parlay migrate-verify` for pre-existing artifacts; testcase derivation reads these; since v0.3 there is no intent-bullet fallback (`parlay migrate-verify` relocates stragglers). |
 
 ---
 
@@ -230,6 +230,23 @@ When a surface file is loaded, the tool verifies:
 - Every fragment has a Source reference
 
 Unknown identifiers are errors. Missing Actions is allowed (pure display fragments). Missing Flow is allowed (simple fragments).
+
+### Criteria presence
+
+A fragment with no `verify:` is reported at the designer→build boundary, and at `parlay validate --type surface`:
+
+| Code | Fires when |
+|---|---|
+| `surface-fragment-no-criteria` (warning) | A fragment carries no `verify:` at all. Nothing states what it must do, so every presentation case written against it cites nothing. |
+| `feature-surface-no-criteria` | The feature has fragments and **none** of them carries `verify:` — the presentation contract is empty as a whole. **Blocks the designer→build boundary.** |
+
+**Only the aggregate blocks.** A single fragment without criteria may be structural or assembly-only — a judgement a reviewer makes, and one no exemption machinery records — so the per-fragment code locates partial vacancy without stopping anyone. A surface where *nothing* states a criterion cannot be any of those: it guarantees that every presentation case the build phase writes cites nothing.
+
+The aggregate shipped as a warning, on the reasoning that erroring would stop every project authored under the pre-v0.5.x routing rule before its owner had a way forward. Both halves of that stopped holding. The way forward exists — `parlay migrate-verify --fragments` seeds the criteria for review, and the routing rule above tells the designer to author them — and a warning was observed not to stop anything: a build agent met this exact condition, diagnosed it, tried `migrate-verify`, found it could not help (it routes to operations first), and emitted four test files of criterion-less cases anyway.
+
+Partial vacancy still reaches the build phase, so `/parlay-build-feature` omits a suite whose source entry has no criteria and reports the omission rather than emitting cases that cite nothing.
+
+Why this needs its own check: the coverage walkers ask whether *stated* criteria are discharged. An entry stating none discharges nothing and demands nothing, so it is coverage-complete by vacancy — the absence is invisible, and only non-discharge is visible.
 
 ## Parsing
 

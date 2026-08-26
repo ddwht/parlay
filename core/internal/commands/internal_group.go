@@ -55,6 +55,7 @@ func registerInternalCommands() {
 		checkBuildfileCmd,
 		checkSupportsCmd,
 		checkReviewGateCmd,
+		gateCmd,
 		scanGeneratedCmd,
 		verifyGeneratedCmd,
 		collectQuestionsCmd,

@@ -147,6 +147,18 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 **Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. The CLI hashes it before writing, so the value never appears in the log. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for.
 
+## Step 0 — Gate
+
+This step is injected at deploy time and runs before every other step in this module. Gate the phase boundary before doing any work in it. For the feature this phase acts on, run:
+
+```
+parlay internal gate @{feature} --stage code
+```
+
+(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **pure recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict and writes nothing, so re-running it after a fix re-derives the answer with no stale state to clear.
+
+**If any invocation exits non-zero, stop.** Do not proceed to the steps below, and do not quietly fix-and-retry: each entry in the gate's `blockers[]` names its own `fix`, and resolving a blocker is the driver's call, not this phase's. Surface the blockers as a `failure` decision request (see **Asking the user**) with them in `context:`, and let the driver decide. A passing gate (exit zero) is the only condition under which the rest of this module runs.
+
 ## Steps
 
 1. **Load schema digests** — Read these before generating:

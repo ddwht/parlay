@@ -25,6 +25,16 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
    - `spec/intents/{feature}/intents.md`
    - `spec/intents/{feature}/dialogs.md`
 
+1.5. **Amendment pre-flight — this module authors artifacts at birth only.** Run `parlay internal check-applied @{feature}` before analyzing anything. This module derives the four contract artifacts from the founding documents (`intents.md`, `dialogs.md`). That is only correct at birth, before the founding docs freeze. Once a feature has been built, the founding docs are frozen and the contract artifacts are the current truth — regenerating them here from `intents.md`/`dialogs.md` would silently revert every amendment the ledger has since applied, because the founding docs never absorbed them.
+
+   So stop, and do not author, when EITHER holds:
+   - the feature has a non-empty `amendments/` ledger (`check-applied` returns any entries in `amendments`), or
+   - `ComputeFeaturePhase` reports phase ≥ build (a buildfile exists — the founding docs are frozen). `check-applied`'s `has_baseline: true` is the cheap signal for this.
+
+   Return a `kind: impasse` decision block (see **Asking the user**) routing the change to `/parlay-refine`: post-birth change to a contract goes through the amendment ledger, one amendment at a time, not through a wholesale re-derivation from frozen founding docs. Name what you found — the ledger entries or the baseline — in `context:`, and offer `refine` (hand off to `/parlay-refine`) and `explain` (the user believes this genuinely is a fresh feature) as options. No `default:` — silently regenerating over an amended contract is exactly the data loss this guard exists to prevent, so an unattended run must abort rather than pick one.
+
+   Proceed only when the feature is at birth: no ledger, no baseline. That is the state this module is for.
+
 2. **Analyze intents for artifact signals** — For each intent, classify which artifact (or combination of artifacts) it contributes to. The classification is based on what the intent DESCRIBES, not on persona names (which are project-specific). The four artifacts are co-equal — an architectural intent flows to `infrastructure.md` directly, not via `capabilities.yaml`, and vice versa.
 
    **Surface signals** (the intent describes visible output):
@@ -98,11 +108,40 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 
 5. **Create the artifacts**:
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.yaml, validate)
-     - **Populate `verify:` on each fragment** (YAML form) with the acceptance criteria from the owning intent's **Verify** bullets that describe visible behavior — but only for intents no capabilities operation covers; an intent that produces an operation carries its criteria there instead. This is what testcase derivation reads; there is no fallback — a fragment whose criteria never land here has none.
+     - **Populate `verify:` on each fragment** (YAML form) with the owning intent's presentation claims, following **Routing acceptance criteria** below. Operation coverage of the intent does **not** exempt a fragment: an intent that produces an operation still contributes its presentation claims here. This is what testcase derivation reads for presentation suites; there is no fallback — a fragment whose criteria never land here has none, and every case written against it will cite nothing.
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
      - **Set `source:` on every operation** to the `@{feature}/{intent-slug}` refs it came from, the same way a surface fragment carries one. This is the only record of which intent an operation implements, and it is what lets a later change described in prose be routed to the operation that owns it. An operation without it can be found only by name similarity, which misses renames and matches things that merely sound alike.
-     - **Populate `verify:` on every operation** with the owning intent's **Verify** bullets that describe the operation's contract (input validation, side-effects, output shape, allowed errors). The acceptance criteria live on the operation from birth — testcase derivation reads them from here, not from intents.md.
+     - **Populate `verify:` on every operation** with the owning intent's contract claims, following **Routing acceptance criteria** below. The acceptance criteria live on the operation from birth — testcase derivation reads them from here, not from intents.md.
    - **If infrastructure**: guide the designer to author `infrastructure.md` — show the fragment format, the field set (Name, Source intent, Affects, Behavior, Invariants), and a worked example drawn from the matching architectural category (boundary, probe, allowlist, dependency pin)
+
+   **Routing acceptance criteria.** An intent's **Verify** bullets are split
+   between the fragments and the operations that source that intent. Route
+   **atomic claims, not whole bullets**: a real bullet routinely packs a
+   stimulus, a backend result and a piece of visible evidence into one
+   sentence, and routing the sentence by its dominant flavour either places it
+   arbitrarily or duplicates it wholesale.
+
+   1. Extract the independently testable claims from the bullet.
+   2. A claim about **user-observable presentation or output**, attributable to
+      a specific fragment, goes on that fragment.
+   3. A claim about the **transport-independent contract** — input validation,
+      state change, output shape, allowed errors — goes on the operation.
+   4. A sentence carrying both is **rewritten into separate criteria**, one per
+      destination. Never relocate the same sentence verbatim to both places: a
+      contract-shaped claim sitting on a fragment demands a display case that
+      cannot be written honestly, and the build phase will write a vacuous one
+      to discharge it.
+
+   *Whether an operation covers the intent is not an input to this.* Routing by
+   operation coverage is what produced features specified to have zero
+   presentation criteria: every intent produced an operation, so every claim
+   went to the operation, so every presentation case had nothing to cite.
+
+   **"Visible" does not imply a fragment.** A CLI or TUI feature with no
+   surface artifact has observable output and no fragment to carry it; there
+   its output claims stay on the operation. The rule places presentation claims
+   on a fragment *when the feature has fragments*, not wherever something is
+   observable.
    - **If domain-model**: write what this feature needs into the **feature's own** `spec/intents/{feature}/domain-model.yaml` — a *contribution*. Do **not** edit the project's root `domain-model.yaml` from a feature phase.
      - The contribution uses the same schema as the root model and holds **only what this feature proposes** — the new entities, the new fields on existing entities, the new enum values, the new relationships. It is not a copy of the root with edits.
      - The root model stays the source of truth. A contribution is a proposal: the loop reports it at the artifacts→build boundary, names which other features it affects, and the designer accepts it there. Editing the root directly from a feature phase is how one feature's need silently becomes every other feature's problem.
@@ -130,4 +169,4 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
 
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
 - `no-dialogs` — dialogs.md doesn't exist. Warn that the decision will be based on intents only (less signal). Ask whether to proceed or scaffold dialogs first.
-- `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip.
+- `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip. **But first re-check the step 1.5 pre-flight:** if this feature has a ledger or a baseline, regenerating is not an overwrite the designer should be offered — it silently reverts every applied amendment, because the fresh artifacts derive from frozen founding docs that never absorbed the ledger. In that state the answer is not regenerate-vs-skip; it is `/parlay-refine`, and step 1.5 has already stopped with the impasse. Only offer regenerate-vs-skip for a feature genuinely still at birth.

@@ -2,6 +2,7 @@
 name: generate-code
 description: "Generate prototype code from buildfile"
 surface: module
+gate-stage: code
 ---
 
 <!--
@@ -78,6 +79,8 @@ Concretely:
 <!-- parlay:expand-decision-protocol -->
 
 <!-- parlay:expand-feedback -->
+
+<!-- parlay:expand-gate -->
 
 ## Steps
 

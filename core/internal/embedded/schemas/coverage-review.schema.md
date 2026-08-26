@@ -38,7 +38,8 @@ exemptions:
 | `testcases_hash` | Yes | SHA-256 hash over the canonical-form serialization of `testcases.yaml`. Whole-file fallback for reviews without `suite_hashes`. |
 | `suite_hashes` | No | Map of suite id (or name, when a suite has no id) to the SHA-256 hash of that suite's canonical form. Present in reviews written by current `parlay review-coverage`; its presence switches testcases staleness from whole-file to per-suite. Absent reviews fall back to `testcases_hash`. |
 | `approved_suites` | Yes | List of suite ids the reviewer has approved. Every required suite must appear or be exempted. |
-| `exemptions` | No | List of `{ suite, item, reason }` entries documenting why a required term has no covering case. `item` is the **covered term** — an operation id, an error code, whatever `source_refs:` names — never the suite id. The gate keys on the term, so a suite-keyed entry can never discharge anything. |
+| `exemptions` | No | List of `{ suite, item, reason }` entries — optionally `criterion_text:` — documenting why a required term has no covering case. `item` is the **covered term** — an operation id, an error code, whatever `source_refs:` names — never the suite id. The gate keys on the term, so a suite-keyed entry can never discharge anything. |
+| `exemptions[].criterion_text` | No | Narrows an exemption to a **single `verify:` bullet** on `item`, matched against the contract's own wording (trimmed; not otherwise normalized). Omitted, the exemption is **entry-wide** and excuses every bullet on `item` — which is how every exemption written before criterion coverage became bullet-granular has to be read, since none of them could have recorded a text. Prefer the narrow form when writing new exemptions: an entry-wide exemption on a five-bullet operation excuses four criteria nobody reviewed. |
 
 ## Versioning
 
@@ -66,7 +67,7 @@ The review is recorded by `parlay review-coverage <feature>`.
 
 Interactively, declining a suite prompts for a reason and records one exemption **per term that suite covered** (its `source_refs:`), because that is what the gate consults. A suite with no `source_refs:` falls back to being keyed on its own name — the only term available.
 
-Non-interactively, `--exempt <suite>:<item>=<reason>` pre-records one, and is repeatable. A suite whose every covered term is exempted this way is not prompted for; a suite with only *some* terms exempted still is, since the rest remain undecided. Parsing splits on the first `=` and the first `:` before it, so a reason may contain either character — `report-suite:@f/operation:submit=covered by the engine: see ADR-4` records the item as `@f/operation:submit` and keeps the reason whole.
+Non-interactively, `--exempt <suite>:<item>=<reason>` pre-records one, and is repeatable. **It always records an entry-wide exemption** — it has no `criterion_text:` form, and so is strictly broader than an exemption recorded interactively against one bullet. The grammar is the reason: it splits on the first `=` and the first `:` so a reason may contain either, and threading a third free-text field through that buys ambiguity rather than precision. Automation authors should not assume the flag and the interactive flow grant equally narrow exemptions — to exempt one bullet, write the entry into the file with `criterion_text:`. A suite whose every covered term is exempted this way is not prompted for; a suite with only *some* terms exempted still is, since the rest remain undecided. Parsing splits on the first `=` and the first `:` before it, so a reason may contain either character — `report-suite:@f/operation:submit=covered by the engine: see ADR-4` records the item as `@f/operation:submit` and keeps the reason whole.
 
 ## Backward compatibility
 

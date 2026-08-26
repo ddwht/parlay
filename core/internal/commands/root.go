@@ -448,6 +448,7 @@ func init() {
 	rootCmd.AddCommand(simplifyCmd)
 	rootCmd.AddCommand(moveFeatureCmd)
 	rootCmd.AddCommand(repairCmd)
+	rootCmd.AddCommand(gateAllCmd)
 	rootCmd.AddCommand(loopCmd)
 
 	// Utility commands for agent consumption

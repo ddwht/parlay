@@ -132,13 +132,15 @@ type caseCriterion struct {
 // observes (claims-unmet otherwise). isV2 gates the criterion warning — legacy
 // v1 suites predate the field and are already flagged by their own legacy code.
 //
-// The second return is every criterion ref the suite's cases discharge — the
-// set the criterion-coverage walker holds the contract's verify: entries
-// against. It is collected here rather than re-decoded in the caller because the
-// criterion node is already decoded for the missing-ref check.
-func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, cases []map[string]yaml.Node) ([]ValidationOutcome, []string) {
+// The second return is every criterion the suite's cases discharge, as (ref,
+// text) pairs — the set the criterion-coverage walker holds the contract's
+// verify: bullets against. It is collected here rather than re-decoded in the
+// caller because the criterion node is already decoded for the missing-ref
+// check.
+func validateSuiteCases(mode ValidationMode, path, suiteName, suiteKind string, cases []map[string]yaml.Node) ([]ValidationOutcome, []CriterionRef) {
 	var outcomes []ValidationOutcome
-	var criterionRefs []string
+	var criterionRefs []CriterionRef
+	isV2 := suiteKind != ""
 	for i, c := range cases {
 		label := fmt.Sprintf("case %d", i+1)
 		if nameNode, ok := c["name"]; ok {
@@ -156,6 +158,7 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 
 		// A v2 case with no criterion records nothing about why it exists.
 		// Warning while the field lands — every testcases.yaml predates it.
+		var citedRef string
 		if isV2 {
 			var crit caseCriterion
 			if node, ok := c["criterion"]; !ok {
@@ -165,7 +168,11 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
 					fmt.Sprintf("%s: suite %q %s has a criterion: with no ref — the ref cites the @feature/kind:name verify: entry the case discharges", path, suiteName, label)))
 			} else {
-				criterionRefs = append(criterionRefs, strings.TrimSpace(crit.Ref))
+				citedRef = strings.TrimSpace(crit.Ref)
+				criterionRefs = append(criterionRefs, CriterionRef{
+					Ref:  citedRef,
+					Text: CanonicalCriterionText(crit.Text),
+				})
 			}
 		}
 
@@ -233,6 +240,29 @@ func validateSuiteCases(mode ValidationMode, path, suiteName string, isV2 bool, 
 				outcomes = append(outcomes, NewOutcome(mode, "testcases-unknown-term",
 					fmt.Sprintf("%s: suite %q %s step %d declares neither action: nor verify: — a step either does something or asserts something", path, suiteName, label, j+1)))
 			}
+		}
+
+		// Cross-kind citation: a presentation case may cite an operation's
+		// criterion, but only when it actually invokes that operation.
+		//
+		// The suite's kind need not equal its criterion's owner — an operation
+		// criterion can legitimately be observed end-to-end through the UI. What
+		// this stops is the operation ref used as a SUBSTITUTE for a display
+		// claim the fragment never stated, which is the tempting move when a
+		// fragment carries no verify: at all.
+		//
+		// Only invocation is mechanizable. Whether the criterion is
+		// contract-shaped, and so suitable for the presentation case citing it,
+		// needs classification metadata that criteria do not carry; that half
+		// stays an authoring rule in build-feature and a job for review.
+		//
+		// Membership is exact and deliberately not routed through exercises:.
+		// The vacuity walker below fires only when NO step targets ANY declared
+		// exercise, so listing the operation there proves nothing about the
+		// steps.
+		if SuiteKind(suiteKind) == SuiteKindPresentation && strings.Contains(citedRef, "/operation:") && !stepTargets[citedRef] {
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-cross-kind-criterion-unexercised",
+				fmt.Sprintf("%s: presentation suite %q %s cites the operation criterion %q but no step targets that operation — a presentation case may discharge an operation's criterion only by invoking it, not as a stand-in for a display criterion the fragment never stated", path, suiteName, label, citedRef)))
 		}
 
 		// Vacuity: a case that names things it exercises but touches none of
@@ -306,6 +336,43 @@ type suiteV2Shape struct {
 	Cases      []map[string]yaml.Node `yaml:"cases,omitempty"`
 }
 
+// CriterionRef is one acceptance criterion's identity: the contract entry that
+// declares it, plus the bullet's own text.
+//
+// The ref alone is NOT an identity. testcasesCoverageInputs used to append one
+// ref per criterion-BEARING entry, so an operation with five verify: bullets
+// contributed a single ref and one case citing it marked all five discharged.
+// Two shipped claims were false as a result: build-feature's "cases come 1:1
+// from verify: entries (coverage)" was unenforceable, and testcases.schema.md's
+// promise that criterion.text "pins the criterion's wording so a later edit to
+// the contract shows up as drift here" was untrue — the field was decoded and
+// never read.
+//
+// Identity is the (ref, text) pair rather than an index or hash appended to the
+// ref, because the contract those fields already state is that a wording edit
+// invalidates the case citing the old wording. An indexed id would survive a
+// re-wording, which is precisely the drift this is supposed to surface. It also
+// needs no new syntax: both halves already exist and build-feature already
+// writes them.
+type CriterionRef struct {
+	Ref  string
+	Text string
+}
+
+// CanonicalCriterionText normalizes a criterion bullet for identity comparison.
+//
+// Deliberately narrow: surrounding whitespace and line endings only. It does
+// NOT lowercase, collapse internal whitespace, or strip punctuation, because
+// each of those can merge materially distinct claims — a spec that
+// distinguishes a field name from a value by capitalization alone is unusual
+// but not wrong, and a validator that silently unifies two such bullets reports
+// coverage the tests do not have.
+func CanonicalCriterionText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.TrimSpace(s)
+}
+
 // TestcasesV2Input carries everything ValidateTestcasesV2 needs beyond the run
 // mode. The two coverage inputs are derived by the caller from the feature's
 // contract artifacts, and both are empty when no such artifact resolves — a
@@ -321,15 +388,49 @@ type TestcasesV2Input struct {
 	// walker holds operation-suite coverage against — every operation the
 	// feature's capabilities.yaml declares.
 	CanonicalOperations []string
-	// Criteria are the contract entries carrying a verify: list, each as its
-	// @<feature>/<kind>:<name> ref. Every one must be discharged by a case whose
-	// criterion.ref matches it, or excused in ExemptCriteria; the criterion
-	// walker fires verify-criterion-uncovered for each that is neither.
-	Criteria []string
-	// ExemptCriteria are refs a human review (coverage-review.yaml) has excused
-	// from needing a covering case. A ref present here is never reported
-	// uncovered.
-	ExemptCriteria map[string]bool
+	// ContractResolved reports that the feature's contract artifacts were found
+	// and read, whatever they turned out to contain.
+	//
+	// Separate from len(Criteria) > 0, and the distinction is the whole point of
+	// this change. "No contract resolved" and "contract resolved and entirely
+	// vacant" both yield zero criteria, but they are opposite situations: in the
+	// first, a case's citations cannot be judged and reporting them as unknown
+	// would be an artifact of the missing input; in the second — the state the
+	// criteria-presence walker exists to surface — a case citing anything is
+	// citing something the contract does not declare, which is exactly what
+	// wants reporting.
+	ContractResolved bool
+	// Criteria are the individual verify: bullets the feature's contract
+	// declares, each carrying the entry it came from and its own text. Every one
+	// must be discharged by a case whose criterion (ref AND text) matches it, or
+	// excused in ExemptCriteria; the criterion walker fires
+	// verify-criterion-uncovered for each that is neither.
+	Criteria []CriterionRef
+	// ExemptCriteria are criteria a human review (coverage-review.yaml) has
+	// excused from needing a covering case.
+	//
+	// An exemption naming a ref and a text excuses exactly that bullet. An
+	// exemption naming only a ref is read as entry-wide — which is how every
+	// exemption written before bullet-level coverage existed has to be read,
+	// since none of them could have recorded a text.
+	ExemptCriteria ExemptedCriteria
+}
+
+// ExemptedCriteria answers whether a given criterion is excused, honoring both
+// the bullet-specific and the legacy entry-wide form.
+type ExemptedCriteria struct {
+	// Entries excuses every criterion on the named ref.
+	Entries map[string]bool
+	// Bullets excuses one (ref, canonical text) pair.
+	Bullets map[CriterionRef]bool
+}
+
+// Excuses reports whether an exemption covers this criterion.
+func (e ExemptedCriteria) Excuses(c CriterionRef) bool {
+	if e.Entries[c.Ref] {
+		return true
+	}
+	return e.Bullets[CriterionRef{Ref: c.Ref, Text: CanonicalCriterionText(c.Text)}]
 }
 
 // ValidateTestcasesV2 validates the v2 shape, walks operation coverage against
@@ -346,13 +447,14 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 	}
 
 	covered := make(map[string]bool)
-	criteriaCovered := make(map[string]bool)
+	// Cited criteria, keyed by the (ref, canonical text) identity.
+	criteriaCovered := make(map[CriterionRef]bool)
 	for _, suite := range tc.Suites {
 		// The cases vocabulary is version-independent, so this runs before the
 		// discriminator check and for legacy suites too — putting it after the
 		// `continue` below would have silently exempted every v1 suite, which is
 		// most of what exists in projects today.
-		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind != "", suite.Cases)
+		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind, suite.Cases)
 		outcomes = append(outcomes, caseOutcomes...)
 		for _, ref := range refs {
 			criteriaCovered[ref] = true
@@ -414,20 +516,108 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 		}
 	}
 
-	// Criterion walker — every contract entry carrying a verify: list must be
-	// discharged by a case that cites it, or excused by an explicit exemption.
-	// This is the complement of the operation walker: that one asks whether a
-	// suite exists per operation, this one asks whether a case exists per stated
-	// acceptance criterion. Warning severity while the field lands — every
+	outcomes = append(outcomes, walkCriterionCoverage(mode, path, in, criteriaCovered)...)
+
+	return outcomes
+}
+
+// walkCriterionCoverage holds the contract's verify: bullets against what the
+// cases cite, at bullet granularity.
+//
+// Three distinct failures, where there used to be one. The old walker compared
+// ref to ref and so could only ever answer "does any case mention this entry":
+//
+//   - a case cites a ref no contract entry declares — a miscitation. Nothing
+//     reported this: an unknown ref simply failed to mark anything covered, so
+//     it read as a coverage gap on some other entry.
+//   - a case cites a known entry with a text that matches none of its current
+//     bullets — drift, or a fabricated criterion. This is the check
+//     testcases.schema.md has always described criterion.text as performing.
+//   - a declared bullet no case discharges — the real uncovered criterion, now
+//     counted per bullet rather than per entry.
+func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input, criteriaCovered map[CriterionRef]bool) []ValidationOutcome {
+	var outcomes []ValidationOutcome
+
+	// Every criterion the contract declares, indexed for the citation checks.
+	//
+	// Two identical bullets on one entry are indistinguishable under text
+	// identity and carry no distinct meaning, so they are reported as the
+	// authoring defect they are rather than given an invented index to tell
+	// them apart. Reported once per duplicated pair, not once per occurrence.
+	declaredRefs := make(map[string]bool)
+	declaredPairs := make(map[CriterionRef]bool)
+	dupeReported := make(map[CriterionRef]bool)
+	for _, c := range in.Criteria {
+		key := CriterionRef{Ref: c.Ref, Text: CanonicalCriterionText(c.Text)}
+		declaredRefs[c.Ref] = true
+		if declaredPairs[key] && !dupeReported[key] {
+			dupeReported[key] = true
+			outcomes = append(outcomes, NewOutcome(mode, "verify-criterion-duplicate",
+				fmt.Sprintf("%s: contract entry %q declares the criterion %q more than once — two identical bullets assert the same thing and cannot be discharged separately; drop the duplicate or reword it into a distinct claim", path, c.Ref, key.Text)))
+		}
+		declaredPairs[key] = true
+	}
+
+	// The two citation-side failures. Sorted so the report is stable: map
+	// iteration order would otherwise reorder findings between runs.
+	var cited []CriterionRef
+	for c := range criteriaCovered {
+		cited = append(cited, c)
+	}
+	sort.Slice(cited, func(i, j int) bool {
+		if cited[i].Ref != cited[j].Ref {
+			return cited[i].Ref < cited[j].Ref
+		}
+		return cited[i].Text < cited[j].Text
+	})
+	// Citation checks run whenever the contract was READ, not whenever it turned
+	// out to be non-empty. A resolved-but-vacant contract is the state this
+	// whole change exists to make visible, and a case citing criteria that
+	// contract does not declare is a miscitation there just as much as anywhere.
+	//
+	// textlessEntries are entries some case cites without a text. Their bullets
+	// are deliberately NOT also reported uncovered: the citation genuinely
+	// discharges nothing, but the cause is already named once by
+	// testcases-criterion-text-missing, and repeating it per bullet turns one
+	// actionable fact into N+1 warnings. Every testcases.yaml written before
+	// criterion identity is in exactly this state, so that multiplier lands on
+	// precisely the projects with the least to gain from it. Nothing is hidden
+	// permanently: once the rebuild writes texts, any real gap surfaces.
+	textlessEntries := make(map[string]bool)
+	for _, c := range cited {
+		if !in.ContractResolved {
+			break
+		}
+		switch {
+		case !declaredRefs[c.Ref]:
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-ref-unknown",
+				fmt.Sprintf("%s: a case cites criterion.ref %q, which no contract entry declares — check the ref against capabilities.yaml and surface.yaml", path, c.Ref)))
+		case c.Text == "":
+			textlessEntries[c.Ref] = true
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-text-missing",
+				fmt.Sprintf("%s: a case cites %q with no criterion.text — the text pins which of that entry's verify: bullets the case discharges, and without it coverage cannot be counted per criterion", path, c.Ref)))
+		case !declaredPairs[c]:
+			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-text-drift",
+				fmt.Sprintf("%s: a case cites %q with criterion.text %q, which matches none of that entry's current verify: bullets — either the contract was reworded after the case was written, or the criterion was invented", path, c.Ref, c.Text)))
+		}
+	}
+
+	// The coverage side. Warning severity while the field lands — every
 	// testcases.yaml predates criterion:, so its cases cite nothing yet and an
 	// error would fail every project at once over a fact none could have
 	// recorded.
-	for _, ref := range in.Criteria {
-		if criteriaCovered[ref] || in.ExemptCriteria[ref] {
+	reportedUncovered := make(map[CriterionRef]bool)
+	for _, c := range in.Criteria {
+		key := CriterionRef{Ref: c.Ref, Text: CanonicalCriterionText(c.Text)}
+		if criteriaCovered[key] || in.ExemptCriteria.Excuses(c) || reportedUncovered[key] {
 			continue
 		}
+		if textlessEntries[c.Ref] {
+			continue
+		}
+		reportedUncovered[key] = true
 		outcomes = append(outcomes, NewOutcome(mode, "verify-criterion-uncovered",
-			fmt.Sprintf("%s: contract entry %q carries verify: criteria but no case discharges it — a case must cite it in criterion.ref, or coverage-review.yaml must exempt it", path, ref)))
+			fmt.Sprintf("%s: criterion %q on contract entry %q has no case discharging it — a case must cite both in criterion.{ref,text}, or coverage-review.yaml must exempt it", path, c.Text, c.Ref)))
 	}
 
 	return outcomes
