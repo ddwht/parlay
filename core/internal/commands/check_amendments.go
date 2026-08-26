@@ -425,6 +425,8 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amend
 		})
 	}
 
+	reportGovernanceReplacements(amendments, claimants, out)
+
 	reportUnaccountedScope(cfg, slug, featDir, liveHeads, out)
 }
 
@@ -732,4 +734,64 @@ func infraFragmentSource(body string) string {
 		}
 	}
 	return ""
+}
+
+// reportGovernanceReplacements refuses an ordinary amendment that replaces one
+// which retired an intent, without restating the retirement.
+//
+// The ledger says an amendment named in supersedes: is history, not
+// specification. Applied to a governance amendment that leaves the two rules
+// disagreeing about who has authority. Say 001 retires intent X and 002
+// supersedes 001 while claiming nothing:
+//
+//   - Read the retirement as standing, and it rests on a decision the ledger
+//     has replaced — authority outliving the record that granted it.
+//   - Read it as lapsed, and the promise silently comes back, un-retired by an
+//     ordinary amendment that never faced the no-safe-default decision gate the
+//     retirement itself required. An agent could undo a deliberate withdrawal
+//     of scope as a side effect of an unrelated change.
+//
+// Neither is acceptable, so the third option is enforced here: replacing a
+// governance decision means taking it over. The replacement restates
+// supersedes_intents:, and with it inherits the Why, the Acceptance and the
+// scope accounting that retiring a promise demands. Authority then always sits
+// with an amendment that is current AND that faced the gate.
+//
+// This is also what lets the resolver keep its simpler claimant-only model: the
+// ledger guarantees a live claimant exists for every retirement in force.
+func reportGovernanceReplacements(amendments []parser.Amendment, claimants map[string][]intentClaim, out *checkAmendmentsOutput) {
+	// Which intents each amendment retires.
+	claimsOf := map[string]map[string]bool{}
+	for intent, cs := range claimants {
+		for _, c := range cs {
+			if claimsOf[c.fileSlug] == nil {
+				claimsOf[c.fileSlug] = map[string]bool{}
+			}
+			claimsOf[c.fileSlug][intent] = true
+		}
+	}
+
+	for _, a := range amendments {
+		for _, sup := range a.Supersedes {
+			retired := claimsOf[sup]
+			if len(retired) == 0 {
+				continue // replacing an ordinary amendment: nothing owed
+			}
+			var missing []string
+			for intent := range retired {
+				if !claimsOf[a.FileSlug][intent] {
+					missing = append(missing, intent)
+				}
+			}
+			if len(missing) == 0 {
+				continue
+			}
+			sort.Strings(missing)
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-supersedes-governance-incomplete",
+				Message: fmt.Sprintf("%03d-%s supersedes %q, which retired %s, but does not restate %s in supersedes_intents: — replacing a decision that withdrew a promise means taking it over, along with its ## Why, ## Acceptance and scope accounting. Otherwise the retirement either outlives the record that granted it, or is quietly undone by an amendment that never faced the decision gate it required",
+					a.Seq, a.FileSlug, sup, strings.Join(missing, ", "), strings.Join(missing, ", ")),
+			})
+		}
+	}
 }

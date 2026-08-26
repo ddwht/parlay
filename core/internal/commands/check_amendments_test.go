@@ -771,3 +771,73 @@ Import was the wrong home.
 		}
 	}
 }
+
+// An ordinary amendment must not be able to replace a governance decision.
+//
+// 001 retires an intent; 002 supersedes 001 but claims no intent itself. The
+// ledger says a superseded amendment is history, so 001 no longer speaks — yet
+// the retirement it performed is still in force, resting on a decision the
+// ledger has replaced. Reading it the other way is worse: the promise would
+// quietly come back, undone by an ordinary amendment that never faced the
+// no-safe-default gate retiring it required.
+//
+// So the replacement has to restate the retirement, and take on its Why,
+// Acceptance and scope obligations with it.
+func TestCheckAmendments_OrdinaryAmendmentCannotReplaceAGovernanceDecision(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-browsing-moves-to-search.md", supersedeBrowse)
+	writeAmendment(t, featDir, "002-unrelated.md", `---
+amendment: unrelated
+date: 2026-08-26
+supersedes:
+  - browsing-moves-to-search
+affects:
+  - "@verify-fixture/surface:thing-list"
+---
+
+## Change
+Something else about the list.
+
+## Why
+Unrelated to the retirement.
+
+## Acceptance
+- The list renders.
+`)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-supersedes-governance-incomplete") {
+		t.Fatalf("an ordinary amendment must not replace a governance decision without restating it; issues=%+v", out.Issues)
+	}
+
+	// Restating it settles the objection — the replacement now owns the
+	// retirement and everything that comes with it.
+	writeAmendment(t, featDir, "002-unrelated.md", `---
+amendment: unrelated
+date: 2026-08-26
+supersedes:
+  - browsing-moves-to-search
+affects:
+  - "@verify-fixture/surface:thing-list"
+supersedes_intents:
+  - browse-the-things
+---
+
+## Change
+Browsing is replaced by a feed instead.
+
+## Why
+Search was the wrong answer.
+
+## Acceptance
+- The feed shows newest first.
+`)
+	out2, _ := runCheckAmendments_(t, "@verify-fixture")
+	if amendmentIssueSeen(out2, "amendment-supersedes-governance-incomplete") {
+		t.Errorf("restating the retirement should settle it; issues=%+v", out2.Issues)
+	}
+	if got := out2.SupersededIntents["browse-the-things"]; got != "unrelated" {
+		t.Errorf("the standing decision should now be the replacement; got %q", got)
+	}
+}

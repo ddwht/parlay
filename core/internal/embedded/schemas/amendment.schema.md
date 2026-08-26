@@ -94,6 +94,7 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `amendment-supersedes-last-intent` | The ledger would retire every founding intent of the feature. Retiring a whole feature is a lifecycle operation with its own dependency checks. |
 | `amendment-supersession-no-successor` | A superseding amendment has no `## Acceptance`. The rename/pure-prose exemption does not apply: retiring a promise with nothing in its place is deletion. |
 | `amendment-supersession-no-rationale` | A superseding amendment has no `## Why`. The frozen intent cannot record why it stopped being true, so this is the only place that reasoning will exist. |
+| `amendment-supersedes-governance-incomplete` | An amendment supersedes one that retired an intent, without restating that retirement in its own `supersedes_intents:`. |
 | `intent-supersession-unaccounted-affect` | A contract entry whose `source:` names a superseded intent has no disposition in `affects:`. |
 | `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts. |
 | `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
@@ -141,6 +142,13 @@ Four rules keep supersession from becoming deletion:
   retiring the same promise. Ordering after a decision that has itself been
   replaced settles nothing, and a genuine chain of replacements has one head
   and is not a fork.
+- **Replacing a retirement means taking it over.** An amendment that names a
+  governance amendment in `supersedes:` must restate its `supersedes_intents:`,
+  and inherits the `## Why`, `## Acceptance` and scope accounting that come
+  with it. Otherwise the two rules disagree: read the retirement as standing
+  and it rests on a record the ledger calls history; read it as lapsed and the
+  promise silently returns, un-retired by an ordinary amendment that never
+  faced the decision gate retiring it required. `amendment-supersedes-governance-incomplete`.
 - **One decision at a time.** Two live amendments superseding the same intent
   fork the ledger and block, unless the later names the earlier in `supersedes:`.
 - **A feature must still promise something.** Retiring the last live intent
