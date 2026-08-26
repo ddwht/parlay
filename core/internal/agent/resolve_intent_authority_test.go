@@ -161,3 +161,26 @@ func TestResolveIntentAuthority_ProspectiveNamesTheNewestClaim(t *testing.T) {
 			prospective.Superseded[0].ByAmendment)
 	}
 }
+
+// The doc comment says later amendments win. That must hold on the slice as
+// given, not on a sorting the caller happens to have done: this is advertised
+// as pure algebra over parser types, and a future caller may hand-build the
+// slice in any order.
+func TestResolveIntentAuthority_UnsortedInputStillPicksTheLatest(t *testing.T) {
+	unsorted := []parser.Amendment{
+		{Seq: 3, FileSlug: "third", Supersedes: []string{"first"}, SupersedesIntents: []string{"browse-the-things"}},
+		retire(1, "first", "browse-the-things"),
+	}
+	r := ResolveIntentAuthority(twoIntents(), unsorted, 3, AppliedAuthority)
+	if len(r.Superseded) != 1 || r.Superseded[0].ByAmendment != "third" {
+		t.Errorf("the highest sequence must win regardless of slice order; got %+v", r.Superseded)
+	}
+
+	p := ResolveIntentAuthority(twoIntents(), unsorted, 1, ProspectiveAuthority)
+	if len(p.Superseded) != 1 || p.Superseded[0].ByAmendment != "third" {
+		t.Errorf("prospective must also pick by sequence, not position; got %+v", p.Superseded)
+	}
+	if p.Superseded[0].Applied {
+		t.Error("seq 3 is past lastApplied 1, so it must be marked not applied")
+	}
+}

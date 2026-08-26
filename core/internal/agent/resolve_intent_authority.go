@@ -48,10 +48,19 @@ const (
 	// would stop anything checking a promise the code still keeps.
 	AppliedAuthority IntentAuthority = iota
 
-	// ProspectiveAuthority additionally counts the unapplied tail. It exists
-	// for the apply workflow alone, which has to see the decision it is in the
-	// middle of applying. Ordinary callers must never select it — there is
-	// deliberately no flag, environment variable or config that turns it on.
+	// ProspectiveAuthority additionally counts the unapplied tail, and reports
+	// the newest claim rather than the one in force: a caller applying a
+	// decision must see THAT decision, not a predecessor the ledger already
+	// replaced.
+	//
+	// RESERVED FOR the apply workflow; not yet used by it. Nothing under
+	// core/internal selects this mode outside tests, because refine currently
+	// reads back the amendment it just wrote rather than asking the resolver.
+	// Stated plainly because an unused safety mode drifts: when the apply path
+	// does route through here, this comment is the contract it must honour, and
+	// until then no claim is being made that it already does. Ordinary callers
+	// must never select it — there is deliberately no flag, environment
+	// variable or config that turns it on.
 	ProspectiveAuthority
 )
 
@@ -147,9 +156,17 @@ func ResolveIntentAuthority(raw []parser.Intent, amendments []parser.Amendment, 
 				continue
 			}
 			c := claim{by: a.FileSlug, seq: a.Seq}
-			latestClaim[s] = c
+			// Keyed on max sequence rather than on iteration order. The
+			// doc comment says later amendments win; taking the last write
+			// would have made that silently depend on the caller sorting its
+			// input, which this package cannot see and should not assume.
+			if prev, ok := latestClaim[s]; !ok || c.seq > prev.seq {
+				latestClaim[s] = c
+			}
 			if a.Seq <= lastApplied {
-				appliedClaim[s] = c
+				if prev, ok := appliedClaim[s]; !ok || c.seq > prev.seq {
+					appliedClaim[s] = c
+				}
 			}
 		}
 	}

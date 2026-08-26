@@ -108,7 +108,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Element: all-clear (visible-when: uncovered == 0 && orphans == 0)
-	if len(uncoveredIntents) == 0 && len(orphanDialogs) == 0 {
+	// The retired list is history worth showing even when nothing is wrong;
+	// gating the all-clear on it too would otherwise return before the section
+	// below ever prints, so a clean feature never learned what it had retired.
+	if len(uncoveredIntents) == 0 && len(orphanDialogs) == 0 && len(retiredDialogs) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "All intents are covered. No orphan dialogs.")
 		return nil
 	}

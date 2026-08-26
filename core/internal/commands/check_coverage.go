@@ -88,23 +88,6 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 	output := coverageOutput{Feature: slug}
 	matchedDialogs := make(map[string]bool)
 
-	// Dialogs belonging to a superseded intent are HISTORY, and must be
-	// claimed before the orphan walk below. matchedDialogs is populated from
-	// the intent loop, so filtering intents without this would drop every such
-	// dialog through to "orphan" — turning preserved history into cleanup debt,
-	// which is the opposite of what supersession promises.
-	for _, sup := range res.Superseded {
-		for _, dialog := range dialogs {
-			if matchesIntent(sup.Intent, dialog) {
-				matchedDialogs[dialog.Slug] = true
-				output.Retired = append(output.Retired, coverageMatch{
-					Intent: sup.Intent.Title,
-					Dialog: dialog.Title,
-				})
-			}
-		}
-	}
-
 	for _, intent := range intents {
 		found := false
 		for _, dialog := range dialogs {
@@ -120,6 +103,29 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 		}
 		if !found {
 			output.Uncovered = append(output.Uncovered, intent.Title)
+		}
+	}
+
+	// Whatever the ACTIVE promises did not claim is classified against the
+	// retired ones before the orphan walk. Active takes precedence and runs
+	// first: matchesIntent is fuzzy, so classifying retired first could list
+	// one dialog as both retired and covered. What remains and matches a
+	// retired promise is history — reporting it as an orphan would present
+	// preserved history as cleanup debt, the opposite of what supersession is
+	// for. A dialog matching neither is a genuine orphan.
+	for _, dialog := range dialogs {
+		if matchedDialogs[dialog.Slug] {
+			continue
+		}
+		for _, sup := range res.Superseded {
+			if matchesIntent(sup.Intent, dialog) {
+				matchedDialogs[dialog.Slug] = true
+				output.Retired = append(output.Retired, coverageMatch{
+					Intent: sup.Intent.Title,
+					Dialog: dialog.Title,
+				})
+				break
+			}
 		}
 	}
 

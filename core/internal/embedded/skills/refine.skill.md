@@ -158,17 +158,23 @@ steps 3 and 4:
    Present what is actually being given up, taken from `parlay internal active-spec` rather
    than paraphrased: the promise's **Goal**, its **Verify** bullets, the
    **replacement** (`## Change` and `## Acceptance`), and the **disposition of
-   every contract entry** whose `source:` names it — each one named in
-   `affects:` as replaced, removed or retained. `parlay internal check-amendments` reports
-   `intent-supersession-unaccounted-affect` for any you miss, but the reviewer
-   should see the list before it is written, not after.
+   every contract entry** whose `source:` names it. Name each such entry in
+   `affects:` and state in `## Change` what becomes of it — replaced, removed
+   or retained. `affects:` carries refs only: it can prove you enumerated an
+   entry, never which of the three you chose, so the disposition itself lives
+   in the prose and nowhere else. `parlay internal check-amendments` reports
+   `intent-supersession-unaccounted-affect` for an entry you did not
+   enumerate, but the reviewer should see the list before it is written, not
+   after.
 
    Then record it as a supersession: name the intent slug in
    `supersedes_intents:`, and write both `## Why` and `## Acceptance` — neither
-   is optional here, and the rename/pure-prose exemption does not apply. The
-   Acceptance becomes the replacement's active criteria; without one the
-   amendment retires a promise and puts nothing in its place, which the
-   validator refuses as `amendment-supersession-no-successor`.
+   is optional here, and the rename/pure-prose exemption does not apply.
+   `## Acceptance` is the successor criteria step 4 lands as `verify:` entries
+   on the affected contract entries — that splice is what makes them current
+   truth, not the amendment file itself. Without one the amendment retires a
+   promise and puts nothing in its place, which the validator refuses as
+   `amendment-supersession-no-successor`.
 
    Three refusals you cannot argue past, all reported by
    `parlay internal check-amendments` after the write: an intent this feature

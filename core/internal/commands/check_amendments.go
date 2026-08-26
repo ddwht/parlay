@@ -278,7 +278,7 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		}
 	}
 
-	resolveIntentSupersessions(cfg, slug, featDir, supersessions, &out)
+	resolveIntentSupersessions(cfg, slug, featDir, amendments, supersessions, &out)
 
 	return out
 }
@@ -300,7 +300,7 @@ type intentClaim struct {
 // the whole feature can answer: does the intent exist, does more than one live
 // amendment claim it, would retiring it leave the feature promising nothing, and
 // has the scope it produced been accounted for.
-func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, claims []intentClaim, out *checkAmendmentsOutput) {
+func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amendments []parser.Amendment, claims []intentClaim, out *checkAmendmentsOutput) {
 	if len(claims) == 0 {
 		return
 	}
@@ -331,33 +331,82 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, claim
 		claimants[c.intent] = append(claimants[c.intent], c)
 	}
 
-	// A fork: two live amendments retiring the same promise, with no ordering
-	// between them. Naming the earlier in supersedes: is the declaration that
-	// this decision replaces it — the same relation the ledger already uses,
-	// so supersession does not get a second ordering model of its own.
-	retired := map[string]bool{}
-	for intent, cs := range claimants {
-		for i, c := range cs {
-			if i == 0 {
+	// A fork is more than one LIVE head retiring the same promise.
+	//
+	// "Ordered after some earlier claimant" is not enough, and the difference
+	// is not academic: 001 claims X, 002 claims X and supersedes 001, 003
+	// claims X and supersedes 001. Every claimant orders after something, yet
+	// 002 and 003 are competing decisions and 003 settles nothing by ordering
+	// after one 002 already replaced. Conversely a genuine chain — 003 replaces
+	// 002 replaces 001 — has exactly one head and must not be reported.
+	//
+	// So the supersedes graph is walked transitively over the whole ledger,
+	// not just over claimants: a claim may be replaced through an intermediate
+	// amendment that retires no intent of its own.
+	replaces := map[string][]string{}
+	for _, a := range amendments {
+		replaces[a.FileSlug] = append(replaces[a.FileSlug], a.Supersedes...)
+	}
+	ancestorsOf := func(start string) map[string]bool {
+		seen := map[string]bool{}
+		stack := append([]string{}, replaces[start]...)
+		for len(stack) > 0 {
+			n := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if seen[n] {
 				continue
 			}
-			ordered := false
-			for _, sup := range c.supersedes {
-				for _, earlier := range cs[:i] {
-					if sup == earlier.fileSlug {
-						ordered = true
-					}
+			seen[n] = true
+			stack = append(stack, replaces[n]...)
+		}
+		return seen
+	}
+
+	retired := map[string]bool{}
+	// Only STANDING decisions must account for scope. A superseded amendment
+	// is history, not specification, so its affects: cannot go on satisfying a
+	// later replacement that omits the disposition.
+	liveHeads := map[string][]intentClaim{}
+	for intent, cs := range claimants {
+		var heads []intentClaim
+		for _, c := range cs {
+			covered := false
+			for _, other := range cs {
+				if other.fileSlug == c.fileSlug {
+					continue
+				}
+				if ancestorsOf(other.fileSlug)[c.fileSlug] {
+					covered = true
+					break
 				}
 			}
-			if !ordered {
-				out.Issues = append(out.Issues, amendmentIssue{
-					Severity: "error", Code: "amendment-supersedes-intent-forked",
-					Message: fmt.Sprintf("%03d-%s and %03d-%s both supersede intent %q with no ordering between them — name the earlier amendment in supersedes: to declare which decision stands", cs[i-1].seq, cs[i-1].fileSlug, c.seq, c.fileSlug, intent),
-				})
+			if !covered {
+				heads = append(heads, c)
 			}
 		}
+		if len(heads) > 1 {
+			var names []string
+			for _, h := range heads {
+				names = append(names, fmt.Sprintf("%03d-%s", h.seq, h.fileSlug))
+			}
+			sort.Strings(names)
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-supersedes-intent-forked",
+				Message: fmt.Sprintf("%s all supersede intent %q and none replaces the others — ordering after a decision that has itself been replaced settles nothing; name the standing head in supersedes:", strings.Join(names, " and "), intent),
+			})
+		}
 		retired[intent] = true
-		out.SupersededIntents[intent] = cs[len(cs)-1].fileSlug
+		liveHeads[intent] = heads
+		if len(heads) > 0 {
+			// The standing decision, which is the newest live head.
+			head := heads[0]
+			for _, h := range heads[1:] {
+				if h.seq > head.seq {
+					head = h
+				}
+			}
+			out.SupersededIntents[intent] = head.fileSlug
+		}
 	}
 
 	// A feature that promises nothing is a lifecycle question — whether it
@@ -376,7 +425,7 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, claim
 		})
 	}
 
-	reportUnaccountedScope(cfg, slug, featDir, claimants, out)
+	reportUnaccountedScope(cfg, slug, featDir, liveHeads, out)
 }
 
 // reportStrayAmendmentFiles names files in amendments/ that the loader
@@ -526,16 +575,32 @@ func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants
 		return
 	}
 
-	// Every entry accounted for by any superseding amendment, canonicalized so
-	// two spellings of the same ref collide.
-	accounted := map[string]bool{}
-	for _, cs := range claimants {
-		for _, c := range cs {
+	// Accounting is PER STANDING DECISION, not pooled across the ledger.
+	//
+	// Pooling let two unrelated things satisfy a requirement neither had met.
+	// A superseded amendment's affects: went on covering the replacement that
+	// omitted the disposition, though the schema says a superseded amendment
+	// is history and not specification — so the replacement must restate what
+	// becomes of the scope, since the record that once said so no longer
+	// speaks. And amendment A's affects: could account for amendment B's
+	// retired intent, which A never claimed to touch.
+	//
+	// One amendment retiring several intents may cover their union with one
+	// affects: list, which is why the key is the amendment rather than the
+	// intent.
+	accountedBy := map[string]map[string]bool{}
+	intentsOf := map[string][]string{}
+	for intent, heads := range claimants {
+		for _, c := range heads {
+			if accountedBy[c.fileSlug] == nil {
+				accountedBy[c.fileSlug] = map[string]bool{}
+			}
 			for _, raw := range c.affects {
 				if ref, err := parser.ParseAmendmentRef(raw); err == nil {
-					accounted[canonicalAmendmentRef(ref)] = true
+					accountedBy[c.fileSlug][canonicalAmendmentRef(ref)] = true
 				}
 			}
+			intentsOf[c.fileSlug] = append(intentsOf[c.fileSlug], intent)
 		}
 	}
 
@@ -561,19 +626,18 @@ func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants
 	}
 
 	var unaccounted []string
-	for _, e := range entries {
-		if e.source == "" {
-			continue
-		}
-		for intent := range claimants {
-			if !sourceNamesIntent(e.source, slug, intent) {
-				continue
+	for amendment, intents := range intentsOf {
+		for _, intent := range intents {
+			for _, e := range entries {
+				if e.source == "" || !sourceNamesIntent(e.source, slug, intent) {
+					continue
+				}
+				ref := fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name)
+				if accountedBy[amendment][ref] {
+					continue
+				}
+				unaccounted = append(unaccounted, fmt.Sprintf("%s (from %s, retired by %s)", ref, intent, amendment))
 			}
-			ref := fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name)
-			if accounted[ref] {
-				continue
-			}
-			unaccounted = append(unaccounted, fmt.Sprintf("%s (from %s)", ref, intent))
 		}
 	}
 	if len(unaccounted) == 0 {
@@ -632,9 +696,21 @@ func sourceNamesIntent(source, feature, intent string) bool {
 		if part[i+1:] != intent {
 			continue
 		}
-		// The prefix may itself be initiative-qualified while the feature we
-		// hold is bare, or the reverse, so compare on the feature name in both.
 		prefix := part[:i]
+		if prefix == feature {
+			return true
+		}
+		// Basename comparison is a concession to refs written before
+		// initiatives were part of the address, and it is lossy: it cannot
+		// tell @initiative-a/catalog/x from @initiative-b/catalog/x. So fall
+		// back to it only when exactly one side is unqualified, where there is
+		// no initiative on the other side to disagree with. When both carry an
+		// initiative, they must match in full.
+		refQualified := strings.Contains(prefix, "/")
+		featQualified := strings.Contains(feature, "/")
+		if refQualified && featQualified {
+			continue
+		}
 		if featureNames[prefix] {
 			return true
 		}

@@ -270,7 +270,12 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 }
 
 // gateDone aggregates the code->complete boundary: generated code matches its
-// recorded hashes, and the coverage-review gate is satisfied.
+// recorded hashes, the coverage-review gate is satisfied, and ledger state is
+// sound. The last is rechecked here rather than trusted from gateCode: a gate
+// invocation evaluates one stage, so --stage done may be called directly, after
+// ledger state changed, or with earlier stages never run. Certifying completion
+// is the strongest claim the ladder makes and is the wrong place to infer that
+// someone else already checked.
 func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
 	verify, err := computeProjectVerifyOutput(cfg)
 	if err == nil && verify != nil {

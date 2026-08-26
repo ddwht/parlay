@@ -122,14 +122,25 @@ every level". Intent level was the level it was missing from.
 Four rules keep supersession from becoming deletion:
 
 - **A successor is required.** `## Why` and `## Acceptance` are both mandatory
-  here, with no rename or pure-prose exemption, and the Acceptance becomes the
-  replacement's active criteria. The field is named `supersedes_intents` rather
-  than `retires` for this reason: a commitment may be replaced, not dropped.
+  here, with no rename or pure-prose exemption. `## Acceptance` is the successor
+  criteria the apply step lands as `verify:` entries on the affected contract
+  entries, the same as for any other amendment — the splice is what makes them
+  current truth, not the ledger file. The field is named `supersedes_intents`
+  rather than `retires` for this reason: a commitment may be replaced, not
+  dropped.
 - **Scope is accounted for.** Every contract entry whose `source:` names a
-  superseded intent must appear in `affects:` — replaced, removed or retained.
-  A feature with no contract artifact satisfies this with an empty set; a
-  feature with artifacts must say what becomes of each, or the generated scope
-  outlives the promise that justified it.
+  superseded intent must appear in `affects:`, and `## Change` must say what
+  becomes of it — replaced, removed or retained. `affects:` carries refs only,
+  so it proves enumeration and never which disposition was chosen; that lives
+  in the prose. A feature with no contract artifact satisfies this with an
+  empty set; a feature with artifacts must say what becomes of each, or the
+  generated scope outlives the promise that justified it. **Accounting is per
+  standing decision:** an amendment that replaces an earlier one restates the
+  disposition, because the earlier is history and no longer speaks.
+- **Only live heads count.** A fork is more than one *standing* decision
+  retiring the same promise. Ordering after a decision that has itself been
+  replaced settles nothing, and a genuine chain of replacements has one head
+  and is not a fork.
 - **One decision at a time.** Two live amendments superseding the same intent
   fork the ledger and block, unless the later names the earlier in `supersedes:`.
 - **A feature must still promise something.** Retiring the last live intent

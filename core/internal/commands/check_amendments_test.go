@@ -645,3 +645,129 @@ func TestSourceNamesIntent_DoesNotMatchAnotherFeaturesIntent(t *testing.T) {
 		t.Error("a different intent in the same feature must not match")
 	}
 }
+
+// Fork detection has to follow the supersession CHAIN, not just find some
+// earlier claimant. 001 claims X; 002 claims X and supersedes 001; 003 claims X
+// but supersedes 001 rather than the live 002. 002 and 003 are competing live
+// heads, and ordering after a decision 002 already replaced settles nothing.
+func TestCheckAmendments_ForkAgainstALiveHeadNotAnyPredecessor(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	mk := func(slug string, supersedes string) string {
+		sup := ""
+		if supersedes != "" {
+			sup = "supersedes:\n  - " + supersedes + "\n"
+		}
+		return "---\namendment: " + slug + "\ndate: 2026-08-26\n" + sup +
+			"affects:\n  - \"@verify-fixture/surface:thing-list\"\nsupersedes_intents:\n  - browse-the-things\n---\n\n## Change\nc\n\n## Why\nw\n\n## Acceptance\n- a\n"
+	}
+	writeAmendment(t, featDir, "001-first.md", mk("first", ""))
+	writeAmendment(t, featDir, "002-second.md", mk("second", "first"))
+	writeAmendment(t, featDir, "003-third.md", mk("third", "first"))
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-supersedes-intent-forked") {
+		t.Fatalf("003 orders after a decision 002 already replaced, so 002 and 003 are competing live heads; issues=%+v", out.Issues)
+	}
+	var msg string
+	for _, iss := range out.Issues {
+		if iss.Code == "amendment-supersedes-intent-forked" {
+			msg = iss.Message
+		}
+	}
+	if !strings.Contains(msg, "second") {
+		t.Errorf("the message must name the live head that was not superseded, not whichever claimant came before by position; got %q", msg)
+	}
+}
+
+// A legitimate transitive chain must NOT fork: 003 supersedes 002 which
+// supersedes 001, so there is exactly one live head throughout.
+func TestCheckAmendments_TransitiveChainIsNotAFork(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	mk := func(slug, supersedes string) string {
+		return "---\namendment: " + slug + "\ndate: 2026-08-26\nsupersedes:\n  - " + supersedes +
+			"\naffects:\n  - \"@verify-fixture/surface:thing-list\"\nsupersedes_intents:\n  - browse-the-things\n---\n\n## Change\nc\n\n## Why\nw\n\n## Acceptance\n- a\n"
+	}
+	writeAmendment(t, featDir, "001-first.md",
+		"---\namendment: first\ndate: 2026-08-26\naffects:\n  - \"@verify-fixture/surface:thing-list\"\nsupersedes_intents:\n  - browse-the-things\n---\n\n## Change\nc\n\n## Why\nw\n\n## Acceptance\n- a\n")
+	writeAmendment(t, featDir, "002-second.md", mk("second", "first"))
+	writeAmendment(t, featDir, "003-third.md", mk("third", "second"))
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if amendmentIssueSeen(out, "amendment-supersedes-intent-forked") {
+		t.Errorf("a single chain of replacements has one live head and is not a fork; issues=%+v", out.Issues)
+	}
+}
+
+func TestSourceNamesIntent_DistinguishesInitiatives(t *testing.T) {
+	// Basename comparison cannot tell two initiatives apart, so it must not be
+	// reached when both sides carry one.
+	if sourceNamesIntent("@initiative-b/catalog/same-intent", "initiative-a/catalog", "same-intent") {
+		t.Error("two initiatives with an identically-named feature must not match")
+	}
+	if !sourceNamesIntent("@initiative-a/catalog/same-intent", "initiative-a/catalog", "same-intent") {
+		t.Error("the same initiative and feature must still match")
+	}
+	// One side unqualified is the legacy shape the fallback exists for.
+	if !sourceNamesIntent("@catalog/same-intent", "initiative-a/catalog", "same-intent") {
+		t.Error("a legacy unqualified ref should still resolve")
+	}
+}
+
+// A replacement must restate the disposition. The amendment it replaces is
+// history, not specification, so its affects: cannot go on covering scope the
+// standing decision says nothing about.
+func TestCheckAmendments_ReplacementMustRestateDisposition(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	// 001 retires create-the-thing and accounts for both entries it sourced.
+	writeAmendment(t, featDir, "001-drop-creation.md", `---
+amendment: drop-creation
+date: 2026-08-26
+affects:
+  - "@verify-fixture/operation:thing.create"
+  - "@verify-fixture/surface:create-form"
+supersedes_intents:
+  - create-the-thing
+---
+
+## Change
+Creation moves to import.
+
+## Why
+Bulk load replaced manual entry.
+
+## Acceptance
+- Import is the only way a thing enters.
+`)
+	// 002 replaces 001 and claims the same intent, accounting for nothing.
+	writeAmendment(t, featDir, "002-drop-creation-differently.md", `---
+amendment: drop-creation-differently
+date: 2026-08-26
+supersedes:
+  - drop-creation
+supersedes_intents:
+  - create-the-thing
+---
+
+## Change
+Creation moves to the API instead.
+
+## Why
+Import was the wrong home.
+
+## Acceptance
+- The API is the only way a thing enters.
+`)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "intent-supersession-unaccounted-affect") {
+		t.Fatalf("the standing decision accounts for nothing; a superseded amendment's affects: must not cover for it. issues=%+v", out.Issues)
+	}
+	for _, iss := range out.Issues {
+		if iss.Code == "intent-supersession-unaccounted-affect" && !strings.Contains(iss.Message, "drop-creation-differently") {
+			t.Errorf("the finding should name the standing decision that owes the disposition; got %q", iss.Message)
+		}
+	}
+}
