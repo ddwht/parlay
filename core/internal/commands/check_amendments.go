@@ -81,8 +81,12 @@ type checkAmendmentsOutput struct {
 	// place a reader learns that a promise has been replaced. Always present
 	// (possibly empty) so consumers can index it unconditionally.
 	SupersededIntents map[string]string `json:"superseded_intents"`
-	Ready             bool              `json:"ready"`
-	Issues            []amendmentIssue  `json:"issues"`
+	// RetiredBy names the terminal amendment that closed this feature, empty
+	// when the feature is live. The forward link cannot live in the frozen
+	// founding documents, so this is where a reader learns the feature ended.
+	RetiredBy string           `json:"retired_by,omitempty"`
+	Ready     bool             `json:"ready"`
+	Issues    []amendmentIssue `json:"issues"`
 }
 
 func runCheckAmendments(cmd *cobra.Command, args []string) error {
@@ -278,7 +282,13 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		}
 	}
 
-	resolveIntentSupersessions(cfg, slug, featDir, amendments, supersessions, &out)
+	resolveIntentSupersessions(cfg, slug, featDir, amendments, supersessions, lastApplied, &out)
+
+	// Unconditional: resolveIntentSupersessions returns early when no amendment
+	// claims an intent, and a retirement record with an empty supersedes_intents
+	// is exactly that case — the one where the completeness rule most needs to
+	// fire.
+	reportFeatureRetirement(cfg, slug, featDir, amendments, lastApplied, &out)
 
 	return out
 }
@@ -300,7 +310,7 @@ type intentClaim struct {
 // the whole feature can answer: does the intent exist, does more than one live
 // amendment claim it, would retiring it leave the feature promising nothing, and
 // has the scope it produced been accounted for.
-func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amendments []parser.Amendment, claims []intentClaim, out *checkAmendmentsOutput) {
+func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amendments []parser.Amendment, claims []intentClaim, lastApplied int, out *checkAmendmentsOutput) {
 	if len(claims) == 0 {
 		return
 	}
@@ -412,13 +422,24 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amend
 	// A feature that promises nothing is a lifecycle question — whether it
 	// still has consumers, whether its generated code should go — with its own
 	// dependency checks. It is not something a ledger entry decides.
+	// A declared retirement is exactly the operation this refusal points at, so
+	// it must not also be blocked by it. The marker is what distinguishes the
+	// two: an amendment that merely happens to name every intent is still
+	// refused, because it carries none of retirement's obligations.
+	retiringFeature := false
+	for _, a := range amendments {
+		if a.RetiresFeature {
+			retiringFeature = true
+		}
+	}
+
 	live := 0
 	for _, in := range intents {
 		if !retired[in.Slug] {
 			live++
 		}
 	}
-	if live == 0 {
+	if live == 0 && !retiringFeature {
 		out.Issues = append(out.Issues, amendmentIssue{
 			Severity: "error", Code: "amendment-supersedes-last-intent",
 			Message: fmt.Sprintf("this ledger would retire every founding intent of %s, leaving the feature promising nothing — retiring a whole feature is a lifecycle operation with its own dependency checks, not a ledger entry", slug),
@@ -427,7 +448,14 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amend
 
 	reportGovernanceReplacements(amendments, claimants, out)
 
-	reportUnaccountedScope(cfg, slug, featDir, liveHeads, out)
+	// Per-entry disposition is a question about scope surviving a promise that
+	// was retired out from under it. When the whole feature is being retired
+	// there is no survivor to disposition: every entry goes with it, and the
+	// rule that matters instead is that nothing outside still points at the
+	// feature — which reportFeatureRetirement enforces.
+	if !retiringFeature {
+		reportUnaccountedScope(cfg, slug, featDir, liveHeads, out)
+	}
 }
 
 // reportStrayAmendmentFiles names files in amendments/ that the loader
@@ -794,4 +822,185 @@ func reportGovernanceReplacements(amendments []parser.Amendment, claimants map[s
 			})
 		}
 	}
+}
+
+// reportFeatureRetirement validates a terminal retirement record against
+// everything one file cannot see: whether the promises it names are exactly the
+// live ones, whether the ledger under it is settled, and whether the successor
+// it points at is somewhere a reader can actually go.
+//
+// The inbound-reference inventory — whether anything still points at this
+// feature — is deliberately elsewhere: it walks the whole project rather than
+// this feature's ledger, and belongs with the other project-wide walks.
+func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendments []parser.Amendment, lastApplied int, out *checkAmendmentsOutput) {
+	var terminal *parser.Amendment
+	for i := range amendments {
+		if amendments[i].RetiresFeature {
+			terminal = &amendments[i]
+		}
+	}
+	if terminal == nil {
+		return
+	}
+	out.RetiredBy = terminal.FileSlug
+
+	intents, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if err != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-incomplete",
+			Message: fmt.Sprintf("%03d-%s retires the feature but its intents.md cannot be read to verify every promise is named: %v", terminal.Seq, terminal.FileSlug, err),
+		})
+		return
+	}
+
+	// Which promises were already retired BEFORE this record. Completeness is
+	// measured against what is live at the moment of retirement, so the
+	// terminal record is excluded from the tally it is being judged against.
+	alreadyRetired := map[string]bool{}
+	for _, a := range amendments {
+		if a.FileSlug == terminal.FileSlug {
+			continue
+		}
+		for _, raw := range a.SupersedesIntents {
+			alreadyRetired[strings.TrimSpace(raw)] = true
+		}
+	}
+	named := map[string]bool{}
+	for _, raw := range terminal.SupersedesIntents {
+		named[strings.TrimSpace(raw)] = true
+	}
+
+	var unnamed, stale []string
+	for _, in := range intents {
+		if alreadyRetired[in.Slug] {
+			if named[in.Slug] {
+				stale = append(stale, in.Slug)
+			}
+			continue
+		}
+		if !named[in.Slug] {
+			unnamed = append(unnamed, in.Slug)
+		}
+	}
+	sort.Strings(unnamed)
+	sort.Strings(stale)
+
+	// Both directions matter. Missing a live promise closes the feature while
+	// something it committed to still stands; listing an already-retired one
+	// in its place makes the set LOOK complete while the live promise it was
+	// counted for goes unnamed.
+	if len(unnamed) > 0 {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-incomplete",
+			Message: fmt.Sprintf("%03d-%s retires the feature but does not name %s — retiring a feature retires every promise it still makes, and a promise left unnamed stands after the feature is gone",
+				terminal.Seq, terminal.FileSlug, strings.Join(unnamed, ", ")),
+		})
+	}
+	if len(stale) > 0 {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "warning", Code: "amendment-retirement-names-retired-intent",
+			Message: fmt.Sprintf("%03d-%s names %s, which an earlier amendment already retired — harmless in itself, but a set padded with history reads as complete while a live promise may be missing",
+				terminal.Seq, terminal.FileSlug, strings.Join(stale, ", ")),
+		})
+	}
+
+	// Retiring on top of changes nobody applied closes the feature over a
+	// specification that was never true of anything.
+	var pending []string
+	for _, a := range amendments {
+		if a.Seq > lastApplied && a.FileSlug != terminal.FileSlug {
+			pending = append(pending, fmt.Sprintf("%03d-%s", a.Seq, a.FileSlug))
+		}
+	}
+	if len(pending) > 0 {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-over-unapplied-tail",
+			Message: fmt.Sprintf("%03d-%s retires the feature while %s remain unapplied — closing a feature on top of changes nobody applied closes it over a specification that was never true; apply or withdraw them first",
+				terminal.Seq, terminal.FileSlug, strings.Join(pending, ", ")),
+		})
+	}
+
+	reportReplacementValidity(cfg, slug, terminal, out)
+
+	// The rule the narrow cut is built on: a feature may be retired only when
+	// nothing still points at it. Naming a replacement records where the work
+	// went and grants no permission — a reference aimed at this feature does
+	// not begin aiming at the successor by being told about it — so this
+	// applies to both outcomes alike.
+	inbound, err := FindInboundReferences(cfg, slug)
+	if err != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-scan-failed",
+			Message: fmt.Sprintf("cannot verify that nothing depends on %s: %v — a retirement is not safe on an unfinished scan", slug, err),
+		})
+		return
+	}
+	if len(inbound) > 0 {
+		var lines []string
+		for _, r := range inbound {
+			lines = append(lines, r.String())
+		}
+		sort.Strings(lines)
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "feature-retirement-still-referenced",
+			Message: fmt.Sprintf("%s cannot be retired — %d reference(s) still point at it: %s. Resolve each, then retire; a replacement records where the work went and does not redirect anything",
+				slug, len(inbound), strings.Join(lines, "; ")),
+		})
+	}
+}
+
+// reportReplacementValidity checks that a named successor is somewhere a reader
+// can actually go: a feature that exists, is not this one, and has not itself
+// been closed.
+func reportReplacementValidity(cfg *config.Context, slug string, terminal *parser.Amendment, out *checkAmendmentsOutput) {
+	ref := strings.TrimSpace(terminal.ReplacementFeature)
+	if ref == "" {
+		return
+	}
+	target := parser.FeatureSlug(ref)
+
+	if sameFeature(target, slug) {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-replaces-itself",
+			Message: fmt.Sprintf("%03d-%s names %q as its replacement, which is the feature being retired — a feature cannot carry work away from itself",
+				terminal.Seq, terminal.FileSlug, ref),
+		})
+		return
+	}
+
+	featDir := cfg.FeaturePath(target)
+	if _, err := os.Stat(filepath.Join(featDir, "intents.md")); err != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-replacement-unknown",
+			Message: fmt.Sprintf("%03d-%s names replacement %q, which is not a feature in this project — name the feature that carries this work now, or record the outcome as obsolete",
+				terminal.Seq, terminal.FileSlug, ref),
+		})
+		return
+	}
+
+	// A successor that is itself closed sends the reader somewhere also gone,
+	// which is worse than naming nothing. An authored-but-unapplied retirement
+	// counts: it is the project's stated intention for that feature, and
+	// pointing at it would be pointing at something on its way out.
+	if replAmendments, err := parser.LoadFeatureAmendments(featDir); err == nil {
+		for _, ra := range replAmendments {
+			if !ra.RetiresFeature {
+				continue
+			}
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-retirement-replacement-retired",
+				Message: fmt.Sprintf("%03d-%s names replacement %q, which is itself retired by %s — pointing a later reader at something also gone is worse than naming nothing",
+					terminal.Seq, terminal.FileSlug, ref, ra.FileSlug),
+			})
+			return
+		}
+	}
+}
+
+// sameFeature compares two feature references that may differ in qualification.
+func sameFeature(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
 }

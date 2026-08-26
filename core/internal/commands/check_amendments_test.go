@@ -841,3 +841,206 @@ Search was the wrong answer.
 		t.Errorf("the standing decision should now be the replacement; got %q", got)
 	}
 }
+
+// --- feature retirement --------------------------------------------------
+
+func retirementAmendment(outcome, replacement, intents string) string {
+	repl := ""
+	if replacement != "" {
+		repl = "replacement_feature: \"" + replacement + "\"\n"
+	}
+	return `---
+amendment: close-the-feature
+date: 2026-08-26
+retires_feature: true
+outcome: ` + outcome + `
+` + repl + `supersedes_intents:
+` + intents + `---
+
+## Change
+The feature is closed.
+
+## Why
+Its job moved out of this feature entirely.
+
+## Acceptance
+- Nothing in this feature is reachable.
+`
+}
+
+const bothIntents = "  - create-the-thing\n  - browse-the-things\n"
+
+func TestFeatureRetirement_RetiresWhenNothingPointsAtIt(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bothIntents))
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("a feature nothing points at should retire: %v (issues %+v)", err, out.Issues)
+	}
+	if out.RetiredBy != "close-the-feature" {
+		t.Errorf("the terminal amendment should be reported; got %q", out.RetiredBy)
+	}
+	// The last-intent refusal must NOT fire: that is the rule this operation
+	// exists to satisfy, not one to work around.
+	if amendmentIssueSeen(out, "amendment-supersedes-last-intent") {
+		t.Errorf("retirement is what the last-intent refusal points at; it must not also block it: %+v", out.Issues)
+	}
+}
+
+func TestFeatureRetirement_RefusesWhileSomethingPointsAtIt(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bothIntents))
+
+	// Another feature's SPEC references it — and is never built, which is the
+	// case a rebuild-scoping probe cannot see.
+	otherDir := filepath.Join(dir, "spec", "intents", "consumer")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"intents.md": "# Consumer\n\n## Use The Thing\n\n**Goal**: g.\n**Persona**: p.\n",
+		"surface.yaml": `feature: consumer
+fragments:
+    - name: Thing Echo
+      page: things
+      region: main
+      shows: data-list
+      order: 1
+      source: '@consumer/use-the-thing'
+      supersedes: '@verify-fixture/thing-list'
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(otherDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var msg string
+	for _, iss := range out.Issues {
+		if iss.Code == "feature-retirement-still-referenced" {
+			msg = iss.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("retiring a feature something stands on must be refused; issues=%+v", out.Issues)
+	}
+	if !strings.Contains(msg, "consumer") || !strings.Contains(msg, "surface.yaml") {
+		t.Errorf("the refusal must name the owning artifact and where; got %q", msg)
+	}
+}
+
+// Provenance is not a dependency. A rule that blocks on any occurrence of the
+// name is one people learn to route around.
+func TestFeatureRetirement_ProvenanceAndProseDoNotBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bothIntents))
+
+	otherDir := filepath.Join(dir, "spec", "intents", "consumer")
+	if err := os.MkdirAll(filepath.Join(otherDir, "amendments"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// intents.md naming it is a story about why this feature exists; a
+	// trigger: naming it records what prompted a change.
+	if err := os.WriteFile(filepath.Join(otherDir, "intents.md"),
+		[]byte("# Consumer\n\n## Use It\n\n**Goal**: replaces @verify-fixture eventually.\n**Persona**: p.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, otherDir, "001-because-of-them.md", `---
+amendment: because-of-them
+date: 2026-08-26
+trigger: "@verify-fixture needed this"
+affects:
+  - "@consumer/surface:thing-echo"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if amendmentIssueSeen(out, "feature-retirement-still-referenced") {
+		for _, iss := range out.Issues {
+			if iss.Code == "feature-retirement-still-referenced" {
+				t.Errorf("prose and trigger provenance are not dependencies: %s", iss.Message)
+			}
+		}
+	}
+}
+
+func TestFeatureRetirement_OutcomeAndReplacementRules(t *testing.T) {
+	cases := []struct {
+		name, outcome, replacement, want string
+	}{
+		{"replaced needs a destination", "replaced", "", "amendment-retirement-replacement-missing"},
+		{"obsolete forbids one", "obsolete", "@other", "amendment-retirement-replacement-unexpected"},
+		{"outcome is closed", "archived", "", "amendment-retirement-outcome-unknown"},
+		{"cannot replace itself", "replaced", "@verify-fixture", "amendment-retirement-replaces-itself"},
+		{"replacement must exist", "replaced", "@nowhere", "amendment-retirement-replacement-unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			featDir := writeVerifyFixture(t, dir)
+			writeAmendment(t, featDir, "001-close-the-feature.md",
+				retirementAmendment(tc.outcome, tc.replacement, bothIntents))
+			out, _ := runCheckAmendments_(t, "@verify-fixture")
+			if !amendmentIssueSeen(out, tc.want) {
+				t.Errorf("expected %s; issues=%+v", tc.want, out.Issues)
+			}
+		})
+	}
+}
+
+func TestFeatureRetirement_MustNameEveryLivePromise(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-close-the-feature.md",
+		retirementAmendment("obsolete", "", "  - create-the-thing\n"))
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-retirement-incomplete") {
+		t.Fatalf("a promise left unnamed stands after the feature is gone; issues=%+v", out.Issues)
+	}
+	for _, iss := range out.Issues {
+		if iss.Code == "amendment-retirement-incomplete" && !strings.Contains(iss.Message, "browse-the-things") {
+			t.Errorf("the refusal must name what was missed; got %q", iss.Message)
+		}
+	}
+}
+
+// The marker is what carries the obligations, so the fields mean nothing
+// without it — and quietly ignoring them would let an author believe they had
+// retired a feature.
+func TestFeatureRetirement_FieldsWithoutTheMarkerAreRefused(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-not-really.md", `---
+amendment: not-really
+date: 2026-08-26
+outcome: obsolete
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+c
+
+## Why
+w
+
+## Acceptance
+- a
+`)
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-retirement-fields-without-marker") {
+		t.Errorf("outcome: without retires_feature: must not be silently ignored; issues=%+v", out.Issues)
+	}
+}

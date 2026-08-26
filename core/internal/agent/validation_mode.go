@@ -154,6 +154,16 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// A terminal retirement naming an intent an earlier amendment already
+	// retired. Harmless on its own — the intent is retired either way — so it
+	// warns rather than blocking. It is reported at all because a set padded
+	// with history reads as complete, which is exactly when a live promise
+	// going unnamed is easiest to miss; the error for that case is
+	// amendment-retirement-incomplete, and this is its companion.
+	"amendment-retirement-names-retired-intent": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	// A duplicated verify: bullet is an authoring defect in the CONTRACT, not
 	// in the testcases file being validated, so it warns rather than failing a
 	// file its author may not own.

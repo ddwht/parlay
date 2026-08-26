@@ -53,6 +53,24 @@ type Amendment struct {
 	// exemption from the byte-integrity check.
 	SupersedesIntents []string `yaml:"supersedes_intents"`
 
+	// RetiresFeature marks this as the feature's terminal record: it closes
+	// the feature rather than changing it. Declared rather than inferred from
+	// an amendment that happens to name every live intent — that shape is
+	// already an error, carries none of retirement's obligations, and a
+	// lifecycle transition nobody chose is not one to infer.
+	RetiresFeature bool `yaml:"retires_feature"`
+
+	// Outcome is closed at "replaced" or "obsolete". A reader months later
+	// cannot recover from silence whether the work moved somewhere or stopped
+	// mattering, and that difference is the whole content of the decision.
+	Outcome string `yaml:"outcome"`
+
+	// ReplacementFeature names where the work went. Required by "replaced",
+	// forbidden by "obsolete". It is metadata about the outcome and never
+	// permission: a reference pointing at this feature does not begin pointing
+	// at the replacement by being told about it.
+	ReplacementFeature string `yaml:"replacement_feature"`
+
 	// Body sections. Change and Why are verbatim prose; Acceptance is the
 	// bullet list the apply step lands as verify: entries on the affected
 	// contract artifact entries.

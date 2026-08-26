@@ -62,6 +62,7 @@ func ValidateAmendment(mode ValidationMode, path string, content []byte) []Valid
 	}
 
 	outcomes = append(outcomes, validateIntentSupersession(mode, a)...)
+	outcomes = append(outcomes, validateFeatureRetirement(mode, a)...)
 
 	return outcomes
 }
@@ -123,6 +124,67 @@ func validateIntentSupersession(mode ValidationMode, a *parser.Amendment) []Vali
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-supersession-no-rationale",
 			"this amendment supersedes a founding intent but has no ## Why — the frozen intent cannot record why it stopped being true, so this is the only place that reasoning will ever exist"))
 	}
+
+	return outcomes
+}
+
+// RetirementOutcomes is the closed vocabulary for how a feature ended.
+//
+// Two values and no third, because the difference between them is the entire
+// content of the decision: "replaced" sends a later reader somewhere, and
+// "obsolete" tells them there is nowhere to go. Silence cannot express either,
+// which is why the field is required rather than encouraged.
+var RetirementOutcomes = map[string]bool{
+	"replaced": true,
+	"obsolete": true,
+}
+
+// validateFeatureRetirement checks the shape of a terminal retirement record.
+//
+// Only the half one file can answer. Whether the named intents are exactly the
+// live ones, whether the replacement exists and still stands, whether the
+// ledger has an unapplied tail, and whether anything still references the
+// feature all need more than this file and live in check-amendments.
+func validateFeatureRetirement(mode ValidationMode, a *parser.Amendment) []ValidationOutcome {
+	var outcomes []ValidationOutcome
+
+	replacement := strings.TrimSpace(a.ReplacementFeature)
+	outcome := strings.TrimSpace(a.Outcome)
+
+	if !a.RetiresFeature {
+		// The fields are meaningless without the marker, and quietly ignoring
+		// them would let an author believe they had retired a feature.
+		if outcome != "" || replacement != "" {
+			outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-fields-without-marker",
+				"outcome:/replacement_feature: are set but retires_feature: is not — these describe how a feature ended and mean nothing on an ordinary amendment; set retires_feature: true, or drop them"))
+		}
+		return outcomes
+	}
+
+	if len(a.SupersedesIntents) == 0 {
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-no-intents",
+			"retires_feature: is set but supersedes_intents: is empty — retiring a feature retires every promise it makes, so name them; check-amendments verifies the set is exactly the live ones"))
+	}
+
+	switch {
+	case outcome == "":
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-outcome-missing",
+			"retires_feature: is set but outcome: is not — record whether the work moved (replaced, with replacement_feature:) or the need is gone (obsolete). A reader months from now cannot recover which from silence"))
+	case !RetirementOutcomes[outcome]:
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-outcome-unknown",
+			fmt.Sprintf("outcome: %q is outside the closed set {obsolete, replaced}", outcome)))
+	case outcome == "replaced" && replacement == "":
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-replacement-missing",
+			"outcome: replaced requires replacement_feature: — saying the work moved without saying where leaves a reader exactly where saying nothing would"))
+	case outcome == "obsolete" && replacement != "":
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-replacement-unexpected",
+			fmt.Sprintf("outcome: obsolete forbids replacement_feature: (%q) — the two say opposite things about whether the work still exists somewhere", replacement)))
+	}
+
+	// Self-replacement is NOT checked here: an amendment does not know which
+	// feature's ledger it sits in — the feature comes from the path — so that
+	// comparison needs the caller's slug and lives in check-amendments beside
+	// the other cross-feature resolution.
 
 	return outcomes
 }
