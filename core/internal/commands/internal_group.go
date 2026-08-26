@@ -70,6 +70,7 @@ func registerInternalCommands() {
 		scaffoldSeedCmd,
 		checkCompositionCmd,
 		checkAmendmentsCmd,
+		activeSpecCmd,
 		checkAppliedCmd,
 		mergedRoutesCmd,
 		crossCuttingIndexCmd,

@@ -114,6 +114,26 @@ truth, and they are what step 4 amends. `parlay internal check-drift` enforces
 this: an edit to a frozen doc surfaces as a `ledger_integrity` finding, not as
 drift.
 
+**Frozen is not immutable in force.** A founding intent records what the
+feature promised and why, at the moment it was founded. When the project
+decides otherwise, that document does not become wrong — it becomes history,
+and the new decision is recorded on top of it. `supersedes_intents:` on an
+amendment is how (see step 3.5). This matters most for a feature that owns no
+contract artifact: `affects:` has nothing to resolve against there, so before
+supersession existed such a feature could not be changed at all, and the only
+routes were to edit a frozen document or to leave the spec contradicting the
+code indefinitely. Neither is a route; both are damage.
+
+**Read the promise set before proposing a change.** Run
+`parlay internal active-spec @{feature}`. It reports which founding promises
+still stand (`active`), which a later decision retired and by which amendment
+(`retired`), and whether a retirement is recorded but not yet applied
+(`pending`, with `blocked: true`). Two things follow. A change that contradicts
+an `active` promise is a supersession and takes step 3.5's decision gate below —
+not a quiet contradiction, and never an edit to the frozen file. A change that
+merely refines what a `retired` promise used to say needs no supersession: that
+promise is already history.
+
 **The change is recorded before it is applied.** Insert this step between
 steps 3 and 4:
 
@@ -125,13 +145,55 @@ steps 3 and 4:
      `date:`, `trigger:` (what prompted this — name the asking feature as
      `@feature` when the pressure is cross-feature), `affects:` (the
      contract entries this changes, as `@{feature}/<kind>:<name>` refs with
-     kind one of `operation | surface | infrastructure | domain`), and
-     `supersedes:` (earlier amendment slugs this replaces, usually empty).
+     kind one of `operation | surface | infrastructure | domain`),
+     `supersedes:` (earlier amendment slugs this replaces, usually empty), and
+     `supersedes_intents:` (founding intent slugs **in this feature** whose
+     promise this decision replaces — omit unless the gate below applies).
    - Body: `## Change` (the delta, in prose — never a restatement of the
      feature), `## Why` (the reasoning; this is the only place it gets
      recorded), `## Acceptance` (criteria; step 4 lands them as `verify:`
      entries on the affected artifact entries — omit only for renames and
      pure-prose changes).
+
+   **If the change contradicts a founding promise, gate it separately first.**
+   Step 3's read of `parlay internal active-spec` tells you whether it does. This is the one
+   decision in the skill with **no safe default and no non-interactive path**:
+   retiring a promise reduces what the feature commits to, and an agent that
+   answered it alone would be deciding, on the project's behalf, to stop doing
+   something the project said it would do. Under `--non-interactive`, raise a
+   `parlay-decision` block and **write nothing** — not the amendment, not the
+   splice.
+
+   Present what is actually being given up, taken from `parlay internal active-spec` rather
+   than paraphrased: the promise's **Goal**, its **Verify** bullets, the
+   **replacement** (`## Change` and `## Acceptance`), and the **disposition of
+   every contract entry** whose `source:` names it — each one named in
+   `affects:` as replaced, removed or retained. `parlay internal check-amendments` reports
+   `intent-supersession-unaccounted-affect` for any you miss, but the reviewer
+   should see the list before it is written, not after.
+
+   Then record it as a supersession: name the intent slug in
+   `supersedes_intents:`, and write both `## Why` and `## Acceptance` — neither
+   is optional here, and the rename/pure-prose exemption does not apply. The
+   Acceptance becomes the replacement's active criteria; without one the
+   amendment retires a promise and puts nothing in its place, which the
+   validator refuses as `amendment-supersession-no-successor`.
+
+   Three refusals you cannot argue past, all reported by
+   `parlay internal check-amendments` after the write: an intent this feature
+   does not declare, a second live amendment retiring an intent another already
+   retired (name the earlier in `supersedes:` to settle it), and retiring a
+   feature's **last** live promise — a feature that promises nothing is a
+   lifecycle question with its own dependency checks, not a ledger entry. If
+   you hit the last one, stop: what you are doing is retiring the feature, and
+   that is not this operation.
+
+   **The retirement takes effect only once applied.** Until the baseline
+   records this amendment, the feature still makes the old promise — the
+   artifacts and the generated code still keep it — so every advancing
+   boundary blocks with `unapplied-amendments` naming the pending supersession.
+   That is correct and is not something to work around: proceed through the
+   splice and re-baseline as with any other amendment.
 
    **Decision-gate the exact file content before writing** — same rule as
    step 4's gate, and the two are one decision when convenient: show the
