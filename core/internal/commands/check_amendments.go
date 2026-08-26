@@ -75,8 +75,14 @@ type checkAmendmentsOutput struct {
 	// touching the ledger. Always present (possibly empty) so consumers can
 	// index it unconditionally.
 	SupersededBy map[string][]string `json:"superseded_by"`
-	Ready        bool                `json:"ready"`
-	Issues       []amendmentIssue    `json:"issues"`
+	// SupersededIntents maps a founding intent slug to the amendment that
+	// retired it. The forward link cannot live in intents.md — the founding
+	// documents are frozen and are never written to — so this is the only
+	// place a reader learns that a promise has been replaced. Always present
+	// (possibly empty) so consumers can index it unconditionally.
+	SupersededIntents map[string]string `json:"superseded_intents"`
+	Ready             bool              `json:"ready"`
+	Issues            []amendmentIssue  `json:"issues"`
 }
 
 func runCheckAmendments(cmd *cobra.Command, args []string) error {
@@ -97,12 +103,13 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 	featDir := cfg.FeaturePath(slug)
 
 	out := checkAmendmentsOutput{
-		Feature:      slug,
-		Amendments:   []amendmentEntry{},
-		DirtySet:     []string{},
-		AllAffects:   []string{},
-		SupersededBy: map[string][]string{},
-		Issues:       []amendmentIssue{},
+		Feature:           slug,
+		Amendments:        []amendmentEntry{},
+		DirtySet:          []string{},
+		AllAffects:        []string{},
+		SupersededBy:      map[string][]string{},
+		SupersededIntents: map[string]string{},
+		Issues:            []amendmentIssue{},
 	}
 
 	// The unapplied tail is defined against the feature baseline's
@@ -144,6 +151,11 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		affects  map[string]bool
 	}
 	var priors []priorScope
+	// Supersession claims in sequence order. Resolved after the walk because
+	// every check below needs the whole ledger in view: whether an intent
+	// exists, whether two amendments claim the same one, and whether retiring
+	// them all would leave the feature promising nothing.
+	var supersessions []intentClaim
 	for _, a := range amendments {
 		entry := amendmentEntry{Seq: a.Seq, Slug: a.Slug, Date: a.Date, Affects: a.Affects, Supersedes: a.Supersedes}
 		out.Amendments = append(out.Amendments, entry)
@@ -189,6 +201,18 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 			}
 		}
 		slugs[a.FileSlug] = true
+
+		for _, raw := range a.SupersedesIntents {
+			slug := strings.TrimSpace(raw)
+			if slug == "" || strings.ContainsAny(slug, "@/") {
+				// Shape is ValidateAmendment's to report; it already ran above.
+				continue
+			}
+			supersessions = append(supersessions, intentClaim{
+				seq: a.Seq, fileSlug: a.FileSlug, intent: slug,
+				supersedes: a.Supersedes, affects: a.Affects,
+			})
+		}
 
 		// Canonical scope of THIS amendment: every affects: ref that parses,
 		// keyed by its normalized @feature/kind:name form so two spellings of
@@ -254,7 +278,105 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		}
 	}
 
+	resolveIntentSupersessions(cfg, slug, featDir, supersessions, &out)
+
 	return out
+}
+
+// intentClaim is one amendment's claim to supersede one founding intent.
+type intentClaim struct {
+	seq        int
+	fileSlug   string
+	intent     string
+	supersedes []string // amendment slugs this claim's amendment replaces
+	affects    []string
+}
+
+// resolveIntentSupersessions runs the ledger-level half of intent supersession:
+// every check that needs more than one file in view.
+//
+// Shape — malformed entries, cross-feature refs, missing successor or rationale
+// — is ValidateAmendment's, already reported per file. What is left is what only
+// the whole feature can answer: does the intent exist, does more than one live
+// amendment claim it, would retiring it leave the feature promising nothing, and
+// has the scope it produced been accounted for.
+func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, claims []intentClaim, out *checkAmendmentsOutput) {
+	if len(claims) == 0 {
+		return
+	}
+
+	intents, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if err != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-supersedes-intent-unknown",
+			Message: fmt.Sprintf("this ledger supersedes founding intents but %s cannot be read: %v", filepath.Join(featDir, "intents.md"), err),
+		})
+		return
+	}
+	known := map[string]bool{}
+	for _, in := range intents {
+		known[in.Slug] = true
+	}
+
+	// claimants[intent] = the amendments claiming it, in sequence order.
+	claimants := map[string][]intentClaim{}
+	for _, c := range claims {
+		if !known[c.intent] {
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-supersedes-intent-unknown",
+				Message: fmt.Sprintf("%03d-%s supersedes intent %q, which this feature's intents.md does not declare — an amendment may only retire a promise its own feature actually made", c.seq, c.fileSlug, c.intent),
+			})
+			continue
+		}
+		claimants[c.intent] = append(claimants[c.intent], c)
+	}
+
+	// A fork: two live amendments retiring the same promise, with no ordering
+	// between them. Naming the earlier in supersedes: is the declaration that
+	// this decision replaces it — the same relation the ledger already uses,
+	// so supersession does not get a second ordering model of its own.
+	retired := map[string]bool{}
+	for intent, cs := range claimants {
+		for i, c := range cs {
+			if i == 0 {
+				continue
+			}
+			ordered := false
+			for _, sup := range c.supersedes {
+				for _, earlier := range cs[:i] {
+					if sup == earlier.fileSlug {
+						ordered = true
+					}
+				}
+			}
+			if !ordered {
+				out.Issues = append(out.Issues, amendmentIssue{
+					Severity: "error", Code: "amendment-supersedes-intent-forked",
+					Message: fmt.Sprintf("%03d-%s and %03d-%s both supersede intent %q with no ordering between them — name the earlier amendment in supersedes: to declare which decision stands", cs[i-1].seq, cs[i-1].fileSlug, c.seq, c.fileSlug, intent),
+				})
+			}
+		}
+		retired[intent] = true
+		out.SupersededIntents[intent] = cs[len(cs)-1].fileSlug
+	}
+
+	// A feature that promises nothing is a lifecycle question — whether it
+	// still has consumers, whether its generated code should go — with its own
+	// dependency checks. It is not something a ledger entry decides.
+	live := 0
+	for _, in := range intents {
+		if !retired[in.Slug] {
+			live++
+		}
+	}
+	if live == 0 {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-supersedes-last-intent",
+			Message: fmt.Sprintf("this ledger would retire every founding intent of %s, leaving the feature promising nothing — retiring a whole feature is a lifecycle operation with its own dependency checks, not a ledger entry", slug),
+		})
+	}
+
+	reportUnaccountedScope(cfg, slug, featDir, claimants, out)
 }
 
 // reportStrayAmendmentFiles names files in amendments/ that the loader
@@ -384,4 +506,119 @@ func emitCheckAmendmentsJSON(cmd *cobra.Command, out checkAmendmentsOutput) erro
 		return NewExitCodeError(1)
 	}
 	return nil
+}
+
+// reportUnaccountedScope refuses a retirement that would orphan generated work.
+//
+// A superseded intent usually produced something: operations, fragments,
+// infrastructure entries that name it in source:. Retiring the promise without
+// saying what becomes of them leaves that scope with no owner — still generated,
+// still shipped, and now traceable to a decision the project has withdrawn.
+//
+// The disposition is deliberately not a new vocabulary. Naming the entry in
+// ordinary affects: IS the disposition: the amendment that retires the promise
+// also states what happens to the contract entries it produced, in the field
+// that already means "this amendment changes these entries". A feature with no
+// contract artifact — the case this whole mechanism exists for — satisfies the
+// rule with an empty set and is never asked for one.
+func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants map[string][]intentClaim, out *checkAmendmentsOutput) {
+	if len(claimants) == 0 {
+		return
+	}
+
+	// Every entry accounted for by any superseding amendment, canonicalized so
+	// two spellings of the same ref collide.
+	accounted := map[string]bool{}
+	for _, cs := range claimants {
+		for _, c := range cs {
+			for _, raw := range c.affects {
+				if ref, err := parser.ParseAmendmentRef(raw); err == nil {
+					accounted[canonicalAmendmentRef(ref)] = true
+				}
+			}
+		}
+	}
+
+	type entry struct{ kind, name, source string }
+	var entries []entry
+
+	if caps, err := parser.ParseCapabilities(filepath.Join(featDir, "capabilities.yaml")); err == nil {
+		for _, op := range caps.Operations {
+			entries = append(entries, entry{"operation", op.ID, op.Source})
+		}
+	}
+	if surfacePath := parser.ResolveSurfacePath(featDir); surfacePath != "" {
+		if frags, err := parser.ParseSurfaceFile(surfacePath); err == nil {
+			for _, f := range frags {
+				entries = append(entries, entry{"surface", parser.Slugify(f.Name), f.Source})
+			}
+		}
+	}
+	if _, _, frags, err := readFragments(filepath.Join(featDir, "infrastructure.md")); err == nil {
+		for _, f := range frags {
+			entries = append(entries, entry{"infrastructure", parser.Slugify(f.heading), infraFragmentSource(f.body)})
+		}
+	}
+
+	var unaccounted []string
+	for _, e := range entries {
+		if e.source == "" {
+			continue
+		}
+		for intent := range claimants {
+			if !sourceNamesIntent(e.source, intent) {
+				continue
+			}
+			ref := fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name)
+			if accounted[ref] {
+				continue
+			}
+			unaccounted = append(unaccounted, fmt.Sprintf("%s (from %s)", ref, intent))
+		}
+	}
+	if len(unaccounted) == 0 {
+		return
+	}
+	sort.Strings(unaccounted)
+	out.Issues = append(out.Issues, amendmentIssue{
+		Severity: "error", Code: "intent-supersession-unaccounted-affect",
+		Message: fmt.Sprintf("retiring these intents leaves %d contract entr%s with no disposition: %s — name each in affects: to say whether it is replaced, removed or retained, or the generated scope outlives the promise that justified it", len(unaccounted), plural(len(unaccounted), "y", "ies"), strings.Join(unaccounted, ", ")),
+	})
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// sourceNamesIntent reports whether a contract entry's source: names this
+// intent. source: is a comma-separated list of @feature/intent-slug refs, and
+// the same intent may appear qualified or bare depending on when it was written.
+func sourceNamesIntent(source, intent string) bool {
+	for _, part := range strings.Split(source, ",") {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "@")
+		if part == intent {
+			return true
+		}
+		if i := strings.LastIndex(part, "/"); i >= 0 && part[i+1:] == intent {
+			return true
+		}
+	}
+	return false
+}
+
+// infraFragmentSource pulls the **Source**: line out of an infrastructure
+// fragment body. The fragment type carries the verbatim block rather than
+// parsed fields, and this is the only field the scope walk needs.
+func infraFragmentSource(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "**Source**:"); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
 }

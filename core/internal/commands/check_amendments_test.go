@@ -416,3 +416,196 @@ func hasIssueWith(out checkAmendmentsOutput, code, substr string) bool {
 	}
 	return false
 }
+
+// --- intent supersession -------------------------------------------------
+//
+// These run through runCheckAmendments — the only production caller of the
+// amendment validators — rather than the leaf functions. A rule proven only
+// against a hand-built input cannot tell a working check from an unreachable
+// one, which is the failure this ledger has already shipped twice.
+
+// supersedeBrowse retires the intent behind exactly one fragment, and accounts
+// for it. browse-the-things sources only surface:thing-list in the fixture.
+const supersedeBrowse = `---
+amendment: browsing-moves-to-search
+date: 2026-08-26
+trigger: "the list view is replaced by search"
+affects:
+  - "@verify-fixture/surface:thing-list"
+supersedes_intents:
+  - browse-the-things
+---
+
+## Change
+Browsing is replaced by search over the same collection.
+
+## Why
+The list could not scale past a few hundred things and nobody browsed it.
+
+## Acceptance
+- Searching for a thing by name returns it.
+`
+
+func TestCheckAmendments_SupersessionAccountingForItsScopePasses(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-browsing-moves-to-search.md", supersedeBrowse)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("accounted supersession should exit zero: %v (issues %+v)", err, out.Issues)
+	}
+	if got := out.SupersededIntents["browse-the-things"]; got != "browsing-moves-to-search" {
+		t.Errorf("expected the retiring amendment to be reported; got %q (%+v)", got, out.SupersededIntents)
+	}
+}
+
+func TestCheckAmendments_SupersessionOrphaningScopeIsRefused(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	// create-the-thing sources BOTH operation:thing.create and
+	// surface:create-form; this names neither.
+	writeAmendment(t, featDir, "001-drop-creation.md", `---
+amendment: drop-creation
+date: 2026-08-26
+supersedes_intents:
+  - create-the-thing
+---
+
+## Change
+Things are no longer created through this feature.
+
+## Why
+Creation moved to the import pipeline.
+
+## Acceptance
+- The import pipeline is the only way a thing enters the system.
+`)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var msg string
+	for _, iss := range out.Issues {
+		if iss.Code == "intent-supersession-unaccounted-affect" {
+			msg = iss.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("retiring a promise must not silently orphan what it produced; issues %+v", out.Issues)
+	}
+	for _, want := range []string{"operation:thing.create", "surface:create-form"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("expected %s to be named as unaccounted; got %q", want, msg)
+		}
+	}
+}
+
+func TestCheckAmendments_SupersedingUnknownIntentIsRefused(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-ghost.md", strings.Replace(supersedeBrowse,
+		"  - browse-the-things", "  - a-promise-never-made", 1))
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-supersedes-intent-unknown") {
+		t.Errorf("an amendment may only retire a promise its own feature made; issues %+v", out.Issues)
+	}
+}
+
+func TestCheckAmendments_TwoClaimsOnOneIntentFork(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-browsing-moves-to-search.md", supersedeBrowse)
+	second := strings.Replace(supersedeBrowse, "amendment: browsing-moves-to-search", "amendment: browsing-moves-to-feed", 1)
+	writeAmendment(t, featDir, "002-browsing-moves-to-feed.md", second)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-supersedes-intent-forked") {
+		t.Fatalf("two live decisions retiring one promise have no ordering; issues %+v", out.Issues)
+	}
+
+	// Declaring which decision stands is the existing ledger relation, not a
+	// second ordering model invented for supersession.
+	ordered := strings.Replace(second, "date: 2026-08-26", "date: 2026-08-26\nsupersedes:\n  - browsing-moves-to-search", 1)
+	writeAmendment(t, featDir, "002-browsing-moves-to-feed.md", ordered)
+	out2, _ := runCheckAmendments_(t, "@verify-fixture")
+	if amendmentIssueSeen(out2, "amendment-supersedes-intent-forked") {
+		t.Errorf("naming the earlier amendment should settle the fork; issues %+v", out2.Issues)
+	}
+}
+
+func TestCheckAmendments_CannotRetireEveryIntent(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-retire-everything.md", `---
+amendment: retire-everything
+date: 2026-08-26
+affects:
+  - "@verify-fixture/operation:thing.create"
+  - "@verify-fixture/surface:create-form"
+  - "@verify-fixture/surface:thing-list"
+supersedes_intents:
+  - create-the-thing
+  - browse-the-things
+---
+
+## Change
+The feature is withdrawn.
+
+## Why
+Its job moved elsewhere.
+
+## Acceptance
+- Nothing in this feature is reachable.
+`)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	if !amendmentIssueSeen(out, "amendment-supersedes-last-intent") {
+		t.Errorf("a feature promising nothing is a lifecycle question, not a ledger entry; issues %+v", out.Issues)
+	}
+}
+
+// The negative control: an ordinary ledger, with no supersession anywhere,
+// must not acquire any of these findings. A check that fires without its
+// subject present is matching something other than what it claims to.
+func TestCheckAmendments_OrdinaryLedgerRaisesNoSupersessionFindings(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-tighten-create.md", `---
+amendment: tighten-create
+date: 2026-08-26
+affects:
+  - "@verify-fixture/operation:thing.create"
+---
+
+## Change
+Creation rejects duplicate names.
+
+## Why
+Two things with one name are one thing.
+
+## Acceptance
+- Creating a duplicate is rejected.
+`)
+
+	out, err := runCheckAmendments_(t, "@verify-fixture")
+	if err != nil {
+		t.Fatalf("ordinary ledger should stay healthy: %v (issues %+v)", err, out.Issues)
+	}
+	for _, iss := range out.Issues {
+		if strings.Contains(iss.Code, "supersed") || strings.Contains(iss.Code, "intent-supersession") {
+			t.Errorf("supersession finding %q on a ledger with no supersession: %s", iss.Code, iss.Message)
+		}
+	}
+	if len(out.SupersededIntents) != 0 {
+		t.Errorf("expected no retired intents, got %+v", out.SupersededIntents)
+	}
+}
+
+func amendmentIssueSeen(out checkAmendmentsOutput, code string) bool {
+	for _, iss := range out.Issues {
+		if iss.Code == code {
+			return true
+		}
+	}
+	return false
+}
