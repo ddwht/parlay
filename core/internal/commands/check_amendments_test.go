@@ -609,3 +609,39 @@ func amendmentIssueSeen(out checkAmendmentsOutput, code string) bool {
 	}
 	return false
 }
+
+func TestSourceNamesIntent_MatchesEveryRealRefShape(t *testing.T) {
+	// All three shapes occur in a real tree; only the last segment is ever
+	// the intent slug.
+	for _, src := range []string{
+		"browse-the-things",
+		"@verify-fixture/browse-the-things",
+		"@parlay-tool/verify-fixture/browse-the-things",
+		"@verify-fixture/create-the-thing, @verify-fixture/browse-the-things",
+	} {
+		if !sourceNamesIntent(src, "verify-fixture", "browse-the-things") {
+			t.Errorf("source %q should name the intent", src)
+		}
+	}
+	// And the feature may be addressed by full slug or bare name.
+	if !sourceNamesIntent("@verify-fixture/browse-the-things", "parlay-tool/verify-fixture", "browse-the-things") {
+		t.Error("a bare feature name should still resolve against an initiative-qualified feature")
+	}
+}
+
+func TestSourceNamesIntent_DoesNotMatchAnotherFeaturesIntent(t *testing.T) {
+	// A contract entry may legitimately source another feature's intent —
+	// cross-feature pressure looks exactly like this on disk. Matching the last
+	// segment alone would let an identically-slugged intent elsewhere satisfy
+	// the lookup, and the author would be handed a blocking demand to account
+	// for an entry that does not derive from the retired promise at all.
+	if sourceNamesIntent("@other-feature/browse-the-things", "verify-fixture", "browse-the-things") {
+		t.Error("another feature's identically-slugged intent must not match")
+	}
+	if sourceNamesIntent("@parlay-tool/other-feature/browse-the-things", "parlay-tool/verify-fixture", "browse-the-things") {
+		t.Error("initiative-qualified refs must still be checked against the feature")
+	}
+	if sourceNamesIntent("@verify-fixture/create-the-thing", "verify-fixture", "browse-the-things") {
+		t.Error("a different intent in the same feature must not match")
+	}
+}

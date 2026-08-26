@@ -566,7 +566,7 @@ func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants
 			continue
 		}
 		for intent := range claimants {
-			if !sourceNamesIntent(e.source, intent) {
+			if !sourceNamesIntent(e.source, slug, intent) {
 				continue
 			}
 			ref := fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name)
@@ -594,16 +594,51 @@ func plural(n int, one, many string) string {
 }
 
 // sourceNamesIntent reports whether a contract entry's source: names this
-// intent. source: is a comma-separated list of @feature/intent-slug refs, and
-// the same intent may appear qualified or bare depending on when it was written.
-func sourceNamesIntent(source, intent string) bool {
+// feature's intent.
+//
+// source: is a comma-separated list of refs that appear in three shapes in a
+// real tree: bare (`some-intent`), feature-qualified (`@feature/some-intent`)
+// and initiative-qualified (`@initiative/feature/some-intent`). Only the last
+// segment is ever the intent slug.
+//
+// The feature half is checked as well as the slug, and that is not pedantry.
+// A contract entry may legitimately source another feature's intent — that is
+// what cross-feature pressure looks like on disk — so matching the last segment
+// alone would let feature B's intent satisfy a lookup for feature A's
+// identically-slugged one. The consequence lands on the author as a blocking
+// intent-supersession-unaccounted-affect demanding they account for an entry
+// that does not derive from the retired promise at all.
+func sourceNamesIntent(source, feature, intent string) bool {
+	// The feature may be addressed by its full slug (initiative/feature) or by
+	// its bare name, depending on how the ref was written.
+	featureNames := map[string]bool{feature: true}
+	if i := strings.LastIndex(feature, "/"); i >= 0 {
+		featureNames[feature[i+1:]] = true
+	}
+
 	for _, part := range strings.Split(source, ",") {
-		part = strings.TrimSpace(part)
-		part = strings.TrimPrefix(part, "@")
-		if part == intent {
+		part = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(part), "@"))
+		if part == "" {
+			continue
+		}
+		i := strings.LastIndex(part, "/")
+		if i < 0 {
+			// Bare slug: unqualified refs can only mean this feature's own.
+			if part == intent {
+				return true
+			}
+			continue
+		}
+		if part[i+1:] != intent {
+			continue
+		}
+		// The prefix may itself be initiative-qualified while the feature we
+		// hold is bare, or the reverse, so compare on the feature name in both.
+		prefix := part[:i]
+		if featureNames[prefix] {
 			return true
 		}
-		if i := strings.LastIndex(part, "/"); i >= 0 && part[i+1:] == intent {
+		if j := strings.LastIndex(prefix, "/"); j >= 0 && featureNames[prefix[j+1:]] {
 			return true
 		}
 	}
