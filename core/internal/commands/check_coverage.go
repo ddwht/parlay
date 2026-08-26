@@ -39,8 +39,12 @@ type coverageOutput struct {
 	Covered   []coverageMatch `json:"covered"`
 	Uncovered []string        `json:"uncovered"`
 	Orphans   []string        `json:"orphans"`
-	Chain     *chainCoverage  `json:"chain,omitempty"`
-	Drift     *driftOutput    `json:"drift,omitempty"`
+	// Retired pairs a dialog with the superseded intent it belonged to. Kept
+	// out of Orphans deliberately: it is history to preserve, not debt to
+	// clean up.
+	Retired []coverageMatch `json:"retired,omitempty"`
+	Chain   *chainCoverage  `json:"chain,omitempty"`
+	Drift   *driftOutput    `json:"drift,omitempty"`
 }
 
 type chainCoverage struct {
@@ -67,10 +71,14 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 		return runCheckCoverageForUnit(cmd, featurePath, slug)
 	}
 
-	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
+	// Coverage is a question about what the feature currently promises, so it
+	// reads the resolved set rather than the raw file. A promise an applied
+	// amendment withdrew must not still demand a dialog.
+	res, err := resolveActiveIntents(cfg, slug)
 	if err != nil {
 		return fmt.Errorf("failed to read intents: %w", err)
 	}
+	intents := res.Active
 
 	dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md"))
 	if err != nil {
@@ -79,6 +87,23 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 
 	output := coverageOutput{Feature: slug}
 	matchedDialogs := make(map[string]bool)
+
+	// Dialogs belonging to a superseded intent are HISTORY, and must be
+	// claimed before the orphan walk below. matchedDialogs is populated from
+	// the intent loop, so filtering intents without this would drop every such
+	// dialog through to "orphan" — turning preserved history into cleanup debt,
+	// which is the opposite of what supersession promises.
+	for _, sup := range res.Superseded {
+		for _, dialog := range dialogs {
+			if matchesIntent(sup.Intent, dialog) {
+				matchedDialogs[dialog.Slug] = true
+				output.Retired = append(output.Retired, coverageMatch{
+					Intent: sup.Intent.Title,
+					Dialog: dialog.Title,
+				})
+			}
+		}
+	}
 
 	for _, intent := range intents {
 		found := false

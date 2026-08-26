@@ -45,12 +45,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Operation: read-file intents.md, parse using intent-schema
-	intentsPath := filepath.Join(featurePath, "intents.md")
-	intents, err := parser.ParseIntentsFile(intentsPath)
+	// Reconciliation is about what the feature currently promises, so it reads
+	// the resolved set. A promise an applied amendment withdrew must not still
+	// be reported as needing a dialog.
+	res, err := resolveActiveIntents(cfg, slug)
 	if err != nil {
 		return fmt.Errorf("failed to read intents: %w", err)
 	}
+	intents := res.Active
 
 	// Operation: read-file dialogs.md, parse using dialog-schema
 	dialogsPath := filepath.Join(featurePath, "dialogs.md")
@@ -81,6 +83,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 		if !found {
 			uncoveredIntents = append(uncoveredIntents, intent)
+		}
+	}
+
+	// Claim dialogs belonging to superseded intents before the orphan walk.
+	// matchedDialogs is populated from the intent loop above, so a filtered
+	// intent set would otherwise drop every retired intent's dialog into the
+	// orphan list and present preserved history as cleanup debt.
+	var retiredDialogs []parser.Dialog
+	for _, sup := range res.Superseded {
+		for _, dialog := range dialogs {
+			if matchesIntent(sup.Intent, dialog) && !matchedDialogs[dialog.Slug] {
+				matchedDialogs[dialog.Slug] = true
+				retiredDialogs = append(retiredDialogs, dialog)
+			}
 		}
 	}
 
@@ -116,6 +132,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Element: orphan-header + orphan-list (visible-when: orphan.length > 0)
+	if len(retiredDialogs) > 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "Retired dialogs (their intent was superseded — history, not debt):")
+		for _, dialog := range retiredDialogs {
+			fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", dialog.Title)
+		}
+	}
+
 	if len(orphanDialogs) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "Orphan dialogs (no matching intent):")
 		for _, dialog := range orphanDialogs {

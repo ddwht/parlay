@@ -1,9 +1,13 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ddwht/parlay/core/internal/parser"
 )
@@ -239,5 +243,88 @@ targets:
 	}
 	if got := refs["note-form"]; got != "note-form" {
 		t.Errorf("note-form source = %q, want %q", got, "note-form")
+	}
+}
+
+// A dialog belonging to a superseded intent is history, not debt.
+//
+// The hazard is specific: matchedDialogs is populated while iterating intents,
+// so feeding it only the active set drops every superseded intent's dialog
+// through to the orphan walk. Coverage would then report preserved history as
+// cleanup work — telling a designer to delete the record of a decision the
+// project deliberately kept.
+func TestCheckCoverage_RetiredIntentsDialogIsNotAnOrphan(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+
+	if err := os.WriteFile(filepath.Join(featDir, "dialogs.md"), []byte(`# Verify Fixture — Dialogs
+
+---
+
+### Create The Thing
+
+**Trigger**: The designer creates a thing.
+
+User: /create
+System: Created.
+
+---
+
+### Browse The Things
+
+**Trigger**: The designer browses.
+
+User: /list
+System: Here they are.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeAmendment(t, featDir, "001-browsing-moves-to-search.md", supersedeBrowse)
+	writeBaselineApplied(t, "verify-fixture", 1)
+
+	var buf bytes.Buffer
+	cmd := testCommandWithContext(t, testContext(t))
+	cmd.SetOut(&buf)
+	if err := runCheckCoverage(cmd, []string{"@verify-fixture"}); err != nil {
+		t.Fatalf("check-coverage failed: %v\n%s", err, buf.String())
+	}
+
+	var out coverageOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, buf.String())
+	}
+
+	for _, o := range out.Orphans {
+		if o == "Browse The Things" {
+			t.Error("a retired intent's dialog must not be reported as an orphan — that presents preserved history as cleanup debt")
+		}
+	}
+	if len(out.Retired) != 1 || out.Retired[0].Dialog != "Browse The Things" {
+		t.Errorf("expected the dialog to be classified as retired, got %+v", out.Retired)
+	}
+	// And the retired promise itself no longer demands coverage.
+	for _, u := range out.Uncovered {
+		if u == "Browse The Things" {
+			t.Error("a withdrawn promise must not still demand a dialog")
+		}
+	}
+}
+
+// writeBaselineApplied pins how far the ledger has been applied.
+func writeBaselineApplied(t *testing.T, slug string, seq int) {
+	t.Helper()
+	cfg := testContext(t)
+	dir := cfg.BuildPath(slug)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b := Baseline{SchemaVersion: BaselineSchemaVersion, LastAppliedAmendment: seq}
+	data, err := yaml.Marshal(&b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".baseline.yaml"), data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

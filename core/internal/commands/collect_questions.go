@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -70,13 +69,14 @@ func runCollectQuestions(cmd *cobra.Command, args []string) error {
 }
 
 func collectForFeature(cfg *config.Context, slug string) (*questionsOutput, error) {
-	featurePath := cfg.FeaturePath(slug)
-	intentsPath := filepath.Join(featurePath, "intents.md")
-
-	intents, err := parser.ParseIntentsFile(intentsPath)
+	// Open questions on a promise that has been withdrawn are history, not
+	// work: collecting them would ask a designer to resolve a question about
+	// something the project has already decided not to do.
+	res, err := resolveActiveIntents(cfg, slug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read intents for %s: %w", slug, err)
 	}
+	intents := res.Active
 
 	output := &questionsOutput{Feature: slug}
 

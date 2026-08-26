@@ -157,6 +157,30 @@ func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warning
 	// check-drift's ledger findings. Integrity violations always block — a
 	// mutated or deleted amendment, or an edited frozen founding doc, is never
 	// sanctioned by an in-flight refine.
+	lb, lw := gateLedgerState(cfg, slug, featurePath)
+	blockers = append(blockers, lb...)
+	warnings = append(warnings, lw...)
+
+	return blockers, warnings
+}
+
+// gateLedgerState is the ledger half of every advancing boundary: frozen-document
+// integrity, the unapplied tail, and the ledger's own validation.
+//
+// Shared rather than inlined in gateBuild, because it was only in gateBuild.
+// gateCode and gateDone aggregated none of it, so entering the pipeline with
+// --from code walked past the only boundary that asks whether a recorded
+// decision has actually been applied — and generated code from a specification
+// its author had already superseded, reporting success. That is the failure
+// intent supersession's applied-tail rule exists to prevent, so leaving it in
+// one boundary would have made the rule true only on the path nobody was
+// worried about.
+//
+// One helper, one code, one source. The unapplied-tail finding keeps its
+// journal-aware downgrade: a refinement that has spliced but not yet
+// re-baselined is mid-apply, not stale, and blocking it would stop the very
+// workflow that resolves the finding.
+func gateLedgerState(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
 	if drift, err := detectDrift(cfg, slug, featurePath); err == nil && drift != nil {
 		for _, f := range drift.LedgerIntegrity {
 			blockers = append(blockers, gateBlocker{
@@ -165,13 +189,20 @@ func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warning
 				Fix:     "restore the frozen text and record the change as an amendment; for a pre-v0.4 edit run parlay migrate-ledger",
 			})
 		}
-		// The unapplied tail, with 2b journal-aware downgrade.
 		if len(drift.UnappliedAmendments) > 0 {
 			finding := gateBlocker{
 				Code: "unapplied-amendments",
 				Message: fmt.Sprintf("%d amendment(s) recorded but not applied to the contract artifacts: %v",
 					len(drift.UnappliedAmendments), drift.UnappliedAmendments),
 				Fix: "run /parlay-refine to apply the ledger tail",
+			}
+			// Name a pending supersession specifically. An unapplied amendment
+			// that merely edits a contract entry leaves the spec incomplete; one
+			// that retires a promise leaves the feature still making a promise
+			// its author has withdrawn, and the reader should not have to open
+			// the ledger to tell those apart.
+			if res, resErr := resolveActiveIntents(cfg, slug); resErr == nil && res.HasPending() {
+				finding.Message += fmt.Sprintf(" — including a pending intent supersession (%s), so this feature still promises what that decision withdraws", res.PendingSummary())
 			}
 			if refineSanctionsUnappliedTail(cfg, slug, featurePath) {
 				finding.Message += " — sanctioned by an in-flight refinement (splice applied, re-baseline pending)"
@@ -227,6 +258,14 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	// stale buildfile before codegen does.
 	blockers = append(blockers, checkBuildfileFreshness(cfg, slug, featurePath, &warnings)...)
 
+	// Ledger state. A caller entering with --from code never crosses the build
+	// boundary, so without this the only check for a recorded-but-unapplied
+	// decision was on a path they skipped: codegen ran against a specification
+	// its author had already superseded and reported success.
+	lb, lw := gateLedgerState(cfg, slug, featurePath)
+	blockers = append(blockers, lb...)
+	warnings = append(warnings, lw...)
+
 	return blockers, warnings
 }
 
@@ -276,6 +315,13 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message})
 		}
 	}
+
+	// Ledger state here too. Marking a feature complete while a recorded
+	// decision is unapplied asserts the strongest thing the ladder can say
+	// about work that does not yet reflect a change its author already made.
+	lb, lw := gateLedgerState(cfg, slug, cfg.FeaturePath(slug))
+	blockers = append(blockers, lb...)
+	warnings = append(warnings, lw...)
 
 	return blockers, warnings
 }
