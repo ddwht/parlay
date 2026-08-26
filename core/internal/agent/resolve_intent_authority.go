@@ -158,6 +158,19 @@ func ResolveIntentAuthority(raw []parser.Intent, amendments []parser.Amendment, 
 		applied, isApplied := appliedClaim[in.Slug]
 		latest, isClaimed := latestClaim[in.Slug]
 
+		// Which claim stands depends on the mode, and the difference is the
+		// reason the modes exist. Applied authority names the decision in
+		// FORCE. Prospective names the decision being APPLIED — when a newer
+		// amendment supersedes the one that retired this promise, the apply
+		// workflow must see the newer one, or it acts on a predecessor the
+		// ledger has already replaced.
+		if isClaimed && mode == ProspectiveAuthority {
+			out.Superseded = append(out.Superseded, SupersededIntent{
+				Intent: in, ByAmendment: latest.by, Seq: latest.seq,
+				Applied: latest.seq <= lastApplied,
+			})
+			continue
+		}
 		if isApplied {
 			out.Superseded = append(out.Superseded, SupersededIntent{
 				Intent: in, ByAmendment: applied.by, Seq: applied.seq, Applied: true,
@@ -169,13 +182,6 @@ func ResolveIntentAuthority(raw []parser.Intent, amendments []parser.Amendment, 
 			continue
 		}
 
-		// Claimed, but by nothing applied yet.
-		if mode == ProspectiveAuthority {
-			out.Superseded = append(out.Superseded, SupersededIntent{
-				Intent: in, ByAmendment: latest.by, Seq: latest.seq, Applied: false,
-			})
-			continue
-		}
 		// Applied authority: the promise stands until the decision is applied,
 		// and the boundary refuses to advance while it is not.
 		out.Pending = append(out.Pending, PendingSupersession{

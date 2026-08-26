@@ -134,3 +134,30 @@ func TestResolveIntentAuthority_OrdinaryLedgerChangesNothing(t *testing.T) {
 			activeSlugs(r), r.Superseded, r.Pending)
 	}
 }
+
+// When an applied decision and a newer unapplied one both claim an intent, the
+// two modes should name DIFFERENT amendments — that difference is the whole
+// point of having two modes. Applied authority reports the decision in force;
+// prospective, which exists for the apply workflow, must report the decision
+// being applied, or the workflow sees a stale predecessor as the current one.
+func TestResolveIntentAuthority_ProspectiveNamesTheNewestClaim(t *testing.T) {
+	ams := []parser.Amendment{
+		retire(1, "browse-moves-to-search", "browse-the-things"),
+		{Seq: 2, FileSlug: "browse-moves-to-feed", Supersedes: []string{"browse-moves-to-search"},
+			SupersedesIntents: []string{"browse-the-things"}},
+	}
+
+	applied := ResolveIntentAuthority(twoIntents(), ams, 1, AppliedAuthority)
+	if len(applied.Superseded) != 1 || applied.Superseded[0].ByAmendment != "browse-moves-to-search" {
+		t.Errorf("applied authority reports the decision in force: %+v", applied.Superseded)
+	}
+
+	prospective := ResolveIntentAuthority(twoIntents(), ams, 1, ProspectiveAuthority)
+	if len(prospective.Superseded) != 1 {
+		t.Fatalf("expected one superseded promise, got %+v", prospective.Superseded)
+	}
+	if prospective.Superseded[0].ByAmendment != "browse-moves-to-feed" {
+		t.Errorf("prospective must report the newest claim so the apply workflow does not act on a superseded predecessor; got %q",
+			prospective.Superseded[0].ByAmendment)
+	}
+}
