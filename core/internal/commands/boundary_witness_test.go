@@ -7,6 +7,10 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/config"
@@ -36,7 +40,7 @@ type boundaryWitness struct {
 
 var boundaryWitnesses = []boundaryWitness{
 	{
-		Claim: claimCriteriaAuthority, Branch: "unapproved", Stage: gateStageCode,
+		Claim: claimCriteriaAuthority, Branch: branchUnapproved, Stage: gateStageCode,
 		Expect: "criteria-authority-missing",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.Remove(criteriaAuthorityPath(cfg, "graded")); err != nil {
@@ -45,7 +49,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimCriteriaAuthority, Branch: "stale", Stage: gateStageCode,
+		Claim: claimCriteriaAuthority, Branch: branchStaleState, Stage: gateStageCode,
 		Expect: "criteria-authority-missing",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			rewriteCriterion(t, dir, "the archive button is disabled while invoices are unpaid",
@@ -53,7 +57,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimTestcasesReady, Branch: "missing subject", Stage: gateStageCode,
+		Claim: claimTestcasesReady, Branch: branchSubjectMissing, Stage: gateStageCode,
 		Expect: "testcases-not-ready",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.Remove(filepath.Join(cfg.BuildPath("graded"), "testcases.yaml")); err != nil {
@@ -62,7 +66,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimTestcasesReady, Branch: "unreadable subject", Stage: gateStageCode,
+		Claim: claimTestcasesReady, Branch: branchSubjectUnreadable, Stage: gateStageCode,
 		Expect: "testcases-not-ready",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "testcases.yaml"),
@@ -72,7 +76,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimCoverageExcept, Branch: "stale ledger", Stage: gateStageCode,
+		Claim: claimCoverageExcept, Branch: branchStaleState, Stage: gateStageCode,
 		Expect: "coverage-exception-invalid",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := saveCoverageExceptions(cfg, "graded", &CoverageExceptions{
@@ -87,7 +91,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimCoverageExcept, Branch: "unreadable ledger", Stage: gateStageCode,
+		Claim: claimCoverageExcept, Branch: branchSubjectUnreadable, Stage: gateStageCode,
 		Expect: "coverage-exception-invalid",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.WriteFile(coverageDecisionsPath(cfg, "graded"), []byte("exceptions: [\n  broken"), 0o644); err != nil {
@@ -96,7 +100,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimCoverageExcept, Branch: "stranded legacy", Stage: gateStageCode,
+		Claim: claimCoverageExcept, Branch: branchStrandedLegacy, Stage: gateStageCode,
 		Expect: "coverage-exception-invalid",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "coverage-review.yaml"),
@@ -106,7 +110,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimBuildfileValid, Branch: "propagation", Stage: gateStageCode,
+		Claim: claimBuildfileValid, Branch: branchPropagation, Stage: gateStageCode,
 		Expect: "invalid-yaml",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "buildfile.yaml"),
@@ -116,7 +120,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimBuildfileFresh, Branch: "propagation", Stage: gateStageCode,
+		Claim: claimBuildfileFresh, Branch: branchPropagation, Stage: gateStageCode,
 		Expect: "stale-buildfile",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			// Change a source the signatures were computed over.
@@ -125,7 +129,7 @@ var boundaryWitnesses = []boundaryWitness{
 		},
 	},
 	{
-		Claim: claimLedgerState, Branch: "propagation", Stage: gateStageCode,
+		Claim: claimLedgerState, Branch: branchPropagation, Stage: gateStageCode,
 		Expect: "unapplied-amendments",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
 			featDir := cfg.FeaturePath("graded")
@@ -221,33 +225,79 @@ func TestBoundaryWitnesses(t *testing.T) {
 // Completeness, and the reason it is not circular: stages are ASSEMBLED from
 // the registry, so a checker with no claim does not run. An unwitnessed path
 // therefore cannot hide by going unregistered.
-func TestBoundaryClaims_EveryBlockingClaimHasAWitness(t *testing.T) {
-	witnessed := map[string]bool{}
-	for _, w := range append(append([]boundaryWitness{}, boundaryWitnesses...), passThroughWitnesses...) {
-		witnessed[w.Claim] = true
-	}
+func TestBoundaryClaims_EveryBlockingBranchHasAWitness(t *testing.T) {
+	type key struct{ claim, branch string }
+
 	// Claims whose witness needs a control the table cannot express — a
 	// different stage, a second feature, a real generated snapshot — and
 	// therefore lives in its own test. Named here so completeness still counts
 	// them, and so deleting one of those tests fails this rather than passing
-	// quietly.
-	for claim, testName := range map[string]string{
-		claimReadiness:      "TestBoundaryWitness_Readiness",
-		claimComposition:    "TestBoundaryWitness_Composition",
-		claimGeneratedState: "TestBoundaryWitness_GeneratedState",
-	} {
-		if !testExists(testName) {
-			t.Errorf("claim %q names witness %s, which does not exist", claim, testName)
+	// quietly. Each names WHICH branch it covers, so a standalone test can no
+	// longer stand in for a whole family.
+	standalone := map[key]string{
+		{claimReadiness, branchPropagation}:              "TestBoundaryWitness_Readiness",
+		{claimComposition, branchPropagation}:            "TestBoundaryWitness_Composition",
+		{claimGeneratedState, branchSubjectUnreadable}:   "TestBoundaryWitness_GeneratedState",
+		{claimGeneratedState, branchModified}:            "TestBoundaryWitness_GeneratedState",
+		{claimGeneratedState, branchSubjectRemoved}:      "TestBoundaryWitness_GeneratedState",
+		{claimGeneratedState, branchNotGenerated}:        "TestBoundaryWitness_GeneratedStateUnrecorded",
+		{claimGeneratedState, branchAdopted}:             "TestBoundaryWitness_GeneratedStateUnrecorded",
+		{claimLedgerState, branchUnappliedTail}:          "TestBoundaryWitness_LedgerUnappliedTail",
+		{claimTestcasesReady, branchDowngradeUnapproved}: "TestBoundaryWitness_TestcasesDowngradeUnapproved",
+	}
+
+	witnessed := map[key]bool{}
+	declared := map[key]bool{}
+	for _, c := range boundaryClaims {
+		for _, b := range c.Branches {
+			declared[key{c.ID, b}] = true
+		}
+	}
+
+	// Every witness must name a DECLARED branch. Without this a witness could
+	// invent a branch name, satisfy completeness for something the registry
+	// never claimed, and leave a real branch uncovered.
+	for _, w := range append(append([]boundaryWitness{}, boundaryWitnesses...), passThroughWitnesses...) {
+		k := key{w.Claim, w.Branch}
+		if !declared[k] {
+			t.Errorf("witness %s/%s names a branch the claim does not declare — either add it to Branches, or the witness is covering something the registry does not claim",
+				w.Claim, w.Branch)
 			continue
 		}
-		witnessed[claim] = true
+		if witnessed[k] {
+			t.Errorf("branch %s/%s has more than one witness; each should prove one path", w.Claim, w.Branch)
+		}
+		witnessed[k] = true
 	}
+	for k, testName := range standalone {
+		if !declared[k] {
+			t.Errorf("standalone witness %s covers %s/%s, which the claim does not declare", testName, k.claim, k.branch)
+			continue
+		}
+		if !testExists(testName) {
+			t.Errorf("branch %s/%s names witness %s, which does not exist", k.claim, k.branch, testName)
+			continue
+		}
+		witnessed[k] = true
+	}
+
+	// The completeness assertion, now per BRANCH. Adding a ninth refusal path
+	// to an eight-path wrapper used to require no registry change and no new
+	// witness — the hiding place this registry exists to close, one level down.
 	for _, c := range boundaryClaims {
 		if !c.Blocking {
 			continue
 		}
-		if !witnessed[c.ID] {
-			t.Errorf("claim %q (%s) can block a boundary and nothing proves it ever fires through the advancing constructor", c.ID, c.What)
+		if len(c.Branches) == 0 {
+			t.Errorf("claim %q (%s) can block a boundary and declares no branches — say which refusal paths it owns, even if that is just %q",
+				c.ID, c.What, branchPropagation)
+			continue
+		}
+		for _, b := range c.Branches {
+			if !witnessed[key{c.ID, b}] {
+				t.Errorf("claim %q branch %q can block a boundary and nothing proves it fires through the advancing constructor (%s)",
+					c.ID, b, c.What)
+			}
 		}
 	}
 }
@@ -581,8 +631,14 @@ func TestBoundaryClaims_EveryWitnessNamesARegisteredClaim(t *testing.T) {
 
 // testExists reports whether a named test function is compiled into this
 // package, so a claim cannot point at a witness somebody deleted.
+// testExists reports whether a dedicated witness test is actually present.
+//
+// It reads this file rather than a hand-maintained list. The list version was
+// the same hiding place one more level out: renaming a test without updating
+// the list broke the link silently in one direction, and deleting a test while
+// leaving its entry passed in the other. Scanning source cannot drift from it.
 func testExists(name string) bool {
-	for _, fn := range dedicatedWitnessTests {
+	for _, fn := range dedicatedWitnessTests() {
 		if fn == name {
 			return true
 		}
@@ -590,11 +646,197 @@ func testExists(name string) bool {
 	return false
 }
 
-// dedicatedWitnessTests is the list the check above resolves against. Keeping
-// it beside the tests means removing one without removing its entry leaves a
-// dangling name the completeness check reports.
-var dedicatedWitnessTests = []string{
-	"TestBoundaryWitness_Readiness",
-	"TestBoundaryWitness_Composition",
-	"TestBoundaryWitness_GeneratedState",
+var dedicatedWitnessTests = sync.OnceValue(func() []string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return nil
+	}
+	body, err := os.ReadFile(file)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range witnessTestRe.FindAllStringSubmatch(string(body), -1) {
+		out = append(out, m[1])
+	}
+	return out
+})
+
+var witnessTestRe = regexp.MustCompile(`(?m)^func (TestBoundaryWitness_\w+)\(`)
+
+// generated-state owns two refusal paths that no other witness reached: a
+// feature whose code was never generated, and a file adopted into the record
+// rather than written by codegen. Both were added inside the wrapper without
+// requiring a registry change, which is exactly the gap per-branch completeness
+// closes.
+func TestBoundaryWitness_GeneratedStateUnrecorded(t *testing.T) {
+	t.Run("never generated blocks", func(t *testing.T) {
+		dir := setupTestDir(t)
+		cfg := writeCleanCodeBoundary(t, dir)
+		approveClean(t, cfg)
+		// No snapshot at all: codegen never ran. An EMPTY snapshot is not the
+		// same state — the file existing is what makes HasHashes true — so
+		// writing one would have tested nothing.
+		snapshot := filepath.Join(cfg.BuildPath("_project"), CodeHashesFile)
+		if err := os.Remove(snapshot); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(snapshot); !os.IsNotExist(err) {
+			t.Fatalf("precondition: no snapshot may exist for this branch to fire (%v)", err)
+		}
+
+		out, err := computeGate(cfg, "graded", gateStageDone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !gateHasCode(out.Blockers, "code-not-generated") {
+			t.Errorf("done must refuse a feature whose code was never generated: %+v", out.Blockers)
+		}
+	})
+
+	t.Run("adopted file blocks", func(t *testing.T) {
+		dir := setupTestDir(t)
+		cfg := writeCleanCodeBoundary(t, dir)
+		approveClean(t, cfg)
+
+		rel := "src/features/graded/CustomerDetail.tsx"
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := "// parlay-feature: graded\n// parlay-component: customer-detail\nexport const CustomerDetail = () => null\n"
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hash, err := hashFileContent(full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Recorded as adopted: written outside codegen and taken into the
+		// record, which the done boundary must not treat as generated.
+		writeProjectCodeHashes(t, cfg, map[string]CodeHashEntry{
+			rel: {Component: "customer-detail", Hash: hash, Provenance: ProvenanceAdopted},
+		})
+
+		out, err := computeGate(cfg, "graded", gateStageDone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !gateHasCode(out.Blockers, "generated-file-adopted") {
+			t.Errorf("done must refuse a file adopted rather than generated: %+v", out.Blockers)
+		}
+	})
+}
+
+// gateBlockerMentions finds an inner diagnostic inside a wrapper's rendered
+// message. Wrapper claims collapse many independent paths into one code, so the
+// code alone cannot witness which path fired.
+func gateBlockerMentions(blockers []gateBlocker, marker string) bool {
+	for _, b := range blockers {
+		if strings.Contains(b.Message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// ledger-state owns a second path beside propagation: a feature whose amendment
+// ledger has entries the baseline has not applied. The wrapper recomputes that
+// verdict itself with journal precision — readiness's own copy is stripped in
+// claimReadinessCheck — so nothing else covers it.
+func TestBoundaryWitness_LedgerUnappliedTail(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+	if gateHasCode(clean.Blockers, "unapplied-amendments") {
+		t.Fatal("precondition: the clean boundary must have no unapplied tail")
+	}
+
+	// An amendment nobody has applied.
+	amendDir := filepath.Join(cfg.FeaturePath("graded"), "amendments")
+	if err := os.MkdirAll(amendDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	amendment := strings.Join([]string{
+		"---",
+		"amendment: widen-the-archive-rule",
+		"date: 2026-08-27",
+		"trigger: \"the rule turned out to be narrower than intended\"",
+		"affects:",
+		"  - \"@graded/operation:customer.archive\"",
+		"---",
+		"",
+		"## Change",
+		"",
+		"The archive rule widens to cover pending invoices.",
+		"",
+		"## Acceptance",
+		"",
+		"- archiving a customer with pending invoices is rejected",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(amendDir, "001-widen-the-archive-rule.md"), []byte(amendment), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "unapplied-amendments") {
+		t.Errorf("an unapplied amendment must hold the code boundary shut — the feature still makes the old promise: %+v", out.Blockers)
+	}
+}
+
+// testcases-readiness owns a third path: a case discharging its criterion by
+// observing STATE rather than what the criterion says, with nobody having
+// accepted that weakening. The case passes and cites its criterion correctly,
+// so no other check can see it.
+func TestBoundaryWitness_TestcasesDowngradeUnapproved(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil || len(current) == 0 {
+		t.Fatalf("precondition: the fixture must declare a criterion to weaken (%v)", err)
+	}
+	target := current[0]
+
+	// The case cites its criterion correctly and passes; it simply observes
+	// state instead of what the criterion states.
+	cases := "schema_version: 3\nsuites:\n  - name: Archive\n    cases:\n" +
+		"      - name: rejects unpaid\n        coverage: state-only\n" +
+		"        criterion: {ref: \"" + target.Ref + "\", text: \"" + target.Text + "\"}\n" +
+		"        steps: [\"check the store\"]\n"
+	if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "testcases.yaml"), []byte(cases), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The wrapper renders all eight of its paths under one user-facing code, so
+	// gateHasCode cannot tell them apart — which is precisely why completeness
+	// keys on internal branch IDs rather than on rendered codes.
+	if !gateBlockerMentions(out.Blockers, "criterion-observed-weakly") {
+		t.Errorf("a weakened observation nobody accepted must hold the boundary shut: %+v", out.Blockers)
+	}
 }

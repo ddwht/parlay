@@ -23,20 +23,23 @@
 // readiness renders eight different codes, and a user-facing code may be
 // renamed; neither should decide what the architecture guarantees.
 //
-// WHAT THIS DOES NOT GUARANTEE, stated because the gap is exactly where the
-// next instance would hide. The witness requirement is per CLAIM, not per code.
-// It proves each registered family can fire through the advancing constructor —
-// that the family is wired to a path a gate takes. It does not prove every code
-// a family renders is individually reachable. A wrapper emitting eight codes
-// satisfies the conformance test with one, so an unreachable ninth path inside
-// that wrapper would pass here, which is the same shape as the failures this
-// registry was built for, one level down.
+// Completeness is per (claim, branch), not per claim. An earlier version keyed
+// on the claim alone, which read stronger than it was: a wrapper rendering
+// several codes satisfied it with one witness, so adding a refusal path inside
+// a wrapper required no registry change and no new witness. That was the same
+// hiding place the registry was built to close, one level down — and it was
+// occupied. Four paths had no witness when the per-branch check first ran.
 //
-// That residual is deliberate rather than overlooked: codes are renamed and
-// merged as diagnostics improve, and pinning each would make the architecture
-// test track diagnostic wording. But it means the registry answers "is this
-// family reachable" and not "is every refusal reachable", and a reader
-// budgeting trust should spend it accordingly.
+// Scoping is compositional rather than per-code. A pass-through family declares
+// branchPropagation only: its diagnostics have their own leaf conformance, and
+// what the boundary owns is that a child blocker reaches it. Exploding those
+// into every schema code would make an architecture test track diagnostic
+// wording. A wrapper that decides for itself declares every path it decides on.
+//
+// WHAT THIS STILL DOES NOT GUARANTEE: a developer can declare a branch and
+// point an existing witness at it, or reuse the wrong branch ID. Omission is
+// harder, not impossible. What changed is that adding a path now requires
+// touching the registry, where the omission is visible, instead of being free.
 
 package commands
 
@@ -68,6 +71,15 @@ type boundaryClaim struct {
 	// Blocking is false for a claim that only ever warns, which needs no
 	// witness because it cannot hold a boundary shut.
 	Blocking bool
+	// Branches are the independent refusal paths this claim owns, each of
+	// which needs its own witness. A pass-through family declares only
+	// branchPropagation: its diagnostics are proven by their own leaf suite,
+	// and what the boundary owns is that a child blocker reaches it.
+	//
+	// A wrapper that decides for itself — reading a file, judging staleness,
+	// aggregating a child verdict — declares every path it decides on, because
+	// no leaf suite covers those and nothing else would notice one going dead.
+	Branches []string
 	Check    func(cfg *config.Context, slug, featurePath string) claimResult
 }
 
@@ -85,6 +97,38 @@ const (
 	claimGeneratedState    = "generated-state"
 )
 
+// Branch IDs name the INDEPENDENT refusal paths a claim owns.
+//
+// The registry proved each claim family is reachable. That is weaker than it
+// read: a wrapper rendering several codes satisfied the completeness test with
+// one witness, so an unreachable path added inside a wrapper required no
+// registry change and no new witness. Adding a ninth branch to an eight-branch
+// wrapper was free — the same hiding place the registry was built to close,
+// one level down.
+//
+// Branches are internal and semantic. User-facing codes stay free to be renamed
+// and merged as diagnostics improve; completeness keys on (claim, branch) so an
+// architecture test never tracks wording.
+const (
+	// Pass-through families: the wrapper's own job is propagation, and the
+	// diagnostics it forwards have their own leaf conformance. One witness that
+	// a child blocker reaches the boundary is the whole claim.
+	branchPropagation = "propagation"
+
+	// Paths a boundary wrapper owns itself, and that no leaf suite covers.
+	branchSubjectMissing      = "subject-missing"
+	branchSubjectUnreadable   = "subject-unreadable"
+	branchStaleState          = "stale-state"
+	branchUnapproved          = "unapproved"
+	branchStrandedLegacy      = "stranded-legacy"
+	branchNotGenerated        = "not-generated"
+	branchModified            = "modified"
+	branchAdopted             = "adopted"
+	branchSubjectRemoved      = "subject-removed"
+	branchUnappliedTail       = "unapplied-tail"
+	branchDowngradeUnapproved = "downgrade-unapproved"
+)
+
 // boundaryClaims is the registry every stage is assembled from.
 //
 // Adding a checker means adding a row: a checker called directly from a stage
@@ -94,47 +138,56 @@ var boundaryClaims = []boundaryClaim{
 	{
 		ID: claimReadiness, What: "the phase's own readiness checks",
 		Stages: []string{gateStageBuild}, Blocking: true,
-		Check: claimReadinessCheck,
+		Branches: []string{branchPropagation},
+		Check:    claimReadinessCheck,
 	},
 	{
 		ID: claimLedgerState, What: "frozen-document integrity and the unapplied amendment tail",
 		Stages: []string{gateStageBuild, gateStageCode, gateStageDone}, Blocking: true,
-		Check: claimLedgerStateCheck,
+		Branches: []string{branchPropagation, branchUnappliedTail},
+		Check:    claimLedgerStateCheck,
 	},
 	{
 		ID: claimBuildfileValid, What: "the buildfile parses and satisfies its schema",
 		Stages: []string{gateStageCode}, Blocking: true,
-		Check: claimBuildfileValidCheck,
+		Branches: []string{branchPropagation},
+		Check:    claimBuildfileValidCheck,
 	},
 	{
 		ID: claimComposition, What: "no cross-feature contradiction between buildfiles",
 		Stages: []string{gateStageCode}, Blocking: true,
-		Check: claimCompositionCheck,
+		Branches: []string{branchPropagation},
+		Check:    claimCompositionCheck,
 	},
 	{
 		ID: claimBuildfileFresh, What: "the buildfile is not stale against its sources",
 		Stages: []string{gateStageCode}, Blocking: true,
-		Check: claimBuildfileFreshCheck,
+		Branches: []string{branchPropagation},
+		Check:    claimBuildfileFreshCheck,
 	},
 	{
 		ID: claimCriteriaAuthority, What: "somebody approved the criteria this feature is graded against",
 		Stages: []string{gateStageCode, gateStageDone}, Blocking: true,
-		Check: claimCriteriaAuthorityCheck,
+		Branches: []string{branchUnapproved, branchStaleState},
+		Check:    claimCriteriaAuthorityCheck,
 	},
 	{
 		ID: claimCoverageExcept, What: "recorded exceptions are still bound to the contract they were granted against",
 		Stages: []string{gateStageCode, gateStageDone}, Blocking: true,
-		Check: claimCoverageExceptCheck,
+		Branches: []string{branchStaleState, branchSubjectUnreadable, branchStrandedLegacy},
+		Check:    claimCoverageExceptCheck,
 	},
 	{
 		ID: claimTestcasesReady, What: "the tests mechanically discharge the standard",
 		Stages: []string{gateStageCode, gateStageDone}, Blocking: true,
-		Check: claimTestcasesReadyCheck,
+		Branches: []string{branchSubjectMissing, branchSubjectUnreadable, branchDowngradeUnapproved},
+		Check:    claimTestcasesReadyCheck,
 	},
 	{
 		ID: claimGeneratedState, What: "generated code matches what was recorded",
 		Stages: []string{gateStageDone}, Blocking: true,
-		Check: claimGeneratedStateCheck,
+		Branches: []string{branchSubjectUnreadable, branchModified, branchSubjectRemoved, branchNotGenerated, branchAdopted},
+		Check:    claimGeneratedStateCheck,
 	},
 }
 

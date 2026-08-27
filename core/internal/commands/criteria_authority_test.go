@@ -1093,9 +1093,13 @@ func TestCriteriaAuthority_AMachineRunMustDescribeItsOwnCriteria(t *testing.T) {
 		damage     func(*MachineRun)
 	}{
 		{"hash does not match its criteria", "edited by hand or is corrupt",
-			func(r *MachineRun) { r.CriteriaHash = CriteriaHash([]AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}}) }},
+			func(r *MachineRun) {
+				r.CriteriaHash = CriteriaHash([]AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}})
+			}},
 		{"criteria replaced under a kept hash", "edited by hand or is corrupt",
-			func(r *MachineRun) { r.Criteria = []AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}} }},
+			func(r *MachineRun) {
+				r.Criteria = []AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}}
+			}},
 		{"no policy source", "names no policy source",
 			func(r *MachineRun) { r.PolicySource = "" }},
 		{"no time", "records no time",
