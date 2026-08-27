@@ -28,6 +28,25 @@ migration: it leaves a ledger saying a person decided, which is the one claim
 the whole system exists to make trustworthy. Every instruction here follows from
 that, and where an instruction is inconvenient, it is inconvenient on purpose.
 
+**That sentence is an obligation on you, not a guarantee the tool enforces.**
+Be precise about which is which:
+
+- The CLI checks **identity, freshness and shape**: that the occurrence exists,
+  that it is the one that was shown, that the file has not moved underneath the
+  decision, that an outcome and a reason were supplied.
+- The CLI cannot check **cognition or authorship**. `--reason` accepts any
+  non-empty string. `--by` is asserted attribution, not verified identity —
+  nothing proves the value came from a person rather than from the process that
+  typed it.
+
+So the honest claim is: *the supported workflow has no default and requires an
+explicit outcome and rationale; the tool proves the decision was about the right
+thing, not that a human made it.* Do not tell anyone the system guarantees a
+person reviewed these, and do not record a decision you did not obtain from one.
+Closing that last gap would need the host to issue a receipt the writer can
+verify, which does not exist today — and ceremony that merely looks like proof
+would be worse than naming the boundary.
+
 ## Steps
 
 ### 1. See what is stranded
