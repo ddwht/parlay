@@ -258,14 +258,14 @@ Generated alongside buildfile.yaml by `/parlay build-feature`.
 | `composition-seed-ambiguous` | No fixture is marked `composes: true` and the `scope: route` suites do not settle which one boots the prototype. |
 | `testcases-appears-level-unknown` | An `appears` step's `value:` is missing or outside the level set `{mounted, output, content}` — the runner cannot decide what depth to assert. |
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
-| `testcases-case-criterion-missing` | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. |
+| `testcases-case-criterion-missing` | A case declares no `criterion:`, so nothing records why it exists. |
 | `testcases-case-unnamed` | A `cases[]` entry declares no `name:`, or an empty one. |
 | `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
 | `testcases-coverage-unknown` | A case declares `coverage:` outside `{full, state-only}` — an unknown value hides whether the claim was downgraded, the exact thing the marker exists to make… |
 | `testcases-criterion-ref-unknown` | A case cites a `criterion.ref` no contract entry declares. |
 | `testcases-criterion-text-drift` | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |
 | `testcases-criterion-text-missing` | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. |
-| `testcases-cross-kind-criterion-unexercised` | A presentation case cites an operation's criterion but no step targets that operation — the ref is standing in for a display criterion rather than… |
+| `testcases-cross-kind-criterion-unexercised` | Warning below `schema_version: 3`, error at 3 or above. |
 | `testcases-file-missing` | A suite lacks `file:`, so nothing has decided where its code goes and codegen would invent a path. |
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |
 | `testcases-operation-uncovered` | A canonical operation has no covering `kind: operation` suite. |
