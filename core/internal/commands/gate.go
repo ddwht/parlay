@@ -270,6 +270,30 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
 
+	eb, ew := gateCoverageExceptions(cfg, slug)
+	blockers = append(blockers, eb...)
+	warnings = append(warnings, ew...)
+
+	return blockers, warnings
+}
+
+// gateCoverageExceptions surfaces a stale or broken exception ledger.
+//
+// Reached from the same boundaries as the other ledger checks, because the
+// evaluation existed and nothing carried its findings anywhere: validate copied
+// the excused set and dropped every blocker, so the freshness rule was written,
+// tested at the leaf, and unreachable in production.
+func gateCoverageExceptions(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+	v := CheckCoverageExceptions(cfg, slug)
+	for _, b := range v.Blockers {
+		blockers = append(blockers, gateBlocker{
+			Code: "coverage-exception-invalid", Message: b,
+			Fix: "re-review the exception, or remove it",
+		})
+	}
+	for _, w := range v.Warnings {
+		warnings = append(warnings, gateBlocker{Code: "coverage-exception-broad", Message: w})
+	}
 	return blockers, warnings
 }
 
@@ -379,6 +403,10 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	ab, aw := gateCriteriaAuthority(cfg, slug)
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
+
+	eb, ew := gateCoverageExceptions(cfg, slug)
+	blockers = append(blockers, eb...)
+	warnings = append(warnings, ew...)
 
 	return blockers, warnings
 }

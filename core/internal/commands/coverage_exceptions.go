@@ -65,6 +65,12 @@ type CoverageException struct {
 	Kind   ExceptionKind `yaml:"kind"`
 	Reason string        `yaml:"reason"`
 
+	// EntryHash binds an ENTRY-WIDE exception to the set of bullets that entry
+	// carried when it was granted, so adding a bullet invalidates it. A
+	// bullet-specific exception needs no such field: its (ref, text) IS its
+	// binding, and it is valid exactly while that bullet is still declared.
+	EntryHash string `yaml:"entry_hash,omitempty"`
+
 	// TestFile and TestHash bind a hand-authored exception to the body it
 	// claims covers the criterion. Without the hash the file can change under
 	// an evergreen approval, which is the same staleness this record exists to
@@ -85,10 +91,14 @@ type CoverageExceptions struct {
 	GrantedAt string `yaml:"granted_at"`
 	GrantedBy string `yaml:"granted_by,omitempty"`
 
-	// The state these exceptions were granted against. An exception is a
-	// judgment about a specific contract; when that contract moves, the
-	// judgment has not been made about the new one.
-	CriteriaHash string `yaml:"criteria_hash"`
+	// CriteriaHash is the whole standard at grant time, kept as audit context
+	// only. It is deliberately NOT the binding: an exception is a localized
+	// claim about one criterion, and binding it to the whole feature would let
+	// an unrelated operation reword force re-review of a waived presentation
+	// bullet. Criteria authority approves the entire standard; this approves
+	// one thing being weaker or absent, and the durable binding should match
+	// the claim actually granted.
+	CriteriaHash string `yaml:"criteria_hash,omitempty"`
 
 	Exceptions []CoverageException `yaml:"exceptions"`
 }
@@ -168,52 +178,107 @@ func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []
 		return v
 	}
 
-	if hash := CriteriaHash(current); rec.CriteriaHash != hash {
-		v.Blockers = append(v.Blockers, fmt.Sprintf(
-			"%d coverage exception(s) were granted against a different contract (%s, now %s) — "+
-				"an exception is a judgment that a specific criterion needs no test, and the criteria have moved since. "+
-				"Re-review them; they are not applied in the meantime",
-			len(rec.Exceptions), shortHash(rec.CriteriaHash), shortHash(hash)))
-		return v
-	}
-
-	declared := map[string]bool{}
+	// Bullets actually declared right now, and the per-entry bullet sets an
+	// entry-wide exception is bound to.
+	declared := map[agent.CriterionRef]bool{}
+	byEntry := map[string][]AuthorizedCriterion{}
 	for _, c := range current {
-		declared[c.Ref] = true
+		declared[agent.CriterionRef{Ref: c.Ref, Text: agent.CanonicalCriterionText(c.Text)}] = true
+		byEntry[c.Ref] = append(byEntry[c.Ref], c)
 	}
 
+	claimed := map[agent.CriterionRef]bool{}
 	for _, ex := range rec.Exceptions {
-		if !declared[ex.Ref] {
+		text := agent.CanonicalCriterionText(ex.Text)
+		key := agent.CriterionRef{Ref: ex.Ref, Text: text}
+
+		// Two exceptions claiming the same thing is an authoring defect: they
+		// cannot be reviewed independently and one silently shadows the other.
+		if claimed[key] {
+			v.Blockers = append(v.Blockers, fmt.Sprintf("%s is excused twice — one claim shadows the other and neither can be reviewed on its own", describeClaim(ex)))
+			continue
+		}
+		claimed[key] = true
+
+		bullets, entryExists := byEntry[ex.Ref]
+		if !entryExists {
 			v.Blockers = append(v.Blockers, fmt.Sprintf(
 				"exception for %s excuses a contract entry that no longer declares criteria", ex.Ref))
 			continue
 		}
+
+		if text == "" {
+			// Entry-wide: bound to the bullet SET, so adding one invalidates
+			// it. Accepted at all because every exemption written before
+			// bullet identity is this shape and none could have recorded a
+			// text.
+			want := entryBulletsHash(bullets)
+			if ex.EntryHash == "" {
+				v.Blockers = append(v.Blockers, fmt.Sprintf(
+					"entry-wide exception for %s records no entry_hash — it would then excuse bullets added after it was granted, which nobody judged", ex.Ref))
+				continue
+			}
+			if ex.EntryHash != want {
+				v.Blockers = append(v.Blockers, fmt.Sprintf(
+					"entry-wide exception for %s was granted against a different set of bullets on that entry (%s, now %s) — re-review it",
+					ex.Ref, shortHash(ex.EntryHash), shortHash(want)))
+				continue
+			}
+			if v.Exempt.Entries == nil {
+				v.Exempt.Entries = map[string]bool{}
+			}
+			v.Exempt.Entries[ex.Ref] = true
+			v.Warnings = append(v.Warnings, fmt.Sprintf(
+				"exception for %s is entry-wide, so it excuses every bullet on that entry — narrow it to the one it was meant for", ex.Ref))
+			continue
+		}
+
+		// Bullet-specific: the (ref, text) pair IS the binding. Membership is
+		// checked exactly rather than by entry, because a typo or a fabricated
+		// text would otherwise become an inert exemption plus an uncovered
+		// warning — a broken ledger that reads as a working one.
+		if !declared[key] {
+			v.Blockers = append(v.Blockers, fmt.Sprintf(
+				"exception for %s names a criterion that entry does not declare: %q — a text that matches no bullet excuses nothing and looks like it does", ex.Ref, ex.Text))
+			continue
+		}
+
+		if ex.Kind == ExceptionStateOnly {
+			// state-only is NOT an exemption. Elsewhere in the schema it means
+			// a real case that cites the criterion and observes it more weakly,
+			// so the criterion IS covered and needs no excusing. Treating it as
+			// an exemption let it excuse a criterion with no case at all, which
+			// is the opposite claim.
+			v.Blockers = append(v.Blockers, fmt.Sprintf(
+				"exception for %s is kind: state-only, which is not an exemption — it means a case cites this criterion and observes it by state rather than output, so the case must exist and carry coverage: state-only. Write the case, or use kind: waived if the criterion genuinely needs no test", ex.Ref))
+			continue
+		}
+
 		if ex.Kind == ExceptionHandAuthored {
 			if reason := handAuthoredProblem(root, ex); reason != "" {
 				v.Blockers = append(v.Blockers, reason)
 				continue
 			}
 		}
-		if text := agent.CanonicalCriterionText(ex.Text); text == "" {
-			// Entry-wide: accepted, because every exemption written before
-			// bullet-level identity existed is this shape and none of them
-			// could have recorded a text. Warned, because it excuses bullets
-			// nobody considered, including ones added later.
-			if v.Exempt.Entries == nil {
-				v.Exempt.Entries = map[string]bool{}
-			}
-			v.Exempt.Entries[ex.Ref] = true
-			v.Warnings = append(v.Warnings, fmt.Sprintf(
-				"exception for %s is entry-wide, so it excuses every criterion on that entry including any added later — narrow it to the bullet it was meant for", ex.Ref))
-			continue
-		} else {
-			if v.Exempt.Bullets == nil {
-				v.Exempt.Bullets = map[agent.CriterionRef]bool{}
-			}
-			v.Exempt.Bullets[agent.CriterionRef{Ref: ex.Ref, Text: text}] = true
+
+		if v.Exempt.Bullets == nil {
+			v.Exempt.Bullets = map[agent.CriterionRef]bool{}
 		}
+		v.Exempt.Bullets[key] = true
 	}
 	return v
+}
+
+// entryBulletsHash fingerprints every bullet currently on one contract entry.
+func entryBulletsHash(bullets []AuthorizedCriterion) string {
+	return CriteriaHash(bullets)
+}
+
+func describeClaim(ex CoverageException) string {
+	if strings.TrimSpace(ex.Text) == "" {
+		return ex.Ref + " (entry-wide)"
+	}
+	return fmt.Sprintf("%s — %q", ex.Ref, ex.Text)
 }
 
 func shortHash(h string) string {
@@ -267,4 +332,32 @@ func handAuthoredProblem(root string, ex CoverageException) string {
 			ex.Ref, file, shortHash(ex.TestHash), shortHash(now))
 	}
 	return ""
+}
+
+// CheckCoverageExceptions is the production entry point: read the ledger, read
+// the standard, and report what the ledger excuses and what is wrong with it.
+//
+// One function every caller shares. The gate had been reading only the excused
+// SET while discarding every blocker and every error, so a stale ledger
+// excused nothing and said nothing — precisely the drop-and-proceed behaviour
+// the freshness rule exists to prevent, with a comment above it claiming the
+// opposite.
+func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict {
+	rec, err := loadCoverageExceptions(cfg, slug)
+	if err != nil {
+		// A ledger that will not load is not a feature with nothing excused.
+		return ExceptionsVerdict{Blockers: []string{
+			fmt.Sprintf("coverage exceptions for %s cannot be read: %v — an unreadable ledger is not an empty one", slug, err),
+		}}
+	}
+	if rec == nil {
+		return ExceptionsVerdict{}
+	}
+	current, err := CurrentCriteria(cfg, slug)
+	if err != nil {
+		return ExceptionsVerdict{Blockers: []string{
+			fmt.Sprintf("cannot establish which criteria %s is graded against, so its exceptions cannot be checked: %v", slug, err),
+		}}
+	}
+	return EvaluateCoverageExceptions(cfg.Root.Path, rec, current)
 }
