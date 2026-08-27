@@ -52,12 +52,22 @@ func (r InboundReference) String() string {
 //
 // intents.md and dialogs.md are absent for that reason: a founding document
 // naming another feature is telling a story about why this one exists.
-var scannedFiles = []struct{ name, field string }{
-	{"surface.yaml", "surface fragment"},
-	{"capabilities.yaml", "operation"},
-	{"infrastructure.md", "infrastructure fragment"},
-	{"buildfile.yaml", "buildfile reference"},
-	{"testcases.yaml", "testcase reference"},
+var scannedFiles = []struct {
+	name, field string
+	// refFields, when non-empty, restricts the scan to lines opening with one
+	// of these prefixes. A markdown contract artifact is prose AND contract,
+	// and the distinction is not "is this a structured field" but WHICH field:
+	// in this tree infrastructure.md's **Source**: carries 74 real refs while
+	// **Behavior**: carries 3 that are sentences describing another feature.
+	// Blocking a retirement on a sentence is the rule this design says it does
+	// not have, so the ref-carrying fields are named rather than inferred.
+	refFields []string
+}{
+	{name: "surface.yaml", field: "surface fragment"},
+	{name: "capabilities.yaml", field: "operation"},
+	{name: "infrastructure.md", field: "infrastructure fragment", refFields: []string{"**Source**:"}},
+	{name: "buildfile.yaml", field: "buildfile reference"},
+	{name: "testcases.yaml", field: "testcase reference"},
 }
 
 // FindInboundReferences reports everything still pointing at target.
@@ -88,7 +98,7 @@ func FindInboundReferences(cfg *config.Context, target string) ([]InboundReferen
 			if sf.name == "buildfile.yaml" || sf.name == "testcases.yaml" {
 				path = filepath.Join(cfg.BuildPath(other), sf.name)
 			}
-			found = append(found, scanFileForRefs(path, other, sf.field, pattern)...)
+			found = append(found, scanFileForRefs(path, other, sf.field, pattern, sf.refFields)...)
 		}
 		// A feature that has never been built contributes no buildfile, and
 		// that absence is NOT evidence of independence — its spec files above
@@ -99,13 +109,16 @@ func FindInboundReferences(cfg *config.Context, target string) ([]InboundReferen
 	// these, and a page manifest or the project's shared vocabulary pointing at
 	// a retired feature breaks in exactly the same way.
 	for _, g := range globalArtifacts(cfg) {
-		found = append(found, scanFileForRefs(g.path, g.owner, g.field, pattern)...)
+		found = append(found, scanFileForRefs(g.path, g.owner, g.field, pattern, g.refFields)...)
 	}
 
 	return found, nil
 }
 
-type globalArtifact struct{ path, owner, field string }
+type globalArtifact struct {
+	path, owner, field string
+	refFields          []string
+}
 
 func globalArtifacts(cfg *config.Context) []globalArtifact {
 	var out []globalArtifact
@@ -120,8 +133,11 @@ func globalArtifacts(cfg *config.Context) []globalArtifact {
 				continue
 			}
 			out = append(out, globalArtifact{
-				path:  filepath.Join(pagesDir, e.Name()),
+				path: filepath.Join(pagesDir, e.Name()),
+				// A manifest's dependencies live in its numbered fragment list; its
+				// surrounding prose is commentary about the page.
 				owner: "page manifest", field: "page region entry",
+				refFields: []string{"1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9."},
 			})
 		}
 	}
@@ -146,7 +162,7 @@ func featureRefPattern(target string) (*regexp.Regexp, error) {
 	return regexp.Compile(`@(?:` + alts + `)[/:]`)
 }
 
-func scanFileForRefs(path, owner, field string, pattern *regexp.Regexp) []InboundReference {
+func scanFileForRefs(path, owner, field string, pattern *regexp.Regexp, refFields []string) []InboundReference {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -157,6 +173,9 @@ func scanFileForRefs(path, owner, field string, pattern *regexp.Regexp) []Inboun
 		// trigger: records what prompted a change — provenance, not a
 		// dependency. Excluded by the same rule that excludes prose.
 		if strings.HasPrefix(trimmed, "trigger:") || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if len(refFields) > 0 && !hasAnyPrefix(trimmed, refFields) {
 			continue
 		}
 		if m := pattern.FindString(line); m != "" {
@@ -183,4 +202,13 @@ func refToken(line string, pattern *regexp.Regexp) string {
 		end++
 	}
 	return line[loc[0]:end]
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }
