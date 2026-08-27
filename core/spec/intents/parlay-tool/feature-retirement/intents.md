@@ -22,13 +22,19 @@
 - Retirement inherits every obligation of an intent-superseding amendment: non-empty `## Why` and `## Acceptance`, and the decision gate with no safe default and no unattended path.
 - A feature may not be retired while its ledger carries unapplied amendments other than the retirement itself. Retiring on top of changes nobody applied closes a feature over a specification that was never true.
 - The retirement takes effect only once applied, exactly as any other amendment does.
+- A feature may be retired only when it has **nothing built**: no contract artifacts, no buildfile or testcases, and no generated code recorded against it. This is what makes the narrow cut sound rather than merely narrow. Retirement does not delete anything, so a feature with artifacts would keep them on disk and readable by every consumer that enumerates features, and a feature with generated code would keep shipping it. Refusing that case is honest; claiming to have handled it would not be.
+- Exactly one record in a ledger may carry the retirement marker, and it must be the last record in the ledger. A retirement followed by further changes is a feature that did not end where it said it did.
 
 **Verify**:
 - An amendment with `retires_feature: true`, a valid `outcome:`, and every live intent named validates, where the same amendment without the marker fails with `amendment-supersedes-last-intent`.
+- A retirement on a feature that has contract artifacts, a buildfile, testcases, or generated code fails, naming what is still there.
+- A second retirement record in one ledger fails, and so does a retirement followed by any later record.
+- A retirement that has not been applied is reported as pending rather than as the feature having ended.
 - `outcome: replaced` with no `replacement_feature:` fails, and so does `outcome: obsolete` with one.
 - An `outcome:` outside the closed set fails.
 - A `replacement_feature:` naming a feature that does not exist fails, and so does one naming a feature that is itself retired.
 - A retirement authored while the ledger carries other unapplied amendments fails.
+- A retirement naming an intent an earlier amendment already retired fails, as does one missing a live intent: the set is exactly the live intents, and a set padded with history reads as complete while a live promise goes unnamed.
 - A retirement amendment missing `## Why` or `## Acceptance` fails, as any superseding amendment does.
 
 ---
@@ -45,7 +51,8 @@
 **Constraints**:
 - The scan reads specifications, not builds, and never skips a feature because it has not been built. Being unbuilt is what makes a dependent invisible to the existing probe and is exactly the case retirement must not miss.
 - Project-global artifacts are scanned separately from features: page manifests and the singleton domain model are not any feature's specification, and a scan that only walks features would miss them entirely.
-- The reference positions that count are a **closed, documented set** of machine-readable fields, not wherever the name appears. Included: page manifest entries, surface fragment `supersedes:`, amendment `affects:`, structured domain references, buildfile reference fields, and generated ownership or `parlay-extends` markers. Excluded: narrative prose, dialogs, source comments, and `trigger:` provenance. A rule that blocks on any occurrence of a string is one people learn to route around, and a closed set is what makes "nothing depends on this" a claim rather than a hope.
+- The reference positions that count are a **closed, documented set** of machine-readable fields in **specifications**, not wherever the name appears. Included: surface fragment references, capability operation references, infrastructure `Source:` citations, amendment `affects:`, page manifest fragment lists, the project domain model, and buildfile and testcase references. Excluded: narrative prose, dialogs, source comments, and `trigger:` provenance. A rule that blocks on any occurrence of a string is one people learn to route around, and a closed set is what makes "nothing depends on this" a claim rather than a hope.
+- Generated ownership markers are **not** scanned, and the claim is scoped to match: what is established is that no supported specification reference remains, not that nothing anywhere does. Generated ownership is instead excluded by the precondition above — a feature with generated code cannot be retired at all — so the narrower claim is sufficient rather than convenient.
 - A refusal reports the **owning artifact, the field or path within it, and the exact reference** — enough for a reader to verify the finding without repeating the scan, and enough that a clean result is auditable rather than merely asserted.
 - References are matched structurally against the feature's qualified and bare forms, not by substring. Buildfiles contain illustrative refs in prose that name no real feature, and a substring scan reports them as dependents.
 - A narrative mention is not a dependency. A `trigger:` naming a feature, and prose that happens to contain its name, are provenance and must not block a retirement — a rule that blocks on any occurrence of a string is one people learn to work around.
@@ -54,6 +61,8 @@
 
 **Verify**:
 - A feature referenced by another feature's specification cannot be retired, and the refusal names the referring feature and the reference.
+- A reference from another feature's amendment `affects:` blocks retirement.
+- A reference appearing only in a non-reference field — a `Verify:` bullet, a `Behavior:` paragraph, a page description — does not block retirement.
 - The same holds when the referring feature has never been built, which the existing probe would have missed.
 - A reference from a page manifest or from the project domain model blocks retirement and is named.
 - A feature named only in a `trigger:` or in prose is not treated as a dependent.
@@ -62,4 +71,4 @@
 
 **Questions**:
 - Dependency freedom and replacement validity are checked when the retirement is authored, not again when it is applied, which leaves **two** ways the approval can go stale. A new inbound reference can appear in between, so the retirement lands on a feature something needs. And a `replacement_feature:` active at authoring can itself retire before this one applies, so the record directs a reader at something gone — the exact failure the replacement rule exists to prevent. Re-validating both at apply time closes them; it was deliberately deferred with the rest of the disposition machinery, and is the first thing to add when a real case demands it.
-- Generated code is out of scope for this cut: nothing here reports or removes what a retired feature emitted. Ownership is not per-file — files are shared, extended, and hand-maintained — so a retired feature's code can still be shipping after this operation completes. The first retirement of a feature that owns code will need it.
+- Retiring a feature that has anything built is refused rather than handled, because handling it means deciding what happens to artifacts and generated code that retirement does not itself remove — and ownership is not per-file, since files are shared, extended and hand-maintained. The motivating case has nothing built, so the restriction costs nothing today. The first feature worth retiring that does have output will need the disposition and removal work this defers, and until then the refusal is the honest answer rather than a silent partial one.

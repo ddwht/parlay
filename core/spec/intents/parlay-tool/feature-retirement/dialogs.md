@@ -10,8 +10,8 @@ User: /parlay-refine @parlay-tool/loop-coverage-review-phase
 User: This whole feature goes away. Mechanical readiness replaced what it was for.
 System (background): Resolves live intents; the change would retire all of them, which an ordinary supersession refuses.
 System (background): Scans every feature's specification, the page manifests and the project domain model for references to this feature.
-System: This retires the feature, not just a promise. Nothing references it — 0 inbound references across ==27== features, ==4== page manifests and the project domain model.
-System: Live promises being retired: ==insert-a-coverage-review-step-between-the-build-and-code-phase-groups== (all ==1==).
+System: This retires the feature, not just a promise. It has nothing built — no contract artifacts, no buildfile, no generated code — and nothing references it.
+System: Live promises being retired: ==insert-a-coverage-review-step-between-the-build-and-code-phase-groups== — every promise the feature still makes.
 System: Did this work move somewhere, or stop being needed?
     a. Moved — name the feature that carries it now
     b. Obsolete — the need itself is gone
@@ -34,10 +34,21 @@ User: Retire this, it is finished.
 System (background): Scans specifications rather than builds, so a feature that has never been built is still visible.
 System: Cannot retire ==@catalog/pricing== — ==3== things still reference it:
     a. ==@catalog/checkout== · surface.yaml · fragment ==order-summary== · `supersedes: @pricing/price-panel`
-    b. ==@catalog/reporting== · buildfile.yaml · `operations[2].binding` · `@pricing/operation:price.quote`
-    c. ==pages/catalog.page.md== · region ==sidebar== · `@pricing/price-panel`
-System: ==@catalog/reporting== has never been built, so a rebuild-scoping probe would not have found it. Retiring on that answer would have removed ground from underneath the work not yet done.
+    b. ==@catalog/reporting== · capabilities.yaml · operation ==quote.render== · `source: @pricing/price-quoting`
+    c. ==pages/catalog.page.md== · fragment list · `@pricing/price-panel`
+System: ==@catalog/reporting== has never been built, so its reference lives only in its specification and a rebuild-scoping probe would not have found it. Retiring on that answer would have removed ground from underneath the work not yet done.
 System: Resolve each of these, then retire.
+
+---
+
+### Refusing a feature that still has something built
+
+**Trigger**: The maintainer tries to retire a feature that has been built.
+
+User: /parlay-refine @catalog/pricing
+User: Retire this.
+System: Cannot retire ==@catalog/pricing== — it still has ==surface.yaml==, ==capabilities.yaml==, a buildfile and ==7== generated files recorded against it.
+System: Retirement records a decision; it does not remove artifacts or generated code, so those would stay on disk and keep being read after the feature was declared gone. Deciding what becomes of them is work this operation does not yet do, and refusing is the honest answer rather than a partial one.
 
 ---
 

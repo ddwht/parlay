@@ -84,9 +84,13 @@ type checkAmendmentsOutput struct {
 	// RetiredBy names the terminal amendment that closed this feature, empty
 	// when the feature is live. The forward link cannot live in the frozen
 	// founding documents, so this is where a reader learns the feature ended.
-	RetiredBy string           `json:"retired_by,omitempty"`
-	Ready     bool             `json:"ready"`
-	Issues    []amendmentIssue `json:"issues"`
+	RetiredBy string `json:"retired_by,omitempty"`
+	// PendingRetirement names a retirement recorded but not yet applied. The
+	// feature still makes every promise it ever did until then, so reporting it
+	// under RetiredBy would say the feature had ended while it had not.
+	PendingRetirement string           `json:"pending_retirement,omitempty"`
+	Ready             bool             `json:"ready"`
+	Issues            []amendmentIssue `json:"issues"`
 }
 
 func runCheckAmendments(cmd *cobra.Command, args []string) error {
@@ -448,11 +452,12 @@ func resolveIntentSupersessions(cfg *config.Context, slug, featDir string, amend
 
 	reportGovernanceReplacements(amendments, claimants, out)
 
-	// Per-entry disposition is a question about scope surviving a promise that
-	// was retired out from under it. When the whole feature is being retired
-	// there is no survivor to disposition: every entry goes with it, and the
-	// rule that matters instead is that nothing outside still points at the
-	// feature — which reportFeatureRetirement enforces.
+	// Per-entry disposition asks what survives a promise retired out from under
+	// it. A retiring feature has nothing to survive — but only because
+	// feature-retirement-has-output refuses to retire a feature that owns any
+	// contract artifact at all. Without that precondition this exemption was an
+	// assertion rather than a fact: retirement deletes nothing, so the entries
+	// would have stayed on disk and readable with their accounting suppressed.
 	if !retiringFeature {
 		reportUnaccountedScope(cfg, slug, featDir, liveHeads, out)
 	}
@@ -833,16 +838,45 @@ func reportGovernanceReplacements(amendments []parser.Amendment, claimants map[s
 // feature — is deliberately elsewhere: it walks the whole project rather than
 // this feature's ledger, and belongs with the other project-wide walks.
 func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendments []parser.Amendment, lastApplied int, out *checkAmendmentsOutput) {
-	var terminal *parser.Amendment
+	var markers []*parser.Amendment
 	for i := range amendments {
 		if amendments[i].RetiresFeature {
-			terminal = &amendments[i]
+			markers = append(markers, &amendments[i])
 		}
 	}
-	if terminal == nil {
+	if len(markers) == 0 {
 		return
 	}
-	out.RetiredBy = terminal.FileSlug
+	terminal := markers[len(markers)-1]
+
+	if len(markers) > 1 {
+		var names []string
+		for _, m := range markers {
+			names = append(names, fmt.Sprintf("%03d-%s", m.Seq, m.FileSlug))
+		}
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-not-terminal",
+			Message: fmt.Sprintf("%s all retire the feature — a feature ends once, so exactly one record may carry the marker", strings.Join(names, ", ")),
+		})
+	}
+	// Terminal means terminal. A retirement followed by further changes is a
+	// feature that did not end where it said it did.
+	if len(amendments) > 0 && amendments[len(amendments)-1].FileSlug != terminal.FileSlug {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-not-terminal",
+			Message: fmt.Sprintf("%03d-%s retires the feature but %03d-%s comes after it — a record following the end of a feature changes something that has stopped existing",
+				terminal.Seq, terminal.FileSlug, amendments[len(amendments)-1].Seq, amendments[len(amendments)-1].FileSlug),
+		})
+	}
+
+	// Declared is not effective. The retirement takes hold when applied, as any
+	// record does, so reporting it as the feature's end before that would say
+	// the feature is gone while it still makes every promise it ever did.
+	if terminal.Seq <= lastApplied {
+		out.RetiredBy = terminal.FileSlug
+	} else {
+		out.PendingRetirement = terminal.FileSlug
+	}
 
 	intents, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
 	if err != nil {
@@ -898,8 +932,8 @@ func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendmen
 	}
 	if len(stale) > 0 {
 		out.Issues = append(out.Issues, amendmentIssue{
-			Severity: "warning", Code: "amendment-retirement-names-retired-intent",
-			Message: fmt.Sprintf("%03d-%s names %s, which an earlier amendment already retired — harmless in itself, but a set padded with history reads as complete while a live promise may be missing",
+			Severity: "error", Code: "amendment-retirement-names-retired-intent",
+			Message: fmt.Sprintf("%03d-%s names %s, which an earlier amendment already retired — the set must be exactly the live intents, and one padded with history reads as complete while a live promise goes unnamed",
 				terminal.Seq, terminal.FileSlug, strings.Join(stale, ", ")),
 		})
 	}
@@ -920,6 +954,7 @@ func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendmen
 		})
 	}
 
+	reportNothingBuilt(cfg, slug, featDir, terminal, out)
 	reportReplacementValidity(cfg, slug, terminal, out)
 
 	// The rule the narrow cut is built on: a feature may be retired only when
@@ -1003,4 +1038,44 @@ func sameFeature(a, b string) bool {
 		return true
 	}
 	return strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
+}
+
+// reportNothingBuilt refuses to retire a feature that has anything built.
+//
+// This is what makes the narrow cut sound rather than merely narrow. Retirement
+// records a decision; it does not delete artifacts and does not remove generated
+// code. So a feature with contract artifacts would keep them on disk, readable
+// by everything that enumerates features, after being declared gone — and one
+// with generated code would keep shipping it.
+//
+// It also makes the scope-accounting exemption true by construction instead of
+// by assertion. "Nothing survives the retirement so nothing needs a disposition"
+// is only true when there was nothing to survive, and that was asserted rather
+// than established until this check existed.
+//
+// The honest answer for a feature that HAS output is a refusal, not a partial
+// operation: deciding what becomes of shared, extended and hand-maintained files
+// is work this does not do.
+func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *parser.Amendment, out *checkAmendmentsOutput) {
+	var present []string
+
+	for _, name := range []string{"surface.yaml", "surface.md", "capabilities.yaml", "infrastructure.md"} {
+		if _, err := os.Stat(filepath.Join(featDir, name)); err == nil {
+			present = append(present, name)
+		}
+	}
+	for _, name := range []string{"buildfile.yaml", "testcases.yaml"} {
+		if _, err := os.Stat(filepath.Join(cfg.BuildPath(slug), name)); err == nil {
+			present = append(present, name)
+		}
+	}
+	if len(present) == 0 {
+		return
+	}
+	sort.Strings(present)
+	out.Issues = append(out.Issues, amendmentIssue{
+		Severity: "error", Code: "feature-retirement-has-output",
+		Message: fmt.Sprintf("%03d-%s retires %s, which still has %s — retirement records a decision and removes nothing, so these would stay on disk and keep being read after the feature was declared gone. Deciding what becomes of them is work this operation does not do",
+			terminal.Seq, terminal.FileSlug, slug, strings.Join(present, ", ")),
+	})
 }

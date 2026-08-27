@@ -63,9 +63,13 @@ var scannedFiles = []struct {
 	// not have, so the ref-carrying fields are named rather than inferred.
 	refFields []string
 }{
-	{name: "surface.yaml", field: "surface fragment"},
-	{name: "capabilities.yaml", field: "operation"},
+	{name: "surface.yaml", field: "surface fragment", refFields: []string{"source:", "supersedes:", "- source:", "- supersedes:"}},
+	{name: "capabilities.yaml", field: "operation", refFields: []string{"source:", "- source:"}},
 	{name: "infrastructure.md", field: "infrastructure fragment", refFields: []string{"**Source**:"}},
+	// Buildfiles and testcases carry refs across many structured keys and no
+	// prose sections, so every non-comment line is a candidate there. The
+	// prose risk this list exists to manage is a markdown or narrative field,
+	// which neither file has.
 	{name: "buildfile.yaml", field: "buildfile reference"},
 	{name: "testcases.yaml", field: "testcase reference"},
 }
@@ -100,6 +104,11 @@ func FindInboundReferences(cfg *config.Context, target string) ([]InboundReferen
 			}
 			found = append(found, scanFileForRefs(path, other, sf.field, pattern, sf.refFields)...)
 		}
+		// Amendment affects: is a documented reference position and was
+		// unreachable until this walk existed: scannedFiles is keyed by
+		// filename and a ledger is a directory of them.
+		found = append(found, scanAmendmentsForRefs(featDir, other, pattern)...)
+
 		// A feature that has never been built contributes no buildfile, and
 		// that absence is NOT evidence of independence — its spec files above
 		// were still read. This is the case affected-set misses.
@@ -211,4 +220,28 @@ func hasAnyPrefix(s string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// scanAmendmentsForRefs walks a feature's ledger for references into another
+// feature. affects: may name a contract entry in a different feature — that is
+// what cross-feature pressure looks like on disk — and such a reference is a
+// dependency on the named feature's contract.
+//
+// trigger: is excluded by the same rule that excludes prose: it records what
+// prompted a change, not what the change needs.
+func scanAmendmentsForRefs(featDir, owner string, pattern *regexp.Regexp) []InboundReference {
+	entries, err := os.ReadDir(filepath.Join(featDir, "amendments"))
+	if err != nil {
+		return nil
+	}
+	var out []InboundReference
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(featDir, "amendments", e.Name())
+		out = append(out, scanFileForRefs(path, owner, "amendment affects:", pattern,
+			[]string{"- \"@", "- @", "affects:"})...)
+	}
+	return out
 }

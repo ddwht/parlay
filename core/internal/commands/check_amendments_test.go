@@ -870,12 +870,37 @@ Its job moved out of this feature entirely.
 
 const bothIntents = "  - create-the-thing\n  - browse-the-things\n"
 
+// writeBareFeature creates the protocol-only shape: founding documents and
+// nothing else. This is the shape retirement is actually for — 18 of 27
+// features in this repo carry no contract artifact — and the only shape the
+// narrow cut accepts, since retirement removes nothing and a feature with
+// artifacts would keep them after being declared gone.
+func writeBareFeature(t *testing.T, dir, name string) string {
+	t.Helper()
+	featDir := filepath.Join(dir, "spec", "intents", name)
+	if err := os.MkdirAll(featDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for f, body := range map[string]string{
+		"intents.md": "# Bare\n\n## Do The Thing\n\n**Goal**: g.\n**Persona**: p.\n\n## Do The Other Thing\n\n**Goal**: g2.\n**Persona**: p.\n",
+		"dialogs.md": "# Bare — Dialogs\n\n---\n",
+	} {
+		if err := os.WriteFile(filepath.Join(featDir, f), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return featDir
+}
+
+const bareIntents = "  - do-the-thing\n  - do-the-other-thing\n"
+
 func TestFeatureRetirement_RetiresWhenNothingPointsAtIt(t *testing.T) {
 	dir := setupTestDir(t)
-	featDir := writeVerifyFixture(t, dir)
-	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bothIntents))
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	writeBaselineApplied(t, "bare", 1)
 
-	out, err := runCheckAmendments_(t, "@verify-fixture")
+	out, err := runCheckAmendments_(t, "@bare")
 	if err != nil {
 		t.Fatalf("a feature nothing points at should retire: %v (issues %+v)", err, out.Issues)
 	}
@@ -1042,5 +1067,113 @@ w
 	out, _ := runCheckAmendments_(t, "@verify-fixture")
 	if !amendmentIssueSeen(out, "amendment-retirement-fields-without-marker") {
 		t.Errorf("outcome: without retires_feature: must not be silently ignored; issues=%+v", out.Issues)
+	}
+}
+
+// The precondition that makes the narrow cut sound rather than merely narrow.
+// Retirement removes nothing, so a feature with artifacts would keep them on
+// disk and readable after being declared gone.
+func TestFeatureRetirement_RefusesAFeatureThatHasOutput(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir) // carries surface.yaml + capabilities.yaml
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bothIntents))
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var msg string
+	for _, iss := range out.Issues {
+		if iss.Code == "feature-retirement-has-output" {
+			msg = iss.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("a feature with artifacts must be refused, not partially retired; issues=%+v", out.Issues)
+	}
+	for _, want := range []string{"surface.yaml", "capabilities.yaml"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal must name what is still there; %q missing from %q", want, msg)
+		}
+	}
+}
+
+// Declared is not effective. Saying a feature has ended while it still makes
+// every promise it ever did is the same error as treating an unapplied
+// supersession as current.
+func TestFeatureRetirement_UnappliedIsPendingNotEnded(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	// No baseline: recorded, not applied.
+
+	out, _ := runCheckAmendments_(t, "@bare")
+	if out.RetiredBy != "" {
+		t.Errorf("an unapplied retirement has not ended the feature; retired_by=%q", out.RetiredBy)
+	}
+	if out.PendingRetirement != "close-the-feature" {
+		t.Errorf("it should be reported as pending; got %q", out.PendingRetirement)
+	}
+}
+
+func TestFeatureRetirement_MustBeTheLastWordInTheLedger(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	// A record after the end of the feature changes something that has
+	// stopped existing.
+	writeAmendment(t, featDir, "002-after-the-end.md", `---
+amendment: after-the-end
+date: 2026-08-27
+affects:
+  - "@bare/surface:something"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+	out, _ := runCheckAmendments_(t, "@bare")
+	if !amendmentIssueSeen(out, "amendment-retirement-not-terminal") {
+		t.Errorf("a feature cannot carry on after it ended; issues=%+v", out.Issues)
+	}
+}
+
+// An amendment in ANOTHER feature's ledger can name this feature's contract in
+// affects:. That position was documented as counted and was structurally
+// unreachable, because the scan was keyed by filename and a ledger is a
+// directory.
+func TestFeatureRetirement_AmendmentAffectsIsADependency(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	writeBaselineApplied(t, "bare", 1)
+
+	consumer := writeBareFeature(t, dir, "consumer")
+	writeAmendment(t, consumer, "001-reaches-in.md", `---
+amendment: reaches-in
+date: 2026-08-27
+affects:
+  - "@bare/surface:some-fragment"
+---
+
+## Change
+c
+
+## Acceptance
+- a
+`)
+
+	out, _ := runCheckAmendments_(t, "@bare")
+	var msg string
+	for _, iss := range out.Issues {
+		if iss.Code == "feature-retirement-still-referenced" {
+			msg = iss.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("a cross-feature affects: is a dependency on this feature's contract; issues=%+v", out.Issues)
+	}
+	if !strings.Contains(msg, "consumer") || !strings.Contains(msg, "amendment") {
+		t.Errorf("the refusal should name the amendment and its owner; got %q", msg)
 	}
 }
