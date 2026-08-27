@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,7 +27,7 @@ func TestCoverageExceptions_FreshLedgerExcusesTheBulletItNames(t *testing.T) {
 		Reason: "enforced by a database constraint, not by this operation",
 	})
 
-	v := EvaluateCoverageExceptions(rec, cs)
+	v := EvaluateCoverageExceptions(t.TempDir(), rec, cs)
 	if len(v.Blockers) != 0 {
 		t.Fatalf("a fresh ledger should apply: %+v", v.Blockers)
 	}
@@ -50,7 +52,7 @@ func TestCoverageExceptions_StaleLedgerBlocksAndExcusesNothing(t *testing.T) {
 		cs[0],
 		crit(cs[1].Ref, "the archive button is HIDDEN while invoices are unpaid"),
 	}
-	v := EvaluateCoverageExceptions(rec, moved)
+	v := EvaluateCoverageExceptions(t.TempDir(), rec, moved)
 
 	if len(v.Blockers) == 0 {
 		t.Fatal("a judgment about a different contract must not silently apply to this one")
@@ -72,7 +74,7 @@ func TestCoverageExceptions_EntryWideIsAcceptedAndWarned(t *testing.T) {
 		Ref: cs[0].Ref, Kind: ExceptionWaived, Reason: "legacy, predates bullet identity",
 	})
 
-	v := EvaluateCoverageExceptions(rec, cs)
+	v := EvaluateCoverageExceptions(t.TempDir(), rec, cs)
 	if len(v.Blockers) != 0 {
 		t.Fatalf("every exemption written before bullet identity is this shape: %+v", v.Blockers)
 	}
@@ -91,7 +93,7 @@ func TestCoverageExceptions_HandAuthoredMustNameItsTest(t *testing.T) {
 	rec := exceptionsFor(cs, CoverageException{
 		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored, Reason: "covered by an integration suite",
 	})
-	if v := EvaluateCoverageExceptions(rec, cs); len(v.Blockers) == 0 {
+	if v := EvaluateCoverageExceptions(t.TempDir(), rec, cs); len(v.Blockers) == 0 {
 		t.Error("an uninspectable test that is also unnamed excuses nothing")
 	}
 }
@@ -103,14 +105,64 @@ func TestCoverageExceptions_ExcusingSomethingTheContractDroppedBlocks(t *testing
 	})
 	// Hash matches; the ref does not exist.
 	rec.CriteriaHash = CriteriaHash(cs)
-	if v := EvaluateCoverageExceptions(rec, cs); len(v.Blockers) == 0 {
+	if v := EvaluateCoverageExceptions(t.TempDir(), rec, cs); len(v.Blockers) == 0 {
 		t.Error("excusing an entry that declares no criteria is a stale judgment wearing a fresh hash")
 	}
 }
 
 func TestCoverageExceptions_NoLedgerIsNotAProblem(t *testing.T) {
-	v := EvaluateCoverageExceptions(nil, twoCriteria())
+	v := EvaluateCoverageExceptions(t.TempDir(), nil, twoCriteria())
 	if len(v.Blockers) != 0 || len(v.Warnings) != 0 {
 		t.Errorf("most features excuse nothing; that is the ordinary case: %+v", v)
+	}
+}
+
+// A hand-authored exception is a person accepting THAT test as covering the
+// criterion. Leaving the hash declared but unchecked would have made the field
+// look like a guarantee while the body drifted underneath it.
+func TestCoverageExceptions_HandAuthoredIsBoundToTheTestBody(t *testing.T) {
+	dir := t.TempDir()
+	cs := twoCriteria()
+
+	testPath := filepath.Join(dir, "archive_test.go")
+	if err := os.WriteFile(testPath, []byte("func TestArchive(t *testing.T) { /* the original */ }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := TestBodyHash(testPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(h string) *CoverageExceptions {
+		return exceptionsFor(cs, CoverageException{
+			Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored,
+			Reason: "covered by an integration suite", TestFile: "archive_test.go", TestHash: h,
+		})
+	}
+
+	if v := EvaluateCoverageExceptions(dir, mk(hash), cs); len(v.Blockers) != 0 {
+		t.Fatalf("the test is unchanged; the exception holds: %+v", v.Blockers)
+	}
+
+	// Rewritten under the approval.
+	if err := os.WriteFile(testPath, []byte("func TestArchive(t *testing.T) { /* rewritten */ }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := EvaluateCoverageExceptions(dir, mk(hash), cs)
+	if len(v.Blockers) == 0 {
+		t.Fatal("a rewritten test is a different claim wearing the old approval")
+	}
+	if !strings.Contains(v.Blockers[0], "different version") {
+		t.Errorf("say what actually changed: %q", v.Blockers[0])
+	}
+
+	// Deleted entirely.
+	os.Remove(testPath)
+	if v := EvaluateCoverageExceptions(dir, mk(hash), cs); len(v.Blockers) == 0 || !strings.Contains(v.Blockers[0], "gone") {
+		t.Errorf("a missing test cannot be covering anything: %+v", v.Blockers)
+	}
+
+	// Named but never fingerprinted.
+	if v := EvaluateCoverageExceptions(dir, mk(""), cs); len(v.Blockers) == 0 {
+		t.Error("without a hash the exception is evergreen over a body nobody is watching")
 	}
 }

@@ -1235,7 +1235,7 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	if pctx != nil {
 		if exceptions, exErr := loadCoverageExceptions(pctx, feature); exErr == nil && exceptions != nil {
 			if current, cErr := CurrentCriteria(pctx, feature); cErr == nil {
-				verdict := EvaluateCoverageExceptions(exceptions, current)
+				verdict := EvaluateCoverageExceptions(pctx.Root.Path, exceptions, current)
 				in.ExemptCriteria = verdict.Exempt
 			}
 		}

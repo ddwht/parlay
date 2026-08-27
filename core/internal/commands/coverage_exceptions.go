@@ -20,6 +20,8 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -160,7 +162,7 @@ type ExceptionsVerdict struct {
 // opposite of the point. Refusing is what makes it a real check: a person said
 // this criterion needs no test, about a contract that has since changed, and
 // only a person can say whether that judgment survives.
-func EvaluateCoverageExceptions(rec *CoverageExceptions, current []AuthorizedCriterion) ExceptionsVerdict {
+func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []AuthorizedCriterion) ExceptionsVerdict {
 	var v ExceptionsVerdict
 	if rec == nil || len(rec.Exceptions) == 0 {
 		return v
@@ -186,10 +188,11 @@ func EvaluateCoverageExceptions(rec *CoverageExceptions, current []AuthorizedCri
 				"exception for %s excuses a contract entry that no longer declares criteria", ex.Ref))
 			continue
 		}
-		if ex.Kind == ExceptionHandAuthored && strings.TrimSpace(ex.TestFile) == "" {
-			v.Blockers = append(v.Blockers, fmt.Sprintf(
-				"hand-authored exception for %s names no test file — the claim is that a test parlay cannot inspect covers this, and an uninspectable test that is also unnamed is not a claim", ex.Ref))
-			continue
+		if ex.Kind == ExceptionHandAuthored {
+			if reason := handAuthoredProblem(root, ex); reason != "" {
+				v.Blockers = append(v.Blockers, reason)
+				continue
+			}
 		}
 		if text := agent.CanonicalCriterionText(ex.Text); text == "" {
 			// Entry-wide: accepted, because every exemption written before
@@ -219,4 +222,49 @@ func shortHash(h string) string {
 		return h[:12]
 	}
 	return h
+}
+
+// TestBodyHash fingerprints a hand-authored test's contents.
+//
+// The whole file rather than a parsed subset, because the claim is that parlay
+// CANNOT inspect this test. Having declined to understand it, the only honest
+// thing to notice is that it changed.
+func TestBodyHash(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+// handAuthoredProblem checks that a hand-authored exception still points at the
+// test it was granted for, and that the test has not changed since.
+//
+// Without the second half the exception is evergreen over a body nobody is
+// watching: a person accepted THAT test as covering the criterion, and a file
+// that has since been rewritten is a different claim wearing the old approval.
+// This is the same staleness the ledger-wide hash prevents, one level down, and
+// leaving it declared-but-unchecked would have been a field that looks like a
+// guarantee and is not.
+func handAuthoredProblem(root string, ex CoverageException) string {
+	file := strings.TrimSpace(ex.TestFile)
+	if file == "" {
+		return fmt.Sprintf("hand-authored exception for %s names no test file — the claim is that a test parlay cannot inspect covers this, and an uninspectable test that is also unnamed is not a claim", ex.Ref)
+	}
+	if strings.TrimSpace(ex.TestHash) == "" {
+		return fmt.Sprintf("hand-authored exception for %s names %s but records no hash of it — the exception would then be evergreen over a body nobody is watching", ex.Ref, file)
+	}
+	now, err := TestBodyHash(filepath.Join(root, file))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Sprintf("hand-authored exception for %s names %s, which is gone — the test it claims covers this criterion no longer exists", ex.Ref, file)
+		}
+		return fmt.Sprintf("hand-authored exception for %s cannot read %s: %v", ex.Ref, file, err)
+	}
+	if now != ex.TestHash {
+		return fmt.Sprintf("hand-authored exception for %s was granted against a different version of %s (%s, now %s) — a rewritten test is a different claim wearing the old approval",
+			ex.Ref, file, shortHash(ex.TestHash), shortHash(now))
+	}
+	return ""
 }
