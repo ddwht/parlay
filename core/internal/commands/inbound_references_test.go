@@ -103,3 +103,69 @@ func TestInboundReferences_ReportsWhereItFoundThings(t *testing.T) {
 		t.Errorf("the report should show the reference as written, got %q", f.Ref)
 	}
 }
+
+// The formats a line scan cannot see. Each of these is legal YAML a generator
+// or a person may write, and missing one produces a clean result that is simply
+// wrong — the worst outcome for a check whose whole job is to establish that
+// nothing points here.
+func TestInboundReferences_StructuralFormsALineScanMisses(t *testing.T) {
+	pattern, err := featureRefPattern("verify-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+
+	cases := []struct {
+		name, body string
+		want       bool
+	}{
+		{
+			name: "folded scalar spreads the value over lines that do not start with the key",
+			body: "fragments:\n  - name: X\n    source: >-\n      @verify-fixture/create-the-thing\n",
+			want: true,
+		},
+		{
+			name: "block scalar likewise",
+			body: "fragments:\n  - name: X\n    source: |-\n      @verify-fixture/create-the-thing\n",
+			want: true,
+		},
+		{
+			name: "flow mapping puts key and value inline behind a brace",
+			body: "fragments: [{name: X, source: '@verify-fixture/create-the-thing'}]\n",
+			want: true,
+		},
+		{
+			// The other direction: a key that carries prose must not count,
+			// however the value is written.
+			name: "a non-reference key does not count even in a folded scalar",
+			body: "fragments:\n  - name: X\n    notes: >-\n      behaves like @verify-fixture/operation:x\n",
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, tc.name+".yaml")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got := len(scanYAMLForRefs(path, "consumer", "surface fragment", pattern, []string{"source", "supersedes"})) > 0
+			if got != tc.want {
+				t.Errorf("counted=%v want=%v for:\n%s", got, tc.want, tc.body)
+			}
+		})
+	}
+}
+
+// An unparseable file is not evidence that nothing points at the feature.
+func TestInboundReferences_UnparseableYAMLFallsBackRatherThanReportingClean(t *testing.T) {
+	pattern, _ := featureRefPattern("verify-fixture")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken.yaml")
+	if err := os.WriteFile(path, []byte("fragments: [\n  source: '@verify-fixture/thing'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if len(scanYAMLForRefs(path, "consumer", "f", pattern, []string{"source"})) == 0 {
+		t.Error("a file that cannot be parsed must not silently report no references")
+	}
+}

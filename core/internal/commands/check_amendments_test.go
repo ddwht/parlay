@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // writeAmendment writes one ledger file into a feature dir.
@@ -1175,5 +1177,61 @@ c
 	}
 	if !strings.Contains(msg, "consumer") || !strings.Contains(msg, "amendment") {
 		t.Errorf("the refusal should name the amendment and its owner; got %q", msg)
+	}
+}
+
+// Generated output is recorded in the code-hashes sidecar, and the buildfile is
+// not a proxy for it. A partial or stale state — no buildfile, non-empty Files
+// map — would have retired cleanly while the generated code kept shipping,
+// which is the exact failure the precondition exists to prevent.
+func TestFeatureRetirement_RefusesWhenGeneratedCodeIsStillRecorded(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	writeBaselineApplied(t, "bare", 1)
+
+	// No buildfile, no artifacts — only the generated-output record.
+	cfg := testContext(t)
+	buildDir := cfg.BuildPath("bare")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hashes := CodeHashes{
+		Files: map[string]CodeHashEntry{
+			"src/features/bare/Bare.tsx": {},
+		},
+	}
+	data, err := yaml.Marshal(&hashes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codeHashesPath(cfg, "bare"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := runCheckAmendments_(t, "@bare")
+	if !amendmentIssueSeen(out, "feature-retirement-has-output") {
+		t.Fatalf("a feature whose generated code is still recorded must not retire; issues=%+v", out.Issues)
+	}
+}
+
+// A feature-local domain model is authored contract the earlier fixed list did
+// not name, and it exists in this tree.
+func TestFeatureRetirement_RefusesOnAnyAuthoredArtifact(t *testing.T) {
+	for _, artifact := range []string{"domain-model.md", "domain-model.yaml", "surface.md", "things.layout.yaml"} {
+		t.Run(artifact, func(t *testing.T) {
+			dir := setupTestDir(t)
+			featDir := writeBareFeature(t, dir, "bare")
+			if err := os.WriteFile(filepath.Join(featDir, artifact), []byte("# x\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+			writeBaselineApplied(t, "bare", 1)
+
+			out, _ := runCheckAmendments_(t, "@bare")
+			if !amendmentIssueSeen(out, "feature-retirement-has-output") {
+				t.Errorf("%s is authored contract retirement would leave behind; issues=%+v", artifact, out.Issues)
+			}
+		})
 	}
 }

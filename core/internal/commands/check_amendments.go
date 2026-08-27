@@ -1059,9 +1059,25 @@ func sameFeature(a, b string) bool {
 func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *parser.Amendment, out *checkAmendmentsOutput) {
 	var present []string
 
-	for _, name := range []string{"surface.yaml", "surface.md", "capabilities.yaml", "infrastructure.md"} {
+	// Every feature-local artifact the feature-structure schema names, not a
+	// remembered subset. domain-model.md and surface.md are legacy forms still
+	// present in this tree, and a per-page layout is optional but real; a
+	// feature carrying any of them has authored contract that retirement would
+	// leave behind.
+	for _, name := range []string{
+		"surface.yaml", "surface.md",
+		"capabilities.yaml", "infrastructure.md",
+		"domain-model.yaml", "domain-model.md",
+	} {
 		if _, err := os.Stat(filepath.Join(featDir, name)); err == nil {
 			present = append(present, name)
+		}
+	}
+	if entries, err := os.ReadDir(featDir); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".layout.yaml") || strings.HasSuffix(e.Name(), ".page.md") {
+				present = append(present, e.Name())
+			}
 		}
 	}
 	for _, name := range []string{"buildfile.yaml", "testcases.yaml"} {
@@ -1069,6 +1085,26 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 			present = append(present, name)
 		}
 	}
+
+	// Generated output is recorded in the per-feature code-hashes sidecar, and
+	// checking the buildfile is not a proxy for it: a partial or stale state
+	// can have no buildfile and a non-empty Files map, which would have retired
+	// cleanly while the generated code kept shipping. That is the exact failure
+	// the precondition exists to prevent, so an unreadable sidecar is a
+	// precondition FAILURE rather than an absence — "cannot tell" is not "none".
+	hashes, err := loadCodeHashes(cfg, slug)
+	if err != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "feature-retirement-has-output",
+			Message: fmt.Sprintf("%03d-%s retires %s, but its generated-output record cannot be read (%v) — a retirement is not safe on an unreadable answer, and absence of a readable record is not absence of generated code",
+				terminal.Seq, terminal.FileSlug, slug, err),
+		})
+		return
+	}
+	if hashes != nil && len(hashes.Files) > 0 {
+		present = append(present, fmt.Sprintf("%d generated file(s)", len(hashes.Files)))
+	}
+
 	if len(present) == 0 {
 		return
 	}

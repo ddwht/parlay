@@ -26,6 +26,10 @@ import (
 	"regexp"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/ddwht/parlay/core/internal/parser"
+
 	"github.com/ddwht/parlay/core/internal/config"
 )
 
@@ -54,6 +58,12 @@ func (r InboundReference) String() string {
 // naming another feature is telling a story about why this one exists.
 var scannedFiles = []struct {
 	name, field string
+	// yamlKeys, when non-empty, selects the mapping keys whose VALUES may hold
+	// a reference, walked over the parsed document rather than matched against
+	// line text. That is what handles a folded or flow-style scalar — a ref
+	// wrapped across lines, or written inline in {…} — which prefix matching
+	// on raw lines cannot see at all.
+	yamlKeys []string
 	// refFields, when non-empty, restricts the scan to lines opening with one
 	// of these prefixes. A markdown contract artifact is prose AND contract,
 	// and the distinction is not "is this a structured field" but WHICH field:
@@ -63,15 +73,21 @@ var scannedFiles = []struct {
 	// not have, so the ref-carrying fields are named rather than inferred.
 	refFields []string
 }{
-	{name: "surface.yaml", field: "surface fragment", refFields: []string{"source:", "supersedes:", "- source:", "- supersedes:"}},
-	{name: "capabilities.yaml", field: "operation", refFields: []string{"source:", "- source:"}},
+	{name: "surface.yaml", field: "surface fragment", yamlKeys: []string{"source", "supersedes"}},
+	{name: "capabilities.yaml", field: "operation", yamlKeys: []string{"source"}},
 	{name: "infrastructure.md", field: "infrastructure fragment", refFields: []string{"**Source**:"}},
-	// Buildfiles and testcases carry refs across many structured keys and no
-	// prose sections, so every non-comment line is a candidate there. The
-	// prose risk this list exists to manage is a markdown or narrative field,
-	// which neither file has.
-	{name: "buildfile.yaml", field: "buildfile reference"},
-	{name: "testcases.yaml", field: "testcase reference"},
+	// Buildfiles and testcases were scanned whole on the reasoning that they
+	// carry refs across many keys and have no prose. The second half was
+	// wrong: buildfile decisions carry why/obsolete-when, and testcases carry
+	// criterion text and human step prose, any of which can name a feature
+	// while describing it. Both get key allowlists like the rest.
+	{name: "buildfile.yaml", field: "buildfile reference", yamlKeys: []string{
+		"source", "sources", "supersedes", "operation", "binding", "feature",
+		"surface_fragment", "domain_element", "component", "fixture", "flow",
+	}},
+	{name: "testcases.yaml", field: "testcase reference", yamlKeys: []string{
+		"source_refs", "operation", "ref", "feature", "component",
+	}},
 }
 
 // FindInboundReferences reports everything still pointing at target.
@@ -102,7 +118,11 @@ func FindInboundReferences(cfg *config.Context, target string) ([]InboundReferen
 			if sf.name == "buildfile.yaml" || sf.name == "testcases.yaml" {
 				path = filepath.Join(cfg.BuildPath(other), sf.name)
 			}
-			found = append(found, scanFileForRefs(path, other, sf.field, pattern, sf.refFields)...)
+			if len(sf.yamlKeys) > 0 {
+				found = append(found, scanYAMLForRefs(path, other, sf.field, pattern, sf.yamlKeys)...)
+			} else {
+				found = append(found, scanFileForRefs(path, other, sf.field, pattern, sf.refFields)...)
+			}
 		}
 		// Amendment affects: is a documented reference position and was
 		// unreachable until this walk existed: scannedFiles is keyed by
@@ -230,18 +250,92 @@ func hasAnyPrefix(s string, prefixes []string) bool {
 // trigger: is excluded by the same rule that excludes prose: it records what
 // prompted a change, not what the change needs.
 func scanAmendmentsForRefs(featDir, owner string, pattern *regexp.Regexp) []InboundReference {
-	entries, err := os.ReadDir(filepath.Join(featDir, "amendments"))
+	// Parsed rather than pattern-matched on line spellings. affects: entries
+	// are quoted or bare, on one line or several, and recognizing the spellings
+	// meant recognizing the ones I happened to think of. The loader already
+	// knows the shape, and reading trigger: here — provenance, not need — is
+	// avoided by naming the field rather than skipping a prefix.
+	amendments, err := parser.LoadFeatureAmendments(featDir)
 	if err != nil {
 		return nil
 	}
 	var out []InboundReference
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
+	for _, a := range amendments {
+		for _, ref := range a.Affects {
+			if !pattern.MatchString(ref) {
+				continue
+			}
+			out = append(out, InboundReference{
+				Owner: owner,
+				Path:  a.Path,
+				Field: fmt.Sprintf("amendment %03d-%s · affects:", a.Seq, a.FileSlug),
+				Ref:   strings.TrimSpace(ref),
+			})
 		}
-		path := filepath.Join(featDir, "amendments", e.Name())
-		out = append(out, scanFileForRefs(path, owner, "amendment affects:", pattern,
-			[]string{"- \"@", "- @", "affects:"})...)
 	}
+	return out
+}
+
+// scanYAMLForRefs walks a parsed document and inspects only the values of keys
+// that may carry a reference.
+//
+// Structural rather than line-based, for two reasons prefix matching cannot
+// address. A folded or block scalar spreads one value over several lines, none
+// of which begins with the key, so the reference is invisible to a line scan.
+// And a flow-style mapping puts the key and value inline inside braces, where
+// the line begins with something else entirely. Both are legal YAML that a
+// generator or a person may produce, and a scan that misses them reports a
+// clean result that is simply wrong — the worst outcome for a check whose whole
+// job is to establish that nothing points here.
+//
+// yaml.Node carries the source line, so exact positions survive the move off
+// raw text.
+func scanYAMLForRefs(path, owner, field string, pattern *regexp.Regexp, keys []string) []InboundReference {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		// An unparseable file is not evidence of independence. Fall back to the
+		// line scan rather than silently reporting nothing.
+		return scanFileForRefs(path, owner, field, pattern, nil)
+	}
+
+	wanted := map[string]bool{}
+	for _, k := range keys {
+		wanted[k] = true
+	}
+
+	var out []InboundReference
+	var walk func(n *yaml.Node, keyName string)
+	walk = func(n *yaml.Node, keyName string) {
+		if n == nil {
+			return
+		}
+		switch n.Kind {
+		case yaml.DocumentNode, yaml.SequenceNode:
+			for _, c := range n.Content {
+				walk(c, keyName)
+			}
+		case yaml.MappingNode:
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				walk(n.Content[i+1], n.Content[i].Value)
+			}
+		case yaml.ScalarNode:
+			if !wanted[keyName] {
+				return
+			}
+			if pattern.MatchString(n.Value) {
+				out = append(out, InboundReference{
+					Owner: owner,
+					Path:  path,
+					Field: fmt.Sprintf("%s · %s (line %d)", field, keyName, n.Line),
+					Ref:   strings.TrimSpace(n.Value),
+				})
+			}
+		}
+	}
+	walk(&doc, "")
 	return out
 }
