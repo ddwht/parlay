@@ -117,35 +117,26 @@ order to get further than this one did.
 
 ### 6. Record it
 
-Forward `tokens.fingerprint`, `tokens.duplicate` and `tokens.legacy_file_hash`
-from the envelope. Never ask the reviewer to read or type them; the short
-`label` is for a person to recognise an entry by, and is not accepted here.
+The envelope carries a ready-made command for each outcome, keyed by the same
+option IDs. Take `actions[<the id they chose>]`, run its `command` with its
+`args` exactly as given, and append only the flags it lists in `requires`:
 
-```
-# reconfirm
-parlay internal record-exception @<feature> --from-legacy \
-  --legacy-fingerprint <tokens.fingerprint> \
-  --legacy-duplicate <tokens.duplicate> \
-  --legacy-file-hash <tokens.legacy_file_hash> \
-  --ref <packet.subject ref> --criterion "<requirement>" \
-  --kind waived --reason "<their words>" --by "interactive decision"
+- `--reason` — the reviewer's words from step 5.
+- `--by` — the identity from the decision channel that answered. If that channel
+  gives you a decision or session identifier, pass it too. **Never a fixed
+  string.** A literal repeated on every judgment records nothing about who
+  decided any of them, which is worse than an empty field because it looks like
+  attribution.
 
-# drop
-parlay internal drop-legacy-exemption @<feature> \
-  --fingerprint <tokens.fingerprint> \
-  --duplicate <tokens.duplicate> \
-  --legacy-file-hash <tokens.legacy_file_hash> \
-  --reason "<their words>" --by "interactive decision"
+Do not build these commands yourself and do not adjust the arguments. They
+already encode things that vary per occurrence and are easy to get wrong: an
+entry-wide judgment omits `--criterion` entirely, because the reviewer was asked
+about every requirement and recording one bullet would contradict what they
+answered.
 
-# defer
-parlay internal defer-legacy-exemption @<feature> \
-  --fingerprint <tokens.fingerprint> \
-  --duplicate <tokens.duplicate> \
-  --legacy-file-hash <tokens.legacy_file_hash> \
-  --reason "<their words>" --by "interactive decision"
-```
-
-Then add `tokens.fingerprint` to your exclusion list and return to step 2.
+Then pass `exclude_token` — not the bare fingerprint — to `--exclude` for the
+rest of the sitting, and return to step 2. Identical entries share a
+fingerprint by design, so the token carries a copy index when it needs one.
 
 ### 7. If a write is refused
 
@@ -160,11 +151,14 @@ were written against the version that was current when each was made.
 
 ## Hard rules
 
-- Present `packet.display` verbatim; build the chooser from `packet.decision`.
+- Present `packet.display` verbatim; build the chooser from `packet.decision`;
+  run `actions[choice]` as given.
   Never assemble either yourself — the ordering and the closed outcome set are
   properties of the artifact, and reconstructing them locally is how they get
   quietly lost.
 - Never carry a prior reason into a new decision, not even as a draft.
+- Never pass a hard-coded `--by`. Attribution that is identical on every
+  judgment is not attribution.
 - Never treat a deferral as an answer, in your reporting or your counts.
 - Never batch. There is no bulk confirm and there will not be one: forty
   authority-bearing decisions are forty decisions, and any affordance that makes

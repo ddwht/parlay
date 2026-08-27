@@ -58,6 +58,15 @@ type nextReviewOutput struct {
 	// two calls that may have loaded different states.
 	Summary *CoverageMigrationStatus `json:"summary"`
 	Packet  *ReviewPacket            `json:"packet,omitempty"`
+	// Actions are keyed by the same stable outcome IDs the decision block
+	// offers, so the skill maps a choice to a command by lookup, never by
+	// reasoning about which flags this occurrence needs.
+	Actions map[string]ReviewAction `json:"actions,omitempty"`
+	// ExcludeToken is what to pass to --exclude after handling this
+	// occurrence, ready-made. The bare fingerprint is wrong when copies exist:
+	// excluding copy 1 by fingerprint alone would fail to exclude it and the
+	// sitting would re-offer the same question.
+	ExcludeToken string `json:"exclude_token,omitempty"`
 	// Tokens travel in the envelope rather than the display: they are for the
 	// skill to forward to the writer, never for a person to read or retype.
 	Tokens *reviewTokens `json:"tokens,omitempty"`
@@ -69,10 +78,72 @@ type nextReviewOutput struct {
 	Note      string `json:"note"`
 }
 
+// ReviewAction is a fully-formed command for one outcome.
+//
+// The skill selects actions[choice], appends the authority values, and runs it.
+// It does not assemble argv from packet data — an earlier version told it to,
+// and the instruction was not followable: the fields it named had been
+// deliberately removed from the JSON, entry-wide occurrences need a flag
+// OMITTED rather than filled, and the exclusion token is not the bare
+// fingerprint when copies exist. Every one of those is a branch, and a branch
+// in prose is a branch nobody tests.
+type ReviewAction struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	// Requires names the flags the skill must append from the decision channel.
+	// They are the only values not derivable here, because they do not exist
+	// until a person answers.
+	Requires []string `json:"requires"`
+}
+
 type reviewTokens struct {
 	Fingerprint    string `json:"fingerprint"`
 	Duplicate      int    `json:"duplicate"`
 	LegacyFileHash string `json:"legacy_file_hash"`
+}
+
+// reviewActions builds the command for each outcome.
+//
+// Two things here are decisions, not formatting. An entry-wide occurrence gets
+// NO --criterion, because passing one would narrow a decision the reviewer was
+// explicitly asked to make over every requirement — the packet said "ALL N" and
+// recording one bullet would contradict what they answered. And --by is left to
+// the caller rather than defaulted, because a literal baked in here would put
+// the same generic attribution on every judgment in the ledger, which is not
+// attribution at all.
+func reviewActions(slug string, occ MigrationOccurrence, packet *ReviewPacket, fileHash string) map[string]ReviewAction {
+	feature := "@" + slug
+	tokens := []string{
+		"--legacy-file-hash", fileHash,
+	}
+	dup := fmt.Sprintf("%d", occ.Duplicate)
+
+	reconfirm := []string{feature, "--from-legacy",
+		"--legacy-fingerprint", occ.Fingerprint,
+		"--legacy-duplicate", dup,
+		"--legacy-file-hash", fileHash,
+		"--ref", occ.Ref, "--kind", "waived",
+	}
+	// Bullet-specific only. An entry-wide exemption maps to an entry-wide
+	// exception, and record-exception requires --criterion omitted for that.
+	if !packet.subject.EntryWide {
+		reconfirm = append(reconfirm, "--criterion", occ.Text)
+	}
+
+	withTokens := func(extra ...string) []string {
+		args := append([]string{feature,
+			"--fingerprint", occ.Fingerprint,
+			"--duplicate", dup,
+		}, tokens...)
+		return append(args, extra...)
+	}
+
+	needs := []string{"--reason", "--by"}
+	return map[string]ReviewAction{
+		OutcomeReconfirm: {Command: "record-exception", Args: reconfirm, Requires: needs},
+		OutcomeDrop:      {Command: "drop-legacy-exemption", Args: withTokens(), Requires: needs},
+		OutcomeDefer:     {Command: "defer-legacy-exemption", Args: withTokens(), Requires: needs},
+	}
 }
 
 // parseExclusion accepts FINGERPRINT or FINGERPRINT#COPY.
@@ -169,6 +240,11 @@ func runNextLegacyReview(cmd *cobra.Command, args []string) error {
 		Fingerprint: next.Fingerprint, Duplicate: next.Duplicate,
 		LegacyFileHash: fileHash,
 	}
-	out.Note = "Present packet.display verbatim. Build the chooser from packet.decision. Forward tokens to whichever writer the reviewer's answer selects, then add this fingerprint to --exclude for the rest of the sitting."
+	out.Actions = reviewActions(slug, *next, packet, fileHash)
+	out.ExcludeToken = next.Fingerprint
+	if next.Duplicate > 0 {
+		out.ExcludeToken = fmt.Sprintf("%s#%d", next.Fingerprint, next.Duplicate)
+	}
+	out.Note = "Present packet.display verbatim. Build the chooser from packet.decision. Run actions[<chosen id>] with its args, appending the flags it lists in `requires`. Then pass exclude_token to --exclude for the rest of the sitting."
 	return enc.Encode(out)
 }
