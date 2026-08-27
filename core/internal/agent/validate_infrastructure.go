@@ -144,9 +144,9 @@ func hasOperationShapedFragment(fragments []parser.InfraFragment) bool {
 }
 
 var (
-	funcSigPattern    = regexp.MustCompile(`\w+\([^)]*\s+\w+`)
-	fileExtPattern    = regexp.MustCompile(`\b\w+\.(go|py|ts|js|rs|java|rb|swift|kt)\b`)
-	langKeywords      = regexp.MustCompile(`\b(func|def|class|interface|struct|impl|enum|trait|module)\b`)
+	funcSigPattern  = regexp.MustCompile(`\w+\([^)]*\s+\w+`)
+	fileExtPattern  = regexp.MustCompile(`\b\w+\.(go|py|ts|js|rs|java|rb|swift|kt)\b`)
+	langKeywords    = regexp.MustCompile(`\b(func|def|class|interface|struct|impl|enum|trait|module)\b`)
 	importPathPattern = regexp.MustCompile(`\w+/\w+\.\w+`)
 )
 

@@ -79,8 +79,8 @@ links:
   - { from: presentation, relation: calls, to: application }
 `,
 		map[string]string{
-			"react-antd":         "name: react-antd\nkind: presentation\n",
-			"nestjs-application": "name: nestjs-application\nkind: application\nsupports:\n  operation_kinds: [command]\n  steps: [validate-input]\n  policies: []\n  errors: [validation-failed]\n",
+			"react-antd":          "name: react-antd\nkind: presentation\n",
+			"nestjs-application":  "name: nestjs-application\nkind: application\nsupports:\n  operation_kinds: [command]\n  steps: [validate-input]\n  policies: []\n  errors: [validation-failed]\n",
 		},
 		map[string]string{
 			"spec/intents/task-list/capabilities.yaml": `schema_version: 1

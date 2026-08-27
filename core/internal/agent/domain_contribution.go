@@ -64,12 +64,12 @@ type FixtureNeed struct {
 // ContributionImpact is the whole answer for one feature: what it proposes,
 // what disagrees, what was already there, and who it reaches.
 type ContributionImpact struct {
-	Feature   string            `json:"feature"`
-	Path      string            `json:"path"`
-	Additions []domain.Element  `json:"additions"`
-	Conflicts []domain.Conflict `json:"conflicts"`
-	Redundant []domain.Element  `json:"redundant"`
-	Affects   []EntityAudience  `json:"affects"`
+	Feature   string             `json:"feature"`
+	Path      string             `json:"path"`
+	Additions []domain.Element   `json:"additions"`
+	Conflicts []domain.Conflict  `json:"conflicts"`
+	Redundant []domain.Element   `json:"redundant"`
+	Affects   []EntityAudience   `json:"affects"`
 	// Applicable is false when the contribution conflicts. Stated rather than
 	// left to be derived from len(conflicts), because "can this land" is the
 	// question the loop asks and a caller getting the derivation wrong would
