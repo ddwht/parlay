@@ -110,6 +110,7 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `amendment-retirement-over-unapplied-tail` | The ledger carries other unapplied records. |
 | `amendment-retirement-not-terminal` | More than one record carries the marker, or a record follows the retirement. A feature ends once, and ends last. |
 | `feature-retirement-has-output` | The feature still has contract artifacts, a buildfile or testcases. Retirement removes nothing, so those would outlive the feature; refusing is the honest answer. |
+| `feature-retirement-scan-incomplete` | An artifact could not be read or parsed, so nothing was established. Unknown is not clean. |
 | `feature-retirement-still-referenced` | Something still points at the feature. Names each owning artifact, position and ref. |
 | `intent-supersession-unaccounted-affect` | A contract entry whose `source:` names a superseded intent has no disposition in `affects:`. |
 | `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts. |

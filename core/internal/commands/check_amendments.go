@@ -970,16 +970,31 @@ func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendmen
 		})
 		return
 	}
-	if len(inbound) > 0 {
+	// A file the scan could not read leaves the answer unknown, and unknown is
+	// not clean. Reported separately from references because the remedy
+	// differs: one is work to do, the other is a scan to repair.
+	if len(inbound.Failures) > 0 {
 		var lines []string
-		for _, r := range inbound {
+		for _, f := range inbound.Failures {
+			lines = append(lines, f.String())
+		}
+		sort.Strings(lines)
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "feature-retirement-scan-incomplete",
+			Message: fmt.Sprintf("cannot establish that nothing depends on %s — %d artifact(s) could not be read: %s. A retirement is not safe on an unfinished scan, and an unreadable file is not an empty one",
+				slug, len(inbound.Failures), strings.Join(lines, "; ")),
+		})
+	}
+	if len(inbound.References) > 0 {
+		var lines []string
+		for _, r := range inbound.References {
 			lines = append(lines, r.String())
 		}
 		sort.Strings(lines)
 		out.Issues = append(out.Issues, amendmentIssue{
 			Severity: "error", Code: "feature-retirement-still-referenced",
 			Message: fmt.Sprintf("%s cannot be retired — %d reference(s) still point at it: %s. Resolve each, then retire; a replacement records where the work went and does not redirect anything",
-				slug, len(inbound), strings.Join(lines, "; ")),
+				slug, len(inbound.References), strings.Join(lines, "; ")),
 		})
 	}
 }
