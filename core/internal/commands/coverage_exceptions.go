@@ -139,9 +139,29 @@ type CoverageException struct {
 	// being replaced wholesale: a different observation, for different
 	// reasons, still citing this criterion and still marked state-only, keeps
 	// matching a decision keyed on names alone. The reviewer is then recorded
-	// as having approved something they never saw. Empty means the decision
-	// predates this binding and must be re-confirmed.
+	// as having approved something they never saw. Empty means the decision is
+	// PRE-BINDING — an old-format entry in this ledger, not a stranded
+	// coverage-review exemption — and must be re-confirmed.
 	CaseHash string `yaml:"case_hash,omitempty"`
+}
+
+// RetiredDecision is a withdrawn approval, carrying both the original
+// judgment and the decision to withdraw it — one without the other tells only
+// half the story.
+type RetiredDecision struct {
+	Ref   string        `yaml:"ref"`
+	Text  string        `yaml:"text,omitempty"`
+	Kind  ExceptionKind `yaml:"kind"`
+	Suite string        `yaml:"suite,omitempty"`
+	Case  string        `yaml:"case,omitempty"`
+
+	OriginalReason string `yaml:"original_reason,omitempty"`
+	OriginalBy     string `yaml:"original_by,omitempty"`
+	OriginalAt     string `yaml:"original_at,omitempty"`
+
+	Reason string `yaml:"reason"`
+	By     string `yaml:"by"`
+	At     string `yaml:"at"`
 }
 
 // CoverageExceptions is the per-feature ledger.
@@ -175,6 +195,12 @@ type CoverageExceptions struct {
 	// abandoned the rest. Dispositions are per legacy entry, so the check can
 	// keep firing until every one has been either re-recorded or deliberately
 	// dropped.
+	// RetiredDecisions are approvals withdrawn because what they were about
+	// changed or went away. They are kept rather than deleted: an approval
+	// that silently vanishes is indistinguishable from one nobody made, and
+	// "who decided this no longer applies, and why" has to stay answerable.
+	RetiredDecisions []RetiredDecision `yaml:"retired_decisions,omitempty"`
+
 	ReconciledLegacy []LegacyDisposition `yaml:"reconciled_legacy,omitempty"`
 }
 

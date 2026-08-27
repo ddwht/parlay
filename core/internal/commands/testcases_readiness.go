@@ -248,10 +248,10 @@ func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecis
 		if drifted != nil {
 			why := "its content changed since the decision was recorded"
 			if drifted.CaseHash == "" {
-				why = "the decision predates content binding and cannot be shown to be about this case"
+				why = "it predates content binding — the decision carries no record of what the case observed, so nothing can show it was about this case"
 			}
 			out = append(out, fmt.Sprintf(
-				"[downgrade-approval-stale] %s: suite %q case %q has an accepted state-only decision, but %s. The approval was a judgment about what this case observed; re-record it against the case as it stands, or strengthen the case",
+				"[downgrade-approval-stale] %s: suite %q case %q has an accepted state-only decision, but %s. The approval was a judgment about what this case observed; retire it with `parlay internal retire-decision` and record a fresh one against the case as it stands, or strengthen the case",
 				path, c.Suite, c.Name, why))
 			continue
 		}
@@ -269,7 +269,7 @@ func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecis
 			continue
 		}
 		out = append(out, fmt.Sprintf(
-			"[downgrade-approval-orphaned] %s: an accepted state-only decision names suite %q case %q for %q, but no such state-only case is declared. It was either renamed, removed, or strengthened to full coverage. Drop the decision, or point it at the case that replaced it",
+			"[downgrade-approval-orphaned] %s: an accepted state-only decision names suite %q case %q for %q, but no such state-only case is declared. It was either renamed, removed, or strengthened to full coverage. Retire it with `parlay internal retire-decision`, or record a decision against the case that replaced it",
 			path, d.Suite, d.Case, d.Ref))
 	}
 	return out
