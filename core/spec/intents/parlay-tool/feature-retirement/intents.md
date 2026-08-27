@@ -22,12 +22,14 @@
 - Retirement inherits every obligation of an intent-superseding amendment: non-empty `## Why` and `## Acceptance`, and the decision gate with no safe default and no unattended path.
 - A feature may not be retired while its ledger carries unapplied amendments other than the retirement itself. Retiring on top of changes nobody applied closes a feature over a specification that was never true.
 - The retirement takes effect only once applied, exactly as any other amendment does.
-- A feature may be retired only when it has **nothing built**: no contract artifacts, no buildfile or testcases, and no generated code recorded against it. This is what makes the narrow cut sound rather than merely narrow. Retirement does not delete anything, so a feature with artifacts would keep them on disk and readable by every consumer that enumerates features, and a feature with generated code would keep shipping it. Refusing that case is honest; claiming to have handled it would not be.
+- A feature may be retired only when it has **nothing built**: no contract artifacts, no buildfile or testcases, and no generated code it owns. Ownership of generated code is read from each tracked file's own marker, against the project-wide record the tool actually writes — a file that *extends* one of the feature's components is partly its output and counts. This is what makes the narrow cut sound rather than merely narrow. Retirement does not delete anything, so a feature with artifacts would keep them on disk and readable by every consumer that enumerates features, and a feature with generated code would keep shipping it. Refusing that case is honest; claiming to have handled it would not be.
 - Exactly one record in a ledger may carry the retirement marker, and it must be the last record in the ledger. A retirement followed by further changes is a feature that did not end where it said it did.
 
 **Verify**:
 - An amendment with `retires_feature: true`, a valid `outcome:`, and every live intent named validates, where the same amendment without the marker fails with `amendment-supersedes-last-intent`.
-- A retirement on a feature that has contract artifacts, a buildfile, testcases, or generated code fails, naming what is still there.
+- A retirement on a feature that has contract artifacts, a buildfile, testcases, or generated code it owns fails, naming what is still there.
+- Generated code owned by a *different* feature does not block, since the record is project-wide.
+- A tracked file that cannot be read leaves ownership unknown and refuses the retirement; a tracked file that is gone is not shipping and does not.
 - A second retirement record in one ledger fails, and so does a retirement followed by any later record.
 - A retirement that has not been applied is reported as pending rather than as the feature having ended.
 - `outcome: replaced` with no `replacement_feature:` fails, and so does `outcome: obsolete` with one.

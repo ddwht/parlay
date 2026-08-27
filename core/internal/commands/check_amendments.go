@@ -1101,23 +1101,18 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 		}
 	}
 
-	// Generated output is recorded in the per-feature code-hashes sidecar, and
-	// checking the buildfile is not a proxy for it: a partial or stale state
-	// can have no buildfile and a non-empty Files map, which would have retired
-	// cleanly while the generated code kept shipping. That is the exact failure
-	// the precondition exists to prevent, so an unreadable sidecar is a
-	// precondition FAILURE rather than an absence — "cannot tell" is not "none".
-	hashes, err := loadCodeHashes(cfg, slug)
-	if err != nil {
+	owned, failures := generatedFilesOwnedBy(cfg, slug)
+	if len(failures) > 0 {
+		sort.Strings(failures)
 		out.Issues = append(out.Issues, amendmentIssue{
 			Severity: "error", Code: "feature-retirement-has-output",
-			Message: fmt.Sprintf("%03d-%s retires %s, but its generated-output record cannot be read (%v) — a retirement is not safe on an unreadable answer, and absence of a readable record is not absence of generated code",
-				terminal.Seq, terminal.FileSlug, slug, err),
+			Message: fmt.Sprintf("%03d-%s retires %s, but its generated output cannot be established: %s — a retirement is not safe on an unreadable answer, and a record that cannot be read is not an empty one",
+				terminal.Seq, terminal.FileSlug, slug, strings.Join(failures, "; ")),
 		})
 		return
 	}
-	if hashes != nil && len(hashes.Files) > 0 {
-		present = append(present, fmt.Sprintf("%d generated file(s)", len(hashes.Files)))
+	if len(owned) > 0 {
+		present = append(present, fmt.Sprintf("%d generated file(s) (%s)", len(owned), strings.Join(firstN(owned, 3), ", ")))
 	}
 
 	if len(present) == 0 {
@@ -1129,4 +1124,81 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 		Message: fmt.Sprintf("%03d-%s retires %s, which still has %s — retirement records a decision and removes nothing, so these would stay on disk and keep being read after the feature was declared gone. Deciding what becomes of them is work this operation does not do",
 			terminal.Seq, terminal.FileSlug, slug, strings.Join(present, ", ")),
 	})
+}
+
+// generatedFilesOwnedBy reports which tracked files the retiring feature owns.
+//
+// It reads the PROJECT snapshot, .parlay/build/_project/.code-hashes.yaml,
+// because that is the only one the CLI writes: saveBuildStateForFeature, which
+// produces the per-feature sidecar, is documented as a helper for tests and has
+// no production caller. Checking the sidecar therefore proved that a test-only
+// artifact blocks retirement while a feature with real generated output — the
+// modern path records it project-level — passed straight through. That is the
+// same reachability failure as a validator tested only against a hand-built
+// input, in a check whose whole job is to refuse exactly this case.
+//
+// Ownership comes from each file's own marker rather than from the snapshot,
+// because a CodeHashEntry records component and provenance but not feature. A
+// file that merely EXTENDS one of the retiring feature's components counts too:
+// it is partly this feature's output and would outlive it.
+//
+// Fail-closed. A tracked file that is gone is not shipping and is skipped; a
+// tracked file that exists and cannot be read, or a snapshot that cannot be
+// loaded, leaves the answer unknown.
+func generatedFilesOwnedBy(cfg *config.Context, slug string) (owned []string, failures []string) {
+	snapshot, err := loadProjectCodeHashes(cfg)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("project generated-output record: %v", err)}
+	}
+	if snapshot == nil || len(snapshot.Files) == 0 {
+		return nil, nil
+	}
+
+	root := cfg.RepoRoot()
+	for rel := range snapshot.Files {
+		abs := filepath.Join(root, rel)
+		marker, err := parser.ParseMarker(abs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // tracked but gone: not shipping
+			}
+			failures = append(failures, fmt.Sprintf("%s: %v", rel, err))
+			continue
+		}
+		if marker == nil {
+			continue
+		}
+		if markerNamesFeature(marker, slug) {
+			owned = append(owned, rel)
+		}
+	}
+	sort.Strings(owned)
+	return owned, failures
+}
+
+// markerNamesFeature reports whether a generated file belongs to a feature,
+// either as its owner or by extending one of its components.
+func markerNamesFeature(marker *parser.Marker, slug string) bool {
+	if marker.Feature != "" && sameFeature(parser.FeatureSlug(marker.Feature), slug) {
+		return true
+	}
+	for _, ext := range marker.Extends {
+		ref := strings.TrimPrefix(strings.TrimSpace(ext), "@")
+		// An extends value is feature/component or initiative/feature/component;
+		// the feature is everything up to the final segment.
+		if i := strings.LastIndex(ref, "/"); i >= 0 {
+			if sameFeature(ref[:i], slug) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// firstN limits a sample in a message without hiding the count beside it.
+func firstN(items []string, n int) []string {
+	if len(items) <= n {
+		return items
+	}
+	return items[:n]
 }

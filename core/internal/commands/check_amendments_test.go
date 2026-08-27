@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ddwht/parlay/core/internal/config"
 )
 
 // writeAmendment writes one ledger file into a feature dir.
@@ -1190,28 +1192,96 @@ func TestFeatureRetirement_RefusesWhenGeneratedCodeIsStillRecorded(t *testing.T)
 	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
 	writeBaselineApplied(t, "bare", 1)
 
-	// No buildfile, no artifacts — only the generated-output record.
 	cfg := testContext(t)
-	buildDir := cfg.BuildPath("bare")
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+
+	// Written in the shape the CLI actually produces: the PROJECT snapshot.
+	// The per-feature sidecar is only ever written by a helper documented as
+	// being for tests, so a fixture using it proved that a test-only artifact
+	// blocks retirement while real generated output passed straight through.
+	src := filepath.Join(dir, "src", "features", "bare")
+	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	hashes := CodeHashes{
-		Files: map[string]CodeHashEntry{
-			"src/features/bare/Bare.tsx": {},
-		},
-	}
-	data, err := yaml.Marshal(&hashes)
-	if err != nil {
+	generated := filepath.Join(src, "Bare.tsx")
+	if err := os.WriteFile(generated, []byte("// parlay-feature: bare\n// parlay-component: bare-view\nexport const Bare = () => null\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(codeHashesPath(cfg, "bare"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeProjectCodeHashes(t, cfg, map[string]CodeHashEntry{
+		"src/features/bare/Bare.tsx": {Component: "bare-view", Hash: "abc", Provenance: ProvenanceGenerated},
+	})
 
 	out, _ := runCheckAmendments_(t, "@bare")
 	if !amendmentIssueSeen(out, "feature-retirement-has-output") {
 		t.Fatalf("a feature whose generated code is still recorded must not retire; issues=%+v", out.Issues)
+	}
+}
+
+// A file that merely EXTENDS one of the retiring feature's components is partly
+// its output and would outlive it.
+func TestFeatureRetirement_RefusesWhenAFileExtendsIt(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	writeBaselineApplied(t, "bare", 1)
+
+	cfg := testContext(t)
+	src := filepath.Join(dir, "src", "shared")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "Shared.tsx"),
+		[]byte("// parlay-feature: other\n// parlay-extends: bare/bare-view\nexport const S = () => null\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectCodeHashes(t, cfg, map[string]CodeHashEntry{
+		"src/shared/Shared.tsx": {Component: "shared", Hash: "def", Provenance: ProvenanceGenerated},
+	})
+
+	out, _ := runCheckAmendments_(t, "@bare")
+	if !amendmentIssueSeen(out, "feature-retirement-has-output") {
+		t.Errorf("a file extending the feature's component is partly its output; issues=%+v", out.Issues)
+	}
+}
+
+// A feature that owns none of the tracked files still retires: the snapshot is
+// project-wide, so "anything is tracked" is not the question.
+func TestFeatureRetirement_OtherFeaturesOutputDoesNotBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeBareFeature(t, dir, "bare")
+	writeAmendment(t, featDir, "001-close-the-feature.md", retirementAmendment("obsolete", "", bareIntents))
+	writeBaselineApplied(t, "bare", 1)
+
+	cfg := testContext(t)
+	src := filepath.Join(dir, "src", "elsewhere")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "Other.tsx"),
+		[]byte("// parlay-feature: unrelated\n// parlay-component: other\nexport const O = () => null\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectCodeHashes(t, cfg, map[string]CodeHashEntry{
+		"src/elsewhere/Other.tsx": {Component: "other", Hash: "ghi", Provenance: ProvenanceGenerated},
+	})
+
+	out, err := runCheckAmendments_(t, "@bare")
+	if err != nil {
+		t.Fatalf("another feature's output is not this feature's: %v (issues %+v)", err, out.Issues)
+	}
+}
+
+func writeProjectCodeHashes(t *testing.T, cfg *config.Context, files map[string]CodeHashEntry) {
+	t.Helper()
+	path := projectCodeHashesPath(cfg)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := yaml.Marshal(&CodeHashes{SchemaVersion: 2, Files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
