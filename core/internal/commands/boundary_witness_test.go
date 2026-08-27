@@ -90,7 +90,7 @@ var boundaryWitnesses = []boundaryWitness{
 		Claim: claimCoverageExcept, Branch: "unreadable ledger", Stage: gateStageCode,
 		Expect: "coverage-exception-invalid",
 		Mutate: func(t *testing.T, dir string, cfg *config.Context) {
-			if err := os.WriteFile(coverageExceptionsPath(cfg, "graded"), []byte("exceptions: [\n  broken"), 0o644); err != nil {
+			if err := os.WriteFile(coverageDecisionsPath(cfg, "graded"), []byte("exceptions: [\n  broken"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		},

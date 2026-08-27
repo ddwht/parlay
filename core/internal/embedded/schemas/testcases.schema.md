@@ -372,7 +372,7 @@ recorded; a file declaring the current shape is one where the fact could have
 been recorded, so the exemption no longer applies to it. Policy is **regenerate**
 — an older version is an instruction to re-run `/parlay-build-feature`.
 
-A bullet may be excused by a `coverage-exceptions.yaml` entry of `kind: waived` — the only supported kind. An exception naming `ref:` and `criterion_text:` excuses exactly that bullet and is valid while that bullet is still declared; one naming `ref:` alone is **entry-wide** and carries an `entry_hash:` of that entry's bullet set, so adding a bullet invalidates it. Entry-wide is accepted because every exemption written before bullet-level identity is that shape and none could have recorded a text, and warned because it excuses more than one bullet.
+A bullet may be excused by a `coverage-decisions.yaml` entry of `kind: waived` — the only supported kind. An exception naming `ref:` and `criterion_text:` excuses exactly that bullet and is valid while that bullet is still declared; one naming `ref:` alone is **entry-wide** and carries an `entry_hash:` of that entry's bullet set, so adding a bullet invalidates it. Entry-wide is accepted because every exemption written before bullet-level identity is that shape and none could have recorded a text, and warned because it excuses more than one bullet.
 
 All five are **warnings** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. They graduate to errors once projects have rebuilt with criterion-carrying cases.
 
@@ -401,7 +401,7 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 | `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
 | `testcases-case-criterion-missing` | A case declares no `criterion:`, so nothing records why it exists. Warning below `schema_version: 3`, error at 3 or above. |
-| `verify-criterion-uncovered` | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-exceptions.yaml` entry excusing it. Counted per bullet, not per entry. **Warning below `schema_version: 3`, error at 3 and above** — a file declaring the current shape is one where the criterion could have been recorded. |
+| `verify-criterion-uncovered` | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-decisions.yaml` entry excusing it. Counted per bullet, not per entry. **Warning below `schema_version: 3`, error at 3 and above** — a file declaring the current shape is one where the criterion could have been recorded. |
 | `testcases-criterion-ref-unknown` | A case cites a `criterion.ref` no contract entry declares. |
 | `testcases-criterion-text-missing` | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. What every file written before bullet-level coverage looks like; the fix is a rebuild. |
 | `testcases-criterion-text-drift` | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |

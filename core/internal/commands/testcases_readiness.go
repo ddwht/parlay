@@ -256,7 +256,7 @@ func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecis
 			continue
 		}
 		out = append(out, fmt.Sprintf(
-			"[criterion-observed-weakly] %s: suite %q case %q discharges %q by observing STATE rather than what the criterion states (%q), and nobody accepted that. The case passes and cites its criterion correctly, so no other check can see the weakening. Record the decision in coverage-exceptions.yaml as kind: state-only naming this suite and case, or strengthen the case to observe what the criterion says",
+			"[criterion-observed-weakly] %s: suite %q case %q discharges %q by observing STATE rather than what the criterion states (%q), and nobody accepted that. The case passes and cites its criterion correctly, so no other check can see the weakening. Record the decision with `parlay internal record-exception --kind state-only` naming this suite and case, or strengthen the case to observe what the criterion says",
 			path, c.Suite, c.Name, c.Ref, c.Text))
 	}
 

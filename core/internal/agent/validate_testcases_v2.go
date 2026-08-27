@@ -412,7 +412,7 @@ type TestcasesV2Input struct {
 	// produced while still only warning on one that predates the field.
 	Revisions ArtifactRevisions
 	// ExemptCriteria are criteria a person deliberately excused, from the
-	// feature's coverage-exceptions.yaml, which has
+	// feature's coverage-decisions.yaml, which has
 	// excused from needing a covering case.
 	//
 	// An exemption naming a ref and a text excuses exactly that bullet. An
@@ -633,7 +633,7 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 		}
 		reportedUncovered[key] = true
 		outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "verify-criterion-uncovered",
-			fmt.Sprintf("%s: criterion %q on contract entry %q has no case discharging it — a case must cite both in criterion.{ref,text}, or coverage-exceptions.yaml must excuse it", path, c.Text, c.Ref)))
+			fmt.Sprintf("%s: criterion %q on contract entry %q has no case discharging it — a case must cite both in criterion.{ref,text}, or coverage-decisions.yaml must excuse it", path, c.Text, c.Ref)))
 	}
 
 	return outcomes

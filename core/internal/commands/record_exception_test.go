@@ -121,12 +121,56 @@ func TestRecordException_WritesTheCaseFingerprint(t *testing.T) {
 	if err := recordExceptionRun(t, "demo"); err != nil {
 		t.Fatalf("a decision about a real weak case must be accepted: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".parlay", "build", "demo", "coverage-exceptions.yaml"))
+	data, err := os.ReadFile(filepath.Join(dir, ".parlay", "build", "demo", "coverage-decisions.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := fingerprintOf(t, weakCase, 0)
 	if !strings.Contains(string(data), want) {
 		t.Fatalf("the written decision must carry the case fingerprint %s; got:\n%s", want, data)
+	}
+}
+
+// A project written before the rename must not have to rename a file by hand,
+// and must never end up with two ledgers where nothing says which is live.
+func TestCoverageDecisions_PreRenameFileIsMigratedOnWrite(t *testing.T) {
+	dir := recordExceptionFixture(t, weakCase)
+	build := filepath.Join(dir, ".parlay", "build", "demo")
+	oldPath := filepath.Join(build, "coverage-exceptions.yaml")
+	newPath := filepath.Join(build, "coverage-decisions.yaml")
+
+	// A ledger under the pre-rename name, holding a decision somebody made.
+	old := "schema_version: 1\nfeature: demo\ngranted_at: \"2026-08-27T00:00:00Z\"\n" +
+		"exceptions:\n  - ref: \"@demo/operation:store.put\"\n    text: the write is durable\n" +
+		"    kind: waived\n    reason: enforced by a database constraint\n" +
+		"    at: \"2026-08-27T00:00:00Z\"\n    by: interactive decision\n"
+	if err := os.WriteFile(oldPath, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// It is read, not ignored: the earlier judgment must survive the rename.
+	rec, err := loadCoverageExceptions(testContext(t), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec == nil || len(rec.Exceptions) != 1 {
+		t.Fatalf("a pre-rename ledger must still be read; got %+v", rec)
+	}
+
+	resetFlagsAfterTest(t, recordExceptionCmd.Flags())
+	recordAWeakDecision(t, "Store honesty", "writes land")
+
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("the ledger must be written under the current name: %v", err)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("the pre-rename file must be gone after migration; leaving both leaves a stale ledger nobody can tell from the live one (stat err: %v)", err)
+	}
+	migrated, err := loadCoverageExceptions(testContext(t), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrated.Exceptions) != 2 {
+		t.Fatalf("the pre-rename decision and the new one must both survive; got %d", len(migrated.Exceptions))
 	}
 }

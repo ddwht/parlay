@@ -129,7 +129,7 @@ var scannedArtifacts = []artifactRule{
 		valueKeys: []string{"ref"},
 	},
 	{
-		name: "coverage-exceptions.yaml", build: true, field: "coverage exception",
+		name: "coverage-decisions.yaml", build: true, field: "coverage decision",
 		valueKeys: []string{"ref"},
 	},
 	{

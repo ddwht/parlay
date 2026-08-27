@@ -274,12 +274,29 @@ func legacyFileHash(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func coverageExceptionsPath(cfg *config.Context, slug string) string {
+// The file is named for what it holds. It began as a list of waivers — "this
+// criterion needs no test" — and "exceptions" described that. It now also holds
+// approvals that a criterion IS discharged but observed weakly, which waive
+// nothing; decisions withdrawn but kept for the audit trail; and answers to
+// judgments inherited from the retired coverage review. Only the first group is
+// an exception, and a name that describes a quarter of a file's contents sends
+// every later reader looking for the wrong thing.
+func coverageDecisionsPath(cfg *config.Context, slug string) string {
+	return filepath.Join(cfg.BuildPath(slug), "coverage-decisions.yaml")
+}
+
+// legacyCoverageDecisionsPath is the pre-rename name. It is read, never
+// written: a project that has one gets it migrated on the next write rather
+// than being told to go and rename a file itself.
+func legacyCoverageDecisionsPath(cfg *config.Context, slug string) string {
 	return filepath.Join(cfg.BuildPath(slug), "coverage-exceptions.yaml")
 }
 
 func loadCoverageExceptions(cfg *config.Context, slug string) (*CoverageExceptions, error) {
-	data, err := os.ReadFile(coverageExceptionsPath(cfg, slug))
+	data, err := os.ReadFile(coverageDecisionsPath(cfg, slug))
+	if err != nil && os.IsNotExist(err) {
+		data, err = os.ReadFile(legacyCoverageDecisionsPath(cfg, slug))
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -288,13 +305,13 @@ func loadCoverageExceptions(cfg *config.Context, slug string) (*CoverageExceptio
 	}
 	var rec CoverageExceptions
 	if err := yaml.Unmarshal(data, &rec); err != nil {
-		return nil, fmt.Errorf("invalid coverage-exceptions file: %w", err)
+		return nil, fmt.Errorf("invalid coverage-decisions file: %w", err)
 	}
 	if rec.SchemaVersion != coverageExceptionsSchemaVersion {
-		return nil, fmt.Errorf("coverage-exceptions schema_version %d is not supported (expected %d)", rec.SchemaVersion, coverageExceptionsSchemaVersion)
+		return nil, fmt.Errorf("coverage-decisions schema_version %d is not supported (expected %d)", rec.SchemaVersion, coverageExceptionsSchemaVersion)
 	}
 	if rec.Feature != slug {
-		return nil, fmt.Errorf("coverage-exceptions names feature %q but was read for %q", rec.Feature, slug)
+		return nil, fmt.Errorf("coverage-decisions names feature %q but was read for %q", rec.Feature, slug)
 	}
 	for i, ex := range rec.Exceptions {
 		if strings.TrimSpace(ex.Ref) == "" {
@@ -330,11 +347,24 @@ func saveCoverageExceptions(cfg *config.Context, slug string, rec *CoverageExcep
 	if err != nil {
 		return err
 	}
-	path := coverageExceptionsPath(cfg, slug)
+	path := coverageDecisionsPath(cfg, slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return atomicfile.WriteAtomic(path, data)
+	if err := atomicfile.WriteAtomic(path, data); err != nil {
+		return err
+	}
+	// A pre-rename file is removed only AFTER the new one is safely written,
+	// so an interrupted migration leaves the old ledger intact rather than
+	// neither. Leaving both would be worse than either alone: two files, one
+	// stale, and nothing saying which the tool reads.
+	old := legacyCoverageDecisionsPath(cfg, slug)
+	if old != path {
+		if err := os.Remove(old); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("the decisions were written to %s but the pre-rename %s could not be removed, and leaving both would leave a stale ledger nobody can tell from the live one: %w", path, old, err)
+		}
+	}
+	return nil
 }
 
 // ExceptionsVerdict reports what the ledger excuses, and what is wrong with it.

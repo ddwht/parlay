@@ -56,6 +56,25 @@ func loadLegacyEntries(cfg *config.Context, slug string) (entries []legacyEntry,
 	return entries, legacyFileHash(content), nil
 }
 
+// requireUnchangedLegacyFile refuses a write whose subject moved since the
+// reviewer saw it.
+//
+// Recomputing identity against whatever file exists at confirmation time is not
+// enough: the person approves the subject the report showed them, and between
+// the report and the write the file may have gained, lost or reworded an entry.
+// The command would then record a disposition against a NEWER occurrence than
+// the one that was judged. The report's hash is therefore an
+// optimistic-concurrency token, not a convenience.
+func requireUnchangedLegacyFile(expected, actual string) error {
+	if expected == "" {
+		return fmt.Errorf("--legacy-file-hash is required: it is the version of the retired review you were shown, and without it this records a judgment against whatever the file happens to say now")
+	}
+	if expected != actual {
+		return fmt.Errorf("the retired coverage review changed after it was listed, so the entry you reviewed may not be the one this would answer. Re-run migrate-coverage-exceptions and confirm against the current file")
+	}
+	return nil
+}
+
 // findLegacyEntry locates the entry a disposition names.
 //
 // An unmatched fingerprint is refused rather than recorded: a disposition that

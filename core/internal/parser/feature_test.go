@@ -4,11 +4,11 @@ import "testing"
 
 func TestParseFeatureRef(t *testing.T) {
 	cases := []struct {
-		in       string
-		wantErr  bool
-		prefix   string
-		slug     string
-		kind     FeatureRefKind
+		in      string
+		wantErr bool
+		prefix  string
+		slug    string
+		kind    FeatureRefKind
 	}{
 		{in: "@feat", slug: "feat", kind: RefKindBare},
 		{in: "feat", slug: "feat", kind: RefKindBare},

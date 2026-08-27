@@ -566,7 +566,7 @@ What guards this boundary now is the injected **Step 0 — Gate**, which
 aggregates it: a person approved the criteria this feature is graded against
 (`criteria-authority`), the tests mechanically discharge that standard
 (`testcases-readiness`), and any recorded exception is still bound to the
-contract it was granted against (`coverage-exceptions`). A non-zero exit stops
+contract it was granted against (`coverage-decisions`). A non-zero exit stops
 this module exactly as before, and its `blockers[]` name what to fix.
 
 Two things follow. Regenerating testcases no longer invalidates anything: what
@@ -582,7 +582,7 @@ The skill is permitted to read ONLY:
 
 - `.parlay/build/<feature>/{buildfile,testcases}.yaml`
 
-  `criteria-authority.yaml` and `coverage-exceptions.yaml` are deliberately NOT
+  `criteria-authority.yaml` and `coverage-decisions.yaml` are deliberately NOT
   in this set. Codegen does not read them; the injected **Step 0 — Gate** does,
   and that command's reads are its own — a boundary check running before this
   module is not this module widening what it may open. Keeping them out is what

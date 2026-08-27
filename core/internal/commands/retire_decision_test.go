@@ -57,7 +57,7 @@ func TestRetireDecision_RepairsAStaleDecision(t *testing.T) {
 		t.Fatalf("retiring the stale decision: %v", err)
 	}
 
-	ledger, err := os.ReadFile(filepath.Join(dir, ".parlay", "build", "demo", "coverage-exceptions.yaml"))
+	ledger, err := os.ReadFile(filepath.Join(dir, ".parlay", "build", "demo", "coverage-decisions.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -274,7 +274,7 @@ Generated alongside buildfile.yaml by `/parlay build-feature`.
 | `testcases-unknown-term` | A `cases[].steps[]` entry uses an `action:` outside `{render, click, input, select, navigate, wait, appears}`, a `verify:` outside `{element, state, route,… |
 | `testcases-v1-unsupported` | A suite has no `kind:` — the v1 shape was removed in v0.3; regenerate via `/parlay-build-feature`. |
 | `verify-criterion-duplicate` | A contract entry declares the same `verify:` bullet twice. |
-| `verify-criterion-uncovered` | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-exceptions.yaml` entry excusing it. |
+| `verify-criterion-uncovered` | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-decisions.yaml` entry excusing it. |
 
 ## Schemas with no diagnostics of their own
 

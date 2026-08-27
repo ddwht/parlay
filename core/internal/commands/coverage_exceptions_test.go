@@ -219,7 +219,7 @@ func TestCoverageExceptions_GateReportsAnUnreadableLedger(t *testing.T) {
 	writeCriteriaFixture(t, dir)
 	cfg := testContext(t)
 
-	path := coverageExceptionsPath(cfg, "graded")
+	path := coverageDecisionsPath(cfg, "graded")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -462,6 +462,9 @@ func resetExcFlags() {
 	recordExceptionRef, recordExceptionText, recordExceptionKind = "", "", string(ExceptionWaived)
 	recordExceptionReason, recordExceptionBy = "", ""
 	recordExceptionSuite, recordExceptionCase = "", ""
+	recordExceptionFromLegacy = false
+	recordExceptionLegacyFP, recordExceptionLegacyDup = "", 0
+	recordExceptionLegacyHash = ""
 }
 
 func TestRecordException_WritesAWaiverTheGateHonours(t *testing.T) {
@@ -572,7 +575,7 @@ exemptions:
 	if live != 1 || dead != 1 {
 		t.Errorf("the report should say which are still about something: %+v", out.Pending)
 	}
-	if _, err := os.Stat(coverageExceptionsPath(cfg, "graded")); !os.IsNotExist(err) {
+	if _, err := os.Stat(coverageDecisionsPath(cfg, "graded")); !os.IsNotExist(err) {
 		t.Error("the migration must not write a decision on the author's behalf")
 	}
 }
@@ -604,7 +607,7 @@ exemptions:
 	}
 
 	// Identity now comes from the listing, not from re-deriving (ref, text).
-	entries, _, lErr := loadLegacyEntries(cfg, "graded")
+	entries, legacyHash, lErr := loadLegacyEntries(cfg, "graded")
 	if lErr != nil {
 		t.Fatal(lErr)
 	}
@@ -622,6 +625,7 @@ exemptions:
 	// Answer the first.
 	resetExcFlags()
 	recordExceptionLegacyFP = fpFor("@graded/operation:customer.archive").Fingerprint
+	recordExceptionLegacyHash = legacyHash
 	recordExceptionLegacyDup = 0
 	recordExceptionRef = "@graded/operation:customer.archive"
 	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
@@ -651,11 +655,13 @@ exemptions:
 
 	// Drop the second deliberately, and the boundary goes quiet.
 	dropLegacyFP = fpFor("@graded/fragment:Customer Detail").Fingerprint
+	dropLegacyHash = legacyHash
 	dropLegacyDup = 0
 	dropLegacyReason = "the control was removed in the redesign"
 	dropLegacyBy = "interactive decision"
 	defer func() {
 		dropLegacyFP, dropLegacyDup, dropLegacyReason, dropLegacyBy = "", 0, "", ""
+		dropLegacyHash = ""
 	}()
 
 	cmd := testCommandWithContext(t, cfg)
@@ -779,7 +785,7 @@ func TestCoverageExceptions_AnsweringOneJudgmentDoesNotAnswerAnother(t *testing.
 	cfg := testContext(t)
 	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
 
-	entries, _, err := loadLegacyEntries(cfg, "graded")
+	entries, legacyHash, err := loadLegacyEntries(cfg, "graded")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -792,6 +798,7 @@ func TestCoverageExceptions_AnsweringOneJudgmentDoesNotAnswerAnother(t *testing.
 
 	resetExcFlags()
 	recordExceptionLegacyFP = entries[0].Fingerprint
+	recordExceptionLegacyHash = legacyHash
 	recordExceptionRef = "@graded/operation:customer.archive"
 	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
 	recordExceptionReason = "still enforced by the constraint"
@@ -820,13 +827,15 @@ func TestCoverageExceptions_EditingTheLegacyFileInvalidatesItsDispositions(t *te
 	cfg := testContext(t)
 	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
 
-	entries, _, err := loadLegacyEntries(cfg, "graded")
+	entries, legacyHash, err := loadLegacyEntries(cfg, "graded")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
 		resetExcFlags()
 		recordExceptionLegacyFP = e.Fingerprint
+		recordExceptionLegacyHash = legacyHash
+		recordExceptionLegacyHash = legacyHash
 		recordExceptionRef, recordExceptionText = e.Ref, e.Text
 		recordExceptionReason = "still holds"
 		recordExceptionBy = "interactive decision"
@@ -859,4 +868,71 @@ func mustLoadExc(t *testing.T, cfg *config.Context) *CoverageExceptions {
 		t.Fatal(err)
 	}
 	return rec
+}
+
+// Codex's guard. The reviewer approves the subject the report showed them.
+// Between the report and the write, the file may gain, lose or reword an entry
+// — and recomputing identity at write time would record a disposition against a
+// NEWER occurrence than the one that was judged. The report's hash is an
+// optimistic-concurrency token, not a convenience.
+func TestCoverageExceptions_ADecisionIsRefusedIfTheFileMovedUnderIt(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
+
+	entries, hashWhenListed, err := loadLegacyEntries(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The file changes after the reviewer was shown it.
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet+
+		"    - suite: s\n      item: \"@graded/fragment:Customer Detail\"\n      reason: added after the listing\n")
+
+	resetExcFlags()
+	recordExceptionLegacyFP = entries[0].Fingerprint
+	recordExceptionLegacyHash = hashWhenListed
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
+	recordExceptionReason = "still enforced"
+	recordExceptionBy = "interactive decision"
+	recordExceptionFromLegacy = true
+
+	err = recordExc(t, cfg, "graded")
+	if err == nil {
+		t.Fatal("a decision confirmed against a stale listing must be refused")
+	}
+	if !strings.Contains(err.Error(), "changed after it was listed") {
+		t.Fatalf("the refusal must say the subject moved; got: %v", err)
+	}
+
+	// And nothing was written: a refused confirmation must not half-land.
+	if rec := mustLoadExc(t, cfg); rec != nil && len(rec.ReconciledLegacy) != 0 {
+		t.Fatalf("a refused decision must record nothing; got %+v", rec.ReconciledLegacy)
+	}
+}
+
+// Omitting the token entirely is the same failure with no evidence at all.
+func TestCoverageExceptions_ADecisionRequiresTheVersionItWasShown(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
+	entries, _, err := loadLegacyEntries(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resetExcFlags()
+	recordExceptionLegacyFP = entries[0].Fingerprint
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
+	recordExceptionReason = "still enforced"
+	recordExceptionBy = "interactive decision"
+	recordExceptionFromLegacy = true
+
+	if err := recordExc(t, cfg, "graded"); err == nil || !strings.Contains(err.Error(), "--legacy-file-hash is required") {
+		t.Fatalf("want a refusal naming the missing token; got: %v", err)
+	}
 }

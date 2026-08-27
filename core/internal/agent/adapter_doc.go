@@ -297,9 +297,6 @@ var ClosedSetDesignSystemSources = map[string]bool{
 	"framework": true, "figma": true, "not-defined": true,
 }
 
-
-
-
 var ClosedSetComponentCategories = map[string]bool{
 	"container": true, "leaf": true, "data-shape": true,
 }

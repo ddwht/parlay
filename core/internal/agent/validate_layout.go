@@ -24,7 +24,6 @@ import (
 	"github.com/ddwht/parlay/core/internal/parser"
 )
 
-
 // SupportedLayoutSchemaVersion is the layout schema version this Core
 // build understands. Layouts with a different (non-zero) schema_version
 // fail validation with code "layout-schema-version-unsupported" (full-list

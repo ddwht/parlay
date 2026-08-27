@@ -1131,7 +1131,7 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // path's parent relative to the active root's BuildRoot(). From it the feature's
 // capabilities.yaml supplies every canonical operation (the operation walker's
 // subjects) and every verify: bullet those operations carry; surface.yaml
-// supplies every bullet its fragments carry; coverage-exceptions.yaml supplies the
+// supplies every bullet its fragments carry; coverage-decisions.yaml supplies the
 // criteria a person deliberately excused, applied only while the ledger is
 // still bound to the contract it was granted against.
 //

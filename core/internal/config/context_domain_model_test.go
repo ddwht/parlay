@@ -189,4 +189,3 @@ func TestLoadDomainModel_BadYamlSurfacesError(t *testing.T) {
 		t.Errorf("malformed YAML should NOT collapse to ErrNoDomainModel; got %v", err)
 	}
 }
-

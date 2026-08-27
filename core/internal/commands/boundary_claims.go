@@ -66,7 +66,7 @@ const (
 	claimComposition       = "cross-feature-composition"
 	claimBuildfileFresh    = "buildfile-freshness"
 	claimCriteriaAuthority = "criteria-authority"
-	claimCoverageExcept    = "coverage-exceptions"
+	claimCoverageExcept    = "coverage-decisions"
 	claimTestcasesReady    = "testcases-readiness"
 	claimGeneratedState    = "generated-state"
 )

@@ -57,6 +57,8 @@ var (
 	recordExceptionFromLegacy bool
 	recordExceptionLegacyFP   string
 	recordExceptionLegacyDup  int
+	recordExceptionLegacyHash string
+	dropLegacyHash            string
 	dropLegacyFP              string
 	dropLegacyDup             int
 )
@@ -117,10 +119,12 @@ func init() {
 	recordExceptionCmd.Flags().StringVar(&recordExceptionSuite, "suite", "", "state-only: the suite whose case observes weakly")
 	recordExceptionCmd.Flags().StringVar(&recordExceptionCase, "case", "", "state-only: the case whose observation is accepted")
 	recordExceptionCmd.Flags().StringVar(&recordExceptionLegacyFP, "legacy-fingerprint", "", "with --from-legacy: the exact entry being answered, from migrate-coverage-exceptions")
+	recordExceptionCmd.Flags().StringVar(&recordExceptionLegacyHash, "legacy-file-hash", "", "with --from-legacy: the version of the retired review you were shown")
 	recordExceptionCmd.Flags().IntVar(&recordExceptionLegacyDup, "legacy-duplicate", 0, "with --from-legacy: which copy, when entries are identical in every field")
 	recordExceptionCmd.Flags().BoolVar(&recordExceptionFromLegacy, "from-legacy", false,
 		"mark the matching stranded exemption in the retired coverage-review.yaml as answered by this decision")
 	dropLegacyCmd.Flags().StringVar(&dropLegacyFP, "fingerprint", "", "the exact entry's fingerprint, from migrate-coverage-exceptions (required)")
+	dropLegacyCmd.Flags().StringVar(&dropLegacyHash, "legacy-file-hash", "", "the version of the retired review you were shown, from migrate-coverage-exceptions (required)")
 	dropLegacyCmd.Flags().IntVar(&dropLegacyDup, "duplicate", 0, "which copy, when entries are identical in every field")
 	dropLegacyCmd.Flags().StringVar(&dropLegacyRef, "ref", "", "deprecated: identity comes from --fingerprint")
 	dropLegacyCmd.Flags().StringVar(&dropLegacyText, "criterion", "", "deprecated: identity comes from --fingerprint")
@@ -247,6 +251,9 @@ func runRecordException(cmd *cobra.Command, args []string) error {
 		if lErr != nil {
 			return lErr
 		}
+		if hErr := requireUnchangedLegacyFile(recordExceptionLegacyHash, fileHash); hErr != nil {
+			return hErr
+		}
 		entry, fErr := findLegacyEntry(entries, recordExceptionLegacyFP, recordExceptionLegacyDup)
 		if fErr != nil {
 			return fErr
@@ -286,10 +293,15 @@ type strandedExemption struct {
 }
 
 type migrateExceptionsOutput struct {
-	Feature string              `json:"feature"`
-	Legacy  string              `json:"legacy_file"`
-	Pending []strandedExemption `json:"stranded"`
-	Note    string              `json:"note"`
+	Feature string `json:"feature"`
+	Legacy  string `json:"legacy_file"`
+	// LegacyFileHash is the version of the retired review these entries were
+	// read from. A writer must pass it back, so a decision recorded after the
+	// file moved is refused rather than silently answering a newer occurrence
+	// than the one the reviewer saw.
+	LegacyFileHash string              `json:"legacy_file_hash"`
+	Pending        []strandedExemption `json:"stranded"`
+	Note           string              `json:"note"`
 }
 
 func runMigrateExceptions(cmd *cobra.Command, args []string) error {
@@ -329,17 +341,17 @@ func runMigrateExceptions(cmd *cobra.Command, args []string) error {
 		declaredBullet[legacyKey(c.Ref, c.Text)] = true
 	}
 
+	entries, legacyHash, lErr := loadLegacyEntries(cfg, slug)
+	if lErr != nil {
+		return lErr
+	}
 	out := migrateExceptionsOutput{
-		Feature: slug, Legacy: legacyPath,
-		Note: "This command writes nothing. Re-record each judgment that still holds with `parlay internal record-exception --from-legacy --legacy-fingerprint <fingerprint>`, " +
-			"and drop the rest with `parlay internal drop-legacy-exemption --fingerprint <fingerprint>`. The boundary keeps reporting these until every one is answered. " +
+		Feature: slug, Legacy: legacyPath, LegacyFileHash: legacyHash,
+		Note: "This command writes nothing. Re-record each judgment that still holds with `parlay internal record-exception --from-legacy --legacy-fingerprint <fingerprint> --legacy-file-hash <legacy_file_hash>`, " +
+			"and drop the rest with `parlay internal drop-legacy-exemption --fingerprint <fingerprint> --legacy-file-hash <legacy_file_hash>`. The boundary keeps reporting these until every one is answered. " +
 			"Whether an old judgment still applies is the one thing nobody but its author can say, " +
 			"so copying them in bulk would assert it for all of them at once. Each fingerprint identifies ONE entry by its whole content, " +
 			"so answering one never answers another that happens to share a ref and criterion.",
-	}
-	entries, _, lErr := loadLegacyEntries(cfg, slug)
-	if lErr != nil {
-		return lErr
 	}
 	for _, e := range entries {
 		still := declaredEntry[e.Ref]
@@ -379,6 +391,9 @@ func runDropLegacyExemption(cmd *cobra.Command, args []string) error {
 	entries, fileHash, lErr := loadLegacyEntries(cfg, slug)
 	if lErr != nil {
 		return lErr
+	}
+	if hErr := requireUnchangedLegacyFile(dropLegacyHash, fileHash); hErr != nil {
+		return hErr
 	}
 	entry, fErr := findLegacyEntry(entries, dropLegacyFP, dropLegacyDup)
 	if fErr != nil {
