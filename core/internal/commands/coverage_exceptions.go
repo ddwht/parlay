@@ -20,6 +20,8 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -201,6 +203,11 @@ type CoverageExceptions struct {
 	// "who decided this no longer applies, and why" has to stay answerable.
 	RetiredDecisions []RetiredDecision `yaml:"retired_decisions,omitempty"`
 
+	// LegacyFileHash is the retired review these dispositions answer. A
+	// disposition names a position in that file, so an edited file invalidates
+	// every one of them rather than silently repointing them.
+	LegacyFileHash string `yaml:"legacy_file_hash,omitempty"`
+
 	ReconciledLegacy []LegacyDisposition `yaml:"reconciled_legacy,omitempty"`
 }
 
@@ -212,6 +219,13 @@ type CoverageExceptions struct {
 type LegacyDisposition struct {
 	Ref  string `yaml:"ref"`
 	Text string `yaml:"criterion_text,omitempty"`
+	// Occurrence is the entry's position in the legacy file. Two exemptions
+	// may share a ref and criterion text while recording different judgments
+	// for different reasons; keyed on (ref, text) alone, answering one marked
+	// BOTH answered, so an unreviewed legacy judgment passed as reconciled.
+	// The position is only meaningful against the file it was read from, which
+	// is why the record carries that file's hash.
+	Occurrence int `yaml:"occurrence"`
 	// Disposition is "recorded" or "dropped".
 	Disposition string `yaml:"disposition"`
 	Reason      string `yaml:"reason"`
@@ -222,6 +236,21 @@ type LegacyDisposition struct {
 // legacyKey identifies a stranded exemption across the two files.
 func legacyKey(ref, text string) string {
 	return ref + "\x00" + agent.CanonicalCriterionText(text)
+}
+
+// legacyOccurrenceKey identifies one EXACT entry in the legacy file.
+func legacyOccurrenceKey(i int, ref, text string) string {
+	return fmt.Sprintf("%d\x00%s", i, legacyKey(ref, text))
+}
+
+// legacyFileHash fingerprints the retired review, so dispositions recorded
+// against it can be shown to be about the file that is actually there. Without
+// it, positions recorded yesterday are read against a file edited since, and a
+// disposition silently comes to answer a different entry than the one somebody
+// judged.
+func legacyFileHash(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func coverageExceptionsPath(cfg *config.Context, slug string) string {

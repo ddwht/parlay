@@ -926,14 +926,76 @@ func TestCriteriaAuthority_DirectDoneRecordsItsOwnWaiver(t *testing.T) {
 		t.Error("a waiver must never become approval")
 	}
 
-	// And crossing done again on the same standard must not log a second time.
+	// Crossing done again inside the SAME execution must not log twice.
 	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
 		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
 		t.Fatal(err)
 	}
 	rec, _ = loadCriteriaAuthority(cfg, "graded")
 	if len(rec.MachineRuns) != 1 {
-		t.Errorf("one standard authorized once must read as one run, not two: %+v", rec.MachineRuns)
+		t.Errorf("one execution authorizing one standard must read as one run, not two: %+v", rec.MachineRuns)
+	}
+}
+
+// The correction to the above. An earlier version inherited on criteria hash
+// alone, so an unchanged standard machine-run once made every later direct done
+// crossing inherit from it and write nothing. A hash proves what was waived,
+// not which execution waived it — the same distinction
+// APastMachineRunDoesNotAuthorizeALaterOne holds for authority, applied to the
+// audit trail.
+func TestCriteriaAuthority_ALaterExecutionDoesNotInheritAnEarlierAudit(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Monday's pipeline, machine-authorized and recorded.
+	t.Setenv("PARLAY_RUN_ID", "mondays-pipeline")
+	if err := commitPendingWaiver(cfg, "graded", gateStageCode,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Friday: a direct done crossing, same unchanged standard, different
+	// execution. It consumed its own waiver and owes its own record.
+	t.Setenv("PARLAY_RUN_ID", "fridays-direct-done")
+	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if len(rec.MachineRuns) != 2 {
+		t.Fatalf("a later execution must not inherit an earlier execution's audit event; got %+v", rec.MachineRuns)
+	}
+	if rec.MachineRuns[1].RunID == rec.MachineRuns[0].RunID {
+		t.Errorf("the two events must be distinguishable by execution: %+v", rec.MachineRuns)
+	}
+}
+
+// Inside one pipeline the carrier is shared, so code and done log once between
+// them. This is the shape a CI job or a loop that sets PARLAY_RUN_ID gets.
+func TestCriteriaAuthority_OnePipelineLogsOneEventAcrossBothBoundaries(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PARLAY_RUN_ID", "one-pipeline")
+	for _, stage := range []string{gateStageCode, gateStageDone} {
+		if err := commitPendingWaiver(cfg, "graded", stage,
+			gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if len(rec.MachineRuns) != 1 {
+		t.Fatalf("one pipeline crossing both boundaries must log one event, not two: %+v", rec.MachineRuns)
 	}
 }
 

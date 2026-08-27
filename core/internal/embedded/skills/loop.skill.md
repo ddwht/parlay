@@ -31,7 +31,9 @@ Before the first phase, mint one correlation id and export it for the whole run:
 export PARLAY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 ```
 
-Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally: when feedback mode is off the variable is simply unread, and a driver that sets it only when enabled has to check, which is one more thing to get wrong.
+Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally — it is not only for feedback mode.
+
+**It is also what makes one pipeline audit as one run.** A machine-authorized crossing (`--authorize-criteria=machine`) records an audit event, and the code and done boundaries are separate processes. Without a shared id the tool cannot tell one pipeline crossing two boundaries from two separate runs, and it will not guess: it records both. With this id exported, done inherits the code boundary's event and the pipeline logs once. Matching is on the id AND the criteria — an earlier run against the same standard is not this run, and never satisfies this one's audit.
 
 **Do not put the feature name in it.** The id lands on every line of a log written to be sent upstream to the maintainers. The CLI hashes it before writing, so a feature name would not survive anyway — but building the id out of something that needs hashing invites someone to read the value back expecting it to mean something. A timestamp and the shell's PID identify a run without describing it.
 

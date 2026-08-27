@@ -115,8 +115,8 @@ func runInternalGate(cmd *cobra.Command, args []string) error {
 }
 
 // machineRunRecordedFor reports whether the audit trail already holds a machine
-// authorization for exactly this standard.
-func machineRunRecordedFor(cfg *config.Context, slug string, criteria []AuthorizedCriterion) (bool, error) {
+// authorization written by THIS execution against exactly this standard.
+func machineRunRecordedFor(cfg *config.Context, slug string, criteria []AuthorizedCriterion, runID string) (bool, error) {
 	rec, err := loadCriteriaAuthority(cfg, slug)
 	if err != nil {
 		return false, err
@@ -124,9 +124,13 @@ func machineRunRecordedFor(cfg *config.Context, slug string, criteria []Authoriz
 	if rec == nil {
 		return false, nil
 	}
+	// Both halves are required. The hash alone says an identical standard was
+	// waived at some point by somebody; the run id is what says it was waived
+	// by THIS execution, which is the only thing that makes today's crossing
+	// already audited.
 	want := CriteriaHash(criteria)
 	for _, r := range rec.MachineRuns {
-		if r.CriteriaHash == want {
+		if r.CriteriaHash == want && r.RunID != "" && r.RunID == runID {
 			return true, nil
 		}
 	}
@@ -544,15 +548,24 @@ func validateAuthorizeCriteriaFlag(v string) error {
 // the same thing when code actually ran. A directly invoked
 // `gate done --authorize-criteria=machine` consumed the waiver, passed, and
 // left no audit at all — the one shape where the inheritance assumption is
-// false is exactly the shape where the record matters most. Done now inherits
-// only against evidence: a machine run already recorded for this standard. With
-// none, done is the first boundary crossed and records its own.
+// false is exactly the shape where the record matters most.
 //
-// Matching is by criteria hash rather than run id, because code and done are
-// separate CLI invocations with separate run identities even in one pipeline —
-// keying on the run would double-log every ordinary loop. The audit question
-// this answers is "was this standard ever machine-authorized", and the hash is
-// what answers it.
+// Done now inherits only from a machine run belonging to THIS execution. The
+// first attempt at this matched on criteria hash alone, which is wrong in a way
+// worth recording: a hash proves what was waived, not which run waived it. An
+// unchanged standard machine-run on Monday would have made a direct done
+// crossing on Friday inherit from it and write no Friday audit — precisely the
+// "an audit event is not standing authority" invariant that
+// APastMachineRunDoesNotAuthorizeALaterOne exists to hold.
+//
+// Execution identity comes from runIdentity(). In CI it is the job or run id,
+// which is genuinely shared across the separate `gate code` and `gate done`
+// invocations of one pipeline, so done inherits and the pipeline logs once.
+// Locally it is host and pid, which differ per invocation — so each boundary
+// records its own. That is the honest outcome: with no carrier proving the two
+// crossings belong to one pipeline, claiming they do would be a guess. A loop
+// that wants the single-event shape locally sets PARLAY_RUN_ID for the
+// duration of the pipeline, which runIdentity() already reads.
 //
 // An unrecordable waiver fails the command rather than passing quietly: a
 // waiver nobody can find later is indistinguishable from one that never
@@ -565,7 +578,7 @@ func commitPendingWaiver(cfg *config.Context, slug, stage string, out gateOutput
 		return nil
 	}
 	if stage == gateStageDone {
-		already, err := machineRunRecordedFor(cfg, slug, out.PendingWaiver.criteria)
+		already, err := machineRunRecordedFor(cfg, slug, out.PendingWaiver.criteria, runIdentity())
 		if err != nil {
 			return fmt.Errorf("this run advanced without human approval of its criteria and the existing audit trail could not be read to see whether that was already recorded: %w", err)
 		}
