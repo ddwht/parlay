@@ -388,4 +388,3 @@ func soleAdapterFile(cfg *config.Context) (string, error) {
 	}
 	return "", fmt.Errorf("no adapter found under %s", cfg.AdaptersPath())
 }
-

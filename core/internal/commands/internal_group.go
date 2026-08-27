@@ -75,6 +75,7 @@ func registerInternalCommands() {
 		applyGovernanceCmd,
 		recordExceptionCmd,
 		migrateExceptionsCmd,
+		dropLegacyCmd,
 		checkAppliedCmd,
 		mergedRoutesCmd,
 		crossCuttingIndexCmd,

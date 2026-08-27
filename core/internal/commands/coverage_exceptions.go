@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -99,6 +100,13 @@ type CoverageException struct {
 	Kind   ExceptionKind `yaml:"kind"`
 	Reason string        `yaml:"reason"`
 
+	// At and By belong to THIS decision. They used to live at file level and
+	// were overwritten on every append, so recording a second person's
+	// judgment rewrote the first one as theirs — an audit trail that
+	// misattributes is worse than none.
+	At string `yaml:"at,omitempty"`
+	By string `yaml:"by,omitempty"`
+
 	// EntryHash binds an ENTRY-WIDE exception to the set of bullets that entry
 	// carried when it was granted, so adding a bullet invalidates it. A
 	// bullet-specific exception needs no such field: its (ref, text) IS its
@@ -119,12 +127,11 @@ type CoverageExceptions struct {
 	SchemaVersion int    `yaml:"schema_version"`
 	Feature       string `yaml:"feature"`
 
-	// GrantedAt and GrantedBy record when and by what. GrantedBy is attribution,
-	// not proof: environment identity cannot establish that a person exercised
-	// judgment, which is why the old artifact recorded a background process as
-	// a reviewer. It is written only when something was actually declined.
+	// GrantedAt is when this ledger was first opened. Per-decision attribution
+	// lives on each entry: a file-level "granted by" is a single slot that
+	// every later append overwrites, which silently reassigns earlier
+	// judgments to whoever recorded the most recent one.
 	GrantedAt string `yaml:"granted_at"`
-	GrantedBy string `yaml:"granted_by,omitempty"`
 
 	// CriteriaHash is the whole standard at grant time, kept as audit context
 	// only. It is deliberately NOT the binding: an exception is a localized
@@ -136,6 +143,37 @@ type CoverageExceptions struct {
 	CriteriaHash string `yaml:"criteria_hash,omitempty"`
 
 	Exceptions []CoverageException `yaml:"exceptions"`
+
+	// ReconciledLegacy records what became of each exemption that was
+	// stranded in the retired coverage-review.yaml.
+	//
+	// Needed because the stranded check used to fire only while this file did
+	// not exist, so the first fresh decision made every OTHER stranded
+	// judgment disappear from the blocker — migrating one exemption silently
+	// abandoned the rest. Dispositions are per legacy entry, so the check can
+	// keep firing until every one has been either re-recorded or deliberately
+	// dropped.
+	ReconciledLegacy []LegacyDisposition `yaml:"reconciled_legacy,omitempty"`
+}
+
+// LegacyDisposition is one stranded exemption, answered.
+//
+// "Dropped" is a decision and is recorded as one. A judgment abandoned without
+// a trace is indistinguishable from one nobody noticed, which is the failure
+// this whole reconciliation exists to prevent.
+type LegacyDisposition struct {
+	Ref  string `yaml:"ref"`
+	Text string `yaml:"criterion_text,omitempty"`
+	// Disposition is "recorded" or "dropped".
+	Disposition string `yaml:"disposition"`
+	Reason      string `yaml:"reason"`
+	At          string `yaml:"at"`
+	By          string `yaml:"by"`
+}
+
+// legacyKey identifies a stranded exemption across the two files.
+func legacyKey(ref, text string) string {
+	return ref + "\x00" + agent.CanonicalCriterionText(text)
 }
 
 func coverageExceptionsPath(cfg *config.Context, slug string) string {
@@ -169,6 +207,19 @@ func loadCoverageExceptions(cfg *config.Context, slug string) (*CoverageExceptio
 		}
 		if strings.TrimSpace(ex.Reason) == "" {
 			return nil, fmt.Errorf("exception %d for %s records no reason — an exception nobody can review later is not one", i+1, ex.Ref)
+		}
+		if strings.TrimSpace(ex.By) == "" {
+			return nil, fmt.Errorf("exception %d for %s records nothing about what decided it — attribution is per decision, and a ledger that cannot say who made which one cannot be audited", i+1, ex.Ref)
+		}
+	}
+	for i, d := range rec.ReconciledLegacy {
+		switch d.Disposition {
+		case "recorded", "dropped":
+		default:
+			return nil, fmt.Errorf("legacy disposition %d has %q, outside {recorded, dropped}", i+1, d.Disposition)
+		}
+		if strings.TrimSpace(d.Reason) == "" || strings.TrimSpace(d.By) == "" || strings.TrimSpace(d.At) == "" {
+			return nil, fmt.Errorf("legacy disposition %d for %s is missing why, what decided it, or when — a judgment answered without those is answered in name only", i+1, d.Ref)
 		}
 	}
 	return &rec, nil
@@ -354,26 +405,25 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 			fmt.Sprintf("coverage exceptions for %s cannot be read: %v — an unreadable ledger is not an empty one", slug, err),
 		}}
 	}
+	// Stranded legacy judgments are checked ALWAYS, not only while this file is
+	// absent. Gating on absence meant the first fresh decision created the file
+	// and every other stranded exemption vanished from the blocker — migrating
+	// one silently abandoned the rest.
+	stranded, unreadable := strandedLegacyExemptions(cfg, slug, rec)
+	if unreadable != "" {
+		return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
+			"%s has a coverage-review.yaml that cannot be read (%s) — it may hold exemptions nobody can now recover, and the gate that used to block on this is gone. "+
+				"Repair or delete it deliberately", slug, unreadable)}}
+	}
+	if len(stranded) > 0 {
+		return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
+			"%s has %d exemption(s) in the retired coverage-review.yaml that nothing has answered: %s. "+
+				"Those are no longer read, so leaving them is quietly dropping judgments somebody made. "+
+				"Re-record each one that still holds, or drop it deliberately — `parlay internal migrate-coverage-exceptions @%s` lists them",
+			slug, len(stranded), strings.Join(stranded, "; "), slug)}}
+	}
+
 	if rec == nil {
-		// No new ledger. A legacy coverage-review.yaml carrying exemptions is
-		// not nothing: validate.go used to read them, and it no longer does,
-		// so staying silent here would let a person's recorded judgment
-		// evaporate into uncovered warnings that a build may still pass. Fail
-		// closed with the remedy rather than migrating silently — which of
-		// those judgments still applies is exactly what nobody but their
-		// author can say.
-		stranded, unreadable := strandedLegacyExemptions(cfg, slug)
-		if unreadable != "" {
-			return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
-				"%s has a coverage-review.yaml that cannot be read (%s) — it may hold exemptions nobody can now recover, and the gate that used to block on this is gone. "+
-					"Repair or delete it deliberately", slug, unreadable)}}
-		}
-		if stranded > 0 {
-			return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
-				"%s has %d exemption(s) recorded in the retired coverage-review.yaml and no coverage-exceptions.yaml — "+
-					"those are no longer read, so leaving this alone would quietly drop judgments somebody made. "+
-					"Migrate them, or delete them deliberately if they no longer apply", slug, stranded)}}
-		}
 		return ExceptionsVerdict{}
 	}
 	current, err := CurrentCriteria(cfg, slug)
@@ -391,13 +441,13 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 // Presence of the legacy file alone is ignored: most carry only suite
 // approvals, which were the half that proved nothing and are gone on purpose.
 // Only recorded exemptions are stranded, because only they were load-bearing.
-func strandedLegacyExemptions(cfg *config.Context, slug string) (count int, unreadable string) {
+func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExceptions) (stranded []string, unreadable string) {
 	path := filepath.Join(cfg.BuildPath(slug), "coverage-review.yaml")
 	if _, statErr := os.Stat(path); statErr != nil {
 		if os.IsNotExist(statErr) {
-			return 0, "" // no legacy file: nothing stranded
+			return nil, "" // no legacy file: nothing stranded
 		}
-		return 0, statErr.Error()
+		return nil, statErr.Error()
 	}
 	legacy, err := parser.ParseCoverageReview(path)
 	if err != nil {
@@ -406,10 +456,34 @@ func strandedLegacyExemptions(cfg *config.Context, slug string) (count int, unre
 		// can now read — was treated exactly like a feature that never had
 		// any, and the blanket gate being removed is the last thing that would
 		// have blocked it.
-		return 0, err.Error()
+		return nil, err.Error()
 	}
 	if legacy == nil {
-		return 0, ""
+		return nil, ""
 	}
-	return len(legacy.Exemptions), ""
+
+	answered := map[string]bool{}
+	if rec != nil {
+		for _, d := range rec.ReconciledLegacy {
+			answered[legacyKey(d.Ref, d.Text)] = true
+		}
+	}
+	for _, ex := range legacy.Exemptions {
+		if ex.Item == "" {
+			continue
+		}
+		if answered[legacyKey(ex.Item, ex.CriterionText)] {
+			continue
+		}
+		stranded = append(stranded, describeStranded(ex.Item, ex.CriterionText))
+	}
+	sort.Strings(stranded)
+	return stranded, ""
+}
+
+func describeStranded(ref, text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ref + " (entry-wide)"
+	}
+	return fmt.Sprintf("%s — %q", ref, text)
 }

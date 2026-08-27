@@ -579,7 +579,6 @@ func TestBoundaryClaims_EveryWitnessNamesARegisteredClaim(t *testing.T) {
 	}
 }
 
-
 // testExists reports whether a named test function is compiled into this
 // package, so a claim cannot point at a witness somebody deleted.
 func testExists(name string) bool {

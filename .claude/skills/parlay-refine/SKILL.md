@@ -198,8 +198,22 @@ steps 3 and 4:
    records this amendment, the feature still makes the old promise — the
    artifacts and the generated code still keep it — so every advancing
    boundary blocks with `unapplied-amendments` naming the pending supersession.
-   That is correct and is not something to work around: proceed through the
-   splice and re-baseline as with any other amendment.
+   That is correct and is not something to work around. **A governance
+   amendment does not apply through the splice.** One that supersedes an
+   intent or retires a feature changes what the founding documents promise,
+   and no artifact edit can express that — the ordinary splice-and-rebaseline
+   path has nothing to splice. Apply it with:
+
+   ```
+   parlay apply-governance @<feature> --confirm
+   ```
+
+   which applies every pending governance amendment on that feature and moves
+   the applied marker. Without `--confirm` it refuses and names the promises
+   that would stop being in force — read that list before confirming, because
+   it, not the amendment filename, is what you are approving. Only after that does the boundary stop naming it. Reach for the
+   splice for amendments that change an artifact's content; reach for
+   `apply-governance` for ones that change what the feature promises at all.
 
    **Decision-gate the exact file content before writing** — same rule as
    step 4's gate, and the two are one decision when convenient: show the

@@ -34,6 +34,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/atomicfile"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -58,6 +59,7 @@ names contract entries, because those have a splice somebody still owes.`,
 }
 
 func init() {
+	rootCmd.AddCommand(applyGovernanceCmd)
 	applyGovernanceCmd.Flags().BoolVar(&applyGovernanceConfirmed, "confirm", false,
 		"required: applying a governance amendment changes what this feature promises, and there is no safe default for that")
 }
@@ -136,8 +138,26 @@ func runApplyGovernance(cmd *cobra.Command, args []string) error {
 		if retires {
 			what = "RETIRE this feature"
 		}
-		return fmt.Errorf("applying %s would %s. Re-run with --confirm; there is no safe default for a decision that withdraws scope",
-			joinNames(names), what)
+		// Name the promises, not just the files. A reviewer asked to confirm
+		// "003-foo" is being asked about a filename; what they are actually
+		// deciding is which intents stop being in force, and that is what
+		// prospective resolution is for — it reports the tail as it WILL
+		// stand, which is precisely the state this confirmation is about.
+		var losing []string
+		if raw, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md")); err == nil {
+			res := agent.ResolveIntentAuthority(raw, amendments, lastApplied, agent.ProspectiveAuthority)
+			for _, sup := range res.Superseded {
+				if !sup.Applied {
+					losing = append(losing, sup.Intent.Slug)
+				}
+			}
+		}
+		detail := ""
+		if len(losing) > 0 {
+			detail = fmt.Sprintf(" %s stops being in force.", joinNames(losing))
+		}
+		return fmt.Errorf("applying %s would %s.%s Re-run with --confirm; there is no safe default for a decision that withdraws scope",
+			joinNames(names), what, detail)
 	}
 
 	highest := lastApplied

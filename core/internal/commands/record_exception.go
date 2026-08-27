@@ -36,6 +36,27 @@ import (
 	"github.com/ddwht/parlay/core/internal/parser"
 )
 
+var dropLegacyCmd = &cobra.Command{
+	Use:   "drop-legacy-exemption <@feature>",
+	Short: "Record that a stranded exemption no longer applies",
+	Long: `Record a deliberate decision that a stranded exemption is not carried forward.
+
+Dropping is a decision and is recorded as one. A judgment abandoned without a
+trace is indistinguishable from one nobody noticed, which is the failure this
+reconciliation exists to prevent — and until every stranded exemption is either
+re-recorded or dropped, the boundary keeps saying so.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDropLegacyExemption,
+}
+
+var (
+	dropLegacyRef             string
+	dropLegacyText            string
+	dropLegacyReason          string
+	dropLegacyBy              string
+	recordExceptionFromLegacy bool
+)
+
 var (
 	recordExceptionRef    string
 	recordExceptionText   string
@@ -91,6 +112,12 @@ func init() {
 	recordExceptionCmd.Flags().StringVar(&recordExceptionBy, "by", "", "what decided this, from the decision channel (required)")
 	recordExceptionCmd.Flags().StringVar(&recordExceptionSuite, "suite", "", "state-only: the suite whose case observes weakly")
 	recordExceptionCmd.Flags().StringVar(&recordExceptionCase, "case", "", "state-only: the case whose observation is accepted")
+	recordExceptionCmd.Flags().BoolVar(&recordExceptionFromLegacy, "from-legacy", false,
+		"mark the matching stranded exemption in the retired coverage-review.yaml as answered by this decision")
+	dropLegacyCmd.Flags().StringVar(&dropLegacyRef, "ref", "", "contract entry of the stranded exemption (required)")
+	dropLegacyCmd.Flags().StringVar(&dropLegacyText, "criterion", "", "its criterion text; omit for the entry-wide legacy shape")
+	dropLegacyCmd.Flags().StringVar(&dropLegacyReason, "reason", "", "why it no longer applies (required)")
+	dropLegacyCmd.Flags().StringVar(&dropLegacyBy, "by", "", "what decided this, from the decision channel (required)")
 }
 
 func runRecordException(cmd *cobra.Command, args []string) error {
@@ -162,10 +189,21 @@ func runRecordException(cmd *cobra.Command, args []string) error {
 	if rec == nil {
 		rec = &CoverageExceptions{Feature: slug}
 	}
-	rec.GrantedAt = time.Now().UTC().Format(time.RFC3339)
-	rec.GrantedBy = recordExceptionBy
+	now := time.Now().UTC().Format(time.RFC3339)
+	if rec.GrantedAt == "" {
+		rec.GrantedAt = now
+	}
 	rec.CriteriaHash = CriteriaHash(current)
+	ex.At, ex.By = now, recordExceptionBy
 	rec.Exceptions = append(rec.Exceptions, ex)
+
+	if recordExceptionFromLegacy {
+		rec.ReconciledLegacy = append(rec.ReconciledLegacy, LegacyDisposition{
+			Ref: recordExceptionRef, Text: recordExceptionText,
+			Disposition: "recorded", Reason: recordExceptionReason,
+			At: now, By: recordExceptionBy,
+		})
+	}
 
 	if err := saveCoverageExceptions(cfg, slug, rec); err != nil {
 		return err
@@ -219,25 +257,86 @@ func runMigrateExceptions(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("read current criteria: %w", err)
 	}
-	declared := map[string]bool{}
+	// Bullet-level, not ref-level. An entry can still exist while the bullet
+	// this exemption excused was reworded or removed, and reporting that as
+	// "still declared" sends a person to re-record a judgment about something
+	// the contract no longer says.
+	declaredEntry := map[string]bool{}
+	declaredBullet := map[string]bool{}
 	for _, c := range current {
-		declared[c.Ref] = true
+		declaredEntry[c.Ref] = true
+		declaredBullet[legacyKey(c.Ref, c.Text)] = true
 	}
 
 	out := migrateExceptionsOutput{
 		Feature: slug, Legacy: legacyPath,
-		Note: "This command writes nothing. Re-record each judgment that still holds with `parlay internal record-exception`, " +
+		Note: "This command writes nothing. Re-record each judgment that still holds with `parlay internal record-exception --from-legacy`, " +
+			"and drop the rest with `parlay internal drop-legacy-exemption`. The boundary keeps reporting these until every one is answered. " +
 			"and delete the rest deliberately. Whether an old judgment still applies is the one thing nobody but its author can say, " +
 			"so copying them in bulk would assert it for all of them at once.",
 	}
 	for _, ex := range legacy.Exemptions {
+		still := declaredEntry[ex.Item]
+		if strings.TrimSpace(ex.CriterionText) != "" {
+			still = declaredBullet[legacyKey(ex.Item, ex.CriterionText)]
+		}
 		out.Pending = append(out.Pending, strandedExemption{
 			Ref: ex.Item, Text: ex.CriterionText,
-			StillDeclared: declared[ex.Item], Reason: ex.Reason,
+			StillDeclared: still, Reason: ex.Reason,
 		})
 	}
 
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+func runDropLegacyExemption(cmd *cobra.Command, args []string) error {
+	cfg, err := mustContext(cmd)
+	if err != nil {
+		return err
+	}
+	slug := parser.FeatureSlug(args[0])
+
+	for name, v := range map[string]string{"--ref": dropLegacyRef, "--reason": dropLegacyReason, "--by": dropLegacyBy} {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+
+	// The exemption must actually be stranded. Recording a disposition for
+	// something that was never there answers nothing and makes the ledger read
+	// as reconciled.
+	legacyPath := filepath.Join(cfg.BuildPath(slug), "coverage-review.yaml")
+	legacy, parseErr := parser.ParseCoverageReview(legacyPath)
+	if parseErr != nil || legacy == nil {
+		return fmt.Errorf("%s has no readable coverage-review.yaml, so there is no stranded exemption to drop", slug)
+	}
+	found := false
+	for _, ex := range legacy.Exemptions {
+		if ex.Item == dropLegacyRef && agent.CanonicalCriterionText(ex.CriterionText) == agent.CanonicalCriterionText(dropLegacyText) {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("%s's coverage-review.yaml records no exemption for %s with that criterion text", slug, dropLegacyRef)
+	}
+
+	rec, err := loadCoverageExceptions(cfg, slug)
+	if err != nil {
+		return fmt.Errorf("read existing exceptions: %w — refusing to overwrite a ledger that could not be read", err)
+	}
+	if rec == nil {
+		rec = &CoverageExceptions{Feature: slug, GrantedAt: time.Now().UTC().Format(time.RFC3339)}
+	}
+	rec.ReconciledLegacy = append(rec.ReconciledLegacy, LegacyDisposition{
+		Ref: dropLegacyRef, Text: dropLegacyText,
+		Disposition: "dropped", Reason: dropLegacyReason,
+		At: time.Now().UTC().Format(time.RFC3339), By: dropLegacyBy,
+	})
+	if err := saveCoverageExceptions(cfg, slug, rec); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Recorded that %s no longer applies\n", describeStranded(dropLegacyRef, dropLegacyText))
+	return nil
 }

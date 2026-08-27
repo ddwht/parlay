@@ -26,7 +26,7 @@ func exceptionsFor(cs []AuthorizedCriterion, exs ...CoverageException) *Coverage
 func TestCoverageExceptions_FreshLedgerExcusesTheBulletItNames(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived,
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision",
 		Reason: "enforced by a database constraint, not by this operation",
 	})
 
@@ -51,7 +51,7 @@ func TestCoverageExceptions_FreshLedgerExcusesTheBulletItNames(t *testing.T) {
 func TestCoverageExceptions_ExceptionDiesWithTheBulletItNames(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, Reason: "r",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
 	})
 
 	reworded := []AuthorizedCriterion{
@@ -73,7 +73,7 @@ func TestCoverageExceptions_ExceptionDiesWithTheBulletItNames(t *testing.T) {
 func TestCoverageExceptions_AnUnrelatedCriterionChangeDoesNotInvalidateIt(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, Reason: "r",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
 	})
 
 	elsewhere := []AuthorizedCriterion{
@@ -92,7 +92,7 @@ func TestCoverageExceptions_AnUnrelatedCriterionChangeDoesNotInvalidateIt(t *tes
 func TestCoverageExceptions_EntryWideIsAcceptedAndWarned(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Kind: ExceptionWaived, Reason: "legacy, predates bullet identity",
+		Ref: cs[0].Ref, Kind: ExceptionWaived, By: "interactive decision", Reason: "legacy, predates bullet identity",
 		EntryHash: entryBulletsHash([]AuthorizedCriterion{cs[0]}),
 	})
 
@@ -120,7 +120,7 @@ func TestCoverageExceptions_EntryWideIsAcceptedAndWarned(t *testing.T) {
 func TestCoverageExceptions_HandAuthoredMustNameItsTest(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored, Reason: "covered by an integration suite",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored, By: "interactive decision", Reason: "covered by an integration suite",
 	})
 	if v := EvaluateCoverageExceptions(t.TempDir(), rec, cs); len(v.Blockers) == 0 {
 		t.Error("an uninspectable test that is also unnamed excuses nothing")
@@ -130,7 +130,7 @@ func TestCoverageExceptions_HandAuthoredMustNameItsTest(t *testing.T) {
 func TestCoverageExceptions_ExcusingSomethingTheContractDroppedBlocks(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: "@f/operation:gone", Text: "x", Kind: ExceptionWaived, Reason: "r",
+		Ref: "@f/operation:gone", Text: "x", Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
 	})
 	// Hash matches; the ref does not exist.
 	rec.CriteriaHash = CriteriaHash(cs)
@@ -201,7 +201,7 @@ func TestCoverageExceptions_GateReportsAStaleLedger(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: current[0].Ref, Text: "a claim this contract never made",
-			Kind: ExceptionWaived, Reason: "r",
+			Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
 		}},
 	})
 
@@ -256,7 +256,7 @@ func TestCoverageExceptions_GateRefusesStateOnlyAsAnExemption(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: current[0].Ref, Text: current[0].Text,
-			Kind: ExceptionStateOnly, Reason: "observed by state",
+			Kind: ExceptionStateOnly, By: "interactive decision", Reason: "observed by state",
 		}},
 	})
 
@@ -312,7 +312,7 @@ exemptions:
 	if msg == "" {
 		t.Fatalf("stranded exemptions must be reported, not dropped: %+v", out.Blockers)
 	}
-	if !strings.Contains(msg, "Migrate") {
+	if !strings.Contains(msg, "migrate-coverage-exceptions") {
 		t.Errorf("the refusal should name the remedy: %q", msg)
 	}
 }
@@ -375,9 +375,9 @@ func TestTestcasesReadiness_AcceptedDowngradePasses(t *testing.T) {
 	suite, caseName, ref, text := weaken(t, cfg)
 
 	if err := saveCoverageExceptions(cfg, "graded", &CoverageExceptions{
-		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z", GrantedBy: "interactive decision",
+		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
-			Ref: ref, Text: text, Kind: ExceptionStateOnly, Suite: suite, Case: caseName,
+			Ref: ref, Text: text, Kind: ExceptionStateOnly, Suite: suite, Case: caseName, By: "interactive decision",
 			Reason: "the control is rendered by a third-party component this suite cannot reach",
 		}},
 	}); err != nil {
@@ -405,7 +405,7 @@ func TestTestcasesReadiness_DowngradeDecisionIsPerCase(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: ref, Text: text, Kind: ExceptionStateOnly,
-			Suite: "Some Other Suite", Case: "some other case", Reason: "r",
+			Suite: "Some Other Suite", Case: "some other case", By: "interactive decision", Reason: "r",
 		}},
 	}); err != nil {
 		t.Fatal(err)
@@ -574,5 +574,100 @@ exemptions:
 	}
 	if _, err := os.Stat(coverageExceptionsPath(cfg, "graded")); !os.IsNotExist(err) {
 		t.Error("the migration must not write a decision on the author's behalf")
+	}
+}
+
+// The seam a whole-branch read found: the stranded check used to fire only
+// while coverage-exceptions.yaml did not exist, so the FIRST fresh decision
+// created the file and every other stranded judgment vanished from the
+// blocker. Migrating one silently abandoned the rest.
+func TestCoverageExceptions_MigratingOneDoesNotStrandTheOthers(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+	defer resetExcFlags()
+
+	legacy := `feature: graded
+reviewed_at: "2026-05-01T00:00:00Z"
+exemptions:
+    - suite: s
+      item: "@graded/operation:customer.archive"
+      criterion_text: archiving a customer with unpaid invoices is rejected
+      reason: enforced by a database constraint
+    - suite: s
+      item: "@graded/fragment:Customer Detail"
+      criterion_text: the archive button is disabled while invoices are unpaid
+      reason: the control is third-party
+`
+	if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "coverage-review.yaml"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Answer the first.
+	resetExcFlags()
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
+	recordExceptionReason = "enforced by a database constraint"
+	recordExceptionBy = "interactive decision"
+	recordExceptionFromLegacy = true
+	if err := recordExc(t, cfg, "graded"); err != nil {
+		t.Fatal(err)
+	}
+
+	v := CheckCoverageExceptions(cfg, "graded")
+	var stranded string
+	for _, b := range v.Blockers {
+		if strings.Contains(b, "nothing has answered") {
+			stranded = b
+		}
+	}
+	if stranded == "" {
+		t.Fatal("the second judgment is still unanswered and must keep being reported")
+	}
+	if strings.Contains(stranded, "customer.archive") {
+		t.Error("the one just answered should no longer be listed")
+	}
+	if !strings.Contains(stranded, "Customer Detail") {
+		t.Errorf("the unanswered one should be named: %q", stranded)
+	}
+
+	// Drop the second deliberately, and the boundary goes quiet.
+	dropLegacyRef = "@graded/fragment:Customer Detail"
+	dropLegacyText = "the archive button is disabled while invoices are unpaid"
+	dropLegacyReason = "the control was removed in the redesign"
+	dropLegacyBy = "interactive decision"
+	defer func() { dropLegacyRef, dropLegacyText, dropLegacyReason, dropLegacyBy = "", "", "", "" }()
+
+	cmd := testCommandWithContext(t, cfg)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	if err := runDropLegacyExemption(cmd, []string{"@graded"}); err != nil {
+		t.Fatal(err)
+	}
+
+	v2 := CheckCoverageExceptions(cfg, "graded")
+	for _, b := range v2.Blockers {
+		if strings.Contains(b, "nothing has answered") {
+			t.Errorf("every stranded judgment is answered now: %s", b)
+		}
+	}
+
+	// And the drop is recorded, because a judgment abandoned without a trace
+	// is indistinguishable from one nobody noticed.
+	rec, _ := loadCoverageExceptions(cfg, "graded")
+	if rec == nil || len(rec.ReconciledLegacy) != 2 {
+		t.Fatalf("both dispositions should be recorded: %+v", rec)
+	}
+	var dropped int
+	for _, d := range rec.ReconciledLegacy {
+		if d.Disposition == "dropped" {
+			dropped++
+			if d.Reason == "" || d.By == "" {
+				t.Error("a deliberate deletion records why and what decided it")
+			}
+		}
+	}
+	if dropped != 1 {
+		t.Errorf("expected one recorded deletion, got %d", dropped)
 	}
 }
