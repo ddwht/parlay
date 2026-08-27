@@ -34,6 +34,8 @@ Parlay projects use three zones with strict ownership:
     <feature-name>/
       buildfile.yaml                ← Generated, internal
       testcases.yaml                 ← Generated, internal
+      criteria-authority.yaml        ← Who accepted the standard, internal
+      coverage-decisions.yaml        ← Coverage judgments a person made, internal
       design-spec.yaml               ← Generated from Figma (optional), internal
       .baseline.yaml                 ← Drift detection baseline
 ```
@@ -80,6 +82,8 @@ File format follows a simple rule: designer-authored prose is markdown; generate
 | `.parlay/build/<feature>/design-spec.yaml` | `/parlay reference-design-spec` | No — tool internal (optional, from Figma) | Surface reviewed, Figma link available |
 | `.parlay/build/<feature>/buildfile.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
 | `.parlay/build/<feature>/testcases.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
+| `.parlay/build/<feature>/criteria-authority.yaml` | The criteria decision at the designer boundary | No — tool internal | Criteria exist to accept |
+| `.parlay/build/<feature>/coverage-decisions.yaml` | `parlay internal record-exception` and its siblings | No — tool internal | A judgment about coverage was made |
 | `.parlay/build/<feature>/.baseline.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
 | `spec/handoff/<feature>/specification.md` | `/parlay generate-enggspec` | Review only | Prototype validated |
 
