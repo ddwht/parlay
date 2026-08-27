@@ -895,3 +895,108 @@ func TestMachineAuthorization_UnrelatedBlockerLeavesNoAudit(t *testing.T) {
 		t.Errorf("the boundary refused, so the audit trail must not say a run advanced: %+v", rec.MachineRuns)
 	}
 }
+
+// The defect: `gate done --authorize-criteria=machine` invoked directly, with
+// no code boundary ever crossed, consumed the waiver and passed while writing
+// nothing. "Done inherits the code run's authorization" is only true when code
+// actually ran; when it did not, done inherited from nothing and the run that
+// most needed an audit trail left none.
+func TestCriteriaAuthority_DirectDoneRecordsItsOwnWaiver(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Done is the first and only boundary crossed. Nothing precedes it.
+	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if rec == nil || len(rec.MachineRuns) != 1 {
+		t.Fatalf("a directly invoked done boundary that consumed a machine waiver must record it; got %+v", rec)
+	}
+	if !strings.Contains(rec.MachineRuns[0].Reason, gateStageDone) {
+		t.Errorf("the record must say which boundary consumed the waiver, so a reader can tell a direct done from an ordinary loop; got %q", rec.MachineRuns[0].Reason)
+	}
+	if rec.Approved != nil {
+		t.Error("a waiver must never become approval")
+	}
+
+	// And crossing done again on the same standard must not log a second time.
+	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = loadCriteriaAuthority(cfg, "graded")
+	if len(rec.MachineRuns) != 1 {
+		t.Errorf("one standard authorized once must read as one run, not two: %+v", rec.MachineRuns)
+	}
+}
+
+// A standard that changed between code and done is not the standard code
+// authorized, so done must record rather than inherit.
+func TestCriteriaAuthority_DoneRecordsWhenTheStandardChanged(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commitPendingWaiver(cfg, "graded", gateStageCode,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed := append([]AuthorizedCriterion{}, current...)
+	changed = append(changed, AuthorizedCriterion{Ref: current[0].Ref, Text: "a criterion nobody authorized"})
+	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: changed, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if len(rec.MachineRuns) != 2 {
+		t.Fatalf("done ran against a different standard than code authorized, so it must record its own: %+v", rec.MachineRuns)
+	}
+}
+
+// A capabilities file that exists but cannot be read must not read as one that
+// is absent. Skipping it returns a standard SHORT of the criteria it should
+// carry, and that understated standard is what then gets approved, hashed and
+// graded against — so a machine that cannot read the file passes a boundary the
+// same file would have failed.
+func TestCurrentCriteria_UnreadableCapabilitiesIsNotAnAbsentOne(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	before, err := CurrentCriteria(cfg, "graded")
+	if err != nil || len(before) == 0 {
+		t.Fatalf("fixture must declare criteria for this to witness anything: %d, %v", len(before), err)
+	}
+
+	// A real stat failure that is not NOT-EXIST: the parent directory is made
+	// unsearchable, so stat on the child returns EACCES. A directory in the
+	// file's place would not witness this — stat succeeds on a directory and
+	// the failure lands in the parse branch, which already failed closed.
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not produce a stat failure")
+	}
+	featDir := cfg.FeaturePath("graded")
+	if err := os.Chmod(featDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(featDir, 0o755) })
+
+	got, err := CurrentCriteria(cfg, "graded")
+	if err == nil {
+		t.Fatalf("an unreadable capabilities artifact must fail closed; got %d criteria and no error", len(got))
+	}
+	if len(got) != 0 {
+		t.Errorf("nothing may be returned alongside the failure; got %d criteria", len(got))
+	}
+}

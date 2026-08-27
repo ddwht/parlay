@@ -331,12 +331,21 @@ func CurrentCriteria(cfg *config.Context, slug string) ([]AuthorizedCriterion, e
 	// error: the parser wraps its cause, so os.IsNotExist never matches and an
 	// ABSENT artifact read as an unreadable one — failing closed on the most
 	// ordinary case in the tree, a feature with no capabilities.
+	//
+	// Only NOT-EXIST is benign. Any other stat failure — a permission denial,
+	// an I/O error, a dangling symlink — means the artifact may be there and
+	// unreadable, and skipping it silently returns a standard SHORT of the
+	// criteria it should carry. That understated standard is then what gets
+	// approved, hashed, and graded against, so a machine that cannot read the
+	// capabilities passes a boundary the same file would have failed.
 	capsPath := filepath.Join(featureDir, "capabilities.yaml")
-	_, capStatErr := os.Stat(capsPath)
 	var caps *parser.Capabilities
 	var capErr error
-	if capStatErr == nil {
+	switch _, statErr := os.Stat(capsPath); {
+	case statErr == nil:
 		caps, capErr = parser.ParseCapabilities(capsPath)
+	case !os.IsNotExist(statErr):
+		return nil, fmt.Errorf("capabilities at %s cannot be read, so the standard this feature is graded against is unknown: %w", capsPath, statErr)
 	}
 	if capErr == nil && caps != nil && caps.Feature != "" {
 		for _, op := range caps.Operations {

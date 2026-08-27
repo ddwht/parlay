@@ -114,6 +114,25 @@ func runInternalGate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// machineRunRecordedFor reports whether the audit trail already holds a machine
+// authorization for exactly this standard.
+func machineRunRecordedFor(cfg *config.Context, slug string, criteria []AuthorizedCriterion) (bool, error) {
+	rec, err := loadCriteriaAuthority(cfg, slug)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	want := CriteriaHash(criteria)
+	for _, r := range rec.MachineRuns {
+		if r.CriteriaHash == want {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // computeGate is the pure core: given a resolved context, a feature slug and a
 // stage token, it aggregates the stage's checkers and returns the verdict. No
 // stdout, no exit — both the internal command and `parlay gate --all` call it.
@@ -516,22 +535,48 @@ func validateAuthorizeCriteriaFlag(v string) error {
 // commitPendingWaiver persists a machine authorization AFTER the boundary
 // passed, and fails the command if it cannot.
 //
-// Only at the code boundary. A normal loop crosses code and then done, and
-// logging both would record one pipeline as two runs that proceeded without
-// human approval. Code is where unapproved criteria authorize generation, so
-// that is the crossing worth holding; done inherits it.
+// A normal loop crosses code and then done, and logging both would record one
+// pipeline as two runs that proceeded without human approval. Code is where
+// unapproved criteria authorize generation, so that is the crossing worth
+// holding, and done inherits it.
+//
+// But "done inherits it" was written as "done records nothing", which is only
+// the same thing when code actually ran. A directly invoked
+// `gate done --authorize-criteria=machine` consumed the waiver, passed, and
+// left no audit at all — the one shape where the inheritance assumption is
+// false is exactly the shape where the record matters most. Done now inherits
+// only against evidence: a machine run already recorded for this standard. With
+// none, done is the first boundary crossed and records its own.
+//
+// Matching is by criteria hash rather than run id, because code and done are
+// separate CLI invocations with separate run identities even in one pipeline —
+// keying on the run would double-log every ordinary loop. The audit question
+// this answers is "was this standard ever machine-authorized", and the hash is
+// what answers it.
 //
 // An unrecordable waiver fails the command rather than passing quietly: a
 // waiver nobody can find later is indistinguishable from one that never
 // happened, which defeats the only reason to permit it.
 func commitPendingWaiver(cfg *config.Context, slug, stage string, out gateOutput) error {
-	if out.PendingWaiver == nil || stage != gateStageCode {
+	if out.PendingWaiver == nil {
 		return nil
+	}
+	if stage != gateStageCode && stage != gateStageDone {
+		return nil
+	}
+	if stage == gateStageDone {
+		already, err := machineRunRecordedFor(cfg, slug, out.PendingWaiver.criteria)
+		if err != nil {
+			return fmt.Errorf("this run advanced without human approval of its criteria and the existing audit trail could not be read to see whether that was already recorded: %w", err)
+		}
+		if already {
+			return nil
+		}
 	}
 	if err := RecordMachineRun(cfg, slug, out.PendingWaiver.criteria,
 		time.Now().UTC().Format(time.RFC3339),
 		"parlay.criterion-authority.allow-machine", runIdentity(),
-		"--authorize-criteria=machine at the code boundary",
+		fmt.Sprintf("--authorize-criteria=machine at the %s boundary", stage),
 	); err != nil {
 		return fmt.Errorf("this run advanced without human approval of its criteria but the waiver could not be recorded: %w", err)
 	}
