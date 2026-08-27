@@ -75,6 +75,7 @@ func registerInternalCommands() {
 		applyGovernanceCmd,
 		recordExceptionCmd,
 		retireDecisionCmd,
+		deferLegacyCmd,
 		migrateExceptionsCmd,
 		dropLegacyCmd,
 		checkAppliedCmd,

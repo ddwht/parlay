@@ -209,6 +209,54 @@ type CoverageExceptions struct {
 	LegacyFileHash string `yaml:"legacy_file_hash,omitempty"`
 
 	ReconciledLegacy []LegacyDisposition `yaml:"reconciled_legacy,omitempty"`
+
+	// DeferredLegacy are review ATTEMPTS, not answers. They are kept separate
+	// from ReconciledLegacy on purpose: only that list satisfies
+	// reconciliation, so a deferral cannot unblock anything no matter how many
+	// accumulate. Treating uncertainty as a completed outcome would silently
+	// withdraw a possibly load-bearing waiver, which is the failure this whole
+	// reconciliation exists to prevent.
+	DeferredLegacy []LegacyDeferral `yaml:"deferred_legacy,omitempty"`
+}
+
+// LegacyDeferral is one person looking at a stranded judgment and being unable
+// to say whether it still holds.
+//
+// "I cannot say" and "this no longer applies" are different statements, and
+// only the second is a decision. Recording the attempt anyway means the next
+// reviewer sees that somebody already looked, and who, rather than
+// rediscovering the entry cold — while the entry itself stays unanswered.
+//
+// The series is preserved rather than overwritten. Two people independently
+// unable to decide is a materially different fact from one attempt replaced
+// twice, and it is the kind of fact that should make somebody ask why.
+type LegacyDeferral struct {
+	Ref         string `yaml:"ref"`
+	Text        string `yaml:"criterion_text,omitempty"`
+	Fingerprint string `yaml:"fingerprint"`
+	Duplicate   int    `yaml:"duplicate,omitempty"`
+	// SourceHash is the version of the legacy file this attempt was made
+	// against. The same person deferring again after the file changed is
+	// looking at a different subject, and that attempt is new.
+	SourceHash string `yaml:"source_hash"`
+	Reason     string `yaml:"reason"`
+	At         string `yaml:"at"`
+	By         string `yaml:"by"`
+}
+
+// sameAttempt reports whether two deferrals record the same act of review.
+//
+// Time is deliberately NOT compared. An atomic write can succeed while its
+// response is lost, and the retry that follows carries a new clock reading for
+// the same act — comparing timestamps would turn transport uncertainty into a
+// duplicate entry, and refusing it outright would turn it into operator
+// repair. What identifies the attempt is who looked, at which occurrence, in
+// which version of the file, and what they said.
+func (d LegacyDeferral) sameAttempt(o LegacyDeferral) bool {
+	return d.Fingerprint == o.Fingerprint && d.Duplicate == o.Duplicate &&
+		d.SourceHash == o.SourceHash &&
+		strings.TrimSpace(d.By) == strings.TrimSpace(o.By) &&
+		strings.TrimSpace(d.Reason) == strings.TrimSpace(o.Reason)
 }
 
 // LegacyDisposition is one stranded exemption, answered.
@@ -335,6 +383,14 @@ func loadCoverageExceptions(cfg *config.Context, slug string) (*CoverageExceptio
 		}
 		if strings.TrimSpace(d.Reason) == "" || strings.TrimSpace(d.By) == "" || strings.TrimSpace(d.At) == "" {
 			return nil, fmt.Errorf("legacy disposition %d for %s is missing why, what decided it, or when — a judgment answered without those is answered in name only", i+1, d.Ref)
+		}
+	}
+	for i, d := range rec.DeferredLegacy {
+		if strings.TrimSpace(d.Reason) == "" || strings.TrimSpace(d.By) == "" || strings.TrimSpace(d.At) == "" {
+			return nil, fmt.Errorf("deferral %d for %s is missing why, who, or when — an attempt nobody can attribute tells the next reviewer nothing they did not already know", i+1, d.Ref)
+		}
+		if strings.TrimSpace(d.SourceHash) == "" {
+			return nil, fmt.Errorf("deferral %d for %s records no source version, so it cannot be told apart from an attempt against a different version of the legacy file", i+1, d.Ref)
 		}
 	}
 	return &rec, nil
@@ -625,6 +681,17 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 			answered[legacyDispositionKey(d.Fingerprint, d.Duplicate)] = true
 		}
 	}
+	// Deferrals do NOT go into `answered`. They are attempts, and an attempt
+	// that unblocked the boundary would be an answer wearing a softer word.
+	// They only change how an unanswered entry is DESCRIBED.
+	deferrals := map[string][]LegacyDeferral{}
+	if rec != nil {
+		for _, d := range rec.DeferredLegacy {
+			k := legacyDispositionKey(d.Fingerprint, d.Duplicate)
+			deferrals[k] = append(deferrals[k], d)
+		}
+	}
+
 	seen := map[string]int{}
 	for _, ex := range legacy.Exemptions {
 		if ex.Item == "" {
@@ -633,10 +700,21 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 		fp := legacyExemptionFingerprint(ex)
 		dup := seen[fp]
 		seen[fp]++
-		if answered[legacyDispositionKey(fp, dup)] {
+		key := legacyDispositionKey(fp, dup)
+		if answered[key] {
 			continue
 		}
-		stranded = append(stranded, describeStranded(ex.Item, ex.CriterionText))
+		desc := describeStrandedOccurrence(ex.Item, ex.CriterionText, ex.Reason, fp)
+		if tries := deferrals[key]; len(tries) > 0 {
+			latest := tries[len(tries)-1]
+			noun := "review"
+			if len(tries) > 1 {
+				noun = "reviews"
+			}
+			desc = fmt.Sprintf("%s [%d %s, none conclusive; most recently %s: %q]",
+				desc, len(tries), noun, latest.By, strings.TrimSpace(latest.Reason))
+		}
+		stranded = append(stranded, desc)
 	}
 	sort.Strings(stranded)
 	return stranded, ""
@@ -647,4 +725,24 @@ func describeStranded(ref, text string) string {
 		return ref + " (entry-wide)"
 	}
 	return fmt.Sprintf("%s — %q", ref, text)
+}
+
+// describeStrandedOccurrence names ONE entry in a way a reader can act on.
+//
+// Ref and criterion text are not enough. Two exemptions may carry both and
+// still be different judgments recorded for different reasons — that is exactly
+// why identity is a content fingerprint. Rendered on ref and text alone, those
+// two appear in the report as one line repeated, so a reviewer answering "the
+// first one" has no way to know which they answered, and no way to see that a
+// second is still waiting. The reason is what distinguishes them to a person;
+// the fingerprint is what distinguishes them to the writer.
+func describeStrandedOccurrence(ref, text, reason, fingerprint string) string {
+	out := describeStranded(ref, text)
+	if r := strings.TrimSpace(reason); r != "" {
+		out += fmt.Sprintf(" [granted because: %s]", r)
+	}
+	if len(fingerprint) >= 8 {
+		out += " #" + fingerprint[:8]
+	}
+	return out
 }
