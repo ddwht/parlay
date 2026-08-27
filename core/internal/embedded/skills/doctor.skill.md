@@ -52,6 +52,7 @@ Then detect pending migrations by looking at what is on disk:
 | `domain-model.md` (not `.yaml`) | domain model → YAML | `parlay migrate-domain-model` |
 | a populated `operations:` block in `domain-model.yaml` | domain operations → per-feature capabilities | `parlay migrate-domain-operations` |
 | intents with **Verify** bullets whose sourcing operations/fragments lack `verify:` | verify bullets → contract artifacts | `parlay migrate-verify` (run `--dry-run` first; it prints the would-be routing) |
+| a retired `.parlay/build/*/coverage-review.yaml` still holding exemptions nothing has answered | stranded coverage judgments → current decisions | **Not a migrator.** Invoke the `migrate-coverage` module. Each stranded entry is a judgment only a person can re-make, so this asks a reviewer one question at a time rather than transforming a file. `parlay internal migrate-coverage-exceptions @{feature}` reports how many are left without changing anything. |
 
 ### 2. Enhance coverage findings with semantic matching
 
@@ -121,6 +122,31 @@ finding has one right disposition:
      deleted) and start the sequence fresh.
   4. Re-run the build phases and `parlay internal save-build-state` so the
      baseline refreezes on the new founding text.
+
+### 3.7 Coverage decisions that outlived their subject
+
+Two shapes to look for, both reported by the code and done boundaries:
+
+- **`downgrade-approval-stale` / `downgrade-approval-orphaned`** — somebody
+  approved a test case observing a requirement weakly, and that case has since
+  been rewritten, renamed, removed, or strengthened. The approval was a judgment
+  about what the case observed, so it no longer stands over anything.
+
+  Repair with `parlay internal retire-decision @{feature} --ref <ref>
+  --criterion "<text>" --suite "<suite>" --case "<case>" --reason "<why it no
+  longer applies>" --by "<who decided>"`. This does not delete the decision — it
+  moves it to the retired list carrying both the original judgment and the
+  choice to withdraw it, so the ledger still answers who decided what and when.
+
+  To re-approve a case whose content merely drifted, retire the old decision and
+  record a fresh one against the case as it now stands. Never edit the old one:
+  an edit makes one review look like two.
+
+- **Stranded legacy exemptions** — see the migration table above. Those need the
+  `migrate-coverage` module, not a repair here.
+
+Both are decisions, so both need a person. Report them and let the designer
+choose; do not retire anything on their behalf.
 
 ### 4. Report, then offer
 

@@ -38,60 +38,81 @@ not part of the stable CLI surface.`,
 // `internal` parent. Called from root.go's init, after each command's own
 // init has configured its flags.
 func registerInternalCommands() {
+	// Every command declares who reaches it. The classes are exclusive and
+	// role-based: see reachability_class.go for what each means and why the
+	// declaration is mandatory rather than opt-in.
 	internalCmd.AddCommand(
 		// Feedback mode — opt-in instrumentation, recorded locally and sent
 		// only when the user chooses to. This is how a skill contributes
 		// the events no CLI call can observe; it is a no-op when the mode
 		// is off. Its siblings — status, export, prune — are people-facing
 		// and registered at the top level in root.go.
-		feedbackRecordCmd,
+		reachability(feedbackRecordCmd, ClassPipelineHelper),
+
 		// Probes — read project state, emit JSON, change nothing.
-		parseCmd,
-		diffCmd,
-		checkCoverageCmd,
-		checkDriftCmd,
-		checkWriteSetCmd,
-		checkReadinessCmd,
-		checkBuildfileCmd,
-		checkSupportsCmd,
-		gateCmd,
-		scanGeneratedCmd,
-		verifyGeneratedCmd,
-		collectQuestionsCmd,
+		reachability(parseCmd, ClassProbe),
+		reachability(diffCmd, ClassProbe),
+		reachability(checkCoverageCmd, ClassProbe),
+		reachability(checkDriftCmd, ClassProbe),
+		reachability(checkWriteSetCmd, ClassProbe),
+		reachability(checkReadinessCmd, ClassProbe),
+		reachability(checkBuildfileCmd, ClassProbe),
+		reachability(checkSupportsCmd, ClassProbe),
+		reachability(scanGeneratedCmd, ClassProbe),
+		reachability(verifyGeneratedCmd, ClassProbe),
+		reachability(collectQuestionsCmd, ClassProbe),
+		reachability(checkCompositionCmd, ClassProbe),
+		reachability(checkAmendmentsCmd, ClassProbe),
+		reachability(activeSpecCmd, ClassProbe),
+		reachability(criteriaAuthorityCmd, ClassProbe),
+		reachability(checkAppliedCmd, ClassProbe),
+		reachability(mergedRoutesCmd, ClassProbe),
+		reachability(crossCuttingIndexCmd, ClassProbe),
+		reachability(affectedSetCmd, ClassProbe),
+		reachability(domainImpactCmd, ClassProbe),
+		reachability(schemaDigestCmd, ClassProbe),
+		reachability(emissionGroupsCmd, ClassProbe),
+		// Inventory, not a decision: it reports what is stranded and writes
+		// nothing. The walkthrough that acts on it is skill-required; this
+		// is the listing anything may read.
+		reachability(migrateExceptionsCmd, ClassProbe),
+
+		// The gate CONSUMES authority; it does not acquire it. It evaluates an
+		// approval somebody else obtained, or consumes an explicit machine
+		// waiver established by config plus flag, and reports blockers. A
+		// blocker that needs a person downstream does not make the checker a
+		// human-interaction command — otherwise every check here would become
+		// one.
+		reachability(gateCmd, ClassPipelineHelper),
 
 		// State helper — writes the baseline and code-hashes pair. Agent-
 		// driven because only the code phase knows the tests passed.
-		saveBuildStateCmd,
-		scaffoldSignaturesCmd,
-		scaffoldPlanCmd,
-		scaffoldOperationsCmd,
-		toolchainPlanCmd,
-		scaffoldSeedCmd,
-		checkCompositionCmd,
-		checkAmendmentsCmd,
-		activeSpecCmd,
-		criteriaAuthorityCmd,
-		approveCriteriaCmd,
-		applyGovernanceCmd,
-		recordExceptionCmd,
-		retireDecisionCmd,
-		deferLegacyCmd,
-		nextLegacyReviewCmd,
-		migrateExceptionsCmd,
-		dropLegacyCmd,
-		checkAppliedCmd,
-		mergedRoutesCmd,
-		crossCuttingIndexCmd,
-		affectedSetCmd,
-		domainImpactCmd,
-		schemaDigestCmd,
-		emissionGroupsCmd,
+		reachability(saveBuildStateCmd, ClassPipelineHelper),
+		reachability(scaffoldSignaturesCmd, ClassPipelineHelper),
+		reachability(scaffoldPlanCmd, ClassPipelineHelper),
+		reachability(scaffoldOperationsCmd, ClassPipelineHelper),
+		reachability(toolchainPlanCmd, ClassPipelineHelper),
+		reachability(scaffoldSeedCmd, ClassPipelineHelper),
+
+		// Authority ACQUISITION. Each of these records or withdraws a human
+		// judgment, so each needs a deployed walkthrough that puts the question
+		// to a person properly. Reached by improvisation, they produce a ledger
+		// saying somebody decided when nobody did.
+		reachability(approveCriteriaCmd, ClassSkillRequired),
+		reachability(applyGovernanceCmd, ClassSkillRequired),
+		reachability(recordExceptionCmd, ClassSkillRequired),
+		reachability(retireDecisionCmd, ClassSkillRequired),
+		reachability(deferLegacyCmd, ClassSkillRequired),
+		reachability(dropLegacyCmd, ClassSkillRequired),
+		// Read-only, but a workflow step rather than a probe: it exists to be
+		// the one place a walkthrough gets the next question from.
+		reachability(nextLegacyReviewCmd, ClassSkillRequired),
 
 		// Refine's step journal — the one write here that is not build
 		// state: it records how far an in-flight refinement got so an
 		// interrupted run resumes instead of restarting.
-		refineJournalCmd,
-		serveCmd,
+		reachability(refineJournalCmd, ClassPipelineHelper),
+		reachability(serveCmd, ClassPipelineHelper),
 	)
 	rootCmd.AddCommand(internalCmd)
 }
