@@ -5,14 +5,8 @@ package commands
 // parlay-artifact: test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ddwht/parlay/core/internal/agent"
-	"github.com/ddwht/parlay/core/internal/parser"
-	"gopkg.in/yaml.v3"
 )
 
 // runGate writes a coverage-review.yaml and runs the real validator over
@@ -20,99 +14,18 @@ import (
 // this bug was invisible for exactly as long as nothing exercised the two
 // halves together, and a test that mirrors the logic it is checking would
 // have passed against the broken code too.
-func runGate(t *testing.T, review parser.CoverageReview, requiredTerms []string) []agent.ValidationOutcome {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "coverage-review.yaml")
+// The coverage-review-uncovered walk these tests exercised is gone: its input
+// field had no production writer, so the code — a default ERROR — could never
+// fire in a real run, and these tests proved a leaf function correct while
+// nothing reached it. They were the demonstration of that failure, not a guard
+// against it.
+//
+// The one real property among them, that a suite-name-keyed exemption must not
+// discharge a term, now holds by construction in the live path: validate.go
+// keys exemptions on the criterion ref, so an item naming a suite creates an
+// entry that no criterion ref can match. It is enforced where exemptions are
+// actually consumed rather than in a walk nothing called.
 
-	review.Feature = "expenses"
-	review.ReviewedAt = "2026-01-01T00:00:00Z"
-	review.ReviewedBy = "cli"
-	review.ReviewMethod = "cli"
-	review.BuildfileHash = "bf"
-	review.TestcasesHash = "tc"
-
-	data, err := yaml.Marshal(&review)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	return agent.ValidateCoverageReview(agent.ModeBuild, agent.CoverageReviewInputs{
-		ReviewPath:       path,
-		Feature:          "expenses",
-		BuildfileHashNow: "bf",
-		TestcasesHashNow: "tc",
-		RequiredCoverage: requiredTerms,
-	})
-}
-
-func uncoveredTerms(outcomes []agent.ValidationOutcome) int {
-	n := 0
-	for _, o := range outcomes {
-		if o.Code == "coverage-review-uncovered" {
-			n++
-		}
-	}
-	return n
-}
-
-// The live bug: the CLI recorded an exemption keyed on the SUITE name
-// while the gate keys on the covered TERM. A reviewer could answer the
-// prompt, watch their reason get written to disk, and still have the gate
-// report the term as uncovered — with no way to discharge it short of
-// hand-editing coverage-review.yaml.
-func TestCLIExemptionActuallySatisfiesTheGate(t *testing.T) {
-	const term = "@expenses/operation:submit-report"
-
-	exemptions := exemptionsForSuite("submit-report-suite", []string{term}, "covered by the engine's own suite")
-	if got := exemptions[0].Item; got != term {
-		t.Errorf("Item = %q, want the covered term %q", got, term)
-	}
-
-	outcomes := runGate(t, parser.CoverageReview{Exemptions: exemptions}, []string{term})
-	if n := uncoveredTerms(outcomes); n != 0 {
-		t.Errorf("coverage-review-uncovered still fires for an exempted term (%d outcome(s)): %+v", n, outcomes)
-	}
-}
-
-// The guard for the regression itself: keying on the suite name must NOT
-// satisfy the gate. If this ever passes, the bug is back and the test
-// above has stopped meaning anything.
-func TestSuiteNameKeyedExemptionDoesNotSatisfyTheGate(t *testing.T) {
-	const term = "@expenses/operation:submit-report"
-	broken := []parser.CoverageExemption{
-		{Suite: "submit-report-suite", Item: "submit-report-suite", Reason: "the old shape"},
-	}
-	outcomes := runGate(t, parser.CoverageReview{Exemptions: broken}, []string{term})
-	if uncoveredTerms(outcomes) == 0 {
-		t.Error("a suite-name-keyed exemption must not discharge a term — if it does, the gate has become unkeyed")
-	}
-}
-
-// A suite covering several terms produces an exemption for each. One entry
-// for a suite covering three operations leaves two uncovered while the
-// reviewer believes they answered.
-func TestExemptionIsRecordedPerCoveredTerm(t *testing.T) {
-	terms := []string{
-		"@expenses/operation:submit-report",
-		"@expenses/operation:approve-report",
-	}
-	exemptions := exemptionsForSuite("report-suite", terms, "external")
-	if len(exemptions) != 2 {
-		t.Fatalf("expected one exemption per term, got %d", len(exemptions))
-	}
-	outcomes := runGate(t, parser.CoverageReview{Exemptions: exemptions}, terms)
-	if n := uncoveredTerms(outcomes); n != 0 {
-		t.Errorf("every term the suite covered must be discharged, %d still uncovered", n)
-	}
-}
-
-// Legacy v1 suites carry no source_refs, so there is no term to key on and
-// the suite name is the only available fallback — no worse than before,
-// and it keeps those testcases reviewable at all.
 func TestLegacySuiteWithoutSourceRefsFallsBackToSuiteName(t *testing.T) {
 	exemptions := exemptionsForSuite("legacy-suite", nil, "why")
 	if len(exemptions) != 1 || exemptions[0].Item != "legacy-suite" {

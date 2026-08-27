@@ -5,6 +5,23 @@ parlay-feature: parlay-tool/multi-adapter
 
 # Coverage Review Schema
 
+> **Superseded.** The gate this file describes stops a person at a list of suite
+> NAMES, defaulting empty input to yes, and records a reviewer read from the
+> environment — which is why real review files in the wild name a background
+> process as the approver. It proves someone answered, never that they saw
+> anything. What it should have asked about is the criterion set: the standard a
+> feature is graded against, produced by rewriting each intent's Verify bullets
+> into atomic claims and routing them, after the designer's last look and
+> without ever being shown. That is now `criteria-authority.yaml` — see
+> `parlay internal criteria-authority`. This document describes the artifact
+> during its deprecation window; its exemptions are still read.
+
+<!-- retired: coverage-review-uncovered. The walk behind it had no production
+     writer for its input, so the code — a default ERROR, the strictest verdict
+     available — could never fire in a real run. Removed with the walk rather
+     than left documented, because a documented code that cannot fire is how an
+     agent ends up reverse-engineering the validator at runtime. -->
+
 File: `.parlay/build/<feature>/coverage-review.yaml`. Records human approval of a feature's testcases.yaml and gates `parlay generate-code`. The presence and freshness of this file is a precondition for codegen on multi-target projects.
 
 ## Structure
@@ -59,7 +76,6 @@ Hashes are computed over a canonical-form serialization (sorted map keys, normal
 | `coverage-review-stale` | `buildfile_hash` differs from the current canonical-form hash, or — for a review without `suite_hashes` — `testcases_hash` differs. Names the drifted hash. |
 | `coverage-review-suite-stale` | A review with `suite_hashes` approved a suite whose canonical form has since changed. Fires per drifted suite, naming it, so only those need re-review; unchanged approved suites stay valid. |
 | `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
-| `coverage-review-uncovered` | A canonical-form-required term (declared error, declared operation) lacks both a covering testcase and an explicit exemption. |
 
 The review is recorded by `parlay review-coverage <feature>`.
 

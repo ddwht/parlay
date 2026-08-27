@@ -20,13 +20,12 @@ import (
 // time; the gate compares them against the recorded hashes in
 // coverage-review.yaml.
 type CoverageReviewInputs struct {
-	ReviewPath        string
-	Feature           string
-	BuildfileHashNow  string
-	TestcasesHashNow  string
-	SuiteHashesNow    map[string]string // per-suite canonical hashes of the on-disk testcases
-	RequiredSuites    []string // every suite present in testcases.yaml
-	RequiredCoverage  []string // every term that needs coverage (operations, errors)
+	ReviewPath       string
+	Feature          string
+	BuildfileHashNow string
+	TestcasesHashNow string
+	SuiteHashesNow   map[string]string // per-suite canonical hashes of the on-disk testcases
+	RequiredSuites   []string          // every suite present in testcases.yaml
 }
 
 // ValidateCoverageReview is the gate. Returns outcomes describing every
@@ -80,15 +79,17 @@ func ValidateCoverageReview(mode ValidationMode, in CoverageReviewInputs) []Vali
 	for _, ex := range cr.Exemptions {
 		exempted[ex.Item] = true
 	}
-	for _, term := range in.RequiredCoverage {
-		// Term is covered if some approved suite covers it OR it has an
-		// explicit exemption. Coverage relationships live in testcases.yaml;
-		// the gate only checks approval + exemption here.
-		if !exempted[term] && !approved[term] {
-			outcomes = append(outcomes, NewOutcome(mode, "coverage-review-uncovered",
-				fmt.Sprintf("required term %q has no covering approved case and no exemption", term)))
-		}
-	}
+	// RequiredCoverage and its walk were removed here. The field had no
+	// production writer at all: computeReviewGate built its input without it,
+	// and the only assignment anywhere was a test that hand-built the struct.
+	// So coverage-review-uncovered — absent from the severity table and
+	// therefore a default ERROR, the strictest verdict the validator has —
+	// could not fire in any real run, and its green test proved a leaf
+	// function correct while nothing reached it.
+	//
+	// Not repaired by populating the field: turning a never-fired hard blocker
+	// on for every multi-target project days before removing the gate it
+	// belongs to would create breakage without protection.
 
 	return outcomes
 }

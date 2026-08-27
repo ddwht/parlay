@@ -149,6 +149,45 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
      - A project that has no contributions and only ever edits the root model still works exactly as before; the contribution file is optional.
    - When multiple artifacts are required, author them in order: domain-model first (so other artifacts can reference its entities), then surface and capabilities and infrastructure in any order
 
+5.5. **Get the standard approved** — The criteria you just wrote are what every
+   test for this feature must discharge, and they are not what the designer
+   wrote. Their **Verify** bullets were split into atomic claims and any
+   sentence carrying both a presentation and a contract claim was **rewritten**
+   into separate criteria on separate destinations. That transformation happened
+   after the only choice they were offered — which artifact set to write — and
+   nothing has shown it to them.
+
+   Present the mapping and get it approved before the phase ends:
+
+   ```
+   @{feature}/intent:{slug} — "{the bullet as they wrote it}"
+     -> @{feature}/operation:{id}    — "{the criterion as you wrote it}"
+     -> @{feature}/fragment:{name}   — "{the criterion as you wrote it}"
+   ```
+
+   Show every criterion, grouped by the bullet it came from, and say plainly
+   where a bullet was split or reworded. **A bullet that survived unchanged is
+   still shown** — the designer is approving the whole standard, and a listing
+   that hides the unchanged parts makes the changed ones look like the only
+   thing at stake.
+
+   **This decision has no safe default and no unattended path.** Under
+   `--non-interactive` raise the decision and stop: an agent answering it is an
+   agent approving the standard it will then be graded against, which is the
+   one thing the coverage-review gate this replaces was trying to prevent.
+
+   On approval, record it:
+   `parlay internal approve-criteria @{feature} --by "{how the decision was answered}" --decision-id "{the decision's id}"`.
+   Pass what actually answered — the decision channel — never a username or a
+   value you invent; `--by` exists so the record can say what accepted the
+   standard, and an identity the tool made up is evidence of nothing.
+
+   `parlay internal criteria-authority @{feature}` reports the same mapping and
+   whether it is approved, so a later phase can check without re-deriving it.
+   Nothing needs re-approving when testcases regenerate: what was approved is
+   the standard, not the suites derived from it. Only a changed criterion asks
+   again, and then the report names exactly what changed.
+
 6. **Report** — Confirm which artifacts were created and what the next pipeline step is (`/parlay-build-feature @{feature}`).
 
    When you are running as a phase module, the report is the `phase-boundary` decision request you return. Carry an `artifacts:` list on it naming exactly what you wrote:
