@@ -121,3 +121,16 @@ func GraduatingCodes() map[string]int {
 	}
 	return out
 }
+
+// NewGraduatedOutcome builds an outcome whose severity respects the artifact's
+// declared revision.
+//
+// Used at every site emitting one of the eight. A plain NewOutcome there would
+// resolve severity from the static table and the graduation would exist while
+// nothing consulted it — the failure this codebase has shipped repeatedly, in
+// checks whose whole purpose was refusing what they let through.
+func NewGraduatedOutcome(mode ValidationMode, revs ArtifactRevisions, code, message string) ValidationOutcome {
+	out := NewOutcome(mode, code, message)
+	out.Severity = GraduatedSeverity(code, mode, revs)
+	return out
+}

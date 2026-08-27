@@ -1192,6 +1192,11 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// with no feature: cannot form a reliable ref, so its operations are skipped.
 	if caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); capErr == nil && caps.Feature != "" {
 		in.ContractResolved = true
+		// The declared revision is what lets the transitional diagnostics
+		// graduate: a file at the current shape is one where these facts could
+		// have been recorded, so omitting them is an error rather than a
+		// warning. Absent reads as legacy, which keeps the warning.
+		in.Revisions.Capabilities = caps.SchemaVersion
 		for _, op := range caps.Operations {
 			if op.ID == "" {
 				continue
