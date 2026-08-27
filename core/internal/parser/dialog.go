@@ -22,8 +22,8 @@ type Turn struct {
 }
 
 type Option struct {
-	Letter    string
-	Desc      string
+	Letter     string
+	Desc       string
 	IsFreeform bool
 }
 

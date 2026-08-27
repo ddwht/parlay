@@ -11,6 +11,16 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 
 - `feature`: The feature reference in standard parlay form — `{feature}` for a top-level feature, `@{initiative}/{feature}` for a feature nested inside an initiative.
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
+- `--authorize-criteria=machine` (optional): Advance boundaries without a person
+  having approved the criteria this feature is graded against. Requires the
+  project to have set `parlay.criterion-authority.allow-machine` — both, or
+  neither counts. **Forward it to every phase-group and to every
+  `parlay internal gate` call**; a phase that does not receive it will stop at
+  the criteria decision, which is the correct behaviour for a run that was not
+  authorized and the wrong one for a run that was. Recorded at the code boundary
+  as a waiver: the separation between authoring a standard and grading against
+  it is not provided for that run, and the record says so rather than claiming
+  approval.
 - `--non-interactive` (optional): Run unattended — take the declared default on advancement decisions, and abort on decisions that have no safe default. See **Non-interactive mode**. Interactive is the default; the flag never makes a run quieter than this, only less attended.
 
 ## Correlating the run (feedback mode)
@@ -21,7 +31,9 @@ Before the first phase, mint one correlation id and export it for the whole run:
 export PARLAY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 ```
 
-Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally: when feedback mode is off the variable is simply unread, and a driver that sets it only when enabled has to check, which is one more thing to get wrong.
+Every CLI call and every phase subagent inherits it from the environment, which is what ties a diagnostic to the retry it caused across separate processes. Do this unconditionally — it is not only for feedback mode.
+
+**It is also what makes one pipeline audit as one run.** A machine-authorized crossing (`--authorize-criteria=machine`) records an audit event, and the code and done boundaries are separate processes. Without a shared id the tool cannot tell one pipeline crossing two boundaries from two separate runs, and it will not guess: it records both. With this id exported, done inherits the code boundary's event and the pipeline logs once. Matching is on the id AND the criteria — an earlier run against the same standard is not this run, and never satisfies this one's audit.
 
 **Do not put the feature name in it.** The id lands on every line of a log written to be sent upstream to the maintainers. The CLI hashes it before writing, so a feature name would not survive anyway — but building the id out of something that needs hashing invites someone to read the value back expecting it to mean something. A timestamp and the shell's PID identify a run without describing it.
 
@@ -176,7 +188,7 @@ A phase that emits a decision request must have left the filesystem in a coheren
    A CI caller needs to know this: `claude -p` alone stops at the first phase-group boundary. Either continue the session until it stops doing work, or run the phases inline.
 
 5. **Enter the designer phase-group** (if starting phase is intents, dialogs, or artifacts):
-   - Invoke the `parlay-designer` subagent with the feature reference, the starting phase, and `--non-interactive` when it was passed.
+   - Invoke the `parlay-designer` subagent with the feature reference, the starting phase, and **both** `--non-interactive` and `--authorize-criteria=machine` when they were passed. The designer phase is where the criteria decision is raised, so a run authorized to proceed without human approval that does not receive the flag stops there — and stops for a reason the caller believed they had answered.
    - It runs the three phases in sequence in one context: author/revise `intents.md`; generate or update `dialogs.md`; determine and create the artifact set.
    - Pre-load on-disk upstream artifacts if `--from` skipped phases in this group (dialogs needs intents; artifacts needs intents + dialogs).
    - It runs **Gap analysis** at the end of the intents phase and the dialogs phase (step 9) and folds the result into the `context:` of the boundary decision.
@@ -186,13 +198,14 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
-   - Run `parlay internal gate @{feature-ref} --stage build`. This is one command and one exit code where there used to be a bare check-readiness: the gate aggregates check-readiness (including the `unapplied-amendments` error), the ledger's integrity findings, its unapplied tail, and the amendment ledger's own validation — the drift and ledger findings the driver previously only saw at planning time (step 3). **A non-zero exit is a hard block** — not acknowledgeable; surface its `blockers[]` and route the user back to the artifacts phase, or to `/parlay-refine` when a blocker names the ledger tail (`unapplied-amendments`). `warnings[]` are informational, exactly as readiness warnings were.
-   - Invoke the `parlay-build` subagent with the feature reference, and `--non-interactive` when it was passed.
+   - Run `parlay internal gate @{feature-ref} --stage build`, adding
+     `--authorize-criteria=machine` when this run carries it. This is one command and one exit code where there used to be a bare check-readiness: the gate aggregates check-readiness (including the `unapplied-amendments` error), the ledger's integrity findings, its unapplied tail, and the amendment ledger's own validation — the drift and ledger findings the driver previously only saw at planning time (step 3). **A non-zero exit is a hard block** — not acknowledgeable; surface its `blockers[]` and route the user back to the artifacts phase, or to `/parlay-refine` when a blocker names the ledger tail (`unapplied-amendments`). `warnings[]` are informational, exactly as readiness warnings were.
+   - Invoke the `parlay-build` subagent with the feature reference, and both `--non-interactive` and `--authorize-criteria=machine` when they were passed.
    - At the end it returns a `phase-boundary` decision; the driver prompts.
 
 7. **Enter the code phase-group** (at the build→code boundary):
    - End the build subagent; announce the new subagent boundary.
-   - Invoke the `parlay-code` subagent (project-level; no `@feature` argument), passing `--non-interactive` when it was passed.
+   - Invoke the `parlay-code` subagent (project-level; no `@feature` argument), passing both `--non-interactive` and `--authorize-criteria=machine` when they were passed. The code boundary is where an authorized waiver is recorded, so a code phase that never receives the flag cannot record one and refuses instead.
    - The code phase raises an `overwrite` decision for every generated file that changed since it was last generated, and a `failure` decision if the test suite does not pass. Both come to the driver.
    - After the code phase completes successfully, end the loop with the natural completion summary (step 12). No trailing confirmation — there is no next phase.
 

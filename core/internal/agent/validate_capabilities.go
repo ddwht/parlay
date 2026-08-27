@@ -145,7 +145,7 @@ func ValidateCapabilities(mode ValidationMode, path string, content []byte, decl
 		// name similarity, which both misses renames and blesses
 		// contradictions.
 		if strings.TrimSpace(op.Source) == "" {
-			outcomes = append(outcomes, NewOutcome(mode, "capabilities-source-missing",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, ArtifactRevisions{Capabilities: caps.SchemaVersion}, "capabilities-source-missing",
 				fmt.Sprintf("%s: operation %q declares no source: — nothing records which intent it came from, so a change described in prose cannot be routed to it", path, op.ID)))
 		}
 

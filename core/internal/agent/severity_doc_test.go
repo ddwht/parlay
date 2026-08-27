@@ -61,6 +61,15 @@ func TestWarningSeveritiesAreDocumentedAsWarnings(t *testing.T) {
 		if perMode[ModeBuild] != SeverityWarning {
 			continue
 		}
+		if _, graduates := graduatingCodes[code]; graduates {
+			// Severity depends on the artifact's declared revision: warning
+			// below the graduation version, error at or above it. A row marked
+			// (warning) would tell a reader the wrong thing for every current
+			// artifact, and an unmarked row would tell them the wrong thing for
+			// every legacy one. The schema states the split in prose above the
+			// table instead, which is the only place it fits.
+			continue
+		}
 		marker, documented := rows[code]
 		if !documented {
 			// Documented in prose rather than a table, or not documented at all.
@@ -113,4 +122,42 @@ func schemaCodeRows(t *testing.T) map[string]string {
 		}
 	}
 	return rows
+}
+
+// The marker-based check above cannot see prose, and prose is where this
+// contradiction lived: a schema stated the revision split correctly in one
+// paragraph and, forty lines later, still called the same diagnostics
+// unconditional warnings. A reader believes whichever they read first.
+//
+// So the graduated codes may not be described with the phrasings that assert a
+// severity independent of the artifact's revision.
+func TestGraduatedCodesAreNotDescribedAsUnconditionalWarnings(t *testing.T) {
+	stale := []string{
+		"warning in both modes",
+		"while the field lands",
+		"warnings while criterion-driven cases land",
+	}
+	names, err := embedded.SchemaNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		body, err := embedded.ReadSchema(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			for code := range graduatingCodes {
+				if !strings.Contains(line, code) {
+					continue
+				}
+				for _, phrase := range stale {
+					if strings.Contains(line, phrase) {
+						t.Errorf("%s line %d describes the graduated %s as %q — its severity follows the artifact's declared revision, and a reader who believes this line is wrong for every current artifact:\n    %s",
+							name, i+1, code, phrase, strings.TrimSpace(line))
+					}
+				}
+			}
+		}
+	}
 }

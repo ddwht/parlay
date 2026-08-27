@@ -37,6 +37,40 @@ type Amendment struct {
 	Affects    []string `yaml:"affects"`
 	Supersedes []string `yaml:"supersedes"`
 
+	// SupersedesIntents names founding intents in THIS feature that this
+	// amendment replaces. Deliberately a separate field from Affects:
+	// Affects resolves contract entries and drives the dirty set, splice
+	// targeting, rebuild scoping and overlap detection, and an intent
+	// retirement participates in none of those. Sharing one field would
+	// make dirty_set ambiguous and push an "except intent refs" branch
+	// into every consumer.
+	//
+	// Named supersedes_intents rather than retires because the amendment is
+	// the replacing decision, parallel to Supersedes above: a commitment
+	// must not be able to disappear without a successor taking its place.
+	// The superseded intents.md is never opened for writing — supersession
+	// records a later decision beside the frozen file and grants it no
+	// exemption from the byte-integrity check.
+	SupersedesIntents []string `yaml:"supersedes_intents"`
+
+	// RetiresFeature marks this as the feature's terminal record: it closes
+	// the feature rather than changing it. Declared rather than inferred from
+	// an amendment that happens to name every live intent — that shape is
+	// already an error, carries none of retirement's obligations, and a
+	// lifecycle transition nobody chose is not one to infer.
+	RetiresFeature bool `yaml:"retires_feature"`
+
+	// Outcome is closed at "replaced" or "obsolete". A reader months later
+	// cannot recover from silence whether the work moved somewhere or stopped
+	// mattering, and that difference is the whole content of the decision.
+	Outcome string `yaml:"outcome"`
+
+	// ReplacementFeature names where the work went. Required by "replaced",
+	// forbidden by "obsolete". It is metadata about the outcome and never
+	// permission: a reference pointing at this feature does not begin pointing
+	// at the replacement by being told about it.
+	ReplacementFeature string `yaml:"replacement_feature"`
+
 	// Body sections. Change and Why are verbatim prose; Acceptance is the
 	// bullet list the apply step lands as verify: entries on the affected
 	// contract artifact entries.

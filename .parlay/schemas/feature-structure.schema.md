@@ -34,7 +34,8 @@ Parlay projects use three zones with strict ownership:
     <feature-name>/
       buildfile.yaml                ← Generated, internal
       testcases.yaml                 ← Generated, internal
-      coverage-review.yaml           ← Generated, internal (records suite-approval decisions)
+      criteria-authority.yaml        ← Who accepted the standard, internal
+      coverage-decisions.yaml        ← Coverage judgments a person made, internal
       design-spec.yaml               ← Generated from Figma (optional), internal
       .baseline.yaml                 ← Drift detection baseline
 ```
@@ -81,7 +82,8 @@ File format follows a simple rule: designer-authored prose is markdown; generate
 | `.parlay/build/<feature>/design-spec.yaml` | `/parlay reference-design-spec` | No — tool internal (optional, from Figma) | Surface reviewed, Figma link available |
 | `.parlay/build/<feature>/buildfile.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
 | `.parlay/build/<feature>/testcases.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
-| `.parlay/build/<feature>/coverage-review.yaml` | `/parlay review-coverage` | No — tool internal | Testcases generated |
+| `.parlay/build/<feature>/criteria-authority.yaml` | The criteria decision at the designer boundary | No — tool internal | Criteria exist to accept |
+| `.parlay/build/<feature>/coverage-decisions.yaml` | `parlay internal record-exception` and its siblings | No — tool internal | A judgment about coverage was made |
 | `.parlay/build/<feature>/.baseline.yaml` | `/parlay build-feature` | No — tool internal | At least one spec artifact reviewed |
 | `spec/handoff/<feature>/specification.md` | `/parlay generate-enggspec` | Review only | Prototype validated |
 
@@ -110,7 +112,6 @@ A page manifest may embed an optional `## Layout` section (a fenced YAML block c
 - `specification.md` is currently the only handoff artifact. Future Phase 8 additions (fixtures, API stubs, etc.) will also live under `spec/handoff/<feature>/`.
 - `spec/pages/` is optional — don't create until `/parlay lock-page` is invoked.
 - **All three per-feature directories are created together, when the feature is created.** `parlay add-feature` makes `spec/intents/<feature>/`, `spec/handoff/<feature>/` and `.parlay/build/<feature>/` in one step, whether or not the feature sits inside an initiative; `parlay new-initiative` does the same for the initiative's own directory. The handoff and build directories start empty — they are *created* eagerly and *filled* later. This is the rule `parlay repair` and `parlay status`'s `trees:` line both enforce: a feature missing any of the three is a mismatch to repair, not a phase not yet reached.
-- `.parlay/build/` is created during `parlay init`; its per-feature directory is created by `parlay add-feature` and populated by `/parlay build-feature` (and `/parlay review-coverage` for `coverage-review.yaml`).
 - `spec/handoff/` is created during `parlay init`; its per-feature directory is created by `parlay add-feature` and populated by `/parlay generate-enggspec`.
 - Prototype code lives outside `spec/` and `.parlay/` (in `src/`, `cmd/`, `app/`, etc.).
 - Deleting a feature folder under `spec/intents/<feature>/` should also clean up `spec/handoff/<feature>/` and `.parlay/build/<feature>/`. Page manifests will flag missing fragments. The project's `domain-model.yaml` is unaffected — it is not per-feature.

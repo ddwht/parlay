@@ -7,10 +7,19 @@
 // the pipeline, this recomputes whether a boundary is actually clear.
 //
 // Purity contract (the same one ComputeFeaturePhase documents, and for the same
-// reason): the gate is a PURE RECOMPUTATION. It writes nothing, stamps nothing,
-// and persists no "gate passed" marker. A stored pass-stamp goes stale the
+// reason): PASSAGE is a pure recomputation. The gate stamps nothing and
+// persists no "gate passed" marker, because a stored pass-stamp goes stale the
 // moment a spec file changes and then becomes the stale-state problem the whole
 // plan exists to remove. Passage is re-derived from disk at every boundary.
+//
+// It is NOT true that the gate writes nothing, and this comment used to say so.
+// commitPendingWaiver persists a machine authorization after a boundary passes
+// — an audit record of a run that proceeded without human approval. That write
+// is deliberately not part of the verdict: it records what happened, and is
+// never read back to decide whether a later boundary passes. The distinction
+// that matters is stamping PASSAGE, which does not happen; a header claiming
+// more purity than the code has is worse than none, because the next person
+// reading it trusts it.
 //
 // The gate does not reimplement any checker — it AGGREGATES the existing ones
 // in-process (direct calls to the compute* cores, never a subprocess) and
@@ -24,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -38,12 +48,19 @@ var gateCmd = &cobra.Command{
 	RunE:  runInternalGate,
 }
 
-var gateStage string
+var (
+	gateStage             string
+	gateAuthorizeCriteria string
+)
 
 func init() {
 	gateCmd.Flags().StringVar(&gateStage, "stage", "",
 		"Boundary to gate, aligned with the FeaturePhase ladder: build (designer->build), code (build->code), done (code->complete)")
 	gateCmd.MarkFlagRequired("stage")
+	gateCmd.Flags().StringVar(&gateAuthorizeCriteria, "authorize-criteria", "",
+		"set to \"machine\" to advance this boundary without human approval of the criteria. Requires the project to "+
+			"have opted in with parlay.criterion-authority.allow-machine; records that the separation between authoring "+
+			"a standard and grading against it was WAIVED for this run, not satisfied")
 }
 
 // gateBlocker is one finding the gate surfaces. A blocker fails the gate; a
@@ -56,6 +73,13 @@ type gateBlocker struct {
 }
 
 type gateOutput struct {
+	// PendingWaiver is a machine authorization this boundary would exercise,
+	// set only when the whole boundary passed. Persisting it is the advancing
+	// COMMAND's job: computeGate stays a pure evaluation, so a caller that
+	// merely asks what a boundary would say does not leave a record claiming a
+	// run happened.
+	PendingWaiver *pendingMachineRun `json:"-"`
+
 	Feature  string        `json:"feature"`
 	Stage    string        `json:"stage"`
 	Passed   bool          `json:"passed"`
@@ -77,9 +101,15 @@ func runInternalGate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateAuthorizeCriteriaFlag(gateAuthorizeCriteria); err != nil {
+		return err
+	}
 	slug := parser.FeatureSlug(args[0])
 	out, err := computeGate(cfg, slug, gateStage)
 	if err != nil {
+		return err
+	}
+	if err := commitPendingWaiver(cfg, slug, gateStage, out); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -91,6 +121,29 @@ func runInternalGate(cmd *cobra.Command, args []string) error {
 		return NewExitCodeError(1)
 	}
 	return nil
+}
+
+// machineRunRecordedFor reports whether the audit trail already holds a machine
+// authorization written by THIS execution against exactly this standard.
+func machineRunRecordedFor(cfg *config.Context, slug string, criteria []AuthorizedCriterion, runID string) (bool, error) {
+	rec, err := loadCriteriaAuthority(cfg, slug)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	// Both halves are required. The hash alone says an identical standard was
+	// waived at some point by somebody; the run id is what says it was waived
+	// by THIS execution, which is the only thing that makes today's crossing
+	// already audited.
+	want := CriteriaHash(criteria)
+	for _, r := range rec.MachineRuns {
+		if r.CriteriaHash == want && r.RunID != "" && r.RunID == runID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // computeGate is the pure core: given a resolved context, a feature slug and a
@@ -115,48 +168,55 @@ func computeGate(cfg *config.Context, slug, stage string) (gateOutput, error) {
 		return out, nil
 	}
 
-	var blockers, warnings []gateBlocker
 	switch stage {
-	case gateStageBuild:
-		blockers, warnings = gateBuild(cfg, slug, featurePath)
-	case gateStageCode:
-		blockers, warnings = gateCode(cfg, slug, featurePath)
-	case gateStageDone:
-		blockers, warnings = gateDone(cfg, slug)
+	case gateStageBuild, gateStageCode, gateStageDone:
 	default:
 		return out, fmt.Errorf("unknown gate stage %q — supported: %s, %s, %s",
 			stage, gateStageBuild, gateStageCode, gateStageDone)
 	}
 
+	// Assembled from the registry rather than by a per-stage function calling
+	// checkers in sequence. A checker not registered as a claim is not
+	// reachable from a boundary at all, which is what makes the completeness
+	// conformance non-circular: an unwitnessed path cannot hide by simply not
+	// being registered, because not being registered means not running.
+	blockers, warnings, pending := runStageClaims(cfg, slug, featurePath, stage)
+
 	out.Blockers = dedupeGateFindings(blockers)
 	out.Warnings = dedupeGateFindings(warnings)
 	out.Passed = len(out.Blockers) == 0
+
+	// A waiver is exercised only by a boundary that actually advances. Held
+	// until every check has spoken, because one subcheck permitting it says
+	// nothing about the aggregate — and an audit trail recording that a refused
+	// run "advanced" lies about the single fact it exists to hold.
+	if out.Passed && pending != nil {
+		out.PendingWaiver = pending
+		out.Warnings = append(out.Warnings, gateBlocker{
+			Code:    "criteria-authority-machine",
+			Message: fmt.Sprintf("%s advanced without human approval of its criteria: %s", slug, pending.reason),
+		})
+	}
 	return out, nil
 }
 
-// gateBuild aggregates the designer->build boundary: readiness, the ledger's
-// integrity and unapplied tail, and the ledger's own validation.
-func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
-	// check-readiness build-feature. This already carries 1c's
-	// unapplied-amendments error, but the gate recomputes that verdict itself
-	// with journal precision (2b) below — so strip it here to avoid both
-	// double-counting it and inheriting readiness's coarse "any journal
-	// suppresses" rule.
-	for _, iss := range checkBuildFeatureReadiness(cfg, featurePath, slug) {
-		if iss.Code == "unapplied-amendments" {
-			continue
-		}
-		switch iss.Severity {
-		case "error":
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		case "warning":
-			warnings = append(warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		}
-	}
-
-	// check-drift's ledger findings. Integrity violations always block — a
-	// mutated or deleted amendment, or an edited frozen founding doc, is never
-	// sanctioned by an in-flight refine.
+// gateLedgerState is the ledger half of every advancing boundary: frozen-document
+// integrity, the unapplied tail, and the ledger's own validation.
+//
+// Shared rather than inlined in gateBuild, because it was only in gateBuild.
+// gateCode and gateDone aggregated none of it, so entering the pipeline with
+// --from code walked past the only boundary that asks whether a recorded
+// decision has actually been applied — and generated code from a specification
+// its author had already superseded, reporting success. That is the failure
+// intent supersession's applied-tail rule exists to prevent, so leaving it in
+// one boundary would have made the rule true only on the path nobody was
+// worried about.
+//
+// One helper, one code, one source. The unapplied-tail finding keeps its
+// journal-aware downgrade: a refinement that has spliced but not yet
+// re-baselined is mid-apply, not stale, and blocking it would stop the very
+// workflow that resolves the finding.
+func gateLedgerState(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
 	if drift, err := detectDrift(cfg, slug, featurePath); err == nil && drift != nil {
 		for _, f := range drift.LedgerIntegrity {
 			blockers = append(blockers, gateBlocker{
@@ -165,13 +225,20 @@ func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warning
 				Fix:     "restore the frozen text and record the change as an amendment; for a pre-v0.4 edit run parlay migrate-ledger",
 			})
 		}
-		// The unapplied tail, with 2b journal-aware downgrade.
 		if len(drift.UnappliedAmendments) > 0 {
 			finding := gateBlocker{
 				Code: "unapplied-amendments",
 				Message: fmt.Sprintf("%d amendment(s) recorded but not applied to the contract artifacts: %v",
 					len(drift.UnappliedAmendments), drift.UnappliedAmendments),
 				Fix: "run /parlay-refine to apply the ledger tail",
+			}
+			// Name a pending supersession specifically. An unapplied amendment
+			// that merely edits a contract entry leaves the spec incomplete; one
+			// that retires a promise leaves the feature still making a promise
+			// its author has withdrawn, and the reader should not have to open
+			// the ledger to tell those apart.
+			if res, resErr := resolveActiveIntents(cfg, slug); resErr == nil && res.HasPending() {
+				finding.Message += fmt.Sprintf(" — including a pending intent supersession (%s), so this feature still promises what that decision withdraws", res.PendingSummary())
 			}
 			if refineSanctionsUnappliedTail(cfg, slug, featurePath) {
 				finding.Message += " — sanctioned by an in-flight refinement (splice applied, re-baseline pending)"
@@ -198,86 +265,105 @@ func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warning
 	return blockers, warnings
 }
 
-// gateCode aggregates the build->code boundary: buildfile validity, cross-
-// feature composition coherence, and buildfile freshness against live sources.
-func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
-	cb := computeCheckBuildfile(cfg, slug)
-	for _, iss := range cb.Issues {
-		switch iss.Severity {
-		case "error":
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		case "warning":
-			warnings = append(warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		}
+// gateTestcasesReadiness is the mechanical half of the bargain that replaces
+// the blanket human gate: a person approves the standard, and whether the tests
+// actually discharge it is checked here rather than by anyone clicking through
+// suite names.
+//
+// It exists because the walkers were graduated to error and nothing ran them in
+// build mode — validate --type testcases hardcodes authoring, and no boundary
+// called them at all — so the middle was advisory on every path that mattered.
+func gateTestcasesReadiness(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+	r := CheckTestcasesReadiness(cfg, slug)
+	for _, b := range r.Blockers {
+		blockers = append(blockers, gateBlocker{
+			Code: "testcases-not-ready", Message: b,
+			Fix: "rebuild the testcases, or record an exception for a criterion that genuinely needs no test",
+		})
 	}
-
-	// Composition is a whole-project coherence check; a failure here is a
-	// cross-feature contradiction the boundary must not advance past.
-	if comp, err := computeComposition(cfg); err == nil {
-		for _, f := range comp.Findings {
-			blockers = append(blockers, gateBlocker{Code: f.Code, Message: f.Message})
-		}
-		for _, n := range comp.Notes {
-			warnings = append(warnings, gateBlocker{Code: n.Code, Message: n.Message})
-		}
+	for _, w := range r.Warnings {
+		warnings = append(warnings, gateBlocker{Code: "testcases-readiness-warning", Message: w})
 	}
-
-	// Buildfile freshness — the source-signatures comparison generate-code step
-	// 11.6 performs by prose, done mechanically here so the boundary catches a
-	// stale buildfile before codegen does.
-	blockers = append(blockers, checkBuildfileFreshness(cfg, slug, featurePath, &warnings)...)
-
 	return blockers, warnings
 }
 
-// gateDone aggregates the code->complete boundary: generated code matches its
-// recorded hashes, and the coverage-review gate is satisfied.
-func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
-	verify, err := computeProjectVerifyOutput(cfg)
-	if err == nil && verify != nil {
-		if !verify.HasHashes {
-			blockers = append(blockers, gateBlocker{
-				Code:    "code-not-generated",
-				Message: "no generated-code hashes recorded — the code phase has not produced a blessed prototype",
-				Fix:     "run /parlay-generate-code",
-			})
-		}
-		for _, f := range verify.Modified {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-modified",
-				Message: fmt.Sprintf("%s differs from the last recorded emission (possible hand-edit)", f.Path),
-				Fix:     "re-run /parlay-generate-code, or reconcile the edit",
-			})
-		}
-		for _, f := range verify.Adopted {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-adopted",
-				Message: fmt.Sprintf("%s was written outside codegen", f.Path),
-			})
-		}
-		for _, f := range verify.Unknown {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-unknown-provenance",
-				Message: fmt.Sprintf("%s has undeclared provenance", f.Path),
-			})
-		}
-		for _, f := range verify.Missing {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-missing",
-				Message: fmt.Sprintf("%s was recorded as generated but is gone from disk", f.Path),
-				Fix:     "re-run /parlay-generate-code, or drop the component",
-			})
-		}
+// gateCoverageExceptions surfaces a stale or broken exception ledger.
+//
+// Reached from the same boundaries as the other ledger checks, because the
+// evaluation existed and nothing carried its findings anywhere: validate copied
+// the excused set and dropped every blocker, so the freshness rule was written,
+// tested at the leaf, and unreachable in production.
+func gateCoverageExceptions(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+	v := CheckCoverageExceptions(cfg, slug)
+	for _, b := range v.Blockers {
+		blockers = append(blockers, gateBlocker{
+			Code: "coverage-exception-invalid", Message: b,
+			Fix: "re-review the exception, or remove it",
+		})
 	}
-
-	rg := computeReviewGate(cfg, slug)
-	for _, iss := range rg.Issues {
-		if iss.Severity == "error" {
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message})
-		}
+	for _, w := range v.Warnings {
+		warnings = append(warnings, gateBlocker{Code: "coverage-exception-broad", Message: w})
 	}
-
 	return blockers, warnings
+}
+
+// gateCriteriaAuthority refuses codegen against a standard nobody approved.
+//
+// Shared and called from every independently invocable boundary that can reach
+// codegen, for the same reason gateLedgerState is: computeGate evaluates ONE
+// stage, so --from code never crosses the build boundary and a check living
+// only there protects the path nobody was worried about.
+//
+// The machine flag is deliberately absent from this signature. A gate reports
+// what is true of the feature; exercising a waiver is something an invocation
+// does, and the CLI passes it where the run is actually authorized. Reading it
+// here would let a gate silently answer a governance question on behalf of a
+// caller that never asked.
+// pendingMachineRun is a waiver this boundary would exercise IF it advances.
+type pendingMachineRun struct {
+	criteria []AuthorizedCriterion
+	reason   string
+}
+
+func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (blockers, warnings []gateBlocker, pending *pendingMachineRun) {
+	verdict, current, err := CheckCriteriaAuthority(cfg, slug, machine)
+	if err != nil {
+		return []gateBlocker{{
+			Code:    "criteria-authority-unreadable",
+			Message: fmt.Sprintf("cannot establish which standard %s is graded against: %v", slug, err),
+			Fix:     "repair the contract artifacts, then re-run",
+		}}, nil, nil
+	}
+	if verdict.Proceed {
+		if verdict.Machine {
+			// PENDING, not written. Evaluation stays pure: this subcheck
+			// permitting the waiver says nothing about whether the boundary
+			// advances, and a stale buildfile or a broken testcase later in the
+			// aggregation can still block it. Writing here produced an audit
+			// trail asserting that a run which was refused had "advanced" — a
+			// record that lies about the one thing it exists to record.
+			pending = &pendingMachineRun{criteria: current, reason: verdict.Reason}
+		}
+		return nil, warnings, pending
+	}
+
+	msg := verdict.Reason
+	if len(verdict.Added) > 0 || len(verdict.Removed) > 0 {
+		// Show WHAT changed. A refusal that only says the standard moved
+		// leaves the reader to diff it themselves, which is the work the gate
+		// just did.
+		for _, c := range verdict.Removed {
+			msg += fmt.Sprintf("\n    - no longer: %s — %q", c.Ref, c.Text)
+		}
+		for _, c := range verdict.Added {
+			msg += fmt.Sprintf("\n    + now: %s — %q", c.Ref, c.Text)
+		}
+	}
+	return []gateBlocker{{
+		Code:    "criteria-authority-missing",
+		Message: fmt.Sprintf("%s (%d criteria): %s", slug, len(current), msg),
+		Fix:     "approve the criteria interactively, or authorize this run explicitly if the project permits it",
+	}}, nil, nil
 }
 
 // refineSanctionsUnappliedTail implements 2b: an unapplied ledger tail is
@@ -435,4 +521,86 @@ func uniqueStrings(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// machineAuthorized reports whether THIS invocation asked to advance without
+// human approval of the criteria.
+//
+// Read from the advancing command rather than passed down from a reporting one,
+// because the question is about a run, not about a feature.
+func machineAuthorized() bool {
+	return gateAuthorizeCriteria == machineAuthorizationMode
+}
+
+// validateAuthorizeCriteriaFlag refuses a value that is neither empty nor the
+// one mode.
+//
+// A typo silently meaning "no waiver" is the worst of both: the run stops for a
+// reason the author believes they addressed, and nothing says the flag was
+// ignored.
+func validateAuthorizeCriteriaFlag(v string) error {
+	if v == "" || v == machineAuthorizationMode {
+		return nil
+	}
+	return fmt.Errorf("--authorize-criteria=%q is not a mode; the only value is %q", v, machineAuthorizationMode)
+}
+
+// commitPendingWaiver persists a machine authorization AFTER the boundary
+// passed, and fails the command if it cannot.
+//
+// A normal loop crosses code and then done, and logging both would record one
+// pipeline as two runs that proceeded without human approval. Code is where
+// unapproved criteria authorize generation, so that is the crossing worth
+// holding, and done inherits it.
+//
+// But "done inherits it" was written as "done records nothing", which is only
+// the same thing when code actually ran. A directly invoked
+// `gate done --authorize-criteria=machine` consumed the waiver, passed, and
+// left no audit at all — the one shape where the inheritance assumption is
+// false is exactly the shape where the record matters most.
+//
+// Done now inherits only from a machine run belonging to THIS execution. The
+// first attempt at this matched on criteria hash alone, which is wrong in a way
+// worth recording: a hash proves what was waived, not which run waived it. An
+// unchanged standard machine-run on Monday would have made a direct done
+// crossing on Friday inherit from it and write no Friday audit — precisely the
+// "an audit event is not standing authority" invariant that
+// APastMachineRunDoesNotAuthorizeALaterOne exists to hold.
+//
+// Execution identity comes from runIdentity(). In CI it is the job or run id,
+// which is genuinely shared across the separate `gate code` and `gate done`
+// invocations of one pipeline, so done inherits and the pipeline logs once.
+// Locally it is host and pid, which differ per invocation — so each boundary
+// records its own. That is the honest outcome: with no carrier proving the two
+// crossings belong to one pipeline, claiming they do would be a guess. A loop
+// that wants the single-event shape locally sets PARLAY_RUN_ID for the
+// duration of the pipeline, which runIdentity() already reads.
+//
+// An unrecordable waiver fails the command rather than passing quietly: a
+// waiver nobody can find later is indistinguishable from one that never
+// happened, which defeats the only reason to permit it.
+func commitPendingWaiver(cfg *config.Context, slug, stage string, out gateOutput) error {
+	if out.PendingWaiver == nil {
+		return nil
+	}
+	if stage != gateStageCode && stage != gateStageDone {
+		return nil
+	}
+	if stage == gateStageDone {
+		already, err := machineRunRecordedFor(cfg, slug, out.PendingWaiver.criteria, runIdentity())
+		if err != nil {
+			return fmt.Errorf("this run advanced without human approval of its criteria and the existing audit trail could not be read to see whether that was already recorded: %w", err)
+		}
+		if already {
+			return nil
+		}
+	}
+	if err := RecordMachineRun(cfg, slug, out.PendingWaiver.criteria,
+		time.Now().UTC().Format(time.RFC3339),
+		"parlay.criterion-authority.allow-machine", runIdentity(),
+		fmt.Sprintf("--authorize-criteria=machine at the %s boundary", stage),
+	); err != nil {
+		return fmt.Errorf("this run advanced without human approval of its criteria but the waiver could not be recorded: %w", err)
+	}
+	return nil
 }

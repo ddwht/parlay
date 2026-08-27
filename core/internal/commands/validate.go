@@ -44,7 +44,7 @@ var validateProject bool
 var validateTypes = []string{
 	"intent", "dialog", "surface", "buildfile", "blueprint", "yaml",
 	"infrastructure", "domain-model", "adapter", "adapter-set",
-	"capabilities", "coverage-review", "testcases", "page", "layout",
+	"capabilities", "testcases", "page", "layout",
 	"authored",
 }
 
@@ -255,10 +255,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = withCriteriaPresence(cmd, reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
 			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
 		}))
-	case "coverage-review":
-		// coverage-review validation is hash-aware and needs full inputs;
-		// surface a minimal YAML-shape check here.
-		validator = agent.ValidateYAML
 	// parlay-feature: parlay-tool/hand-authored-units
 	// parlay-component: authored-unit-validation
 	case "authored":
@@ -1131,8 +1127,9 @@ func renderTestcasesOutcomes(outcomes []agent.ValidationOutcome) error {
 // path's parent relative to the active root's BuildRoot(). From it the feature's
 // capabilities.yaml supplies every canonical operation (the operation walker's
 // subjects) and every verify: bullet those operations carry; surface.yaml
-// supplies every bullet its fragments carry; coverage-review.yaml supplies the
-// exemptions a human review recorded.
+// supplies every bullet its fragments carry; coverage-decisions.yaml supplies the
+// criteria a person deliberately excused, applied only while the ledger is
+// still bound to the contract it was granted against.
 //
 // Criteria are gathered per BULLET, not per entry. Gathering them per entry —
 // one ref for an operation with five bullets — is what let a single case mark
@@ -1191,6 +1188,11 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 	// with no feature: cannot form a reliable ref, so its operations are skipped.
 	if caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml")); capErr == nil && caps.Feature != "" {
 		in.ContractResolved = true
+		// The declared revision is what lets the transitional diagnostics
+		// graduate: a file at the current shape is one where these facts could
+		// have been recorded, so omitting them is an error rather than a
+		// warning. Absent reads as legacy, which keeps the warning.
+		in.Revisions.Capabilities = caps.SchemaVersion
 		for _, op := range caps.Operations {
 			if op.ID == "" {
 				continue
@@ -1217,32 +1219,26 @@ func testcasesCoverageInputs(cmd *cobra.Command, path string) agent.TestcasesV2I
 		}
 	}
 
-	// coverage-review.yaml → exemptions. A recorded exemption whose item is a
-	// criterion ref excuses that criterion from needing a case — the same
-	// human-review exemption the coverage-review gate already honors, read here
-	// so the earlier warning agrees with the later gate.
-	if cr, crErr := parser.ParseCoverageReview(filepath.Join(pctx.BuildPath(feature), "coverage-review.yaml")); crErr == nil {
-		for _, ex := range cr.Exemptions {
-			if ex.Item == "" {
-				continue
+	// Exceptions → ExemptCriteria, freshness-bound.
+	//
+	// The legacy coverage-review.yaml read that used to sit here folded
+	// cr.Exemptions in without touching either hash, so nothing bound an
+	// exemption to the artifacts it was granted against — the blanket gate was
+	// the only thing enforcing that, and it is going. Left as it was, removing
+	// the gate would have converted every recorded exemption into a permanent
+	// unconditional waiver, aimed precisely at the criteria a person once said
+	// needed no test, and silently.
+	//
+	// A stale ledger now excuses NOTHING and reports why, rather than being
+	// dropped: dropping turns each waiver back into an uncovered criterion,
+	// which under warning severities may still proceed, leaving freshness
+	// advisory.
+	if pctx != nil {
+		if exceptions, exErr := loadCoverageExceptions(pctx, feature); exErr == nil && exceptions != nil {
+			if current, cErr := CurrentCriteria(pctx, feature); cErr == nil {
+				verdict := EvaluateCoverageExceptions(pctx.Root.Path, exceptions, current)
+				in.ExemptCriteria = verdict.Exempt
 			}
-			// criterion_text: present excuses exactly that bullet; absent is
-			// read as entry-wide. Every exemption written before bullet-level
-			// coverage existed omits it, and none of them could have recorded
-			// one — so the absent form has to keep meaning what it meant, or
-			// upgrading silently narrows exemptions a human already granted.
-			text := agent.CanonicalCriterionText(ex.CriterionText)
-			if text == "" {
-				if in.ExemptCriteria.Entries == nil {
-					in.ExemptCriteria.Entries = make(map[string]bool)
-				}
-				in.ExemptCriteria.Entries[ex.Item] = true
-				continue
-			}
-			if in.ExemptCriteria.Bullets == nil {
-				in.ExemptCriteria.Bullets = make(map[agent.CriterionRef]bool)
-			}
-			in.ExemptCriteria.Bullets[agent.CriterionRef{Ref: ex.Item, Text: text}] = true
 		}
 	}
 

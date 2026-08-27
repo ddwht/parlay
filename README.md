@@ -432,7 +432,6 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 | `/parlay-register-adapter <path>` | Register a framework adapter |
 | `/parlay-view-page <page>` | Assemble cross-feature page view |
 | `/parlay-lock-page <page>` | Lock page layout into a manifest |
-| `/parlay-review-coverage @<feature>` | Walk suites, record approvals, write coverage-review.yaml |
 | `/parlay-migrate-capabilities` | Move operation-shaped fragments from infrastructure.md into capabilities.yaml |
 | `/parlay-migrate-config` | Convert legacy prototype-framework into a single-target presentation adapter-set |
 | `/parlay-migrate-spec` | Convert each feature's surface.md to surface.yaml |

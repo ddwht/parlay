@@ -16,26 +16,26 @@ import (
 
 // CoverageReview is the parsed shape of coverage-review.yaml.
 type CoverageReview struct {
-	Path           string             `yaml:"-"`
-	Feature        string             `yaml:"feature"`
-	ReviewedAt     string             `yaml:"reviewed_at"`
-	ReviewedBy     string             `yaml:"reviewed_by"`
-	ReviewMethod   string             `yaml:"review_method"`
-	BuildfileHash  string             `yaml:"buildfile_hash"`
-	TestcasesHash  string             `yaml:"testcases_hash"`
+	Path          string `yaml:"-"`
+	Feature       string `yaml:"feature"`
+	ReviewedAt    string `yaml:"reviewed_at"`
+	ReviewedBy    string `yaml:"reviewed_by"`
+	ReviewMethod  string `yaml:"review_method"`
+	BuildfileHash string `yaml:"buildfile_hash"`
+	TestcasesHash string `yaml:"testcases_hash"`
 	// SuiteHashes records a canonical-form hash per suite so the gate can tell
 	// which suites drifted rather than invalidating the whole review when any
 	// one changes. Absent in reviews written before per-suite staleness
 	// existed; the gate falls back to TestcasesHash when it is empty.
-	SuiteHashes    map[string]string  `yaml:"suite_hashes,omitempty"`
-	ApprovedSuites []string           `yaml:"approved_suites"`
+	SuiteHashes    map[string]string   `yaml:"suite_hashes,omitempty"`
+	ApprovedSuites []string            `yaml:"approved_suites"`
 	Exemptions     []CoverageExemption `yaml:"exemptions,omitempty"`
 }
 
 // CoverageExemption documents why a required term has no covering case.
 type CoverageExemption struct {
-	Suite  string `yaml:"suite"`
-	Item   string `yaml:"item"`
+	Suite string `yaml:"suite"`
+	Item  string `yaml:"item"`
 	// CriterionText narrows an exemption to a single verify: bullet on Item.
 	//
 	// Optional, and its absence is load-bearing rather than a default: an
@@ -45,7 +45,7 @@ type CoverageExemption struct {
 	// reading absence as "excuses nothing" would silently revoke exemptions a
 	// human already granted.
 	CriterionText string `yaml:"criterion_text,omitempty"`
-	Reason string `yaml:"reason"`
+	Reason        string `yaml:"reason"`
 }
 
 // ParseCoverageReview reads coverage-review.yaml from disk and parses it.

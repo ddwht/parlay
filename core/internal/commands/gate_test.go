@@ -283,3 +283,59 @@ operations:
 		t.Fatal(err)
 	}
 }
+
+// --- ledger state at every advancing boundary ----------------------------
+//
+// Regression tests for a bypass that predates intent supersession. Only
+// gateBuild aggregated ledger integrity and the unapplied tail; gateCode and
+// gateDone aggregated neither. A caller entering with --from code therefore
+// never crossed the boundary that asks whether a recorded decision had been
+// applied, and codegen ran against a specification its author had already
+// superseded — reporting success.
+
+func TestGate_Code_UnappliedTailBlocks(t *testing.T) {
+	setupUnappliedTailFeature(t)
+	out, err := computeGate(testContext(t), "my-feature", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "unapplied-amendments") {
+		t.Errorf("--from code must not walk past a recorded-but-unapplied decision; blockers=%+v", out.Blockers)
+	}
+	if out.Passed {
+		t.Error("the build->code boundary must not pass with an unapplied tail")
+	}
+}
+
+func TestGate_Done_UnappliedTailBlocks(t *testing.T) {
+	setupUnappliedTailFeature(t)
+	out, err := computeGate(testContext(t), "my-feature", gateStageDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "unapplied-amendments") {
+		t.Errorf("completing a feature asserts the strongest thing the ladder can say; blockers=%+v", out.Blockers)
+	}
+}
+
+// The journal-aware downgrade must be the SAME rule at every boundary, not a
+// build-only nicety: a refinement mid-apply is not stale, and blocking it at
+// the code boundary would stop the workflow that resolves the finding.
+func TestGate_Code_SanctionedTailIsWarning(t *testing.T) {
+	setupUnappliedTailFeature(t)
+	writeRefineJournalFixture(t, "my-feature", refineJournal{
+		Feature:   "my-feature",
+		Amendment: 1,
+		Completed: []string{"amendment-written", "splice-applied"},
+	})
+	out, err := computeGate(testContext(t), "my-feature", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gateHasCode(out.Blockers, "unapplied-amendments") {
+		t.Errorf("a sanctioned tail must not block the code boundary either; blockers=%+v", out.Blockers)
+	}
+	if !gateHasCode(out.Warnings, "unapplied-amendments") {
+		t.Errorf("it must still be reported; warnings=%+v", out.Warnings)
+	}
+}

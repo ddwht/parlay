@@ -137,7 +137,7 @@ type caseCriterion struct {
 // verify: bullets against. It is collected here rather than re-decoded in the
 // caller because the criterion node is already decoded for the missing-ref
 // check.
-func validateSuiteCases(mode ValidationMode, path, suiteName, suiteKind string, cases []map[string]yaml.Node) ([]ValidationOutcome, []CriterionRef) {
+func validateSuiteCases(mode ValidationMode, revs ArtifactRevisions, path, suiteName, suiteKind string, cases []map[string]yaml.Node) ([]ValidationOutcome, []CriterionRef) {
 	var outcomes []ValidationOutcome
 	var criterionRefs []CriterionRef
 	isV2 := suiteKind != ""
@@ -162,10 +162,10 @@ func validateSuiteCases(mode ValidationMode, path, suiteName, suiteKind string, 
 		if isV2 {
 			var crit caseCriterion
 			if node, ok := c["criterion"]; !ok {
-				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
+				outcomes = append(outcomes, NewGraduatedOutcome(mode, revs, "testcases-case-criterion-missing",
 					fmt.Sprintf("%s: suite %q %s declares no criterion: — nothing records which verify: entry it discharges; regenerate with `parlay build-feature` to derive it", path, suiteName, label)))
 			} else if err := node.Decode(&crit); err != nil || strings.TrimSpace(crit.Ref) == "" {
-				outcomes = append(outcomes, NewOutcome(mode, "testcases-case-criterion-missing",
+				outcomes = append(outcomes, NewGraduatedOutcome(mode, revs, "testcases-case-criterion-missing",
 					fmt.Sprintf("%s: suite %q %s has a criterion: with no ref — the ref cites the @feature/kind:name verify: entry the case discharges", path, suiteName, label)))
 			} else {
 				citedRef = strings.TrimSpace(crit.Ref)
@@ -261,7 +261,7 @@ func validateSuiteCases(mode ValidationMode, path, suiteName, suiteKind string, 
 		// exercise, so listing the operation there proves nothing about the
 		// steps.
 		if SuiteKind(suiteKind) == SuiteKindPresentation && strings.Contains(citedRef, "/operation:") && !stepTargets[citedRef] {
-			outcomes = append(outcomes, NewOutcome(mode, "testcases-cross-kind-criterion-unexercised",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, revs, "testcases-cross-kind-criterion-unexercised",
 				fmt.Sprintf("%s: presentation suite %q %s cites the operation criterion %q but no step targets that operation — a presentation case may discharge an operation's criterion only by invoking it, not as a stand-in for a display criterion the fragment never stated", path, suiteName, label, citedRef)))
 		}
 
@@ -406,7 +406,13 @@ type TestcasesV2Input struct {
 	// excused in ExemptCriteria; the criterion walker fires
 	// verify-criterion-uncovered for each that is neither.
 	Criteria []CriterionRef
-	// ExemptCriteria are criteria a human review (coverage-review.yaml) has
+
+	// Revisions carry the declared schema_version of the artifacts in play, so
+	// the transitional diagnostics can graduate on a file a current generator
+	// produced while still only warning on one that predates the field.
+	Revisions ArtifactRevisions
+	// ExemptCriteria are criteria a person deliberately excused, from the
+	// feature's coverage-decisions.yaml, which has
 	// excused from needing a covering case.
 	//
 	// An exemption naming a ref and a text excuses exactly that bullet. An
@@ -446,6 +452,16 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 		return outcomes
 	}
 
+	// The file's own declared revision is what graduates the transitional
+	// diagnostics. It was decoded and never read until now — v1-versus-v2 is
+	// discriminated by per-suite kind: — so the promised "graduates once
+	// projects have rebuilt" had no way to arrive. A caller may also supply it
+	// (the criteria come from other artifacts, and their revisions with them);
+	// the file wins for its own.
+	if tc.SchemaVersion > in.Revisions.Testcases {
+		in.Revisions.Testcases = tc.SchemaVersion
+	}
+
 	covered := make(map[string]bool)
 	// Cited criteria, keyed by the (ref, canonical text) identity.
 	criteriaCovered := make(map[CriterionRef]bool)
@@ -454,7 +470,7 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 		// discriminator check and for legacy suites too — putting it after the
 		// `continue` below would have silently exempted every v1 suite, which is
 		// most of what exists in projects today.
-		caseOutcomes, refs := validateSuiteCases(mode, path, suite.Name, suite.Kind, suite.Cases)
+		caseOutcomes, refs := validateSuiteCases(mode, in.Revisions, path, suite.Name, suite.Kind, suite.Cases)
 		outcomes = append(outcomes, caseOutcomes...)
 		for _, ref := range refs {
 			criteriaCovered[ref] = true
@@ -493,7 +509,7 @@ func ValidateTestcasesV2(mode ValidationMode, in TestcasesV2Input) []ValidationO
 		// in existence was written without it, so erroring would fail them
 		// all at once. The severity states the direction of travel.
 		if strings.TrimSpace(suite.File) == "" {
-			outcomes = append(outcomes, NewOutcome(mode, "testcases-file-missing",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "testcases-file-missing",
 				fmt.Sprintf("%s: v2 suite %q declares no file: — generate-code would have to invent a path, which is how two components' tests end up in two places; rebuild with `parlay build-feature` to populate it from the plan", path, suite.Name)))
 		}
 
@@ -590,14 +606,14 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 		}
 		switch {
 		case !declaredRefs[c.Ref]:
-			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-ref-unknown",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "testcases-criterion-ref-unknown",
 				fmt.Sprintf("%s: a case cites criterion.ref %q, which no contract entry declares — check the ref against capabilities.yaml and surface.yaml", path, c.Ref)))
 		case c.Text == "":
 			textlessEntries[c.Ref] = true
-			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-text-missing",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "testcases-criterion-text-missing",
 				fmt.Sprintf("%s: a case cites %q with no criterion.text — the text pins which of that entry's verify: bullets the case discharges, and without it coverage cannot be counted per criterion", path, c.Ref)))
 		case !declaredPairs[c]:
-			outcomes = append(outcomes, NewOutcome(mode, "testcases-criterion-text-drift",
+			outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "testcases-criterion-text-drift",
 				fmt.Sprintf("%s: a case cites %q with criterion.text %q, which matches none of that entry's current verify: bullets — either the contract was reworded after the case was written, or the criterion was invented", path, c.Ref, c.Text)))
 		}
 	}
@@ -616,8 +632,8 @@ func walkCriterionCoverage(mode ValidationMode, path string, in TestcasesV2Input
 			continue
 		}
 		reportedUncovered[key] = true
-		outcomes = append(outcomes, NewOutcome(mode, "verify-criterion-uncovered",
-			fmt.Sprintf("%s: criterion %q on contract entry %q has no case discharging it — a case must cite both in criterion.{ref,text}, or coverage-review.yaml must exempt it", path, c.Text, c.Ref)))
+		outcomes = append(outcomes, NewGraduatedOutcome(mode, in.Revisions, "verify-criterion-uncovered",
+			fmt.Sprintf("%s: criterion %q on contract entry %q has no case discharging it — a case must cite both in criterion.{ref,text}, or coverage-decisions.yaml must excuse it", path, c.Text, c.Ref)))
 	}
 
 	return outcomes

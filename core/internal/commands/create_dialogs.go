@@ -38,12 +38,15 @@ func runCreateDialogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Operation: read-file intents.md, parse using intent-schema
+	// Generate dialogs only for promises the feature still makes. Writing a
+	// dialog for a withdrawn promise would create work the project has already
+	// decided against, and then report it as uncovered forever.
 	intentsPath := filepath.Join(featurePath, "intents.md")
-	intents, err := parser.ParseIntentsFile(intentsPath)
+	res, err := resolveActiveIntents(cfg, slug)
 	if err != nil {
 		return fmt.Errorf("failed to read intents: %w", err)
 	}
+	intents := res.Active
 
 	if len(intents) == 0 {
 		return fmt.Errorf("no intents found in %s — write some intents first", intentsPath)

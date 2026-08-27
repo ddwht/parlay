@@ -178,6 +178,10 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    - **If surface**: run the existing create-surface flow (load schemas, analyze for ambiguities, generate surface.yaml, validate)
      - **Populate `verify:` on each fragment** (YAML form) with the owning intent's presentation claims, following **Routing acceptance criteria** below. Operation coverage of the intent does **not** exempt a fragment: an intent that produces an operation still contributes its presentation claims here. This is what testcase derivation reads for presentation suites; there is no fallback — a fragment whose criteria never land here has none, and every case written against it will cite nothing.
    - **If capabilities**: guide the designer to author `capabilities.yaml` — show the closed-vocabulary structure, the operation kinds, and an example operation derived from the feature's intents
+     - **Set `schema_version: 2`** — the shape carrying `source:` on every
+       operation. Declaring it is what makes a missing `source:` an error
+       rather than a warning, and a current file that omits the version asks to
+       be graded by the rules written for files that predate the field.
      - **Set `source:` on every operation** to the `@{feature}/{intent-slug}` refs it came from, the same way a surface fragment carries one. This is the only record of which intent an operation implements, and it is what lets a later change described in prose be routed to the operation that owns it. An operation without it can be found only by name similarity, which misses renames and matches things that merely sound alike.
      - **Populate `verify:` on every operation** with the owning intent's contract claims, following **Routing acceptance criteria** below. The acceptance criteria live on the operation from birth — testcase derivation reads them from here, not from intents.md.
    - **If infrastructure**: guide the designer to author `infrastructure.md` — show the fragment format, the field set (Name, Source intent, Affects, Behavior, Invariants), and a worked example drawn from the matching architectural category (boundary, probe, allowlist, dependency pin)
@@ -216,6 +220,54 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
      - **Referencing an entity that only another feature's contribution proposes is fine.** `capabilities.yaml` reports it as `capabilities-entity-pending` — a warning naming the proposer — rather than failing. Do not invent a placeholder entity to work around it.
      - A project that has no contributions and only ever edits the root model still works exactly as before; the contribution file is optional.
    - When multiple artifacts are required, author them in order: domain-model first (so other artifacts can reference its entities), then surface and capabilities and infrastructure in any order
+
+5.5. **Get the standard approved** — The criteria you just wrote are what every
+   test for this feature must discharge, and they are not what the designer
+   wrote. Their **Verify** bullets were split into atomic claims and any
+   sentence carrying both a presentation and a contract claim was **rewritten**
+   into separate criteria on separate destinations. That transformation happened
+   after the only choice they were offered — which artifact set to write — and
+   nothing has shown it to them.
+
+   Present the mapping and get it approved before the phase ends:
+
+   ```
+   @{feature}/intent:{slug} — "{the bullet as they wrote it}"
+     -> @{feature}/operation:{id}    — "{the criterion as you wrote it}"
+     -> @{feature}/fragment:{name}   — "{the criterion as you wrote it}"
+   ```
+
+   Show every criterion, grouped by the bullet it came from, and say plainly
+   where a bullet was split or reworded. **A bullet that survived unchanged is
+   still shown** — the designer is approving the whole standard, and a listing
+   that hides the unchanged parts makes the changed ones look like the only
+   thing at stake.
+
+   **This decision has no safe default.** Under `--non-interactive` raise the
+   decision and stop: an agent answering it is an agent approving the standard
+   it will then be graded against, which is the one thing the gate this replaces
+   was trying to prevent. Do not answer it, and do not record an approval.
+
+   **The one exception is an explicitly authorized machine run** — a project
+   that has set `parlay.criterion-authority.allow-machine` AND an invocation
+   passing `--authorize-criteria=machine`. There, write the artifacts, record
+   NO approval, and continue: the boundary will proceed under the waiver and log
+   that nobody looked. Both switches are required, and neither is something this
+   phase decides — it is reading a choice the project and the run already made.
+   Without that exception the unattended case cannot reach codegen at all, which
+   is the benchmark finding this work exists to fix rather than restate.
+
+   On approval, record it:
+   `parlay internal approve-criteria @{feature} --by "{how the decision was answered}" --decision-id "{the decision's id}"`.
+   Pass what actually answered — the decision channel — never a username or a
+   value you invent; `--by` exists so the record can say what accepted the
+   standard, and an identity the tool made up is evidence of nothing.
+
+   `parlay internal criteria-authority @{feature}` reports the same mapping and
+   whether it is approved, so a later phase can check without re-deriving it.
+   Nothing needs re-approving when testcases regenerate: what was approved is
+   the standard, not the suites derived from it. Only a changed criterion asks
+   again, and then the report names exactly what changed.
 
 6. **Report** — Confirm which artifacts were created and what the next pipeline step is (`/parlay-build-feature @{feature}`).
 

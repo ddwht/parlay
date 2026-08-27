@@ -38,7 +38,7 @@ type CapabilityOperation struct {
 	// buildfile to test — never needed it. Asking "which artifact owns
 	// this change" does, and without it a backend refinement had nothing
 	// to route on but name similarity.
-	Source   string            `yaml:"source,omitempty"`
+	Source string `yaml:"source,omitempty"`
 	// Verify holds the operation's acceptance criteria — relocated from the
 	// owning intent's **Verify** bullets so testcase derivation reads them
 	// from the contract artifact instead of the narrative doc. Optional on
@@ -47,14 +47,14 @@ type CapabilityOperation struct {
 	Verify []string `yaml:"verify,omitempty"`
 	// Rationale is one line of provenance prose — the "why" beside the
 	// what. Never parsed or validated beyond being a string.
-	Rationale string           `yaml:"rationale,omitempty"`
-	Kind     string            `yaml:"kind"`
-	Subject  CapabilitySubject `yaml:"subject"`
-	Input    *CapabilityIO     `yaml:"input,omitempty"`
-	Output   *CapabilityIO     `yaml:"output,omitempty"`
-	Errors   []string          `yaml:"errors,omitempty"`
-	Policies []string          `yaml:"policies,omitempty"`
-	Steps    []CapabilityStep  `yaml:"steps"`
+	Rationale string            `yaml:"rationale,omitempty"`
+	Kind      string            `yaml:"kind"`
+	Subject   CapabilitySubject `yaml:"subject"`
+	Input     *CapabilityIO     `yaml:"input,omitempty"`
+	Output    *CapabilityIO     `yaml:"output,omitempty"`
+	Errors    []string          `yaml:"errors,omitempty"`
+	Policies  []string          `yaml:"policies,omitempty"`
+	Steps     []CapabilityStep  `yaml:"steps"`
 }
 
 // CapabilitySubject names the entity an operation acts on.

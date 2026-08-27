@@ -370,7 +370,6 @@ func ResolveEffectiveConfig(active *Root) (*EffectiveConfig, error) {
 		return c.SDDFramework
 	})
 
-
 	// Cross-validate ai-agent single-source. We do this once the
 	// effective config is assembled, so the error message has both
 	// paths handy.

@@ -707,8 +707,8 @@ suites:
 `)
 	// The contract declares a criterion for an operation no case cites.
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/operation:report.submit", Text: "submitting stores the report"},
@@ -758,10 +758,10 @@ suites:
             target: title
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
 	}
 	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
 		t.Error("verify-criterion-uncovered fired on a criterion a case discharges")
@@ -782,10 +782,10 @@ suites:
     cases: []
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "submitting stores the report"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "submitting stores the report"}},
 		ExemptCriteria: ExemptedCriteria{
 			Entries: map[string]bool{"@expenses/operation:report.submit": true},
 		},
@@ -826,8 +826,8 @@ suites:
 // this reported nothing at all.
 func TestValidateTestcasesV2_CoverageIsPerBulletNotPerEntry(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
@@ -855,10 +855,10 @@ func TestValidateTestcasesV2_CoverageIsPerBulletNotPerEntry(t *testing.T) {
 // unknown ref simply marked nothing covered, so it read as a gap elsewhere.
 func TestValidateTestcasesV2_CriterionRefUnknown(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  criterionFixture("@expenses/fragment:typo", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:typo", "the title reads Submit"),
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
 	}
 	outcomes := ValidateTestcasesV2(ModeBuild, in)
 	if !findCode(outcomes, "testcases-criterion-ref-unknown") {
@@ -871,10 +871,10 @@ func TestValidateTestcasesV2_CriterionRefUnknown(t *testing.T) {
 // performing, and which it did not perform: the field was decoded and dropped.
 func TestValidateTestcasesV2_CriterionTextDrift(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  criterionFixture("@expenses/fragment:submit", "the heading reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the heading reads Submit"),
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
 	}
 	outcomes := ValidateTestcasesV2(ModeBuild, in)
 	if !findCode(outcomes, "testcases-criterion-text-drift") {
@@ -905,10 +905,10 @@ suites:
             target: title
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"}},
 	}
 	outcomes := ValidateTestcasesV2(ModeBuild, in)
 	if !findCode(outcomes, "testcases-criterion-text-missing") {
@@ -938,10 +938,10 @@ func TestValidateTestcasesV2_NoContractSuppressesCitationChecks(t *testing.T) {
 // unify two bullets.
 func TestValidateTestcasesV2_CriterionTextNormalization(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "  the title reads Submit  "}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/fragment:submit", Text: "  the title reads Submit  "}},
 	}
 	if findCode(ValidateTestcasesV2(ModeBuild, in), "verify-criterion-uncovered") {
 		t.Error("surrounding whitespace defeated criterion identity")
@@ -959,8 +959,8 @@ func TestValidateTestcasesV2_CriterionTextNormalization(t *testing.T) {
 // are reported as an authoring defect rather than given an invented index.
 func TestValidateTestcasesV2_DuplicateCriterion(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
@@ -982,8 +982,8 @@ func TestValidateTestcasesV2_DuplicateCriterion(t *testing.T) {
 // other bullets still requiring a case.
 func TestValidateTestcasesV2_BulletSpecificExemption(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/fragment:submit", Text: "the title reads Submit"},
@@ -1016,8 +1016,8 @@ func TestValidateTestcasesV2_BulletSpecificExemption(t *testing.T) {
 // exemptions a human already granted.
 func TestValidateTestcasesV2_LegacyExemptionStaysEntryWide(t *testing.T) {
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
+		Path:             "test",
+		Content:          criterionFixture("@expenses/fragment:submit", "the title reads Submit"),
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},
@@ -1065,10 +1065,10 @@ suites:
             target: report-store
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
 	}
 	outcomes := ValidateTestcasesV2(ModeBuild, in)
 	if findCode(outcomes, "testcases-cross-kind-criterion-unexercised") {
@@ -1100,10 +1100,10 @@ suites:
             target: title
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
 	}
 	if !findCode(ValidateTestcasesV2(ModeBuild, in), "testcases-cross-kind-criterion-unexercised") {
 		t.Fatal("a presentation case citing an operation it never invokes was accepted")
@@ -1132,10 +1132,10 @@ suites:
             target: report-store
 `)
 	in := TestcasesV2Input{
-		Path:     "test",
-		Content:  content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
-		Criteria: []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
+		Criteria:         []CriterionRef{{Ref: "@expenses/operation:report.submit", Text: "stores the report"}},
 	}
 	if findCode(ValidateTestcasesV2(ModeBuild, in), "testcases-cross-kind-criterion-unexercised") {
 		t.Error("the cross-kind rule fired on an operation suite citing its own operation")
@@ -1164,8 +1164,8 @@ suites:
             target: report-store
 `)
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},
@@ -1204,8 +1204,8 @@ suites:
             target: report-store
 `)
 	in := TestcasesV2Input{
-		Path:    "test",
-		Content: content,
+		Path:             "test",
+		Content:          content,
 		ContractResolved: true,
 		Criteria: []CriterionRef{
 			{Ref: "@expenses/operation:report.submit", Text: "stores the report"},

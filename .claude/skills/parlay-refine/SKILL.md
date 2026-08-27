@@ -114,6 +114,26 @@ truth, and they are what step 4 amends. `parlay internal check-drift` enforces
 this: an edit to a frozen doc surfaces as a `ledger_integrity` finding, not as
 drift.
 
+**Frozen is not immutable in force.** A founding intent records what the
+feature promised and why, at the moment it was founded. When the project
+decides otherwise, that document does not become wrong — it becomes history,
+and the new decision is recorded on top of it. `supersedes_intents:` on an
+amendment is how (see step 3.5). This matters most for a feature that owns no
+contract artifact: `affects:` has nothing to resolve against there, so before
+supersession existed such a feature could not be changed at all, and the only
+routes were to edit a frozen document or to leave the spec contradicting the
+code indefinitely. Neither is a route; both are damage.
+
+**Read the promise set before proposing a change.** Run
+`parlay internal active-spec @{feature}`. It reports which founding promises
+still stand (`active`), which a later decision retired and by which amendment
+(`retired`), and whether a retirement is recorded but not yet applied
+(`pending`, with `blocked: true`). Two things follow. A change that contradicts
+an `active` promise is a supersession and takes step 3.5's decision gate below —
+not a quiet contradiction, and never an edit to the frozen file. A change that
+merely refines what a `retired` promise used to say needs no supersession: that
+promise is already history.
+
 **The change is recorded before it is applied.** Insert this step between
 steps 3 and 4:
 
@@ -125,13 +145,75 @@ steps 3 and 4:
      `date:`, `trigger:` (what prompted this — name the asking feature as
      `@feature` when the pressure is cross-feature), `affects:` (the
      contract entries this changes, as `@{feature}/<kind>:<name>` refs with
-     kind one of `operation | surface | infrastructure | domain`), and
-     `supersedes:` (earlier amendment slugs this replaces, usually empty).
+     kind one of `operation | surface | infrastructure | domain`),
+     `supersedes:` (earlier amendment slugs this replaces, usually empty), and
+     `supersedes_intents:` (founding intent slugs **in this feature** whose
+     promise this decision replaces — omit unless the gate below applies).
    - Body: `## Change` (the delta, in prose — never a restatement of the
      feature), `## Why` (the reasoning; this is the only place it gets
      recorded), `## Acceptance` (criteria; step 4 lands them as `verify:`
      entries on the affected artifact entries — omit only for renames and
      pure-prose changes).
+
+   **If the change contradicts a founding promise, gate it separately first.**
+   Step 3's read of `parlay internal active-spec` tells you whether it does. This is the one
+   decision in the skill with **no safe default and no non-interactive path**:
+   retiring a promise reduces what the feature commits to, and an agent that
+   answered it alone would be deciding, on the project's behalf, to stop doing
+   something the project said it would do. Under `--non-interactive`, raise a
+   `parlay-decision` block and **write nothing** — not the amendment, not the
+   splice.
+
+   Present what is actually being given up, taken from `parlay internal active-spec` rather
+   than paraphrased: the promise's **Goal**, its **Verify** bullets, the
+   **replacement** (`## Change` and `## Acceptance`), and the **disposition of
+   every contract entry** whose `source:` names it. Name each such entry in
+   `affects:` and state in `## Change` what becomes of it — replaced, removed
+   or retained. `affects:` carries refs only: it can prove you enumerated an
+   entry, never which of the three you chose, so the disposition itself lives
+   in the prose and nowhere else. `parlay internal check-amendments` reports
+   `intent-supersession-unaccounted-affect` for an entry you did not
+   enumerate, but the reviewer should see the list before it is written, not
+   after.
+
+   Then record it as a supersession: name the intent slug in
+   `supersedes_intents:`, and write both `## Why` and `## Acceptance` — neither
+   is optional here, and the rename/pure-prose exemption does not apply.
+   `## Acceptance` is the successor criteria step 4 lands as `verify:` entries
+   on the affected contract entries — that splice is what makes them current
+   truth, not the amendment file itself. Without one the amendment retires a
+   promise and puts nothing in its place, which the validator refuses as
+   `amendment-supersession-no-successor`.
+
+   Three refusals you cannot argue past, all reported by
+   `parlay internal check-amendments` after the write: an intent this feature
+   does not declare, a second live amendment retiring an intent another already
+   retired (name the earlier in `supersedes:` to settle it), and retiring a
+   feature's **last** live promise — a feature that promises nothing is a
+   lifecycle question with its own dependency checks, not a ledger entry. If
+   you hit the last one, stop: what you are doing is retiring the feature, and
+   that is not this operation.
+
+   **The retirement takes effect only once applied.** Until the baseline
+   records this amendment, the feature still makes the old promise — the
+   artifacts and the generated code still keep it — so every advancing
+   boundary blocks with `unapplied-amendments` naming the pending supersession.
+   That is correct and is not something to work around. **A governance
+   amendment does not apply through the splice.** One that supersedes an
+   intent or retires a feature changes what the founding documents promise,
+   and no artifact edit can express that — the ordinary splice-and-rebaseline
+   path has nothing to splice. Apply it with:
+
+   ```
+   parlay internal apply-governance @<feature> --confirm
+   ```
+
+   which applies every pending governance amendment on that feature and moves
+   the applied marker. Without `--confirm` it refuses and names the promises
+   that would stop being in force — read that list before confirming, because
+   it, not the amendment filename, is what you are approving. Only after that does the boundary stop naming it. Reach for the
+   splice for amendments that change an artifact's content; reach for
+   `apply-governance` for ones that change what the feature promises at all.
 
    **Decision-gate the exact file content before writing** — same rule as
    step 4's gate, and the two are one decision when convenient: show the
@@ -507,39 +589,24 @@ report — which mode ran is part of what was blessed.
    that already succeeded; the next run's pre-flight shows it, and
    re-running save-build-state on an unchanged tree is a no-op.
 
-10. **Re-review coverage** — but ask the gate what actually needs it first:
-    `parlay internal check-review-gate @{feature}` reports `stale_suites` —
-    the approved suites whose testcases changed since the review. When the
-    review carries per-suite hashes, a one-suite refinement stales exactly
-    one suite, and the re-review walk is that suite, not all of them. Tell
-    the reviewer which suites they are re-approving and why those.
+10. **Check the standard still holds** — a refinement that changed criteria
+    changed what this feature is graded against, and the approval was bound to
+    the old set. `parlay internal criteria-authority @{feature}` reports whether
+    the current criteria are approved and, when they are not, exactly which
+    bullets were added or removed.
 
-    **The gate may be inactive — that is a documented outcome, not a skip to
-    improvise.** When `parlay internal check-review-gate` reports `ready: true` AND no
-    `.parlay/build/{feature}/coverage-review.yaml` exists, this project does
-    not run the coverage-review gate at all — it is single-target /
-    presentation-only, and the gate short-circuits to ready for exactly that
-    shape. There is nothing to re-review and nothing the next codegen run will
-    trip on. Record `coverage re-review skipped: gate inactive (no
-    coverage-review.yaml; review-gate ready)` in the step-11 report and
-    proceed to step 11. Do NOT run `review-coverage` to manufacture a review
-    the project's shape does not call for. (`ready: true` WITH a
-    coverage-review.yaml present means the existing review still holds after
-    this change; re-review anyway per the next paragraph so its pinned hashes
-    track the new buildfile.)
+    An unchanged standard needs nothing: what was approved is the criteria, not
+    the testcases derived from them, so regenerating suites re-approves nothing
+    and asks nobody. A changed one routes back to the artifacts phase, where the
+    mapping from each intent bullet to the criterion it became is shown and
+    approved — approving from here would approve a standard nobody was shown,
+    which is what the retired suite-name gate did.
 
-    Otherwise — a coverage-review.yaml exists (the gate is active) — run
-    `parlay review-coverage @{feature}`. Not optional, and not
-    tidiness. The refinement changed the buildfile, which invalidates the
-    hashes `coverage-review.yaml` pins, so the review gate exits non-zero on
-    the *next* codegen run — after this command has reported success and
-    everyone has moved on. Chaining it here is what keeps a refined project
-    in a state the next command can actually work from. (A review predating
-    per-suite hashes stales whole-file; the first re-run writes the
-    per-suite form and the narrowing applies from then on.)
-
-    Use `--exempt <suite>:<item>=<reason>` for terms that legitimately have no
-    covering case.
+    If the feature carries coverage exceptions, the same command's ledger check
+    reports any that were granted against criteria that have since moved. Those
+    block until re-reviewed rather than being dropped: a judgment that a
+    specific criterion needs no test says nothing about a criterion that has
+    been rewritten.
 
 11. **Report** — What changed, in this order: the artifact and the span amended;
     the components regenerated; the test result; the baseline and coverage

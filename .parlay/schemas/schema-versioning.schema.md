@@ -15,7 +15,7 @@ An artifact that carries a `schema_version:` field declares it:
 - **a plain integer**, always — never a semver string (`"1.2.0"`), never a date, never a string tag.
 - **monotonically increasing**, starting at `1` for the artifact's first released shape.
 
-Not every artifact needs a `schema_version:` field. It's required for artifacts whose on-disk shape is expected to evolve across releases in a way consumers must detect (hand-authored or long-lived generated files). It's optional for artifacts whose shape is pinned by something else already — `adapter-set.schema.md` and `coverage-review.schema.md`, for example, have no version field of their own because their shape is tied to the project's adapter-set topology and the buildfile/testcases hashes they gate, respectively, not to an independent evolution timeline.
+Not every artifact needs a `schema_version:` field. It's required for artifacts whose on-disk shape is expected to evolve across releases in a way consumers must detect (hand-authored or long-lived generated files). It's optional for artifacts whose shape is pinned by something else already — `adapter-set.schema.md`, for example, has no version field of its own because its shape is tied to the project's adapter-set topology rather than to an independent evolution timeline.
 
 ## Migrator-or-regenerate: pick one, document it
 
@@ -39,7 +39,8 @@ A schema declaring `schema_version:` with neither policy documented is incomplet
 | `.parlay/build/_project/.code-hashes.yaml` | `schema-version` | Regenerate | **Kebab-case, not snake_case** — a violation of the rule above that predates this doc, kept because the field is read by every `verify-generated` run against snapshots already on disk in every project, and a rename would make each of them unreadable to gain nothing but consistency. Currently at 2; v2 added the `hand-authored` provenance, changing the domain of an existing field. Regenerate by re-running `parlay save-build-state`. |
 | `.parlay/build/<feature>/.baseline.yaml` | `schema-version` | Regenerate | Same kebab-case exception and the same reason. Each feature's baseline carries its own `generated-at` instant — see "Per-feature blessing instants" below. |
 | `.parlay/adapter-set.yaml` | — (none) | N/A | Shape is pinned by the project's adapter-set topology, not an independent version timeline. |
-| `.parlay/build/<feature>/coverage-review.yaml` | — (none) | N/A | Gated by buildfile/testcases content hashes, not its own version. |
+| `.parlay/build/<feature>/criteria-authority.yaml` | `schema_version` | Migrator chain | Records a human decision with no upstream to re-derive it from, which is the migrator-chain profile. Its hashes pin the criteria it approved, not its own future shape. |
+| `.parlay/build/<feature>/coverage-decisions.yaml` | `schema_version` | Migrator chain | Same reason: a person's judgment that a criterion needs no test cannot be regenerated. |
 | `.parlay/adapters/<name>.adapter.yaml` | — (none, deferred) | N/A for now | Hand-authored, long-lived — the migrator-chain profile — but the file *format* hasn't had a breaking change yet. See `adapter.schema.md`'s Versioning section: add `schema_version` with a real migrator at the first breaking format change, not speculatively now. |
 | `.parlay/blueprint.yaml` | — (none, deferred) | N/A for now | Same deferral reasoning as the adapter file; see `blueprint.schema.md`. |
 | `spec/pages/<page>.page.md` (manifest shape, not the embedded Layout block) | — (none, deferred) | N/A for now | Simple, hand-reviewed, unchanged shape since introduction; see `page.schema.md`. Do not confuse with the embedded `## Layout` block's own `schema_version`, a separate field on a separate structure. |

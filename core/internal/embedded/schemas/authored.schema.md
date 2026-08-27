@@ -31,7 +31,7 @@ satisfies:
 | Field | Required | Description |
 |---|---|---|
 | `schema_version` | Yes | Integer, currently `1`. See the Versioning section. |
-| `unit` | Yes | The unit's slug. Must equal the containing directory's name — the same directory-matches-identifier rule `coverage-review.yaml` follows for `feature:`. |
+| `unit` | Yes | The unit's slug. Must equal the containing directory's name — the same directory-matches-identifier rule every per-feature build artifact follows for `feature:`. |
 | `summary` | Yes | One line stating what the unit is. Read by humans and by the phases that must explain why they refused to generate into it. |
 | `sources` | Yes | Non-empty list of root-relative globs naming the hand-authored sources. |
 | `tests` | No | Root-relative globs naming the unit's own test sources. A unit with no `tests:` can satisfy no invariant by test, only by inspection. |

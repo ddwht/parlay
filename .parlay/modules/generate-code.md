@@ -155,7 +155,9 @@ This step is injected at deploy time and runs before every other step in this mo
 parlay internal gate @{feature} --stage code
 ```
 
-(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **pure recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict and writes nothing, so re-running it after a fix re-derives the answer with no stale state to clear.
+**If this run carries `--authorize-criteria=machine`, pass it here too.** Without it this gate refuses a feature whose criteria nobody has approved, which is right for a run that was not authorized and wrong for one that was — and the flag is how a run says which it is. Both the project setting and this argument are required; neither alone counts.
+
+(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict, so re-running it after a fix re-derives the answer with no stale state to clear. It writes nothing **except** when an authorized machine run passes the code boundary, where it records the waiver — that record is the only trace that generation proceeded against a standard nobody approved, so it is written by the run that actually advanced rather than inferred later.
 
 **If any invocation exits non-zero, stop.** Do not proceed to the steps below, and do not quietly fix-and-retry: each entry in the gate's `blockers[]` names its own `fix`, and resolving a blocker is the driver's call, not this phase's. Surface the blockers as a `failure` decision request (see **Asking the user**) with them in `context:`, and let the driver decide. A passing gate (exit zero) is the only condition under which the rest of this module runs.
 
@@ -629,30 +631,42 @@ The fix is structural: the baseline and code-hashes are written together by a si
 - `toolchain-preserves-violated` — a `mutating` toolchain tool ran and broke one of its declared `preserves:` guarantees: the testcases regressed (caught by step 16), a parlay marker vanished from an `owns_markers: parlay` file, or a declared element/action disappeared. Codegen STOPs and names the tool. Distinct from `test-execution-failed` on purpose — the provenance (a tool broke it, not the emission) is the actionable fact.
 - `spec-leak` — if you (the agent) find yourself wanting to read a file under `spec/intents/`, **do not**. Stop and report which buildfile field is missing the information you need. This is a buildfile schema bug, not an excuse to cross the boundary.
 
-## Section: Coverage-review gate (multi-target only)
+## Section: Boundary gate
 
-<!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
+<!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate — provenance: this section began as the coverage-review gate, now retired -->
 <!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
 
-When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay internal check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
+Codegen does not consult a coverage review. That gate is retired: it asked a
+person to approve a list of suite NAMES with the default set to yes, recorded
+whoever the environment said was running, and proved that somebody answered
+rather than that anybody looked.
 
-**Gate-inactive is a recorded outcome, not a skip to improvise (F3).** When `check-review-gate` reports `ready: true` AND no `coverage-review.yaml` exists — the presentation-only / single-target shape, where the gate short-circuits — there is no review to consult and nothing to block on. Record `coverage-review gate inactive (no coverage-review.yaml; review-gate ready) — proceeding` and continue past this gate. This is the documented unattended path (record-skipped-with-reason); do NOT invent a coverage review the project's shape does not call for, and do NOT treat the absent file as `coverage-review-missing` (that code fires only for a *multi-target* project, where the gate is active and the file is genuinely required).
+What guards this boundary now is the injected **Step 0 — Gate**, which
+aggregates it: a person approved the criteria this feature is graded against
+(`criteria-authority`), the tests mechanically discharge that standard
+(`testcases-readiness`), and any recorded exception is still bound to the
+contract it was granted against (`coverage-decisions`). A non-zero exit stops
+this module exactly as before, and its `blockers[]` name what to fix.
 
-| Code | When it fires |
-|---|---|
-| `coverage-review-missing` | The file does not exist. |
-| `coverage-review-stale` | `buildfile_hash` differs from the canonical-form hash of the on-disk file, or — for a review without `suite_hashes` — `testcases_hash` differs. |
-| `coverage-review-suite-stale` | A review with `suite_hashes` approved a suite whose canonical form has since changed. Fires per drifted suite. |
-| `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
-| `coverage-review-uncovered` | A canonical-form-required term lacks both a covering testcase and an explicit exemption. |
-
-Hashes are computed over canonical form (sorted keys, normalized whitespace) — cosmetic edits don't drift the hash. Run `parlay review-coverage @<feature>` to record approval; codegen does NOT auto-record. When the gate reports `stale_suites`, only those suites lost their approval — name them to the reviewer so the re-review walks exactly the drifted suites instead of all of them.
+Two things follow. Regenerating testcases no longer invalidates anything: what
+was approved is the standard, not the suites derived from it. And a run carrying
+`--authorize-criteria=machine`, in a project that has opted in, advances without
+human approval and records that waiver at this boundary — the record says the
+separation between authoring a standard and grading against it was waived, not
+satisfied.
 
 ### Codegen read-set
 
 The skill is permitted to read ONLY:
 
-- `.parlay/build/<feature>/{buildfile,testcases,coverage-review}.yaml`
+- `.parlay/build/<feature>/{buildfile,testcases}.yaml`
+
+  `criteria-authority.yaml` and `coverage-decisions.yaml` are deliberately NOT
+  in this set. Codegen does not read them; the injected **Step 0 — Gate** does,
+  and that command's reads are its own — a boundary check running before this
+  module is not this module widening what it may open. Keeping them out is what
+  stops "the gate consults it" from becoming "codegen may read anything the gate
+  reads".
 - `.parlay/{config,blueprint,adapter-set}.yaml`
 - `.parlay/adapters/<slug>.adapter.yaml` (referenced from adapter-set)
 - `.parlay/domain-model.yaml`

@@ -15,7 +15,7 @@ Operation-shaped content lives here. Architectural prose for boundaries, probes,
 
 
 ```yaml
-schema_version: 1
+schema_version: 2
 feature: <feature-slug>
 
 operations:
@@ -42,11 +42,11 @@ operations:
 
 ### Versioning
 
-`schema_version` (see `schema-versioning.schema.md` for the house rule) is currently `1`. **Policy: regenerate.** `capabilities.yaml` is tool-derived from intents/dialogs via `/parlay-create-artifacts` (and populated by the migration commands `migrate-capabilities`/`migrate-domain-operations` for pre-existing content). A stale `schema_version` is a signal to re-run the producing command, not to migrate the file in place — there's no hand-authored state in a v1 capabilities file that a migrator would need to preserve beyond what regeneration already reconstructs from intents.
+`schema_version` (see `schema-versioning.schema.md` for the house rule) is currently `2`. Version 2 is the shape carrying `source:` on every operation, and declaring it makes `capabilities-source-missing` an **error** rather than a warning — a file at the current shape is one where the provenance could have been recorded. **Policy: regenerate.** `capabilities.yaml` is tool-derived from intents/dialogs via `/parlay-create-artifacts` (and populated by the migration commands `migrate-capabilities`/`migrate-domain-operations` for pre-existing content). A stale `schema_version` is a signal to re-run the producing command, not to migrate the file in place — there's no hand-authored state in a v1 capabilities file that a migrator would need to preserve beyond what regeneration already reconstructs from intents.
 
 | Field | Required | Description |
 |---|---|---|
-| `schema_version` | Yes | Currently `1`. |
+| `schema_version` | Yes | Currently `2`. |
 | `feature` | Yes | Feature slug; must match the directory name. |
 | `operations` | Yes | List of capability operations. May be empty for presentation-only features. |
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
@@ -114,7 +114,7 @@ The capabilities validator enforces:
 | `capabilities-duplicate-operation-id` | Two operations within one capabilities.yaml share the same id. |
 | `capabilities-stub-unfilled` | An operation declares `kind: unknown` (the migrate-domain-operations stub kind). Build mode fails until the kind is set explicitly. |
 | `capabilities-subject-missing` | An operation declares no `subject.entity`. Required for every operation — the downstream wiring is derived from it. |
-| `capabilities-source-missing` (warning) | An operation declares no `source:`, so nothing records which intent it came from and a change described in prose cannot be routed to it. Warning in both modes: the field is required on generate but tolerated absent on read, since every capabilities.yaml predates it. |
+| `capabilities-source-missing` | An operation declares no `source:`, so nothing records which intent it came from and a change described in prose cannot be routed to it. **Warning below `schema_version: 2`, error at 2 or above** — every capabilities.yaml predates the field, and a file declaring the current shape is one that could have recorded it. |
 | `capabilities-entity-undeclared` | `subject.entity` or `output.entity` names an entity that `domain-model.yaml` does not declare **and no feature's contribution proposes**. Requires a resolvable domain model: with none, the cross-reference is skipped rather than failing every operation, since a project that has not authored a domain model yet is a normal state. |
 | `capabilities-entity-pending` (warning) | The referenced entity is not in the root model yet, but a feature's `spec/intents/<feature>/domain-model.yaml` contribution proposes it. The finding names the proposing feature. This case used to be indistinguishable from a typo — both graded as errors — so a feature referencing an entity a sibling was about to introduce had to ship a placeholder. Accept the proposing contribution and the reference resolves. |
 | `buildfile-operation-ref-unnormalized` | A downstream buildfile references an operation by bare local id rather than the `@<feature>/operation:<id>` form. |

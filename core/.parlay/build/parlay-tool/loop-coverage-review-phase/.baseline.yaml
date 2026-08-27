@@ -1,5 +1,5 @@
 schema-version: 3
-generated-at: "2026-08-17T06:53:10Z"
+generated-at: "2026-08-27T15:38:25Z"
 intents:
     insert-a-coverage-review-step-between-the-build-and-code-phase-groups:
         content-hash: 5bb3952f6c09957b
@@ -11,3 +11,6 @@ sources:
     intents:
         insert-a-coverage-review-step-between-the-build-and-code-phase-groups: 0c63dcdd53769340
     domain: 56866a325365609d
+    amendments:
+        001-mechanical-readiness-replaces-the-review.md: b389ed5ee9117c81
+last-applied-amendment: 1

@@ -108,11 +108,16 @@ func runMigrateVerify(cmd *cobra.Command, args []string) error {
 	for _, featDir := range featureDirs {
 		feature, _ := filepath.Rel(intentsRoot, featDir)
 
-		intents, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+		// Route bullets only from promises still in force. A withdrawn
+		// promise's criteria must not be seeded onto a contract artifact —
+		// that would re-import, as current acceptance, exactly the
+		// expectations an applied amendment retired.
+		res, err := resolveActiveIntents(cfg, parser.FeatureSlug(feature))
 		if err != nil {
 			fmt.Fprintf(out, "  %s — read intents failed: %v\n", feature, err)
 			continue
 		}
+		intents := res.Active
 		bullets := map[string][]string{}
 		for _, in := range intents {
 			if len(in.Verify) > 0 {

@@ -10,7 +10,7 @@ Diagnosis-first: you determine which checks apply by looking at the project,
 not by asking the designer to know which of a dozen commands they need.
 
 This replaces the previous per-operation skills — the former sync,
-collect-questions, review-coverage, and five migrate-* skills. Every underlying
+collect-questions and five migrate-* skills. Every underlying
 CLI command still exists and can be run directly; this skill is the front door
 that decides which ones matter right now.
 
@@ -61,6 +61,7 @@ Then detect pending migrations by looking at what is on disk:
 | `domain-model.md` (not `.yaml`) | domain model → YAML | `parlay migrate-domain-model` |
 | a populated `operations:` block in `domain-model.yaml` | domain operations → per-feature capabilities | `parlay migrate-domain-operations` |
 | intents with **Verify** bullets whose sourcing operations/fragments lack `verify:` | verify bullets → contract artifacts | `parlay migrate-verify` (run `--dry-run` first; it prints the would-be routing) |
+| a retired `.parlay/build/*/coverage-review.yaml` still holding exemptions nothing has answered | stranded coverage judgments → current decisions | **Not a migrator.** Invoke the `migrate-coverage` module. Each stranded entry is a judgment only a person can re-make, so this asks a reviewer one question at a time rather than transforming a file. `parlay internal migrate-coverage-exceptions @{feature}` reports how many are left without changing anything. |
 
 ### 2. Enhance coverage findings with semantic matching
 
@@ -131,6 +132,31 @@ finding has one right disposition:
   4. Re-run the build phases and `parlay internal save-build-state` so the
      baseline refreezes on the new founding text.
 
+### 3.7 Coverage decisions that outlived their subject
+
+Two shapes to look for, both reported by the code and done boundaries:
+
+- **`downgrade-approval-stale` / `downgrade-approval-orphaned`** — somebody
+  approved a test case observing a requirement weakly, and that case has since
+  been rewritten, renamed, removed, or strengthened. The approval was a judgment
+  about what the case observed, so it no longer stands over anything.
+
+  Repair with `parlay internal retire-decision @{feature} --ref <ref>
+  --criterion "<text>" --suite "<suite>" --case "<case>" --reason "<why it no
+  longer applies>" --by "<who decided>"`. This does not delete the decision — it
+  moves it to the retired list carrying both the original judgment and the
+  choice to withdraw it, so the ledger still answers who decided what and when.
+
+  To re-approve a case whose content merely drifted, retire the old decision and
+  record a fresh one against the case as it now stands. Never edit the old one:
+  an edit makes one review look like two.
+
+- **Stranded legacy exemptions** — see the migration table above. Those need the
+  `migrate-coverage` module, not a repair here.
+
+Both are decisions, so both need a person. Report them and let the designer
+choose; do not retire anything on their behalf.
+
 ### 4. Report, then offer
 
 Present one consolidated picture — tree consistency, coverage, open
@@ -151,8 +177,12 @@ repair, or an artifact edit without explicit confirmation.
   unambiguous fixes.
 - **Coverage gaps** — offer to generate dialog templates for uncovered
   intents (all, or a chosen subset).
-- **Coverage review** — when a feature is ready for the codegen gate, run
-  `parlay review-coverage @{feature}` to walk its suites and record approvals.
+- **Criterion authority** — when a feature's criteria have never been approved,
+  or have changed since they were, `parlay internal criteria-authority @{feature}`
+  reports the standard and what moved. Approval belongs to the artifacts phase,
+  where the mapping from each intent bullet to the criterion it became is shown;
+  offer to route there rather than recording an approval from here, since
+  approving a standard nobody was shown is what the retired suite-name gate did.
 
 ## Hard rules
 

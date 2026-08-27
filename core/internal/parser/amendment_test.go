@@ -72,11 +72,11 @@ func TestParseAmendmentRef(t *testing.T) {
 	}
 
 	for _, bad := range []string{
-		"reports/operation:x",        // no @
-		"@reports",                   // no kind segment
-		"@reports/list-reports",      // intent-style ref, no kind
-		"@reports/widget:x",          // unknown kind
-		"@reports/operation:",        // empty name
+		"reports/operation:x",   // no @
+		"@reports",              // no kind segment
+		"@reports/list-reports", // intent-style ref, no kind
+		"@reports/widget:x",     // unknown kind
+		"@reports/operation:",   // empty name
 	} {
 		if _, err := ParseAmendmentRef(bad); err == nil {
 			t.Errorf("expected %q to be rejected", bad)

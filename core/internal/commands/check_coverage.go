@@ -39,8 +39,12 @@ type coverageOutput struct {
 	Covered   []coverageMatch `json:"covered"`
 	Uncovered []string        `json:"uncovered"`
 	Orphans   []string        `json:"orphans"`
-	Chain     *chainCoverage  `json:"chain,omitempty"`
-	Drift     *driftOutput    `json:"drift,omitempty"`
+	// Retired pairs a dialog with the superseded intent it belonged to. Kept
+	// out of Orphans deliberately: it is history to preserve, not debt to
+	// clean up.
+	Retired []coverageMatch `json:"retired,omitempty"`
+	Chain   *chainCoverage  `json:"chain,omitempty"`
+	Drift   *driftOutput    `json:"drift,omitempty"`
 }
 
 type chainCoverage struct {
@@ -67,10 +71,14 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 		return runCheckCoverageForUnit(cmd, featurePath, slug)
 	}
 
-	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
+	// Coverage is a question about what the feature currently promises, so it
+	// reads the resolved set rather than the raw file. A promise an applied
+	// amendment withdrew must not still demand a dialog.
+	res, err := resolveActiveIntents(cfg, slug)
 	if err != nil {
 		return fmt.Errorf("failed to read intents: %w", err)
 	}
+	intents := res.Active
 
 	dialogs, err := parser.ParseDialogsFile(filepath.Join(featurePath, "dialogs.md"))
 	if err != nil {
@@ -95,6 +103,29 @@ func runCheckCoverage(cmd *cobra.Command, args []string) error {
 		}
 		if !found {
 			output.Uncovered = append(output.Uncovered, intent.Title)
+		}
+	}
+
+	// Whatever the ACTIVE promises did not claim is classified against the
+	// retired ones before the orphan walk. Active takes precedence and runs
+	// first: matchesIntent is fuzzy, so classifying retired first could list
+	// one dialog as both retired and covered. What remains and matches a
+	// retired promise is history — reporting it as an orphan would present
+	// preserved history as cleanup debt, the opposite of what supersession is
+	// for. A dialog matching neither is a genuine orphan.
+	for _, dialog := range dialogs {
+		if matchedDialogs[dialog.Slug] {
+			continue
+		}
+		for _, sup := range res.Superseded {
+			if matchesIntent(sup.Intent, dialog) {
+				matchedDialogs[dialog.Slug] = true
+				output.Retired = append(output.Retired, coverageMatch{
+					Intent: sup.Intent.Title,
+					Dialog: dialog.Title,
+				})
+				break
+			}
 		}
 	}
 
