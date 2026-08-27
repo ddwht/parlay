@@ -7,10 +7,19 @@
 // the pipeline, this recomputes whether a boundary is actually clear.
 //
 // Purity contract (the same one ComputeFeaturePhase documents, and for the same
-// reason): the gate is a PURE RECOMPUTATION. It writes nothing, stamps nothing,
-// and persists no "gate passed" marker. A stored pass-stamp goes stale the
+// reason): PASSAGE is a pure recomputation. The gate stamps nothing and
+// persists no "gate passed" marker, because a stored pass-stamp goes stale the
 // moment a spec file changes and then becomes the stale-state problem the whole
 // plan exists to remove. Passage is re-derived from disk at every boundary.
+//
+// It is NOT true that the gate writes nothing, and this comment used to say so.
+// commitPendingWaiver persists a machine authorization after a boundary passes
+// — an audit record of a run that proceeded without human approval. That write
+// is deliberately not part of the verdict: it records what happened, and is
+// never read back to decide whether a later boundary passes. The distinction
+// that matters is stamping PASSAGE, which does not happen; a header claiming
+// more purity than the code has is worse than none, because the next person
+// reading it trusts it.
 //
 // The gate does not reimplement any checker — it AGGREGATES the existing ones
 // in-process (direct calls to the compute* cores, never a subprocess) and

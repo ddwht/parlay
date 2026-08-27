@@ -44,7 +44,7 @@ var validateProject bool
 var validateTypes = []string{
 	"intent", "dialog", "surface", "buildfile", "blueprint", "yaml",
 	"infrastructure", "domain-model", "adapter", "adapter-set",
-	"capabilities", "coverage-review", "testcases", "page", "layout",
+	"capabilities", "testcases", "page", "layout",
 	"authored",
 }
 
@@ -255,10 +255,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = withCriteriaPresence(cmd, reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
 			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
 		}))
-	case "coverage-review":
-		// coverage-review validation is hash-aware and needs full inputs;
-		// surface a minimal YAML-shape check here.
-		validator = agent.ValidateYAML
 	// parlay-feature: parlay-tool/hand-authored-units
 	// parlay-component: authored-unit-validation
 	case "authored":

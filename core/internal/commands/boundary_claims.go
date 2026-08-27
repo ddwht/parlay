@@ -61,7 +61,6 @@ type boundaryClaim struct {
 const (
 	claimReadiness         = "readiness"
 	claimLedgerState       = "ledger-state"
-	claimAmendments        = "amendment-ledger"
 	claimBuildfileValid    = "buildfile-validity"
 	claimComposition       = "cross-feature-composition"
 	claimBuildfileFresh    = "buildfile-freshness"
