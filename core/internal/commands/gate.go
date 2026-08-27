@@ -274,6 +274,32 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, eb...)
 	warnings = append(warnings, ew...)
 
+	tb, tw := gateTestcasesReadiness(cfg, slug)
+	blockers = append(blockers, tb...)
+	warnings = append(warnings, tw...)
+
+	return blockers, warnings
+}
+
+// gateTestcasesReadiness is the mechanical half of the bargain that replaces
+// the blanket human gate: a person approves the standard, and whether the tests
+// actually discharge it is checked here rather than by anyone clicking through
+// suite names.
+//
+// It exists because the walkers were graduated to error and nothing ran them in
+// build mode — validate --type testcases hardcodes authoring, and no boundary
+// called them at all — so the middle was advisory on every path that mattered.
+func gateTestcasesReadiness(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+	r := CheckTestcasesReadiness(cfg, slug)
+	for _, b := range r.Blockers {
+		blockers = append(blockers, gateBlocker{
+			Code: "testcases-not-ready", Message: b,
+			Fix: "rebuild the testcases, or record an exception for a criterion that genuinely needs no test",
+		})
+	}
+	for _, w := range r.Warnings {
+		warnings = append(warnings, gateBlocker{Code: "testcases-readiness-warning", Message: w})
+	}
 	return blockers, warnings
 }
 
@@ -407,6 +433,10 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	eb, ew := gateCoverageExceptions(cfg, slug)
 	blockers = append(blockers, eb...)
 	warnings = append(warnings, ew...)
+
+	tb, tw := gateTestcasesReadiness(cfg, slug)
+	blockers = append(blockers, tb...)
+	warnings = append(warnings, tw...)
 
 	return blockers, warnings
 }

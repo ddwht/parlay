@@ -409,7 +409,13 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 		// closed with the remedy rather than migrating silently — which of
 		// those judgments still applies is exactly what nobody but their
 		// author can say.
-		if stranded := strandedLegacyExemptions(cfg, slug); stranded > 0 {
+		stranded, unreadable := strandedLegacyExemptions(cfg, slug)
+		if unreadable != "" {
+			return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
+				"%s has a coverage-review.yaml that cannot be read (%s) — it may hold exemptions nobody can now recover, and the gate that used to block on this is gone. "+
+					"Repair or delete it deliberately", slug, unreadable)}}
+		}
+		if stranded > 0 {
 			return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
 				"%s has %d exemption(s) recorded in the retired coverage-review.yaml and no coverage-exceptions.yaml — "+
 					"those are no longer read, so leaving this alone would quietly drop judgments somebody made. "+
@@ -432,10 +438,25 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 // Presence of the legacy file alone is ignored: most carry only suite
 // approvals, which were the half that proved nothing and are gone on purpose.
 // Only recorded exemptions are stranded, because only they were load-bearing.
-func strandedLegacyExemptions(cfg *config.Context, slug string) int {
-	legacy, err := parser.ParseCoverageReview(filepath.Join(cfg.BuildPath(slug), "coverage-review.yaml"))
-	if err != nil || legacy == nil {
-		return 0
+func strandedLegacyExemptions(cfg *config.Context, slug string) (count int, unreadable string) {
+	path := filepath.Join(cfg.BuildPath(slug), "coverage-review.yaml")
+	if _, statErr := os.Stat(path); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return 0, "" // no legacy file: nothing stranded
+		}
+		return 0, statErr.Error()
 	}
-	return len(legacy.Exemptions)
+	legacy, err := parser.ParseCoverageReview(path)
+	if err != nil {
+		// Present and unreadable is NOT absent. Collapsing the two meant a
+		// malformed legacy review — which may well contain exemptions nobody
+		// can now read — was treated exactly like a feature that never had
+		// any, and the blanket gate being removed is the last thing that would
+		// have blocked it.
+		return 0, err.Error()
+	}
+	if legacy == nil {
+		return 0, ""
+	}
+	return len(legacy.Exemptions), ""
 }

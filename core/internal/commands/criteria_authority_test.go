@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ddwht/parlay/core/internal/agent"
 )
 
 func crit(ref, text string) AuthorizedCriterion { return AuthorizedCriterion{Ref: ref, Text: text} }
@@ -415,5 +417,101 @@ func TestCriteriaAuthorityCLI_RejectsAnUnknownMode(t *testing.T) {
 
 	if _, err := runCriteriaAuthorityCmd_(t, "@graded"); err == nil {
 		t.Error("the mode is a closed value; a typo must not silently mean no waiver")
+	}
+}
+
+// The mechanical half must actually block. It was graduated to error and
+// nothing ran it in build mode: validate --type testcases hardcodes authoring,
+// and no boundary called the walkers at all, so the middle was advisory on
+// every path that mattered.
+func TestTestcasesReadiness_UncoveredCriterionBlocksTheGate(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	// A current-shape file whose one suite discharges nothing.
+	buildDir := cfg.BuildPath("graded")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, "testcases.yaml"), []byte(`schema_version: 3
+feature: graded
+suites:
+  - name: Customer Detail
+    kind: presentation
+    source_refs:
+      - "@graded/fragment:Customer Detail"
+    file: src/CustomerDetail.test.tsx
+    cases:
+      - name: renders
+        exercises: ["@graded/fragment:Customer Detail"]
+        observes: ["@graded/fragment:Customer Detail"]
+        steps:
+          - { type: render, target: "@graded/fragment:Customer Detail" }
+        expectations:
+          - { type: shows, target: "@graded/fragment:Customer Detail" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var graduated bool
+	for _, b := range out.Blockers {
+		if b.Code == "testcases-not-ready" && strings.Contains(b.Message, "[verify-criterion-uncovered]") {
+			graduated = true
+		}
+	}
+	if !graduated {
+		t.Fatalf("a current-shape file leaving a criterion undischarged must block the boundary: %+v", out.Blockers)
+	}
+}
+
+// The same file below the graduation version keeps its warning: that is why
+// these were warnings at all, and the rule must not fail projects over a fact
+// they could not have recorded.
+func TestTestcasesReadiness_LegacyShapeDoesNotBlock(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	buildDir := cfg.BuildPath("graded")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, "testcases.yaml"), []byte(`schema_version: 2
+feature: graded
+suites:
+  - name: Customer Detail
+    kind: presentation
+    source_refs:
+      - "@graded/fragment:Customer Detail"
+    file: src/CustomerDetail.test.tsx
+    cases:
+      - name: renders
+        exercises: ["@graded/fragment:Customer Detail"]
+        observes: ["@graded/fragment:Customer Detail"]
+        steps:
+          - { type: render, target: "@graded/fragment:Customer Detail" }
+        expectations:
+          - { type: shows, target: "@graded/fragment:Customer Detail" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := computeGate(cfg, "graded", gateStageCode)
+	// Other codes are errors at any version and are not what this is about;
+	// the claim is that the GRADUATED ones do not fire on a legacy shape.
+	for _, b := range out.Blockers {
+		if b.Code != "testcases-not-ready" {
+			continue
+		}
+		for code := range agent.GraduatingCodes() {
+			if strings.Contains(b.Message, "["+code+"]") {
+				t.Errorf("%s must not block a file that predates the field it checks: %s", code, b.Message)
+			}
+		}
 	}
 }

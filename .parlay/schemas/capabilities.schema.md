@@ -15,7 +15,7 @@ Operation-shaped content lives here. Architectural prose for boundaries, probes,
 
 
 ```yaml
-schema_version: 1
+schema_version: 2
 feature: <feature-slug>
 
 operations:
@@ -42,11 +42,11 @@ operations:
 
 ### Versioning
 
-`schema_version` (see `schema-versioning.schema.md` for the house rule) is currently `1`. **Policy: regenerate.** `capabilities.yaml` is tool-derived from intents/dialogs via `/parlay-create-artifacts` (and populated by the migration commands `migrate-capabilities`/`migrate-domain-operations` for pre-existing content). A stale `schema_version` is a signal to re-run the producing command, not to migrate the file in place — there's no hand-authored state in a v1 capabilities file that a migrator would need to preserve beyond what regeneration already reconstructs from intents.
+`schema_version` (see `schema-versioning.schema.md` for the house rule) is currently `2`. Version 2 is the shape carrying `source:` on every operation, and declaring it makes `capabilities-source-missing` an **error** rather than a warning — a file at the current shape is one where the provenance could have been recorded. **Policy: regenerate.** `capabilities.yaml` is tool-derived from intents/dialogs via `/parlay-create-artifacts` (and populated by the migration commands `migrate-capabilities`/`migrate-domain-operations` for pre-existing content). A stale `schema_version` is a signal to re-run the producing command, not to migrate the file in place — there's no hand-authored state in a v1 capabilities file that a migrator would need to preserve beyond what regeneration already reconstructs from intents.
 
 | Field | Required | Description |
 |---|---|---|
-| `schema_version` | Yes | Currently `1`. |
+| `schema_version` | Yes | Currently `2`. |
 | `feature` | Yes | Feature slug; must match the directory name. |
 | `operations` | Yes | List of capability operations. May be empty for presentation-only features. |
 | `operations[].id` | Yes | Feature-local identifier (e.g., `task.create`). Normalized to `@<feature>/operation:<id>` on the way into the buildfile. |
