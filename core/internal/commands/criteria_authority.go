@@ -177,6 +177,24 @@ func loadCriteriaAuthority(cfg *config.Context, slug string) (*CriteriaAuthority
 			return nil, fmt.Errorf("criteria-authority records an approval with no authority identity — it cannot say who accepted the standard")
 		}
 	}
+	// Machine runs get the same check, and need it for a sharper reason than
+	// the approval does. The gate reads these hashes to decide whether THIS
+	// execution already recorded its waiver; a stored hash that does not
+	// describe its own stored criteria would let a forged or corrupt entry
+	// satisfy that check, and the boundary would skip writing the audit record
+	// for a run that proceeded without human approval. The one entry whose
+	// absence nobody notices is the one that most needed to exist.
+	for i, r := range rec.MachineRuns {
+		if got := CriteriaHash(r.Criteria); got != r.CriteriaHash {
+			return nil, fmt.Errorf("machine run %d records hash %s but stores criteria hashing to %s — the record was edited by hand or is corrupt, and an audit trail that does not describe its own contents is not one", i+1, r.CriteriaHash, got)
+		}
+		if strings.TrimSpace(r.PolicySource) == "" {
+			return nil, fmt.Errorf("machine run %d names no policy source, so a reader cannot find the decision that permitted advancing without approval", i+1)
+		}
+		if strings.TrimSpace(r.At) == "" {
+			return nil, fmt.Errorf("machine run %d records no time, so it cannot be placed against the standard it graded", i+1)
+		}
+	}
 	return &rec, nil
 }
 

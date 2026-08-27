@@ -1062,3 +1062,60 @@ func TestCurrentCriteria_UnreadableCapabilitiesIsNotAnAbsentOne(t *testing.T) {
 		t.Errorf("nothing may be returned alongside the failure; got %d criteria", len(got))
 	}
 }
+
+// The gate reads a machine run's stored hash to decide whether THIS execution
+// already recorded its waiver. Nothing checked that the hash described the
+// criteria stored beside it, so a forged or corrupt entry could satisfy that
+// check — and the boundary would skip writing the audit record for a run that
+// proceeded without human approval. The one entry whose absence nobody notices
+// is the one that most needed to exist.
+func TestCriteriaAuthority_AMachineRunMustDescribeItsOwnCriteria(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A genuine run first, so the fixture is one a forged entry could hide in.
+	if err := commitPendingWaiver(cfg, "graded", gateStageCode,
+		gateOutput{Passed: true, PendingWaiver: &pendingMachineRun{criteria: current, reason: "authorized"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := loadCriteriaAuthority(cfg, "graded")
+	if err != nil || len(rec.MachineRuns) != 1 {
+		t.Fatalf("fixture must hold one genuine run: %v %+v", err, rec)
+	}
+
+	for _, tc := range []struct {
+		name, want string
+		damage     func(*MachineRun)
+	}{
+		{"hash does not match its criteria", "edited by hand or is corrupt",
+			func(r *MachineRun) { r.CriteriaHash = CriteriaHash([]AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}}) }},
+		{"criteria replaced under a kept hash", "edited by hand or is corrupt",
+			func(r *MachineRun) { r.Criteria = []AuthorizedCriterion{{Ref: "@x/operation:y", Text: "something else"}} }},
+		{"no policy source", "names no policy source",
+			func(r *MachineRun) { r.PolicySource = "" }},
+		{"no time", "records no time",
+			func(r *MachineRun) { r.At = "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			damaged := *rec
+			run := rec.MachineRuns[0]
+			tc.damage(&run)
+			damaged.MachineRuns = []MachineRun{run}
+			if err := saveCriteriaAuthority(cfg, "graded", &damaged); err != nil {
+				t.Fatal(err)
+			}
+			_, err := loadCriteriaAuthority(cfg, "graded")
+			if err == nil {
+				t.Fatal("a machine run that does not describe itself must be refused, not read")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q; got: %v", tc.want, err)
+			}
+		})
+	}
+}

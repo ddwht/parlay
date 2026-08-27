@@ -22,6 +22,21 @@
 // IDs are separate from the codes a claim emits. A wrapper like testcase
 // readiness renders eight different codes, and a user-facing code may be
 // renamed; neither should decide what the architecture guarantees.
+//
+// WHAT THIS DOES NOT GUARANTEE, stated because the gap is exactly where the
+// next instance would hide. The witness requirement is per CLAIM, not per code.
+// It proves each registered family can fire through the advancing constructor —
+// that the family is wired to a path a gate takes. It does not prove every code
+// a family renders is individually reachable. A wrapper emitting eight codes
+// satisfies the conformance test with one, so an unreachable ninth path inside
+// that wrapper would pass here, which is the same shape as the failures this
+// registry was built for, one level down.
+//
+// That residual is deliberate rather than overlooked: codes are renamed and
+// merged as diagnostics improve, and pinning each would make the architecture
+// test track diagnostic wording. But it means the registry answers "is this
+// family reachable" and not "is every refusal reachable", and a reader
+// budgeting trust should spend it accordingly.
 
 package commands
 
