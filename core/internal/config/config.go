@@ -52,6 +52,23 @@ type ProjectConfig struct {
 	// parlay-feature: parlay-tool/feedback-mode
 	Feedback bool `yaml:"feedback,omitempty"`
 
+	// AllowMachineCriteriaAuthority mirrors the
+	// parlay.criterion-authority.allow-machine key: when true, this project
+	// permits a run to generate code without a person having approved the
+	// criteria it will be graded against, PROVIDED that invocation also passes
+	// --authorize-criteria=machine.
+	//
+	// Two switches rather than one, and default deny, on purpose. The config
+	// answers "may this project ever waive the separation between authoring a
+	// standard and grading against it?" — a governance choice a team makes
+	// once, in a committed file, where it is reviewable. The flag answers "is
+	// this run exercising that permission?" A flag alone would make a
+	// high-consequence waiver look like an ordinary convenience switch,
+	// available in any project to anyone who found it; a setting alone would
+	// make every unattended run silently self-authorizing forever after one
+	// person enabled it.
+	AllowMachineCriteriaAuthority bool `yaml:"criterion-authority.allow-machine,omitempty"`
+
 	// ledger: was removed in v0.4 — the ledger-and-contract model is the
 	// only regime, so there is nothing left for the flag to gate. A config
 	// still carrying the key is silently inert (decoding is non-strict).
