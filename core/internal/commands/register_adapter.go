@@ -93,6 +93,11 @@ type adapterTypographyToken struct {
 	EmitForm string `yaml:"emit-form"`
 }
 
+
+
+
+
+
 // adapterCache is a per-process cache of parsed adapter files keyed by
 // absolute path. It exists so that subsequent commands within a single CLI
 // invocation reuse the parse result rather than re-reading and re-parsing
@@ -185,6 +190,8 @@ func validateAdapterDeclarations(path string, content []byte) error {
 	}
 	return fmt.Errorf("adapter failed validation:\n%s", strings.Join(msgs, "\n"))
 }
+
+
 
 func runRegisterAdapter(cmd *cobra.Command, args []string) error {
 	cfg, err := mustContext(cmd)
