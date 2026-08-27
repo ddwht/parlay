@@ -1095,7 +1095,10 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 			}
 		}
 	}
-	for _, name := range []string{"buildfile.yaml", "testcases.yaml"} {
+	// The decision records are feature-local build artifacts too. Retirement
+	// removes nothing, so an approval or a waiver left behind outlives the
+	// feature whose criteria it was about.
+	for _, name := range []string{"buildfile.yaml", "testcases.yaml", "criteria-authority.yaml", "coverage-exceptions.yaml"} {
 		if _, err := os.Stat(filepath.Join(cfg.BuildPath(slug), name)); err == nil {
 			present = append(present, name)
 		}

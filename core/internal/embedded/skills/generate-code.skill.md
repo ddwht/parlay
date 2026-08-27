@@ -552,9 +552,9 @@ The fix is structural: the baseline and code-hashes are written together by a si
 - `toolchain-preserves-violated` — a `mutating` toolchain tool ran and broke one of its declared `preserves:` guarantees: the testcases regressed (caught by step 16), a parlay marker vanished from an `owns_markers: parlay` file, or a declared element/action disappeared. Codegen STOPs and names the tool. Distinct from `test-execution-failed` on purpose — the provenance (a tool broke it, not the emission) is the actionable fact.
 - `spec-leak` — if you (the agent) find yourself wanting to read a file under `spec/intents/`, **do not**. Stop and report which buildfile field is missing the information you need. This is a buildfile schema bug, not an excuse to cross the boundary.
 
-## Section: Coverage-review gate (multi-target only)
+## Section: Boundary gate
 
-<!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
+<!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate — provenance: this section began as the coverage-review gate, now retired -->
 <!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
 
 Codegen does not consult a coverage review. That gate is retired: it asked a

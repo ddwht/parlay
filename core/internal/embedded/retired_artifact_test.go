@@ -5,6 +5,7 @@
 package embedded
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,12 @@ import (
 // the mechanism. Each would have sent an agent to a file nothing produces.
 var retiredArtifacts = []string{
 	"coverage-review.yaml",
+	// The schema document, not just the artifact: a versioning table still
+	// used it as a live example of an artifact needing no schema_version, and
+	// matching only the .yaml spelling walked straight past it.
+	"coverage-review.schema.md",
 	"parlay review-coverage",
+	"parlay-review-coverage",
 	"check-review-gate",
 }
 
@@ -45,6 +51,21 @@ var retirementExplanations = []string{
 // what a feature promised when it was founded, and rewriting them to match the
 // present is exactly what the amendment ledger exists to avoid. This covers
 // only what is deployed and followed.
+// Repo-root documents are checked too. The first version of this lint scanned
+// only deployed skills and schemas, and README.md was still advertising the
+// removed command while CLAUDE.md — which the deployer WRITES into every
+// project — still listed the retired artifact as a current build output. Those
+// are the two documents a person is most likely to read first.
+func TestRetiredArtifactsAreNotInRepoDocs(t *testing.T) {
+	for _, path := range []string{"../../../README.md", "../../../CLAUDE.md"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Skipf("%s not readable from here: %v", path, err)
+		}
+		checkRetired(t, path, string(body))
+	}
+}
+
 func TestRetiredArtifactsAreNotLiveGuidance(t *testing.T) {
 	skills, err := ReadAllSkills()
 	if err != nil {

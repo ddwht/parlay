@@ -58,7 +58,7 @@ Four-zone layout — strict ownership:
   - **domain-model.yaml** — entities, relationships, and shared vocabulary
   - Plus *.page.md for per-page layouts. A feature picks whichever artifacts it needs; capabilities.yaml and infrastructure.md are co-equal, not stand-ins for each other.
 - **spec/handoff/<feature>/** (engineering output): specification.md
-- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, coverage-review.yaml, .baseline.yaml — never user-facing
+- **.parlay/build/<feature>/** (tool internals): buildfile.yaml, testcases.yaml, criteria-authority.yaml, coverage-exceptions.yaml, .baseline.yaml — never user-facing
 - **.parlay/adapter-set.yaml** (tool config, project-owned): pins adapter slot topology — multi-target projects only
 
 ## Multi-Root Layout

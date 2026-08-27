@@ -15,7 +15,7 @@ An artifact that carries a `schema_version:` field declares it:
 - **a plain integer**, always — never a semver string (`"1.2.0"`), never a date, never a string tag.
 - **monotonically increasing**, starting at `1` for the artifact's first released shape.
 
-Not every artifact needs a `schema_version:` field. It's required for artifacts whose on-disk shape is expected to evolve across releases in a way consumers must detect (hand-authored or long-lived generated files). It's optional for artifacts whose shape is pinned by something else already — `adapter-set.schema.md` and `coverage-review.schema.md`, for example, have no version field of their own because their shape is tied to the project's adapter-set topology and the buildfile/testcases hashes they gate, respectively, not to an independent evolution timeline.
+Not every artifact needs a `schema_version:` field. It's required for artifacts whose on-disk shape is expected to evolve across releases in a way consumers must detect (hand-authored or long-lived generated files). It's optional for artifacts whose shape is pinned by something else already — `adapter-set.schema.md`, for example, has no version field of its own because its shape is tied to the project's adapter-set topology rather than to an independent evolution timeline.
 
 ## Migrator-or-regenerate: pick one, document it
 

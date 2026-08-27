@@ -72,6 +72,7 @@ func registerInternalCommands() {
 		activeSpecCmd,
 		criteriaAuthorityCmd,
 		approveCriteriaCmd,
+		applyGovernanceCmd,
 		checkAppliedCmd,
 		mergedRoutesCmd,
 		crossCuttingIndexCmd,

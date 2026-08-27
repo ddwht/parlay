@@ -119,6 +119,20 @@ var scannedArtifacts = []artifactRule{
 		keyedMaps: []string{"operations"},
 	},
 	{
+		// Added when the records were: both carry canonical criterion refs, so
+		// another feature holding an approval or a waiver naming this one is a
+		// reference like any other. The set predated them, which meant the
+		// inventory certified zero inbound while a decision record elsewhere
+		// still pointed here — the closed set was closed over the vocabulary of
+		// an earlier release.
+		name: "criteria-authority.yaml", build: true, field: "criterion authority",
+		valueKeys: []string{"ref"},
+	},
+	{
+		name: "coverage-exceptions.yaml", build: true, field: "coverage exception",
+		valueKeys: []string{"ref"},
+	},
+	{
 		name: "testcases.yaml", build: true, field: "testcase reference",
 		valueKeys: []string{
 			"source_refs", "operation", "ref", "feature", "component",
