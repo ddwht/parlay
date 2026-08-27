@@ -73,6 +73,8 @@ func registerInternalCommands() {
 		criteriaAuthorityCmd,
 		approveCriteriaCmd,
 		applyGovernanceCmd,
+		recordExceptionCmd,
+		migrateExceptionsCmd,
 		checkAppliedCmd,
 		mergedRoutesCmd,
 		crossCuttingIndexCmd,

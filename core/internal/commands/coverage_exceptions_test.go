@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -439,4 +441,138 @@ func weaken(t *testing.T, cfg *config.Context) (suite, caseName, ref, text strin
 	}
 	return "Customer Detail", "disabled while unpaid",
 		"@graded/fragment:Customer Detail", "the archive button is disabled while invoices are unpaid"
+}
+
+// --- authoring -------------------------------------------------------------
+//
+// R1 shipped a record the tool could read, validate, bind and block on, that a
+// person could only produce by hand-editing YAML against a shape documented
+// nowhere. A decision artifact with no authoring path is one nobody makes
+// deliberately.
+
+func recordExc(t *testing.T, cfg *config.Context, slug string) error {
+	t.Helper()
+	cmd := testCommandWithContext(t, cfg)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	return runRecordException(cmd, []string{"@" + slug})
+}
+
+func resetExcFlags() {
+	recordExceptionRef, recordExceptionText, recordExceptionKind = "", "", string(ExceptionWaived)
+	recordExceptionReason, recordExceptionBy = "", ""
+	recordExceptionSuite, recordExceptionCase = "", ""
+}
+
+func TestRecordException_WritesAWaiverTheGateHonours(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+	defer resetExcFlags()
+
+	resetExcFlags()
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
+	recordExceptionReason = "enforced by a database constraint, not by this operation"
+	recordExceptionBy = "interactive decision"
+
+	if err := recordExc(t, cfg, "graded"); err != nil {
+		t.Fatal(err)
+	}
+
+	v := CheckCoverageExceptions(cfg, "graded")
+	if len(v.Blockers) != 0 {
+		t.Fatalf("a record this command just wrote should validate: %+v", v.Blockers)
+	}
+	if !v.Exempt.Excuses(agent.CriterionRef{Ref: recordExceptionRef, Text: recordExceptionText}) {
+		t.Error("the waiver should excuse the bullet it names")
+	}
+}
+
+// A text matching no bullet would produce a ledger that reads as working and
+// excuses nothing, so it is refused at the point of writing rather than
+// discovered at a boundary later.
+func TestRecordException_RefusesACriterionThatDoesNotExist(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	defer resetExcFlags()
+
+	resetExcFlags()
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "a claim this contract never made"
+	recordExceptionReason = "r"
+	recordExceptionBy = "interactive decision"
+
+	if err := recordExc(t, cfg, "graded"); err == nil {
+		t.Error("an exception about a criterion nobody declared excuses nothing and looks like it does")
+	}
+}
+
+func TestRecordException_StateOnlyNeedsTheCaseItAccepts(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	defer resetExcFlags()
+
+	resetExcFlags()
+	recordExceptionKind = string(ExceptionStateOnly)
+	recordExceptionRef = "@graded/fragment:Customer Detail"
+	recordExceptionText = "the archive button is disabled while invoices are unpaid"
+	recordExceptionReason = "r"
+	recordExceptionBy = "interactive decision"
+
+	if err := recordExc(t, cfg, "graded"); err == nil {
+		t.Error("a downgrade decision naming no case accepts every weakening of that criterion, including ones nobody saw")
+	}
+}
+
+// The migration reports and writes nothing: whether an old judgment still
+// applies is the one thing nobody but its author can say.
+func TestMigrateExceptions_ReportsWithoutWriting(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+
+	legacy := `feature: graded
+reviewed_at: "2026-05-01T00:00:00Z"
+reviewed_by: node
+exemptions:
+    - suite: s
+      item: "@graded/operation:customer.archive"
+      reason: enforced by a database constraint
+    - suite: s
+      item: "@graded/operation:gone"
+      reason: this operation was removed
+`
+	if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "coverage-review.yaml"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	cmd := testCommandWithContext(t, cfg)
+	cmd.SetOut(&buf)
+	if err := runMigrateExceptions(cmd, []string{"@graded"}); err != nil {
+		t.Fatal(err)
+	}
+	var out migrateExceptionsOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, buf.String())
+	}
+	if len(out.Pending) != 2 {
+		t.Fatalf("both stranded judgments should be listed: %+v", out.Pending)
+	}
+	// One excuses a criterion that still exists; one does not, and that is the
+	// difference between re-deciding and deleting.
+	var live, dead int
+	for _, p := range out.Pending {
+		if p.StillDeclared {
+			live++
+		} else {
+			dead++
+		}
+	}
+	if live != 1 || dead != 1 {
+		t.Errorf("the report should say which are still about something: %+v", out.Pending)
+	}
+	if _, err := os.Stat(coverageExceptionsPath(cfg, "graded")); !os.IsNotExist(err) {
+		t.Error("the migration must not write a decision on the author's behalf")
+	}
 }
