@@ -144,53 +144,70 @@ func TestCoverageExceptions_NoLedgerIsNotAProblem(t *testing.T) {
 	}
 }
 
-// A hand-authored exception is a person accepting THAT test as covering the
-// criterion. Leaving the hash declared but unchecked would have made the field
-// look like a guarantee while the body drifted underneath it.
-func TestCoverageExceptions_HandAuthoredIsBoundToTheTestBody(t *testing.T) {
+// hand-authored is recognized and refused. It SUCCEEDED before, producing a
+// real exemption for any contained regular file whose hash matched — a false
+// coverage path, since existence and a stable fingerprint establish that
+// something is there and unchanged, never that it is a test of this criterion.
+func TestCoverageExceptions_HandAuthoredIsRefusedUntilItIsBuilt(t *testing.T) {
 	dir := t.TempDir()
 	cs := twoCriteria()
-
-	testPath := filepath.Join(dir, "archive_test.go")
-	if err := os.WriteFile(testPath, []byte("func TestArchive(t *testing.T) { /* the original */ }\n"), 0o644); err != nil {
+	real := filepath.Join(dir, "archive_test.go")
+	if err := os.WriteFile(real, []byte("func TestArchive(t *testing.T) {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := TestBodyHash(testPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mk := func(h string) *CoverageExceptions {
-		return exceptionsFor(cs, CoverageException{
-			Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored,
-			Reason: "covered by an integration suite", TestFile: "archive_test.go", TestHash: h,
-		})
-	}
+	hash, _ := TestBodyHash(real)
 
-	if v := EvaluateCoverageExceptions(dir, mk(hash), cs); len(v.Blockers) != 0 {
-		t.Fatalf("the test is unchanged; the exception holds: %+v", v.Blockers)
-	}
+	rec := exceptionsFor(cs, CoverageException{
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored,
+		Reason: "covered by an integration suite", TestFile: "archive_test.go", TestHash: hash,
+	})
 
-	// Rewritten under the approval.
-	if err := os.WriteFile(testPath, []byte("func TestArchive(t *testing.T) { /* rewritten */ }\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	v := EvaluateCoverageExceptions(dir, mk(hash), cs)
+	v := EvaluateCoverageExceptions(dir, rec, cs)
 	if len(v.Blockers) == 0 {
-		t.Fatal("a rewritten test is a different claim wearing the old approval")
+		t.Fatal("a file that exists and matches its hash is not evidence that it tests this criterion")
 	}
-	if !strings.Contains(v.Blockers[0], "different version") {
-		t.Errorf("say what actually changed: %q", v.Blockers[0])
+	if !strings.Contains(v.Blockers[0], "not yet supported") {
+		t.Errorf("say it is unsupported rather than implying the file was the problem: %q", v.Blockers[0])
+	}
+	if v.Exempt.Excuses(agent.CriterionRef{Ref: cs[0].Ref, Text: cs[0].Text}) {
+		t.Error("an unsupported kind must excuse nothing")
+	}
+}
+
+// The path checks stay exercised directly: they are real, and they are what the
+// kind will need when it is supported. Keeping them tested means they do not
+// rot while the kind is refused.
+func TestCoverageExceptions_HandAuthoredPathChecksStillHold(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "archive_test.go")
+	if err := os.WriteFile(real, []byte("func TestArchive(t *testing.T) {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := TestBodyHash(real)
+	ex := func(file, h string) CoverageException {
+		return CoverageException{Ref: "@f/operation:archive", Kind: ExceptionHandAuthored, TestFile: file, TestHash: h}
 	}
 
-	// Deleted entirely.
-	os.Remove(testPath)
-	if v := EvaluateCoverageExceptions(dir, mk(hash), cs); len(v.Blockers) == 0 || !strings.Contains(v.Blockers[0], "gone") {
-		t.Errorf("a missing test cannot be covering anything: %+v", v.Blockers)
+	if got := handAuthoredProblem(dir, ex("archive_test.go", hash)); got != "" {
+		t.Errorf("a contained regular file with a matching hash passes the PATH checks: %q", got)
 	}
-
-	// Named but never fingerprinted.
-	if v := EvaluateCoverageExceptions(dir, mk(""), cs); len(v.Blockers) == 0 {
-		t.Error("without a hash the exception is evergreen over a body nobody is watching")
+	for _, tc := range []struct{ file, want string }{
+		{"/etc/passwd", "absolute"},
+		{"../elsewhere/thing_test.go", "escapes the project"},
+		{"missing_test.go", "gone"},
+	} {
+		if got := handAuthoredProblem(dir, ex(tc.file, hash)); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: expected %q, got %q", tc.file, tc.want, got)
+		}
+	}
+	if got := handAuthoredProblem(dir, ex("archive_test.go", "")); !strings.Contains(got, "no hash") {
+		t.Errorf("an unfingerprinted file is evergreen: %q", got)
+	}
+	if err := os.WriteFile(real, []byte("rewritten\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := handAuthoredProblem(dir, ex("archive_test.go", hash)); !strings.Contains(got, "different version") {
+		t.Errorf("a rewritten body is a different claim: %q", got)
 	}
 }
 
@@ -290,5 +307,72 @@ func TestCoverageExceptions_GateRefusesStateOnlyAsAnExemption(t *testing.T) {
 	}
 	if msg == "" || !strings.Contains(msg, "not an exemption") {
 		t.Errorf("state-only must not excuse a criterion with no case at all: %+v", out.Blockers)
+	}
+}
+
+// A person's recorded judgment must not evaporate because the file that held
+// it stopped being read. validate.go used to fold legacy exemptions in and no
+// longer does, so silence here would drop them into uncovered warnings a build
+// may still pass.
+func TestCoverageExceptions_GateRefusesStrandedLegacyExemptions(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	buildDir := cfg.BuildPath("graded")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `feature: graded
+reviewed_at: "2026-05-01T00:00:00Z"
+reviewed_by: node
+review_method: cli
+buildfile_hash: sha256:x
+testcases_hash: sha256:y
+approved_suites:
+    - customer-detail
+exemptions:
+    - suite: customer-detail
+      item: "@graded/operation:customer.archive"
+      reason: enforced by a database constraint
+`
+	if err := os.WriteFile(filepath.Join(buildDir, "coverage-review.yaml"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := computeGate(cfg, "graded", gateStageCode)
+	var msg string
+	for _, b := range out.Blockers {
+		if b.Code == "coverage-exception-invalid" {
+			msg = b.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("stranded exemptions must be reported, not dropped: %+v", out.Blockers)
+	}
+	if !strings.Contains(msg, "Migrate") {
+		t.Errorf("the refusal should name the remedy: %q", msg)
+	}
+}
+
+// The approvals half proved nothing and is gone on purpose, so a legacy file
+// carrying only those strands nothing.
+func TestCoverageExceptions_LegacyApprovalsAloneStrandNothing(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	buildDir := cfg.BuildPath("graded")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, "coverage-review.yaml"), []byte(
+		"feature: graded\nreviewed_at: \"2026-05-01T00:00:00Z\"\nreviewed_by: node\napproved_suites:\n    - customer-detail\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := computeGate(cfg, "graded", gateStageCode)
+	if gateHasCode(out.Blockers, "coverage-exception-invalid") {
+		t.Errorf("suite approvals were the half that proved nothing; losing them is the point: %+v", out.Blockers)
 	}
 }

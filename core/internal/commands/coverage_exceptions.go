@@ -32,17 +32,36 @@ import (
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/atomicfile"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 const coverageExceptionsSchemaVersion = 1
 
 // ExceptionKind is the closed set of things a person may excuse.
 //
-// Named rather than free-form because each kind is a different claim, and a
-// reader deciding whether an exception still applies needs to know which was
-// made. "waived" says this criterion needs no test at all; "state-only" says it
-// is checked by state rather than by output; "hand-authored" says a test exists
-// that parlay cannot inspect.
+// Only `waived` is SUPPORTED. The other two are recognized so a ledger naming
+// them gets a remedy instead of a parse failure, and refused so neither can
+// excuse anything.
+//
+// state-only is refused because it is not an exemption at all: everywhere else
+// in the schema it means a real case that cites the criterion and observes it
+// by state rather than output, so the criterion is covered rather than excused.
+// Accepting it as an exemption let it excuse a criterion with no case, which is
+// the opposite claim, and honouring it properly means resolving that case and
+// proving it is neither absent nor drifted.
+//
+// hand-authored is refused for a sharper reason: it SUCCEEDED, producing a real
+// exemption for any contained regular file whose hash matched. That is a false
+// coverage path rather than deferred richness — existence and a stable
+// fingerprint establish that something is there and unchanged, never that it is
+// a test, still less that it tests THIS criterion. Honouring it means
+// reconciling with the authored-unit model that already exists for exactly this
+// purpose: a declared unit, its `tests:` globs, and the criteria its
+// `satisfies:` claims. Inventing a second vocabulary for external coverage
+// beside that one is how two answers to the same question start disagreeing.
+//
+// waived-only is a coherent release. The others become supported when they are
+// built, not by being listed.
 type ExceptionKind string
 
 const (
@@ -51,6 +70,8 @@ const (
 	ExceptionHandAuthored ExceptionKind = "hand-authored"
 )
 
+// exceptionKinds are the values a ledger may NAME. Whether a kind is honoured
+// is a separate question, answered per kind below.
 var exceptionKinds = map[ExceptionKind]bool{
 	ExceptionWaived: true, ExceptionStateOnly: true, ExceptionHandAuthored: true,
 }
@@ -255,10 +276,15 @@ func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []
 		}
 
 		if ex.Kind == ExceptionHandAuthored {
-			if reason := handAuthoredProblem(root, ex); reason != "" {
-				v.Blockers = append(v.Blockers, reason)
-				continue
-			}
+			// Refused outright rather than validated. The path checks below
+			// are real and stay for when the kind is supported, but passing
+			// them establishes only that a contained regular file exists and
+			// is unchanged — never that it is a test, still less that it tests
+			// this criterion. Accepting on that basis is a false coverage
+			// path, which is worse than not offering the kind.
+			v.Blockers = append(v.Blockers, fmt.Sprintf(
+				"exception for %s is kind: hand-authored, which is not yet supported — a named file that exists and has not changed is not evidence that it tests this criterion. Declare the test as an authored unit and let its satisfies: carry the claim, or use kind: waived if the criterion genuinely needs no generated test", ex.Ref))
+			continue
 		}
 
 		if v.Exempt.Bullets == nil {
@@ -317,14 +343,39 @@ func handAuthoredProblem(root string, ex CoverageException) string {
 	if file == "" {
 		return fmt.Sprintf("hand-authored exception for %s names no test file — the claim is that a test parlay cannot inspect covers this, and an uninspectable test that is also unnamed is not a claim", ex.Ref)
 	}
-	if strings.TrimSpace(ex.TestHash) == "" {
-		return fmt.Sprintf("hand-authored exception for %s names %s but records no hash of it — the exception would then be evergreen over a body nobody is watching", ex.Ref, file)
+
+	// Path constraints before anything reads the file. Existence and a stable
+	// hash establish only that SOMETHING is there and unchanged — they do not
+	// make README.md a test. An absolute or escaping path additionally lets a
+	// ledger point outside the project entirely, at a file no reviewer of this
+	// repository would ever see.
+	if filepath.IsAbs(file) {
+		return fmt.Sprintf("hand-authored exception for %s names an absolute path (%s) — test_file is project-relative so the claim stays reviewable inside the repository", ex.Ref, file)
 	}
-	now, err := TestBodyHash(filepath.Join(root, file))
+	clean := filepath.Clean(file)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Sprintf("hand-authored exception for %s escapes the project (%s) — a test nobody reviewing this repository can see is not evidence to them", ex.Ref, file)
+	}
+
+	full := filepath.Join(root, clean)
+	info, err := os.Lstat(full)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Sprintf("hand-authored exception for %s names %s, which is gone — the test it claims covers this criterion no longer exists", ex.Ref, file)
 		}
+		return fmt.Sprintf("hand-authored exception for %s cannot read %s: %v", ex.Ref, file, err)
+	}
+	// Lstat rather than Stat: a symlink can be repointed at a different body
+	// without changing anything a reviewer of the link would notice.
+	if !info.Mode().IsRegular() {
+		return fmt.Sprintf("hand-authored exception for %s names %s, which is not a regular file — a symlink or directory can be repointed under the approval", ex.Ref, file)
+	}
+
+	if strings.TrimSpace(ex.TestHash) == "" {
+		return fmt.Sprintf("hand-authored exception for %s names %s but records no hash of it — the exception would then be evergreen over a body nobody is watching", ex.Ref, file)
+	}
+	now, err := TestBodyHash(full)
+	if err != nil {
 		return fmt.Sprintf("hand-authored exception for %s cannot read %s: %v", ex.Ref, file, err)
 	}
 	if now != ex.TestHash {
@@ -351,6 +402,19 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 		}}
 	}
 	if rec == nil {
+		// No new ledger. A legacy coverage-review.yaml carrying exemptions is
+		// not nothing: validate.go used to read them, and it no longer does,
+		// so staying silent here would let a person's recorded judgment
+		// evaporate into uncovered warnings that a build may still pass. Fail
+		// closed with the remedy rather than migrating silently — which of
+		// those judgments still applies is exactly what nobody but their
+		// author can say.
+		if stranded := strandedLegacyExemptions(cfg, slug); stranded > 0 {
+			return ExceptionsVerdict{Blockers: []string{fmt.Sprintf(
+				"%s has %d exemption(s) recorded in the retired coverage-review.yaml and no coverage-exceptions.yaml — "+
+					"those are no longer read, so leaving this alone would quietly drop judgments somebody made. "+
+					"Migrate them, or delete them deliberately if they no longer apply", slug, stranded)}}
+		}
 		return ExceptionsVerdict{}
 	}
 	current, err := CurrentCriteria(cfg, slug)
@@ -360,4 +424,18 @@ func CheckCoverageExceptions(cfg *config.Context, slug string) ExceptionsVerdict
 		}}
 	}
 	return EvaluateCoverageExceptions(cfg.Root.Path, rec, current)
+}
+
+// strandedLegacyExemptions counts exemptions in a retired coverage-review.yaml
+// that nothing reads any more.
+//
+// Presence of the legacy file alone is ignored: most carry only suite
+// approvals, which were the half that proved nothing and are gone on purpose.
+// Only recorded exemptions are stranded, because only they were load-bearing.
+func strandedLegacyExemptions(cfg *config.Context, slug string) int {
+	legacy, err := parser.ParseCoverageReview(filepath.Join(cfg.BuildPath(slug), "coverage-review.yaml"))
+	if err != nil || legacy == nil {
+		return 0
+	}
+	return len(legacy.Exemptions)
 }
