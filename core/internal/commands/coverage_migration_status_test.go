@@ -147,3 +147,75 @@ func TestMigrationStatus_CarriesFullTokensAlongsideTheLabel(t *testing.T) {
 		t.Fatal("two occurrences sharing a ref and text must still get distinct labels")
 	}
 }
+
+// The projection's structural invariants, so more consumers can read it safely.
+// Both are the kind of property that silently stops holding when somebody adds
+// a state and forgets one of the two places that enumerate them.
+func TestMigrationStatus_CountsPartitionAndTraversalIsComplete(t *testing.T) {
+	cfg, entries, hash := deferFixture(t)
+
+	deferLegacyFP, deferLegacyHash = entries[0].Fingerprint, hash
+	deferLegacyBy, deferLegacyReason = "alice", "cannot tell"
+	if err := deferRun(t, cfg, "graded"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, stage := range []string{"one deferred, one untouched", "one answered, one deferred"} {
+		st, err := CollectCoverageMigrationStatus(cfg, "graded")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Counts PARTITION the occurrences: every one falls in exactly one
+		// bucket, and the buckets add up to the whole.
+		if got := st.Answered + st.PendingUnreviewed + st.PendingDeferred; got != len(st.Occurrences) {
+			t.Fatalf("%s: counts (%d) do not partition %d occurrences", stage, got, len(st.Occurrences))
+		}
+		for _, o := range st.Occurrences {
+			switch o.State {
+			case "answered", "deferred", "unreviewed":
+			default:
+				t.Fatalf("%s: occurrence %s has state %q, outside the partition", stage, o.Label, o.State)
+			}
+		}
+
+		// Traversal reaches every pending occurrence exactly once: walking it
+		// to exhaustion must enumerate the pending set with no repeats and no
+		// omissions.
+		seen := map[string]int{}
+		walk := *st
+		for i := 0; i < len(st.Occurrences)+1; i++ {
+			next := walk.NextToReview()
+			if next == nil {
+				break
+			}
+			seen[legacyDispositionKey(next.Fingerprint, next.Duplicate)]++
+			// Simulate that occurrence being answered so traversal advances.
+			for j := range walk.Occurrences {
+				if walk.Occurrences[j].Fingerprint == next.Fingerprint &&
+					walk.Occurrences[j].Duplicate == next.Duplicate {
+					walk.Occurrences[j].State = "answered"
+				}
+			}
+		}
+		if len(seen) != st.PendingTotal {
+			t.Fatalf("%s: traversal reached %d occurrences, pending_total is %d", stage, len(seen), st.PendingTotal)
+		}
+		for k, n := range seen {
+			if n != 1 {
+				t.Errorf("%s: traversal offered %s %d times", stage, k, n)
+			}
+		}
+
+		if stage == "one deferred, one untouched" {
+			resetExcFlags()
+			recordExceptionLegacyFP, recordExceptionLegacyHash = entries[1].Fingerprint, hash
+			recordExceptionRef, recordExceptionText = entries[1].Ref, entries[1].Text
+			recordExceptionReason, recordExceptionBy = "confirmed", "interactive decision"
+			recordExceptionFromLegacy = true
+			if err := recordExc(t, cfg, "graded"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
