@@ -144,70 +144,30 @@ func TestCoverageExceptions_NoLedgerIsNotAProblem(t *testing.T) {
 	}
 }
 
-// hand-authored is recognized and refused. It SUCCEEDED before, producing a
-// real exemption for any contained regular file whose hash matched — a false
-// coverage path, since existence and a stable fingerprint establish that
-// something is there and unchanged, never that it is a test of this criterion.
-func TestCoverageExceptions_HandAuthoredIsRefusedUntilItIsBuilt(t *testing.T) {
-	dir := t.TempDir()
+// The reserved kinds are refused, and carry no machinery of their own.
+//
+// hand-authored previously SUCCEEDED for any contained regular file whose hash
+// matched — a false coverage path, since existence and a stable fingerprint
+// establish that something is there and unchanged, never that it tests this
+// criterion. The path checks and body hashing that guarded it were then
+// reachable only from their own tests once the kind was refused ahead of them,
+// which is the orphaned-leaf shape this release exists to eliminate. Removed
+// rather than kept warm for a feature nobody has built.
+func TestCoverageExceptions_ReservedKindsAreRefused(t *testing.T) {
 	cs := twoCriteria()
-	real := filepath.Join(dir, "archive_test.go")
-	if err := os.WriteFile(real, []byte("func TestArchive(t *testing.T) {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	hash, _ := TestBodyHash(real)
-
-	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored,
-		Reason: "covered by an integration suite", TestFile: "archive_test.go", TestHash: hash,
-	})
-
-	v := EvaluateCoverageExceptions(dir, rec, cs)
-	if len(v.Blockers) == 0 {
-		t.Fatal("a file that exists and matches its hash is not evidence that it tests this criterion")
-	}
-	if !strings.Contains(v.Blockers[0], "not yet supported") {
-		t.Errorf("say it is unsupported rather than implying the file was the problem: %q", v.Blockers[0])
-	}
-	if v.Exempt.Excuses(agent.CriterionRef{Ref: cs[0].Ref, Text: cs[0].Text}) {
-		t.Error("an unsupported kind must excuse nothing")
-	}
-}
-
-// The path checks stay exercised directly: they are real, and they are what the
-// kind will need when it is supported. Keeping them tested means they do not
-// rot while the kind is refused.
-func TestCoverageExceptions_HandAuthoredPathChecksStillHold(t *testing.T) {
-	dir := t.TempDir()
-	real := filepath.Join(dir, "archive_test.go")
-	if err := os.WriteFile(real, []byte("func TestArchive(t *testing.T) {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	hash, _ := TestBodyHash(real)
-	ex := func(file, h string) CoverageException {
-		return CoverageException{Ref: "@f/operation:archive", Kind: ExceptionHandAuthored, TestFile: file, TestHash: h}
-	}
-
-	if got := handAuthoredProblem(dir, ex("archive_test.go", hash)); got != "" {
-		t.Errorf("a contained regular file with a matching hash passes the PATH checks: %q", got)
-	}
-	for _, tc := range []struct{ file, want string }{
-		{"/etc/passwd", "absolute"},
-		{"../elsewhere/thing_test.go", "escapes the project"},
-		{"missing_test.go", "gone"},
-	} {
-		if got := handAuthoredProblem(dir, ex(tc.file, hash)); !strings.Contains(got, tc.want) {
-			t.Errorf("%s: expected %q, got %q", tc.file, tc.want, got)
-		}
-	}
-	if got := handAuthoredProblem(dir, ex("archive_test.go", "")); !strings.Contains(got, "no hash") {
-		t.Errorf("an unfingerprinted file is evergreen: %q", got)
-	}
-	if err := os.WriteFile(real, []byte("rewritten\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := handAuthoredProblem(dir, ex("archive_test.go", hash)); !strings.Contains(got, "different version") {
-		t.Errorf("a rewritten body is a different claim: %q", got)
+	for _, kind := range []ExceptionKind{ExceptionHandAuthored, ExceptionStateOnly} {
+		t.Run(string(kind), func(t *testing.T) {
+			rec := exceptionsFor(cs, CoverageException{
+				Ref: cs[0].Ref, Text: cs[0].Text, Kind: kind, Reason: "r",
+			})
+			v := EvaluateCoverageExceptions(t.TempDir(), rec, cs)
+			if len(v.Blockers) == 0 {
+				t.Fatalf("%s is reserved, not supported", kind)
+			}
+			if v.Exempt.Excuses(agent.CriterionRef{Ref: cs[0].Ref, Text: cs[0].Text}) {
+				t.Error("a reserved kind must excuse nothing")
+			}
+		})
 	}
 }
 
@@ -281,9 +241,9 @@ func TestCoverageExceptions_GateStaysQuietWithNoLedger(t *testing.T) {
 	}
 }
 
-// state-only is not an exemption anywhere else in the schema: it means a real
-// case cites the criterion and observes it by state. Letting it excuse a
-// criterion with NO case was the opposite claim.
+// A downgrade decision must name the case it accepts. One that names none
+// would accept every weakening of that criterion, including ones nobody saw —
+// which is the review it exists to be, granted in advance and in the dark.
 func TestCoverageExceptions_GateRefusesStateOnlyAsAnExemption(t *testing.T) {
 	dir := setupTestDir(t)
 	writeCriteriaFixture(t, dir)
@@ -305,8 +265,8 @@ func TestCoverageExceptions_GateRefusesStateOnlyAsAnExemption(t *testing.T) {
 			msg = b.Message
 		}
 	}
-	if msg == "" || !strings.Contains(msg, "not an exemption") {
-		t.Errorf("state-only must not excuse a criterion with no case at all: %+v", out.Blockers)
+	if msg == "" || !strings.Contains(msg, "names no suite:/case:") {
+		t.Errorf("a downgrade decision naming no case would accept every weakening of that criterion, including ones nobody saw: %+v", out.Blockers)
 	}
 }
 
@@ -375,4 +335,108 @@ func TestCoverageExceptions_LegacyApprovalsAloneStrandNothing(t *testing.T) {
 	if gateHasCode(out.Blockers, "coverage-exception-invalid") {
 		t.Errorf("suite approvals were the half that proved nothing; losing them is the point: %+v", out.Blockers)
 	}
+}
+
+// A weakened observation stops the run unless somebody accepted it.
+//
+// The case cites its criterion correctly and every mechanical walk passes, so
+// nothing else can see this: the suite review that caught it is gone, and
+// criterion approval happens before testcases exist. A warning would not do —
+// warnings advance in CI, so the unattended path this release enables would
+// permit agent-authored weakening with nobody in the loop.
+func TestTestcasesReadiness_UnapprovedDowngradeBlocks(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+	weaken(t, cfg)
+
+	r := CheckTestcasesReadiness(cfg, "graded")
+	var found string
+	for _, b := range r.Blockers {
+		if strings.Contains(b, "criterion-observed-weakly") {
+			found = b
+		}
+	}
+	if found == "" {
+		t.Fatalf("an unaccepted weakening must stop the run: blockers=%+v warnings=%+v", r.Blockers, r.Warnings)
+	}
+	if !strings.Contains(found, "nobody accepted that") {
+		t.Errorf("say what is missing rather than that the downgrade is wrong: %q", found)
+	}
+}
+
+// And a recorded decision naming that exact case lets it through.
+func TestTestcasesReadiness_AcceptedDowngradePasses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+	suite, caseName, ref, text := weaken(t, cfg)
+
+	if err := saveCoverageExceptions(cfg, "graded", &CoverageExceptions{
+		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z", GrantedBy: "interactive decision",
+		Exceptions: []CoverageException{{
+			Ref: ref, Text: text, Kind: ExceptionStateOnly, Suite: suite, Case: caseName,
+			Reason: "the control is rendered by a third-party component this suite cannot reach",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckTestcasesReadiness(cfg, "graded")
+	for _, b := range r.Blockers {
+		if strings.Contains(b, "criterion-observed-weakly") {
+			t.Errorf("this exact case was accepted: %s", b)
+		}
+	}
+}
+
+// A decision naming a DIFFERENT case does not cover this one: accepting that
+// checking the store is honest here says nothing about another case doing the
+// same thing for another reason.
+func TestTestcasesReadiness_DowngradeDecisionIsPerCase(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveClean(t, cfg)
+	_, _, ref, text := weaken(t, cfg)
+
+	if err := saveCoverageExceptions(cfg, "graded", &CoverageExceptions{
+		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
+		Exceptions: []CoverageException{{
+			Ref: ref, Text: text, Kind: ExceptionStateOnly,
+			Suite: "Some Other Suite", Case: "some other case", Reason: "r",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckTestcasesReadiness(cfg, "graded")
+	blocked := false
+	for _, b := range r.Blockers {
+		if strings.Contains(b, "criterion-observed-weakly") {
+			blocked = true
+		}
+	}
+	if !blocked {
+		t.Error("a decision about a different case must not cover this one")
+	}
+}
+
+// weaken turns the fixture's presentation case into a state-only observation
+// and returns its identity.
+func weaken(t *testing.T, cfg *config.Context) (suite, caseName, ref, text string) {
+	t.Helper()
+	path := filepath.Join(cfg.BuildPath("graded"), "testcases.yaml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := strings.Replace(string(body), "coverage: full", "coverage: state-only", 1)
+	if out == string(body) {
+		t.Fatal("fixture has no coverage: full to weaken; the test would prove nothing")
+	}
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return "Customer Detail", "disabled while unpaid",
+		"@graded/fragment:Customer Detail", "the archive button is disabled while invoices are unpaid"
 }

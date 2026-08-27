@@ -162,6 +162,24 @@ func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadines
 	}
 	in.ExemptCriteria = ev.Exempt
 
+	// An observation downgrade is a semantic weakening nobody reviewed.
+	//
+	// `coverage: state-only` turns "the viewport shows the mesh" into "the store
+	// contains the mesh" — the criterion still cites, the case still passes, and
+	// the claim is weaker. The old suite review was where a person saw that;
+	// criterion approval happens BEFORE testcases exist, so it cannot; and
+	// coverage-exceptions refuses the kind. Left alone, the one residual the
+	// redesign said mechanics cannot judge was passing unseen, while R1 claimed
+	// human authority over the standard.
+	//
+	// Blocks rather than warns, because a warning advances in CI and the
+	// unattended path this release enables would then permit agent-authored
+	// weakening with nobody in the loop — which is the separation the whole
+	// redesign is built on, failing in the one mode it was meant to make
+	// possible.
+	// Every weakened observation needs a decision naming that exact case.
+	r.Blockers = append(r.Blockers, unapprovedDowngrades(tcPath, content, ev.AcceptedDowngrades)...)
+
 	for _, o := range agent.ValidateTestcasesV2(agent.ModeBuild, in) {
 		switch o.Severity {
 		case agent.SeverityError:
@@ -187,4 +205,54 @@ func statArtifact(path string) error {
 func artifactExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// unapprovedDowngrades names every case that observes its criterion more weakly
+// than the criterion states, without a decision accepting that.
+//
+// The case cites its criterion correctly and every mechanical walk passes, so
+// nothing else can see this: the suite review that used to catch a weakened
+// observation is gone, and criterion approval happens before testcases exist.
+// A downgrade is often the honest answer — a criterion whose only truthful
+// observation is state is exactly what the marker records — so this asks for a
+// decision rather than forbidding one.
+func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecision) []string {
+	var shape struct {
+		Suites []struct {
+			Name  string `yaml:"name"`
+			Cases []struct {
+				Name      string `yaml:"name"`
+				Coverage  string `yaml:"coverage"`
+				Criterion struct {
+					Ref  string `yaml:"ref"`
+					Text string `yaml:"text"`
+				} `yaml:"criterion"`
+			} `yaml:"cases"`
+		} `yaml:"suites"`
+	}
+	if err := yaml.Unmarshal(content, &shape); err != nil {
+		return nil // the parse failure is already a blocker above
+	}
+	var out []string
+	for _, su := range shape.Suites {
+		for _, c := range su.Cases {
+			if c.Coverage != "state-only" {
+				continue
+			}
+			approved := false
+			for _, d := range accepted {
+				if d.Accepts(c.Criterion.Ref, c.Criterion.Text, su.Name, c.Name) {
+					approved = true
+					break
+				}
+			}
+			if approved {
+				continue
+			}
+			out = append(out, fmt.Sprintf(
+				"[criterion-observed-weakly] %s: suite %q case %q discharges %q by observing STATE rather than what the criterion states (%q), and nobody accepted that. The case passes and cites its criterion correctly, so no other check can see the weakening. Record the decision in coverage-exceptions.yaml as kind: state-only naming this suite and case, or strengthen the case to observe what the criterion says",
+				path, su.Name, c.Name, c.Criterion.Ref, c.Criterion.Text))
+		}
+	}
+	return out
 }

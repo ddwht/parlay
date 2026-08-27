@@ -20,8 +20,6 @@
 package commands
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,16 +37,20 @@ const coverageExceptionsSchemaVersion = 1
 
 // ExceptionKind is the closed set of things a person may excuse.
 //
-// Only `waived` is SUPPORTED. The other two are recognized so a ledger naming
-// them gets a remedy instead of a parse failure, and refused so neither can
-// excuse anything.
+// `waived` and `state-only` are supported; `hand-authored` is RESERVED.
 //
-// state-only is refused because it is not an exemption at all: everywhere else
-// in the schema it means a real case that cites the criterion and observes it
-// by state rather than output, so the criterion is covered rather than excused.
-// Accepting it as an exemption let it excuse a criterion with no case, which is
-// the opposite claim, and honouring it properly means resolving that case and
-// proving it is neither absent nor drifted.
+// state-only is not an exemption and is not treated as one: it excuses nothing.
+// It records a person accepting that ONE case observes its criterion more
+// weakly than the criterion states — "the archive button is disabled" checked by
+// reading the stored flag rather than the rendered control. The criterion is
+// still covered; the claim is weaker.
+//
+// It needs a decision because nothing else can see it. The suite review that
+// used to catch a weakened observation is gone; criterion approval happens
+// before testcases exist, so it cannot; and the case cites its criterion
+// correctly, so every mechanical walk passes. Without a recorded decision an
+// agent could substitute a weaker check for the one that was approved and
+// proceed — including unattended, where a warning simply advances.
 //
 // hand-authored is refused for a sharper reason: it SUCCEEDED, producing a real
 // exemption for any contained regular file whose hash matched. That is a false
@@ -60,8 +62,13 @@ const coverageExceptionsSchemaVersion = 1
 // `satisfies:` claims. Inventing a second vocabulary for external coverage
 // beside that one is how two answers to the same question start disagreeing.
 //
-// waived-only is a coherent release. The others become supported when they are
-// built, not by being listed.
+// waived-only is a coherent release. The others are RESERVED: named so a
+// ledger using one gets a remedy rather than a parse error, refused so neither
+// can excuse anything, and carrying no fields or helpers of their own. An
+// unsupported kind that ships validation machinery nothing reaches is the
+// orphaned-leaf shape this release spent itself eliminating — the path checks
+// and body hashing that used to sit here were reachable only from their own
+// tests.
 type ExceptionKind string
 
 const (
@@ -74,6 +81,12 @@ const (
 // is a separate question, answered per kind below.
 var exceptionKinds = map[ExceptionKind]bool{
 	ExceptionWaived: true, ExceptionStateOnly: true, ExceptionHandAuthored: true,
+}
+
+// Accepts reports whether a decision covers this case's downgrade.
+func (d DowngradeDecision) Accepts(ref, text, suite, caseName string) bool {
+	return d.Ref == ref && d.Text == agent.CanonicalCriterionText(text) &&
+		d.Suite == suite && d.Case == caseName
 }
 
 // CoverageException is one criterion a person excused.
@@ -92,12 +105,13 @@ type CoverageException struct {
 	// binding, and it is valid exactly while that bullet is still declared.
 	EntryHash string `yaml:"entry_hash,omitempty"`
 
-	// TestFile and TestHash bind a hand-authored exception to the body it
-	// claims covers the criterion. Without the hash the file can change under
-	// an evergreen approval, which is the same staleness this record exists to
-	// prevent, one level down.
-	TestFile string `yaml:"test_file,omitempty"`
-	TestHash string `yaml:"test_hash,omitempty"`
+	// Suite and Case identify the downgraded case a `state-only` decision
+	// accepts. A downgrade is a judgment about ONE case observing ONE criterion
+	// more weakly than it states, so the decision binds to that case: accepting
+	// "checking the store is honest here" says nothing about a different case
+	// doing the same thing for a different reason.
+	Suite string `yaml:"suite,omitempty"`
+	Case  string `yaml:"case,omitempty"`
 }
 
 // CoverageExceptions is the per-feature ledger.
@@ -175,7 +189,17 @@ func saveCoverageExceptions(cfg *config.Context, slug string, rec *CoverageExcep
 }
 
 // ExceptionsVerdict reports what the ledger excuses, and what is wrong with it.
+// DowngradeDecision is a person accepting one case's weaker observation.
+type DowngradeDecision struct {
+	Ref, Text   string
+	Suite, Case string
+}
+
 type ExceptionsVerdict struct {
+	// AcceptedDowngrades are the weakened observations somebody approved.
+	// Carried separately from Exempt because they excuse nothing: the
+	// criterion IS discharged, by a case that observes it more weakly.
+	AcceptedDowngrades []DowngradeDecision
 	// Exempt is the set to hand the criterion walker. Empty when the ledger is
 	// stale: a judgment about a different contract excuses nothing here.
 	Exempt agent.ExemptedCriteria
@@ -265,25 +289,24 @@ func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []
 		}
 
 		if ex.Kind == ExceptionStateOnly {
-			// state-only is NOT an exemption. Elsewhere in the schema it means
-			// a real case that cites the criterion and observes it more weakly,
-			// so the criterion IS covered and needs no excusing. Treating it as
-			// an exemption let it excuse a criterion with no case at all, which
-			// is the opposite claim.
-			v.Blockers = append(v.Blockers, fmt.Sprintf(
-				"exception for %s is kind: state-only, which is not an exemption — it means a case cites this criterion and observes it by state rather than output, so the case must exist and carry coverage: state-only. Write the case, or use kind: waived if the criterion genuinely needs no test", ex.Ref))
+			if strings.TrimSpace(ex.Suite) == "" || strings.TrimSpace(ex.Case) == "" {
+				v.Blockers = append(v.Blockers, fmt.Sprintf(
+					"state-only decision for %s names no suite:/case: — a downgrade is a judgment about one case observing one criterion weakly, and one that names no case accepts every weakening of that criterion including ones nobody saw", ex.Ref))
+				continue
+			}
+			// Recorded, and deliberately NOT added to Exempt: the criterion is
+			// covered by a real case. What this authorizes is the weaker
+			// observation, which the readiness walk resolves against the
+			// testcases.
+			v.AcceptedDowngrades = append(v.AcceptedDowngrades, DowngradeDecision{
+				Ref: ex.Ref, Text: text, Suite: ex.Suite, Case: ex.Case,
+			})
 			continue
 		}
 
 		if ex.Kind == ExceptionHandAuthored {
-			// Refused outright rather than validated. The path checks below
-			// are real and stay for when the kind is supported, but passing
-			// them establishes only that a contained regular file exists and
-			// is unchanged — never that it is a test, still less that it tests
-			// this criterion. Accepting on that basis is a false coverage
-			// path, which is worse than not offering the kind.
 			v.Blockers = append(v.Blockers, fmt.Sprintf(
-				"exception for %s is kind: hand-authored, which is not yet supported — a named file that exists and has not changed is not evidence that it tests this criterion. Declare the test as an authored unit and let its satisfies: carry the claim, or use kind: waived if the criterion genuinely needs no generated test", ex.Ref))
+				"exception for %s is kind: hand-authored, which is RESERVED and not implemented — declare the test as an authored unit and let its satisfies: carry the claim, or use kind: waived if the criterion genuinely needs no generated test", ex.Ref))
 			continue
 		}
 
@@ -313,76 +336,6 @@ func shortHash(h string) string {
 		return h[:12]
 	}
 	return h
-}
-
-// TestBodyHash fingerprints a hand-authored test's contents.
-//
-// The whole file rather than a parsed subset, because the claim is that parlay
-// CANNOT inspect this test. Having declined to understand it, the only honest
-// thing to notice is that it changed.
-func TestBodyHash(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
-
-// handAuthoredProblem checks that a hand-authored exception still points at the
-// test it was granted for, and that the test has not changed since.
-//
-// Without the second half the exception is evergreen over a body nobody is
-// watching: a person accepted THAT test as covering the criterion, and a file
-// that has since been rewritten is a different claim wearing the old approval.
-// This is the same staleness the ledger-wide hash prevents, one level down, and
-// leaving it declared-but-unchecked would have been a field that looks like a
-// guarantee and is not.
-func handAuthoredProblem(root string, ex CoverageException) string {
-	file := strings.TrimSpace(ex.TestFile)
-	if file == "" {
-		return fmt.Sprintf("hand-authored exception for %s names no test file — the claim is that a test parlay cannot inspect covers this, and an uninspectable test that is also unnamed is not a claim", ex.Ref)
-	}
-
-	// Path constraints before anything reads the file. Existence and a stable
-	// hash establish only that SOMETHING is there and unchanged — they do not
-	// make README.md a test. An absolute or escaping path additionally lets a
-	// ledger point outside the project entirely, at a file no reviewer of this
-	// repository would ever see.
-	if filepath.IsAbs(file) {
-		return fmt.Sprintf("hand-authored exception for %s names an absolute path (%s) — test_file is project-relative so the claim stays reviewable inside the repository", ex.Ref, file)
-	}
-	clean := filepath.Clean(file)
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Sprintf("hand-authored exception for %s escapes the project (%s) — a test nobody reviewing this repository can see is not evidence to them", ex.Ref, file)
-	}
-
-	full := filepath.Join(root, clean)
-	info, err := os.Lstat(full)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Sprintf("hand-authored exception for %s names %s, which is gone — the test it claims covers this criterion no longer exists", ex.Ref, file)
-		}
-		return fmt.Sprintf("hand-authored exception for %s cannot read %s: %v", ex.Ref, file, err)
-	}
-	// Lstat rather than Stat: a symlink can be repointed at a different body
-	// without changing anything a reviewer of the link would notice.
-	if !info.Mode().IsRegular() {
-		return fmt.Sprintf("hand-authored exception for %s names %s, which is not a regular file — a symlink or directory can be repointed under the approval", ex.Ref, file)
-	}
-
-	if strings.TrimSpace(ex.TestHash) == "" {
-		return fmt.Sprintf("hand-authored exception for %s names %s but records no hash of it — the exception would then be evergreen over a body nobody is watching", ex.Ref, file)
-	}
-	now, err := TestBodyHash(full)
-	if err != nil {
-		return fmt.Sprintf("hand-authored exception for %s cannot read %s: %v", ex.Ref, file, err)
-	}
-	if now != ex.TestHash {
-		return fmt.Sprintf("hand-authored exception for %s was granted against a different version of %s (%s, now %s) — a rewritten test is a different claim wearing the old approval",
-			ex.Ref, file, shortHash(ex.TestHash), shortHash(now))
-	}
-	return ""
 }
 
 // CheckCoverageExceptions is the production entry point: read the ledger, read

@@ -1032,7 +1032,16 @@ func reportReplacementValidity(cfg *config.Context, slug string, terminal *parse
 	// which is worse than naming nothing. An authored-but-unapplied retirement
 	// counts: it is the project's stated intention for that feature, and
 	// pointing at it would be pointing at something on its way out.
-	if replAmendments, err := parser.LoadFeatureAmendments(featDir); err == nil {
+	replAmendments, replErr := parser.LoadFeatureAmendments(featDir)
+	if replErr != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-retirement-replacement-unknown",
+			Message: fmt.Sprintf("%03d-%s names replacement %q whose ledger cannot be read (%v) — a successor that cannot be checked for its own retirement is not one a reader can be sent to",
+				terminal.Seq, terminal.FileSlug, ref, replErr),
+		})
+		return
+	}
+	{
 		for _, ra := range replAmendments {
 			if !ra.RetiresFeature {
 				continue
@@ -1079,13 +1088,21 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 	// present in this tree, and a per-page layout is optional but real; a
 	// feature carrying any of them has authored contract that retirement would
 	// leave behind.
+	// Fail-closed on uncertainty. "Nothing built" is a claim, and a stat or a
+	// directory read that failed for any reason other than absence does not
+	// support it — the file may be there and unreadable, which is precisely the
+	// case where retiring would leave something behind.
+	var unreadable []string
 	for _, name := range []string{
 		"surface.yaml", "surface.md",
 		"capabilities.yaml", "infrastructure.md",
 		"domain-model.yaml", "domain-model.md",
 	} {
-		if _, err := os.Stat(filepath.Join(featDir, name)); err == nil {
+		switch _, err := os.Stat(filepath.Join(featDir, name)); {
+		case err == nil:
 			present = append(present, name)
+		case !os.IsNotExist(err):
+			unreadable = append(unreadable, fmt.Sprintf("%s (%v)", name, err))
 		}
 	}
 	if entries, err := os.ReadDir(featDir); err == nil {
@@ -1094,14 +1111,28 @@ func reportNothingBuilt(cfg *config.Context, slug, featDir string, terminal *par
 				present = append(present, e.Name())
 			}
 		}
+	} else if !os.IsNotExist(err) {
+		unreadable = append(unreadable, fmt.Sprintf("the feature directory (%v)", err))
 	}
 	// The decision records are feature-local build artifacts too. Retirement
 	// removes nothing, so an approval or a waiver left behind outlives the
 	// feature whose criteria it was about.
 	for _, name := range []string{"buildfile.yaml", "testcases.yaml", "criteria-authority.yaml", "coverage-exceptions.yaml"} {
-		if _, err := os.Stat(filepath.Join(cfg.BuildPath(slug), name)); err == nil {
+		switch _, err := os.Stat(filepath.Join(cfg.BuildPath(slug), name)); {
+		case err == nil:
 			present = append(present, name)
+		case !os.IsNotExist(err):
+			unreadable = append(unreadable, fmt.Sprintf("%s (%v)", name, err))
 		}
+	}
+	if len(unreadable) > 0 {
+		sort.Strings(unreadable)
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "feature-retirement-has-output",
+			Message: fmt.Sprintf("%03d-%s retires %s, but %d artifact(s) could not be checked: %s — \"nothing built\" cannot be claimed over a file that was not read",
+				terminal.Seq, terminal.FileSlug, slug, len(unreadable), strings.Join(unreadable, ", ")),
+		})
+		return
 	}
 
 	owned, failures := generatedFilesOwnedBy(cfg, slug)
