@@ -136,19 +136,19 @@ func computeGate(cfg *config.Context, slug, stage string) (gateOutput, error) {
 		return out, nil
 	}
 
-	var blockers, warnings []gateBlocker
-	var pending *pendingMachineRun
 	switch stage {
-	case gateStageBuild:
-		blockers, warnings = gateBuild(cfg, slug, featurePath)
-	case gateStageCode:
-		blockers, warnings, pending = gateCode(cfg, slug, featurePath)
-	case gateStageDone:
-		blockers, warnings, pending = gateDone(cfg, slug)
+	case gateStageBuild, gateStageCode, gateStageDone:
 	default:
 		return out, fmt.Errorf("unknown gate stage %q — supported: %s, %s, %s",
 			stage, gateStageBuild, gateStageCode, gateStageDone)
 	}
+
+	// Assembled from the registry rather than by a per-stage function calling
+	// checkers in sequence. A checker not registered as a claim is not
+	// reachable from a boundary at all, which is what makes the completeness
+	// conformance non-circular: an unwitnessed path cannot hide by simply not
+	// being registered, because not being registered means not running.
+	blockers, warnings, pending := runStageClaims(cfg, slug, featurePath, stage)
 
 	out.Blockers = dedupeGateFindings(blockers)
 	out.Warnings = dedupeGateFindings(warnings)
@@ -166,36 +166,6 @@ func computeGate(cfg *config.Context, slug, stage string) (gateOutput, error) {
 		})
 	}
 	return out, nil
-}
-
-// gateBuild aggregates the designer->build boundary: readiness, the ledger's
-// integrity and unapplied tail, and the ledger's own validation.
-func gateBuild(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
-	// check-readiness build-feature. This already carries 1c's
-	// unapplied-amendments error, but the gate recomputes that verdict itself
-	// with journal precision (2b) below — so strip it here to avoid both
-	// double-counting it and inheriting readiness's coarse "any journal
-	// suppresses" rule.
-	for _, iss := range checkBuildFeatureReadiness(cfg, featurePath, slug) {
-		if iss.Code == "unapplied-amendments" {
-			continue
-		}
-		switch iss.Severity {
-		case "error":
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		case "warning":
-			warnings = append(warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		}
-	}
-
-	// check-drift's ledger findings. Integrity violations always block — a
-	// mutated or deleted amendment, or an edited frozen founding doc, is never
-	// sanctioned by an in-flight refine.
-	lb, lw := gateLedgerState(cfg, slug, featurePath)
-	blockers = append(blockers, lb...)
-	warnings = append(warnings, lw...)
-
-	return blockers, warnings
 }
 
 // gateLedgerState is the ledger half of every advancing boundary: frozen-document
@@ -261,59 +231,6 @@ func gateLedgerState(cfg *config.Context, slug, featurePath string) (blockers, w
 	}
 
 	return blockers, warnings
-}
-
-// gateCode aggregates the build->code boundary: buildfile validity, cross-
-// feature composition coherence, and buildfile freshness against live sources.
-func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker, pendingWaiver *pendingMachineRun) {
-	cb := computeCheckBuildfile(cfg, slug)
-	for _, iss := range cb.Issues {
-		switch iss.Severity {
-		case "error":
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		case "warning":
-			warnings = append(warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
-		}
-	}
-
-	// Composition is a whole-project coherence check; a failure here is a
-	// cross-feature contradiction the boundary must not advance past.
-	if comp, err := computeComposition(cfg); err == nil {
-		for _, f := range comp.Findings {
-			blockers = append(blockers, gateBlocker{Code: f.Code, Message: f.Message})
-		}
-		for _, n := range comp.Notes {
-			warnings = append(warnings, gateBlocker{Code: n.Code, Message: n.Message})
-		}
-	}
-
-	// Buildfile freshness — the source-signatures comparison generate-code step
-	// 11.6 performs by prose, done mechanically here so the boundary catches a
-	// stale buildfile before codegen does.
-	blockers = append(blockers, checkBuildfileFreshness(cfg, slug, featurePath, &warnings)...)
-
-	// Ledger state. A caller entering with --from code never crosses the build
-	// boundary, so without this the only check for a recorded-but-unapplied
-	// decision was on a path they skipped: codegen ran against a specification
-	// its author had already superseded and reported success.
-	lb, lw := gateLedgerState(cfg, slug, featurePath)
-	blockers = append(blockers, lb...)
-	warnings = append(warnings, lw...)
-
-	ab, aw, ap := gateCriteriaAuthority(cfg, slug, machineAuthorized())
-	blockers = append(blockers, ab...)
-	warnings = append(warnings, aw...)
-	pendingWaiver = ap
-
-	eb, ew := gateCoverageExceptions(cfg, slug)
-	blockers = append(blockers, eb...)
-	warnings = append(warnings, ew...)
-
-	tb, tw := gateTestcasesReadiness(cfg, slug)
-	blockers = append(blockers, tb...)
-	warnings = append(warnings, tw...)
-
-	return blockers, warnings, pendingWaiver
 }
 
 // gateTestcasesReadiness is the mechanical half of the bargain that replaces
@@ -415,81 +332,6 @@ func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (bloc
 		Message: fmt.Sprintf("%s (%d criteria): %s", slug, len(current), msg),
 		Fix:     "approve the criteria interactively, or authorize this run explicitly if the project permits it",
 	}}, nil, nil
-}
-
-// gateDone aggregates the code->complete boundary: generated code matches its
-// recorded hashes, the coverage-review gate is satisfied, and ledger state is
-// sound. The last is rechecked here rather than trusted from gateCode: a gate
-// invocation evaluates one stage, so --stage done may be called directly, after
-// ledger state changed, or with earlier stages never run. Certifying completion
-// is the strongest claim the ladder makes and is the wrong place to infer that
-// someone else already checked.
-func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocker, pendingWaiver *pendingMachineRun) {
-	verify, err := computeProjectVerifyOutput(cfg)
-	if err == nil && verify != nil {
-		if !verify.HasHashes {
-			blockers = append(blockers, gateBlocker{
-				Code:    "code-not-generated",
-				Message: "no generated-code hashes recorded — the code phase has not produced a blessed prototype",
-				Fix:     "run /parlay-generate-code",
-			})
-		}
-		for _, f := range verify.Modified {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-modified",
-				Message: fmt.Sprintf("%s differs from the last recorded emission (possible hand-edit)", f.Path),
-				Fix:     "re-run /parlay-generate-code, or reconcile the edit",
-			})
-		}
-		for _, f := range verify.Adopted {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-adopted",
-				Message: fmt.Sprintf("%s was written outside codegen", f.Path),
-			})
-		}
-		for _, f := range verify.Unknown {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-unknown-provenance",
-				Message: fmt.Sprintf("%s has undeclared provenance", f.Path),
-			})
-		}
-		for _, f := range verify.Missing {
-			blockers = append(blockers, gateBlocker{
-				Code:    "generated-file-missing",
-				Message: fmt.Sprintf("%s was recorded as generated but is gone from disk", f.Path),
-				Fix:     "re-run /parlay-generate-code, or drop the component",
-			})
-		}
-	}
-
-	rg := computeReviewGate(cfg, slug)
-	for _, iss := range rg.Issues {
-		if iss.Severity == "error" {
-			blockers = append(blockers, gateBlocker{Code: iss.Code, Message: iss.Message})
-		}
-	}
-
-	// Ledger state here too. Marking a feature complete while a recorded
-	// decision is unapplied asserts the strongest thing the ladder can say
-	// about work that does not yet reflect a change its author already made.
-	lb, lw := gateLedgerState(cfg, slug, cfg.FeaturePath(slug))
-	blockers = append(blockers, lb...)
-	warnings = append(warnings, lw...)
-
-	ab, aw, ap := gateCriteriaAuthority(cfg, slug, machineAuthorized())
-	blockers = append(blockers, ab...)
-	warnings = append(warnings, aw...)
-	pendingWaiver = ap
-
-	eb, ew := gateCoverageExceptions(cfg, slug)
-	blockers = append(blockers, eb...)
-	warnings = append(warnings, ew...)
-
-	tb, tw := gateTestcasesReadiness(cfg, slug)
-	blockers = append(blockers, tb...)
-	warnings = append(warnings, tw...)
-
-	return blockers, warnings, pendingWaiver
 }
 
 // refineSanctionsUnappliedTail implements 2b: an unapplied ledger tail is

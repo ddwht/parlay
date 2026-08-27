@@ -794,6 +794,14 @@ func writeCleanCodeBoundary(t *testing.T, dir string) *config.Context {
 	if err := os.MkdirAll(bd, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A feature that has reached the code boundary has been built, so it has a
+	// baseline. Without one the drift walk has nothing to compare against and
+	// the ledger claim silently contributes nothing — which made the fixture
+	// unrealistic in exactly the direction that hides a fail-open.
+	if err := saveBuildStateForFeature(cfg, "graded", cfg.Root.Path); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.WriteFile(filepath.Join(bd, "buildfile.yaml"), []byte(`schema_version: 1
 feature: graded
 adapter: react-antd

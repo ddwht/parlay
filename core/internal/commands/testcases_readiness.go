@@ -24,6 +24,8 @@ package commands
 
 import (
 	"fmt"
+
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 
@@ -76,6 +78,17 @@ func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadines
 				"%s declares %d criteria and has no testcases.yaml — nothing discharges them", slug, len(criteria)))
 		}
 		// A genuinely criterion-free feature may legitimately have none.
+		return r
+	}
+
+	// Parse here rather than relying on the validator to report it:
+	// ValidateTestcasesV2 returns NO outcomes on a YAML error, on the reasoning
+	// that an upstream validator handles parse failures — and no upstream
+	// validator runs at this boundary. So an unparseable testcases file
+	// contributed nothing and the boundary read that as readiness.
+	var probe map[string]any
+	if err := yaml.Unmarshal(content, &probe); err != nil {
+		r.Blockers = append(r.Blockers, fmt.Sprintf("testcases for %s cannot be parsed: %v — readiness cannot be established over a file nothing could read", slug, err))
 		return r
 	}
 
