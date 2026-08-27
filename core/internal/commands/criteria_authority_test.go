@@ -347,42 +347,102 @@ func TestCriteriaAuthorityCLI_RefusesUnapprovedWithNonZeroExit(t *testing.T) {
 	}
 }
 
-// The audit event is written only when a run actually proceeds. A record on a
-// refused run would say a waiver happened when nothing did.
-func TestCriteriaAuthorityCLI_MachineRunIsRecordedOnlyWhenItProceeds(t *testing.T) {
+// The reporting command records NOTHING. It logged a waiver for a run that
+// never proceeded, while the boundary that actually advanced refused — it was
+// handed machineFlag=false by a caller with no way to pass anything else. So
+// the flag there previews, and the gate exercises.
+func TestCriteriaAuthorityCLI_ReportingDoesNotRecordAWaiver(t *testing.T) {
 	dir := setupTestDir(t)
 	writeCriteriaFixture(t, dir)
+	allowMachineAuthority(t, dir)
 	cfg := testContext(t)
 
-	// Refused: policy has not opted in.
 	authorizeCriteriaMode = machineAuthorizationMode
 	defer func() { authorizeCriteriaMode = "" }()
-	if out, err := runCriteriaAuthorityCmd_(t, "@graded"); err == nil || out.Authorized {
-		t.Fatal("a flag without the project opt-in must refuse")
-	}
-	if rec, _ := loadCriteriaAuthority(cfg, "graded"); rec != nil && len(rec.MachineRuns) > 0 {
-		t.Fatal("nothing proceeded, so nothing should have been recorded")
-	}
 
-	// Permitted: both switches present.
-	allowMachineAuthority(t, dir)
 	out, err := runCriteriaAuthorityCmd_(t, "@graded")
 	if err != nil || !out.Authorized || !out.Machine {
-		t.Fatalf("project permits it and the run asked: %+v (%v)", out, err)
+		t.Fatalf("the preview should say an advancing run would be permitted: %+v (%v)", out, err)
 	}
-	rec, loadErr := loadCriteriaAuthority(cfg, "graded")
-	if loadErr != nil {
-		t.Fatal(loadErr)
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if rec != nil && len(rec.MachineRuns) > 0 {
+		t.Error("nothing advanced, so nothing should have been recorded")
 	}
+}
+
+// The CI path, end to end through the boundary that actually advances.
+func TestCriteriaAuthority_GateExercisesTheWaiverAndRecordsIt(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	allowMachineAuthority(t, dir)
+	cfg := testContext(t)
+
+	gateAuthorizeCriteria = machineAuthorizationMode
+	defer func() { gateAuthorizeCriteria = "" }()
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gateHasCode(out.Blockers, "criteria-authority-missing") {
+		t.Fatalf("project permits it and this run asked: %+v", out.Blockers)
+	}
+	if !gateHasCode(out.Warnings, "criteria-authority-machine") {
+		t.Errorf("advancing without human approval should be reported, not silent: %+v", out.Warnings)
+	}
+
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
 	if rec == nil || len(rec.MachineRuns) != 1 {
-		t.Fatalf("the waiver should be recorded exactly once: %+v", rec)
-	}
-	ev := rec.MachineRuns[0]
-	if ev.PolicySource == "" || ev.RunID == "" || len(ev.Criteria) != 2 {
-		t.Errorf("an audit event needs the policy that permitted it, the run that did it, and what it graded against: %+v", ev)
+		t.Fatalf("the run that advanced should have recorded exactly one waiver: %+v", rec)
 	}
 	if rec.Approved != nil {
-		t.Error("a machine run must never be written as human approval")
+		t.Error("a waiver must never become approval")
+	}
+}
+
+// Either switch alone refuses, at the boundary this time.
+func TestCriteriaAuthority_GateNeedsBothSwitches(t *testing.T) {
+	t.Run("flag without the project opt-in", func(t *testing.T) {
+		dir := setupTestDir(t)
+		writeCriteriaFixture(t, dir)
+		gateAuthorizeCriteria = machineAuthorizationMode
+		defer func() { gateAuthorizeCriteria = "" }()
+
+		out, _ := computeGate(testContext(t), "graded", gateStageCode)
+		if !gateHasCode(out.Blockers, "criteria-authority-missing") {
+			t.Error("a flag alone must not waive the separation")
+		}
+	})
+
+	t.Run("opt-in without the flag", func(t *testing.T) {
+		dir := setupTestDir(t)
+		writeCriteriaFixture(t, dir)
+		allowMachineAuthority(t, dir)
+
+		out, _ := computeGate(testContext(t), "graded", gateStageCode)
+		if !gateHasCode(out.Blockers, "criteria-authority-missing") {
+			t.Error("an opt-in alone must not make every run self-authorizing")
+		}
+	})
+}
+
+// A waiver authorizes ITS run and no later one. Otherwise one CI escape answers
+// the question permanently for everyone after it.
+func TestCriteriaAuthority_ALaterUnflaggedRunStillStops(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	allowMachineAuthority(t, dir)
+	cfg := testContext(t)
+
+	gateAuthorizeCriteria = machineAuthorizationMode
+	if out, _ := computeGate(cfg, "graded", gateStageCode); gateHasCode(out.Blockers, "criteria-authority-missing") {
+		t.Fatalf("the authorized run should advance: %+v", out.Blockers)
+	}
+	gateAuthorizeCriteria = ""
+
+	out, _ := computeGate(cfg, "graded", gateStageCode)
+	if !gateHasCode(out.Blockers, "criteria-authority-missing") {
+		t.Error("the next run did not ask, so it must stop — an audit event is not standing authority")
 	}
 }
 
@@ -513,5 +573,59 @@ suites:
 				t.Errorf("%s must not block a file that predates the field it checks: %s", code, b.Message)
 			}
 		}
+	}
+}
+
+// Absence is judged against the SUBJECT. An earlier version returned success
+// for a missing testcases.yaml on the belief that the buildfile checks report
+// it — they do not, and the code that emits testcases-not-found is the gate
+// being removed. So a feature with criteria, a valid buildfile and no tests at
+// all would have passed.
+func TestTestcasesReadiness_MissingTestcasesBlocksAFeatureWithCriteria(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+
+	out, _ := computeGate(testContext(t), "graded", gateStageCode)
+	var msg string
+	for _, b := range out.Blockers {
+		if b.Code == "testcases-not-ready" {
+			msg = b.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("two criteria and nothing discharging them: %+v", out.Blockers)
+	}
+	if !strings.Contains(msg, "no testcases.yaml") {
+		t.Errorf("say what is missing: %q", msg)
+	}
+}
+
+// A genuinely criterion-free feature may legitimately have none.
+func TestTestcasesReadiness_MissingTestcasesIsFineWithNoCriteria(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := filepath.Join(dir, "spec", "intents", "bare-contract")
+	if err := os.MkdirAll(featDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"intents.md": "# Bare\n\n## Do It\n\n**Goal**: g.\n**Persona**: p.\n",
+		"surface.yaml": `feature: bare-contract
+fragments:
+    - name: Thing
+      page: things
+      region: main
+      shows: detail
+      order: 1
+      source: '@bare-contract/do-it'
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(featDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r := CheckTestcasesReadiness(testContext(t), "bare-contract")
+	if len(r.Blockers) != 0 {
+		t.Errorf("a feature declaring no criteria needs nothing to discharge them: %+v", r.Blockers)
 	}
 }

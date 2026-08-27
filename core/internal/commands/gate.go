@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -38,12 +39,19 @@ var gateCmd = &cobra.Command{
 	RunE:  runInternalGate,
 }
 
-var gateStage string
+var (
+	gateStage             string
+	gateAuthorizeCriteria string
+)
 
 func init() {
 	gateCmd.Flags().StringVar(&gateStage, "stage", "",
 		"Boundary to gate, aligned with the FeaturePhase ladder: build (designer->build), code (build->code), done (code->complete)")
 	gateCmd.MarkFlagRequired("stage")
+	gateCmd.Flags().StringVar(&gateAuthorizeCriteria, "authorize-criteria", "",
+		"set to \"machine\" to advance this boundary without human approval of the criteria. Requires the project to "+
+			"have opted in with parlay.criterion-authority.allow-machine; records that the separation between authoring "+
+			"a standard and grading against it was WAIVED for this run, not satisfied")
 }
 
 // gateBlocker is one finding the gate surfaces. A blocker fails the gate; a
@@ -266,7 +274,7 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
 
-	ab, aw := gateCriteriaAuthority(cfg, slug)
+	ab, aw := gateCriteriaAuthority(cfg, slug, machineAuthorized())
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
 
@@ -335,8 +343,8 @@ func gateCoverageExceptions(cfg *config.Context, slug string) (blockers, warning
 // does, and the CLI passes it where the run is actually authorized. Reading it
 // here would let a gate silently answer a governance question on behalf of a
 // caller that never asked.
-func gateCriteriaAuthority(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
-	verdict, current, err := CheckCriteriaAuthority(cfg, slug, false)
+func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (blockers, warnings []gateBlocker) {
+	verdict, current, err := CheckCriteriaAuthority(cfg, slug, machine)
 	if err != nil {
 		return []gateBlocker{{
 			Code:    "criteria-authority-unreadable",
@@ -345,7 +353,28 @@ func gateCriteriaAuthority(cfg *config.Context, slug string) (blockers, warnings
 		}}, nil
 	}
 	if verdict.Proceed {
-		return nil, nil
+		if verdict.Machine {
+			// The audit event belongs to the run that ACTUALLY advanced, not to
+			// whoever asked the question. Recording it from a standalone report
+			// meant a waiver could be logged for a run that never proceeded,
+			// while the boundary that did advance refused, having been handed
+			// machineFlag=false by a caller that could not pass anything else.
+			if err := RecordMachineRun(cfg, slug, current,
+				time.Now().UTC().Format(time.RFC3339),
+				"parlay.criterion-authority.allow-machine", runIdentity(),
+				"--authorize-criteria=machine at the "+gateStage+" boundary",
+			); err != nil {
+				return []gateBlocker{{
+					Code:    "criteria-authority-unrecordable",
+					Message: fmt.Sprintf("this run is authorized to proceed without human approval but the waiver could not be recorded: %v — an unrecorded waiver is one nobody can find later", err),
+				}}, nil
+			}
+			warnings = append(warnings, gateBlocker{
+				Code:    "criteria-authority-machine",
+				Message: fmt.Sprintf("%s advanced without human approval of its criteria: %s", slug, verdict.Reason),
+			})
+		}
+		return nil, warnings
 	}
 
 	msg := verdict.Reason
@@ -426,7 +455,7 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
 
-	ab, aw := gateCriteriaAuthority(cfg, slug)
+	ab, aw := gateCriteriaAuthority(cfg, slug, machineAuthorized())
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
 
@@ -596,4 +625,13 @@ func uniqueStrings(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// machineAuthorized reports whether THIS invocation asked to advance without
+// human approval of the criteria.
+//
+// Read from the advancing command rather than passed down from a reporting one,
+// because the question is about a run, not about a feature.
+func machineAuthorized() bool {
+	return gateAuthorizeCriteria == machineAuthorizationMode
 }

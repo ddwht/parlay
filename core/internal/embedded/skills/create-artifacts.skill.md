@@ -175,10 +175,19 @@ Determine which spec artifacts a feature needs, based on its intents and dialogs
    that hides the unchanged parts makes the changed ones look like the only
    thing at stake.
 
-   **This decision has no safe default and no unattended path.** Under
-   `--non-interactive` raise the decision and stop: an agent answering it is an
-   agent approving the standard it will then be graded against, which is the
-   one thing the coverage-review gate this replaces was trying to prevent.
+   **This decision has no safe default.** Under `--non-interactive` raise the
+   decision and stop: an agent answering it is an agent approving the standard
+   it will then be graded against, which is the one thing the gate this replaces
+   was trying to prevent. Do not answer it, and do not record an approval.
+
+   **The one exception is an explicitly authorized machine run** — a project
+   that has set `parlay.criterion-authority.allow-machine` AND an invocation
+   passing `--authorize-criteria=machine`. There, write the artifacts, record
+   NO approval, and continue: the boundary will proceed under the waiver and log
+   that nobody looked. Both switches are required, and neither is something this
+   phase decides — it is reading a choice the project and the run already made.
+   Without that exception the unattended case cannot reach codegen at all, which
+   is the benchmark finding this work exists to fix rather than restate.
 
    On approval, record it:
    `parlay internal approve-criteria @{feature} --by "{how the decision was answered}" --decision-id "{the decision's id}"`.

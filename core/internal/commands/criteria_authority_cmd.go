@@ -62,9 +62,9 @@ func init() {
 	approveCriteriaCmd.Flags().StringVar(&approveCriteriaID, "decision-id", "",
 		"identifier of the interaction that produced this approval, so it can be traced rather than merely asserted")
 	criteriaAuthorityCmd.Flags().StringVar(&authorizeCriteriaMode, "authorize-criteria", "",
-		"set to \"machine\" to proceed without human approval. Requires the project to have opted in with "+
-			"parlay.criterion-authority.allow-machine; records that the separation between authoring a standard "+
-			"and grading against it was WAIVED for this run, not satisfied")
+		"set to \"machine\" to preview whether an advancing run would be permitted to proceed without human "+
+			"approval. This command reports only — the waiver is exercised, and recorded, by the boundary that "+
+			"actually advances (parlay internal gate --authorize-criteria=machine)")
 }
 
 type criteriaAuthorityOutput struct {
@@ -98,19 +98,12 @@ func runCriteriaAuthority(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Append the audit event only after the run is actually authorized. A
-	// record written on a refused run would say a waiver happened when nothing
-	// proceeded.
-	if verdict.Proceed && verdict.Machine {
-		if err := RecordMachineRun(cfg, slug, current,
-			time.Now().UTC().Format(time.RFC3339),
-			"parlay.criterion-authority.allow-machine",
-			runIdentity(),
-			"--authorize-criteria=machine",
-		); err != nil {
-			return fmt.Errorf("record machine authorization: %w", err)
-		}
-	}
+	// This command REPORTS; it does not advance anything, so it records
+	// nothing. Appending here logged a waiver for a run that never proceeded,
+	// while the boundary that actually advanced refused — it was handed
+	// machineFlag=false by a caller with no way to pass anything else. The
+	// audit event now belongs to the gate, which is the run that goes on to
+	// generate code.
 
 	out := criteriaAuthorityOutput{
 		Feature: slug, Criteria: current, Hash: CriteriaHash(current),

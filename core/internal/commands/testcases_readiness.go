@@ -50,28 +50,51 @@ type TestcasesReadiness struct {
 func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadiness {
 	var r TestcasesReadiness
 
+	featureDir := cfg.FeaturePath(slug)
+
 	tcPath := filepath.Join(cfg.BuildPath(slug), "testcases.yaml")
 	content, err := os.ReadFile(tcPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// No testcases yet is a build-phase question, reported by the
-			// buildfile checks, not a readiness failure to duplicate here.
+	if err != nil && !os.IsNotExist(err) {
+		r.Blockers = append(r.Blockers, fmt.Sprintf("testcases for %s cannot be read: %v — readiness cannot be established over a file that was not read", slug, err))
+		return r
+	}
+	if os.IsNotExist(err) {
+		// Absence is judged against the SUBJECT, not waved through. An earlier
+		// version returned success here on the belief that the buildfile checks
+		// report a missing testcases.yaml. They do not — computeCheckBuildfile
+		// validates only buildfile.yaml, and the code that emits
+		// testcases-not-found is computeReviewGate, which is the thing being
+		// removed. So a feature with an approved criterion set, a valid
+		// buildfile and no tests at all would have passed.
+		criteria, cErr := CurrentCriteria(cfg, slug)
+		if cErr != nil {
+			r.Blockers = append(r.Blockers, fmt.Sprintf("%s has no testcases and its contract cannot be read to tell whether it needs any: %v", slug, cErr))
 			return r
 		}
-		r.Blockers = append(r.Blockers, fmt.Sprintf("testcases for %s cannot be read: %v — readiness cannot be established over a file that was not read", slug, err))
+		if len(criteria) > 0 {
+			r.Blockers = append(r.Blockers, fmt.Sprintf(
+				"%s declares %d criteria and has no testcases.yaml — nothing discharges them", slug, len(criteria)))
+		}
+		// A genuinely criterion-free feature may legitimately have none.
 		return r
 	}
 
 	in := agent.TestcasesV2Input{Path: tcPath, Content: content}
-
-	featureDir := cfg.FeaturePath(slug)
 
 	// Contract: capabilities supplies canonical operations and their criteria;
 	// surface supplies its fragments'. A declared artifact that will not parse
 	// leaves the standard unknown, and an unknown standard cannot be checked
 	// against — the walkers would simply find nothing to require.
 	capsPath := filepath.Join(featureDir, "capabilities.yaml")
-	if _, statErr := os.Stat(capsPath); statErr == nil {
+	statErr := statArtifact(capsPath)
+	if statErr != nil {
+		// Anything other than absence — a permission or I/O failure — is not
+		// an absent artifact, and treating it as one silently drops the whole
+		// operation contract from the subject being checked.
+		r.Blockers = append(r.Blockers, fmt.Sprintf("capabilities for %s cannot be reached: %v", slug, statErr))
+		return r
+	}
+	if artifactExists(capsPath) {
 		caps, capErr := parser.ParseCapabilities(capsPath)
 		if capErr != nil {
 			r.Blockers = append(r.Blockers, fmt.Sprintf("capabilities for %s cannot be read: %v", slug, capErr))
@@ -135,4 +158,20 @@ func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadines
 		}
 	}
 	return r
+}
+
+// statArtifact returns nil for both a present artifact and a genuinely absent
+// one, and an error for anything else. Absence is a fact about the project;
+// a permission or I/O failure is a fact about this run, and conflating them
+// drops real content out of whatever is being checked.
+func statArtifact(path string) error {
+	if _, err := os.Stat(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func artifactExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
