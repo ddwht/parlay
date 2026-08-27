@@ -164,7 +164,8 @@ func gateStepExpansion(stage string) string {
 		"```\n" +
 		"parlay internal gate @{feature} --stage " + stage + "\n" +
 		"```\n\n" +
-		"(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **pure recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict and writes nothing, so re-running it after a fix re-derives the answer with no stale state to clear.\n\n" +
+		"**If this run carries `--authorize-criteria=machine`, pass it here too.** Without it this gate refuses a feature whose criteria nobody has approved, which is right for a run that was not authorized and wrong for one that was — and the flag is how a run says which it is. Both the project setting and this argument are required; neither alone counts.\n\n" +
+		"(When this phase operates on more than one feature — a project-level pass emits several — run the gate once per feature in scope.) The gate is a **recomputation** over what is on disk: it aggregates the boundary's checkers into one verdict, so re-running it after a fix re-derives the answer with no stale state to clear. It writes nothing **except** when an authorized machine run passes the code boundary, where it records the waiver — that record is the only trace that generation proceeded against a standard nobody approved, so it is written by the run that actually advanced rather than inferred later.\n\n" +
 		"**If any invocation exits non-zero, stop.** Do not proceed to the steps below, and do not quietly fix-and-retry: each entry in the gate's `blockers[]` names its own `fix`, and resolving a blocker is the driver's call, not this phase's. Surface the blockers as a `failure` decision request (see **Asking the user**) with them in `context:`, and let the driver decide. A passing gate (exit zero) is the only condition under which the rest of this module runs."
 }
 

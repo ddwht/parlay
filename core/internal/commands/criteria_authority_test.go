@@ -472,8 +472,9 @@ func TestCriteriaAuthority_GateRejectsAnUnknownFlagValue(t *testing.T) {
 }
 
 // writePassingTestcases writes a current-shape file discharging every criterion
-// the fixture declares, so a test about authorization is not also a test about
-// coverage.
+// the fixture declares, in the real step vocabulary — action/target for steps,
+// verify/target for expectations — so a test about authorization is not also a
+// test about coverage.
 func writePassingTestcases(t *testing.T, cfg *config.Context, slug string) {
 	t.Helper()
 	buildDir := cfg.BuildPath(slug)
@@ -485,6 +486,7 @@ feature: graded
 suites:
   - name: Customer Detail
     kind: presentation
+    component: customer-detail
     source_refs:
       - "@graded/fragment:Customer Detail"
     file: src/CustomerDetail.test.tsx
@@ -495,10 +497,13 @@ suites:
           text: the archive button is disabled while invoices are unpaid
         exercises: ["@graded/fragment:Customer Detail"]
         observes: ["@graded/fragment:Customer Detail"]
+        coverage: full
         steps:
-          - { type: render, target: "@graded/fragment:Customer Detail" }
-        expectations:
-          - { type: shows, target: "@graded/fragment:Customer Detail" }
+          - action: render
+            target: "@graded/fragment:Customer Detail"
+          - verify: element
+            target: "@graded/fragment:Customer Detail"
+            expected: disabled
   - name: Archive
     kind: operation
     operation: "@graded/operation:customer.archive"
@@ -512,10 +517,13 @@ suites:
           text: archiving a customer with unpaid invoices is rejected
         exercises: ["@graded/operation:customer.archive"]
         observes: ["@graded/operation:customer.archive"]
+        coverage: full
         steps:
-          - { type: invoke, target: "@graded/operation:customer.archive" }
-        expectations:
-          - { type: rejects, target: "@graded/operation:customer.archive" }
+          - action: click
+            target: "@graded/operation:customer.archive"
+          - verify: state
+            target: "@graded/operation:customer.archive"
+            expected: rejected
 `
 	if err := os.WriteFile(filepath.Join(buildDir, "testcases.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -749,5 +757,133 @@ fragments:
 	r := CheckTestcasesReadiness(testContext(t), "bare-contract")
 	if len(r.Blockers) != 0 {
 		t.Errorf("a feature declaring no criteria needs nothing to discharge them: %+v", r.Blockers)
+	}
+}
+
+// writeCleanCodeBoundary builds a feature that clears the ENTIRE code boundary.
+//
+// It exists because a mutation test without a clean control proves nothing: if
+// the unmutated fixture already blocks, a blocker in the mutated one is not
+// evidence the mutation caused it. Being unable to construct this was itself
+// diagnostic — the transactional property had been tested against a verdict
+// assembled by hand rather than one production produces.
+func writeCleanCodeBoundary(t *testing.T, dir string) *config.Context {
+	t.Helper()
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	writePassingTestcases(t, cfg, "graded")
+
+	adapters := cfg.AdaptersPath()
+	if err := os.MkdirAll(adapters, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapterPath := filepath.Join(adapters, "react-antd.adapter.yaml")
+	if err := os.WriteFile(adapterPath, []byte("name: react-antd\nkind: presentation\nfile-conventions:\n  project-root: \".\"\n  source-root: src/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sigs, err := computeSourceSignatures(cfg.FeaturePath("graded"), cfg.Root.Path, adapterPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigYaml := ""
+	for k, v := range sigs {
+		sigYaml += "  " + k + ": " + v + "\n"
+	}
+	bd := cfg.BuildPath("graded")
+	if err := os.MkdirAll(bd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bd, "buildfile.yaml"), []byte(`schema_version: 1
+feature: graded
+adapter: react-antd
+components:
+  customer-detail:
+    kind: component
+    source: "@graded/fragment:Customer Detail"
+plan:
+  creates:
+    - path: src/features/graded/CustomerDetail.tsx
+      sources: ["component/customer-detail"]
+source-signatures:
+`+sigYaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// The control itself: without it every mutation below would be arguing from a
+// fixture that was already blocked.
+func TestCleanCodeBoundary_Passes(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	current, _ := CurrentCriteria(cfg, "graded")
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Passed {
+		t.Fatalf("the clean control must pass or nothing below proves anything: %+v", out.Blockers)
+	}
+}
+
+// The machine path, end to end through the advancing command against a
+// boundary that genuinely passes.
+func TestMachineAuthorization_CleanRunRecordsExactlyOneWaiver(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	allowMachineAuthority(t, dir)
+
+	gateAuthorizeCriteria = machineAuthorizationMode
+	defer func() { gateAuthorizeCriteria = "" }()
+
+	if err := runGateCmd_(t, "@graded", gateStageCode); err != nil {
+		t.Fatalf("both switches set and the boundary otherwise clean: %v", err)
+	}
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if rec == nil || len(rec.MachineRuns) != 1 {
+		t.Fatalf("exactly one waiver for one advancing run: %+v", rec)
+	}
+	if rec.Approved != nil {
+		t.Error("a waiver must never become approval")
+	}
+
+	// A later run that does not ask still stops: an audit event is not
+	// standing authority.
+	gateAuthorizeCriteria = ""
+	out, _ := computeGate(cfg, "graded", gateStageCode)
+	if out.Passed {
+		t.Error("the next run did not ask for the waiver, so it must stop")
+	}
+}
+
+// The mutation that matters, now provable: an unrelated blocker on an otherwise
+// authorized run must leave no audit trail claiming it advanced.
+func TestMachineAuthorization_UnrelatedBlockerLeavesNoAudit(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	allowMachineAuthority(t, dir)
+
+	// Mutate exactly one thing, and verify the mutation actually blocks before
+	// concluding anything from the absence of an audit record — otherwise this
+	// test passes when the mutation silently did nothing.
+	if err := os.Remove(filepath.Join(cfg.BuildPath("graded"), "testcases.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := computeGate(cfg, "graded", gateStageCode); out.Passed {
+		t.Fatal("the mutation did not block, so this test would prove nothing")
+	}
+
+	gateAuthorizeCriteria = machineAuthorizationMode
+	defer func() { gateAuthorizeCriteria = "" }()
+
+	_ = runGateCmd_(t, "@graded", gateStageCode)
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if rec != nil && len(rec.MachineRuns) > 0 {
+		t.Errorf("the boundary refused, so the audit trail must not say a run advanced: %+v", rec.MachineRuns)
 	}
 }
