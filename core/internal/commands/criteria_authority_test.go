@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,5 +296,124 @@ func TestCriteriaAuthority_GateDoesNotSelfAuthorizeEvenWhenPolicyAllows(t *testi
 
 	if !gateHasCode(gateCodeFor(t, "graded").Blockers, "criteria-authority-missing") {
 		t.Error("policy permits a waiver; it does not exercise one")
+	}
+}
+
+// --- CLI ------------------------------------------------------------------
+
+func runCriteriaAuthorityCmd_(t *testing.T, args ...string) (criteriaAuthorityOutput, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	cmd := testCommandWithContext(t, testContext(t))
+	cmd.SetOut(&buf)
+	err := runCriteriaAuthority(cmd, args)
+	var out criteriaAuthorityOutput
+	if buf.Len() > 0 {
+		if jsonErr := json.Unmarshal(buf.Bytes(), &out); jsonErr != nil {
+			t.Fatalf("not JSON: %v\n%s", jsonErr, buf.String())
+		}
+	}
+	return out, err
+}
+
+func allowMachineAuthority(t *testing.T, dir string) {
+	t.Helper()
+	cfgDir := filepath.Join(dir, ".parlay")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"),
+		[]byte("ai-agent: Claude Code\ncriterion-authority.allow-machine: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCriteriaAuthorityCLI_RefusesUnapprovedWithNonZeroExit(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	authorizeCriteriaMode = ""
+
+	out, err := runCriteriaAuthorityCmd_(t, "@graded")
+	if err == nil {
+		t.Error("a refusal must exit non-zero so CI notices it")
+	}
+	if out.Authorized {
+		t.Error("nobody approved this standard")
+	}
+	if out.Hash == "" || len(out.Criteria) != 2 {
+		t.Errorf("the report should name the standard it refused over: %+v", out)
+	}
+}
+
+// The audit event is written only when a run actually proceeds. A record on a
+// refused run would say a waiver happened when nothing did.
+func TestCriteriaAuthorityCLI_MachineRunIsRecordedOnlyWhenItProceeds(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	// Refused: policy has not opted in.
+	authorizeCriteriaMode = machineAuthorizationMode
+	defer func() { authorizeCriteriaMode = "" }()
+	if out, err := runCriteriaAuthorityCmd_(t, "@graded"); err == nil || out.Authorized {
+		t.Fatal("a flag without the project opt-in must refuse")
+	}
+	if rec, _ := loadCriteriaAuthority(cfg, "graded"); rec != nil && len(rec.MachineRuns) > 0 {
+		t.Fatal("nothing proceeded, so nothing should have been recorded")
+	}
+
+	// Permitted: both switches present.
+	allowMachineAuthority(t, dir)
+	out, err := runCriteriaAuthorityCmd_(t, "@graded")
+	if err != nil || !out.Authorized || !out.Machine {
+		t.Fatalf("project permits it and the run asked: %+v (%v)", out, err)
+	}
+	rec, loadErr := loadCriteriaAuthority(cfg, "graded")
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if rec == nil || len(rec.MachineRuns) != 1 {
+		t.Fatalf("the waiver should be recorded exactly once: %+v", rec)
+	}
+	ev := rec.MachineRuns[0]
+	if ev.PolicySource == "" || ev.RunID == "" || len(ev.Criteria) != 2 {
+		t.Errorf("an audit event needs the policy that permitted it, the run that did it, and what it graded against: %+v", ev)
+	}
+	if rec.Approved != nil {
+		t.Error("a machine run must never be written as human approval")
+	}
+}
+
+func TestCriteriaAuthorityCLI_ApprovalRequiresAnIdentity(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+
+	approveCriteriaBy = ""
+	var buf bytes.Buffer
+	cmd := testCommandWithContext(t, testContext(t))
+	cmd.SetOut(&buf)
+	if err := runApproveCriteria(cmd, []string{"@graded"}); err == nil {
+		t.Error("an approval that cannot say what accepted the standard is the forgery this record exists to avoid")
+	}
+
+	approveCriteriaBy = "interactive decision"
+	defer func() { approveCriteriaBy = "" }()
+	if err := runApproveCriteria(cmd, []string{"@graded"}); err != nil {
+		t.Fatalf("with an identity it should record: %v", err)
+	}
+	rec, _ := loadCriteriaAuthority(testContext(t), "graded")
+	if rec == nil || rec.Approved == nil || rec.Approved.Authority != "interactive decision" {
+		t.Errorf("the identity must be stored as given, not derived: %+v", rec)
+	}
+}
+
+func TestCriteriaAuthorityCLI_RejectsAnUnknownMode(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	authorizeCriteriaMode = "yes"
+	defer func() { authorizeCriteriaMode = "" }()
+
+	if _, err := runCriteriaAuthorityCmd_(t, "@graded"); err == nil {
+		t.Error("the mode is a closed value; a typo must not silently mean no waiver")
 	}
 }

@@ -49,8 +49,8 @@ const criteriaAuthoritySchemaVersion = 1
 // AuthorizedCriterion is one approved (ref, text) pair, stored so a later run
 // can show what CHANGED rather than only that something did.
 type AuthorizedCriterion struct {
-	Ref  string `yaml:"ref"`
-	Text string `yaml:"text"`
+	Ref  string `yaml:"ref" json:"ref"`
+	Text string `yaml:"text" json:"text"`
 }
 
 // MachineRun is an audit event: a run that proceeded without human judgment.
@@ -327,8 +327,18 @@ func CurrentCriteria(cfg *config.Context, slug string) ([]AuthorizedCriterion, e
 	featureDir := cfg.FeaturePath(slug)
 	var out []AuthorizedCriterion
 
-	caps, capErr := parser.ParseCapabilities(filepath.Join(featureDir, "capabilities.yaml"))
-	if capErr == nil && caps.Feature != "" {
+	// Existence is checked before parsing rather than inferred from the parse
+	// error: the parser wraps its cause, so os.IsNotExist never matches and an
+	// ABSENT artifact read as an unreadable one — failing closed on the most
+	// ordinary case in the tree, a feature with no capabilities.
+	capsPath := filepath.Join(featureDir, "capabilities.yaml")
+	_, capStatErr := os.Stat(capsPath)
+	var caps *parser.Capabilities
+	var capErr error
+	if capStatErr == nil {
+		caps, capErr = parser.ParseCapabilities(capsPath)
+	}
+	if capErr == nil && caps != nil && caps.Feature != "" {
 		for _, op := range caps.Operations {
 			if op.ID == "" {
 				continue
@@ -340,10 +350,9 @@ func CurrentCriteria(cfg *config.Context, slug string) ([]AuthorizedCriterion, e
 				}
 			}
 		}
-	} else if capErr != nil && !os.IsNotExist(capErr) {
-		// A contract artifact that exists and will not parse leaves the
-		// standard unknown, and an unknown standard must not be approved or
-		// silently treated as empty.
+	} else if capErr != nil {
+		// Present and unparseable leaves the standard unknown, and an unknown
+		// standard must not be approved or silently treated as empty.
 		return nil, fmt.Errorf("read capabilities: %w", capErr)
 	}
 
