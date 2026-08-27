@@ -328,7 +328,7 @@ When a `file:` names a path inside a hand-authored unit's declared `tests:` glob
 
 The build phase should not emit such a suite at all when the unit's `satisfies:` already lists the invariant — a generated suite for an invariant a unit covers is either a duplicate or, because it cannot see the unit's internals, a vacuous one that asserts nothing and passes forever. Replacing a vacuous suite with a declared external test is the point of the mechanism.
 
-Freshness of a cited test rides the existing hash machinery rather than a new one: `coverage-review.yaml` already pins `buildfile_hash` and `testcases_hash` and goes stale when either moves, and a unit's aggregate hash is already a `source-signatures:` input (`authored`), so an edit to the cited test invalidates the consuming buildfile through the same gate that catches any other source change. "The external test changed, re-review" therefore falls out of mechanisms that already exist, with nothing new to keep in sync.
+Freshness of a cited test rides the mechanisms already in force rather than a new one. A unit's aggregate hash is a `source-signatures:` input (`authored`), so an edit to the cited test invalidates the consuming buildfile through the same freshness check that catches any other source change; and generated-state verification reports a tracked file that moved under its record. "The external test changed, re-review" therefore falls out of machinery that exists, with nothing new to keep in sync.
 
 ### Coverage walker
 
@@ -348,14 +348,14 @@ Four diagnostics come out of this walker:
 
 | Code | Fires when | Fix |
 |---|---|---|
-| `verify-criterion-uncovered` (warning) | a declared bullet no case discharges | write the case, or exempt the bullet |
-| `testcases-criterion-ref-unknown` (warning) | a case cites a ref no contract entry declares | correct the ref against `capabilities.yaml` / `surface.yaml` |
-| `testcases-criterion-text-missing` (warning) | a case cites a ref with no text | rebuild with `parlay build-feature`; this is what every pre-bullet-coverage file looks like |
-| `testcases-criterion-text-drift` (warning) | a case cites a known entry with a text matching none of its current bullets | the contract was reworded after the case was written, or the criterion was invented |
+| `verify-criterion-uncovered` | a declared bullet no case discharges | write the case, or excuse the bullet |
+| `testcases-criterion-ref-unknown` | a case cites a ref no contract entry declares | correct the ref against `capabilities.yaml` / `surface.yaml` |
+| `testcases-criterion-text-missing` | a case cites a ref with no text | rebuild with `parlay build-feature`; this is what every pre-bullet-coverage file looks like |
+| `testcases-criterion-text-drift` | a case cites a known entry with a text matching none of its current bullets | the contract was reworded after the case was written, or the criterion was invented |
 
 ### Cross-kind citation
 
-A suite's `kind:` need not equal its criterion's owner. A presentation case may discharge an **operation's** criterion — an operation contract can legitimately be observed end-to-end through the UI — but only by **invoking that operation**: one of the case's steps must have the operation's ref as its `target:`. A presentation case citing an operation ref that no step targets draws `testcases-cross-kind-criterion-unexercised` (warning).
+A suite's `kind:` need not equal its criterion's owner. A presentation case may discharge an **operation's** criterion — an operation contract can legitimately be observed end-to-end through the UI — but only by **invoking that operation**: one of the case's steps must have the operation's ref as its `target:`. A presentation case citing an operation ref that no step targets draws `testcases-cross-kind-criterion-unexercised`.
 
 What this stops is the operation ref used as a **substitute** for a display criterion the fragment never stated — the tempting move when a fragment carries no `verify:` at all. It compiles every display claim down to a store assertion, permanently and without the `coverage: state-only` stamp that exists to record exactly that downgrade.
 
@@ -363,7 +363,16 @@ Only invocation is checkable. Whether the cited criterion is *contract-shaped*, 
 
 A fifth, `verify-criterion-duplicate`, reports the contract rather than the testcases file: two identical bullets on one entry are indistinguishable under text identity and cannot be discharged separately, so they are an authoring defect to fix rather than a case to index around.
 
-A bullet may be excused by a `coverage-review.yaml` exemption. An exemption whose `item:` is the ref and whose `criterion_text:` is the bullet excuses exactly that bullet; an exemption with `item:` alone is **entry-wide**, which is how every exemption written before bullet-level coverage has to be read, since none could have recorded a text.
+**Severity follows the file's declared revision.** Every diagnostic in this
+section, and `testcases-file-missing` below, is a **warning below
+`schema_version: 3` and an error at 3 or above**. They were warnings at all
+because every artifact in existence predated the fields they check, and erroring
+would have failed every project at once over a fact none of them could have
+recorded; a file declaring the current shape is one where the fact could have
+been recorded, so the exemption no longer applies to it. Policy is **regenerate**
+— an older version is an instruction to re-run `/parlay-build-feature`.
+
+A bullet may be excused by a `coverage-exceptions.yaml` entry of `kind: waived` — the only supported kind. An exception naming `ref:` and `criterion_text:` excuses exactly that bullet and is valid while that bullet is still declared; one naming `ref:` alone is **entry-wide** and carries an `entry_hash:` of that entry's bullet set, so adding a bullet invalidates it. Entry-wide is accepted because every exemption written before bullet-level identity is that shape and none could have recorded a text, and warned because it excuses more than one bullet.
 
 All five are **warnings** while criterion-driven cases land: every testcases.yaml was generated before `criterion:` existed, so its cases cite nothing yet, and erroring would fail every project at once over a fact none of them could have recorded. They graduate to errors once projects have rebuilt with criterion-carrying cases.
 
@@ -381,7 +390,7 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 |---|---|
 | `testcases-operation-uncovered` | A canonical operation has no covering `kind: operation` suite. |
 | `testcases-source-refs-missing` | A new v2 suite lacks `source_refs:`. |
-| `testcases-file-missing` (warning) | A v2 suite lacks `file:`, so nothing has decided where its code goes and codegen would invent a path. Warning in both modes while the field lands — every testcases.yaml predates it. Rebuild to populate it from the plan. |
+| `testcases-file-missing` | A suite lacks `file:`, so nothing has decided where its code goes and codegen would invent a path. Rebuild to populate it from the plan. |
 | `testcases-v1-unsupported` | A suite has no `kind:` — the v1 shape was removed in v0.3; regenerate via `/parlay-build-feature`. |
 | `testcases-suite-kind-unknown` | A suite declares `kind:` outside `{presentation, operation}`. |
 | `testcases-operation-shape-mismatch` | An operation suite asserts `output.entity` that does not match the canonical operation. |
@@ -392,10 +401,10 @@ The v1 shape (a suite with no `kind:`) stopped being accepted in v0.3: it draws 
 | `testcases-case-vacuous` | A case declares `exercises:` but none of those targets appears as a step `target:` — the case acts on nothing it claims to. |
 | `testcases-case-claims-unmet` | A `verify:` step reads a `target:` outside the case's declared `observes:` — the case asserts on something its declaration does not admit. |
 | `testcases-case-criterion-missing` (warning) | A case in a v2 suite declares no `criterion:`, so nothing records why it exists. Warning while the field lands — every testcases.yaml predates it. |
-| `verify-criterion-uncovered` (warning) | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-review.yaml` exemption. Counted per bullet, not per entry. Warning while criterion-driven cases land — every testcases.yaml predates `criterion:`. |
-| `testcases-criterion-ref-unknown` (warning) | A case cites a `criterion.ref` no contract entry declares. |
-| `testcases-criterion-text-missing` (warning) | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. What every file written before bullet-level coverage looks like; the fix is a rebuild. |
-| `testcases-criterion-text-drift` (warning) | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |
+| `verify-criterion-uncovered` | A `verify:` bullet on a contract entry has no case whose `criterion.{ref,text}` discharges it and no `coverage-exceptions.yaml` entry excusing it. Counted per bullet, not per entry. **Warning below `schema_version: 3`, error at 3 and above** — a file declaring the current shape is one where the criterion could have been recorded. |
+| `testcases-criterion-ref-unknown` | A case cites a `criterion.ref` no contract entry declares. |
+| `testcases-criterion-text-missing` | A case cites a ref with no `criterion.text`, so which of the entry's bullets it discharges cannot be told. What every file written before bullet-level coverage looks like; the fix is a rebuild. |
+| `testcases-criterion-text-drift` | A case cites a known entry with a `criterion.text` matching none of its current `verify:` bullets — the contract was reworded, or the criterion was invented. |
 | `testcases-cross-kind-criterion-unexercised` (warning) | A presentation case cites an operation's criterion but no step targets that operation — the ref is standing in for a display criterion rather than discharging a contract one. |
 | `verify-criterion-duplicate` (warning) | A contract entry declares the same `verify:` bullet twice. Two identical bullets cannot be discharged separately; fix the contract rather than indexing around them. |
 

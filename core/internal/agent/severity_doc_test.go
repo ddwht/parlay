@@ -61,6 +61,15 @@ func TestWarningSeveritiesAreDocumentedAsWarnings(t *testing.T) {
 		if perMode[ModeBuild] != SeverityWarning {
 			continue
 		}
+		if _, graduates := graduatingCodes[code]; graduates {
+			// Severity depends on the artifact's declared revision: warning
+			// below the graduation version, error at or above it. A row marked
+			// (warning) would tell a reader the wrong thing for every current
+			// artifact, and an unmarked row would tell them the wrong thing for
+			// every legacy one. The schema states the split in prose above the
+			// table instead, which is the only place it fits.
+			continue
+		}
 		marker, documented := rows[code]
 		if !documented {
 			// Documented in prose rather than a table, or not documented at all.

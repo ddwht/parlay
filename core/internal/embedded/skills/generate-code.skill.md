@@ -580,7 +580,14 @@ satisfied.
 
 The skill is permitted to read ONLY:
 
-- `.parlay/build/<feature>/{buildfile,testcases,coverage-review}.yaml`
+- `.parlay/build/<feature>/{buildfile,testcases}.yaml`
+
+  `criteria-authority.yaml` and `coverage-exceptions.yaml` are deliberately NOT
+  in this set. Codegen does not read them; the injected **Step 0 — Gate** does,
+  and that command's reads are its own — a boundary check running before this
+  module is not this module widening what it may open. Keeping them out is what
+  stops "the gate consults it" from becoming "codegen may read anything the gate
+  reads".
 - `.parlay/{config,blueprint,adapter-set}.yaml`
 - `.parlay/adapters/<slug>.adapter.yaml` (referenced from adapter-set)
 - `.parlay/domain-model.yaml`
