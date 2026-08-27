@@ -266,7 +266,55 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
 
+	ab, aw := gateCriteriaAuthority(cfg, slug)
+	blockers = append(blockers, ab...)
+	warnings = append(warnings, aw...)
+
 	return blockers, warnings
+}
+
+// gateCriteriaAuthority refuses codegen against a standard nobody approved.
+//
+// Shared and called from every independently invocable boundary that can reach
+// codegen, for the same reason gateLedgerState is: computeGate evaluates ONE
+// stage, so --from code never crosses the build boundary and a check living
+// only there protects the path nobody was worried about.
+//
+// The machine flag is deliberately absent from this signature. A gate reports
+// what is true of the feature; exercising a waiver is something an invocation
+// does, and the CLI passes it where the run is actually authorized. Reading it
+// here would let a gate silently answer a governance question on behalf of a
+// caller that never asked.
+func gateCriteriaAuthority(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+	verdict, current, err := CheckCriteriaAuthority(cfg, slug, false)
+	if err != nil {
+		return []gateBlocker{{
+			Code:    "criteria-authority-unreadable",
+			Message: fmt.Sprintf("cannot establish which standard %s is graded against: %v", slug, err),
+			Fix:     "repair the contract artifacts, then re-run",
+		}}, nil
+	}
+	if verdict.Proceed {
+		return nil, nil
+	}
+
+	msg := verdict.Reason
+	if len(verdict.Added) > 0 || len(verdict.Removed) > 0 {
+		// Show WHAT changed. A refusal that only says the standard moved
+		// leaves the reader to diff it themselves, which is the work the gate
+		// just did.
+		for _, c := range verdict.Removed {
+			msg += fmt.Sprintf("\n    - no longer: %s — %q", c.Ref, c.Text)
+		}
+		for _, c := range verdict.Added {
+			msg += fmt.Sprintf("\n    + now: %s — %q", c.Ref, c.Text)
+		}
+	}
+	return []gateBlocker{{
+		Code:    "criteria-authority-missing",
+		Message: fmt.Sprintf("%s (%d criteria): %s", slug, len(current), msg),
+		Fix:     "approve the criteria interactively, or authorize this run explicitly if the project permits it",
+	}}, nil
 }
 
 // gateDone aggregates the code->complete boundary: generated code matches its
@@ -327,6 +375,10 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	lb, lw := gateLedgerState(cfg, slug, cfg.FeaturePath(slug))
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
+
+	ab, aw := gateCriteriaAuthority(cfg, slug)
+	blockers = append(blockers, ab...)
+	warnings = append(warnings, aw...)
 
 	return blockers, warnings
 }

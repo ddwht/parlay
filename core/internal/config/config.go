@@ -88,6 +88,17 @@ func (c *ProjectConfig) NoEditorEnabled() bool {
 	return c.NoEditor
 }
 
+// MachineCriteriaAuthorityAllowed reports whether this project has opted in to
+// waiving the separation between authoring a grading standard and grading
+// against it. Read through here rather than off the field so the answer stays
+// single-sourced, and so the default — deny — lives in one place.
+func (c *ProjectConfig) MachineCriteriaAuthorityAllowed() bool {
+	if c == nil {
+		return false
+	}
+	return c.AllowMachineCriteriaAuthority
+}
+
 const (
 	ParlayDir     = ".parlay"
 	ConfigFile    = "config.yaml"

@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -102,5 +104,195 @@ func TestCriteriaAuthority_APastMachineRunDoesNotAuthorizeALaterOne(t *testing.T
 	}
 	if !strings.Contains(v.Reason, "nobody looked") {
 		t.Errorf("the refusal should say what the earlier run actually recorded: %q", v.Reason)
+	}
+}
+
+// --- production path -----------------------------------------------------
+//
+// The rules above are a pure function, and a pure function nobody reaches is
+// the failure this session has already shipped twice. These run through
+// computeGate, which is what the loop and the CLI actually call.
+
+func writeCriteriaFixture(t *testing.T, dir string) {
+	t.Helper()
+	featDir := filepath.Join(dir, "spec", "intents", "graded")
+	if err := os.MkdirAll(featDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"intents.md": "# Graded\n\n## Archive A Customer\n\n**Goal**: g.\n**Persona**: p.\n",
+		"capabilities.yaml": `schema_version: 1
+feature: graded
+operations:
+  - id: customer.archive
+    source: '@graded/archive-a-customer'
+    kind: command
+    subject:
+      entity: Customer
+    verify:
+      - archiving a customer with unpaid invoices is rejected
+    steps:
+      - { type: validate-input }
+`,
+		"surface.yaml": `feature: graded
+fragments:
+    - name: Customer Detail
+      page: customers
+      region: main
+      shows: detail
+      order: 1
+      actions: invoke
+      source: '@graded/archive-a-customer'
+      verify:
+        - the archive button is disabled while invoices are unpaid
+`,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(featDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func gateCodeFor(t *testing.T, slug string) gateOutput {
+	t.Helper()
+	out, err := computeGate(testContext(t), slug, gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestCriteriaAuthority_GateRefusesAnUnapprovedStandard(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+
+	out := gateCodeFor(t, "graded")
+	if !gateHasCode(out.Blockers, "criteria-authority-missing") {
+		t.Fatalf("codegen must not run against a standard nobody approved; blockers=%+v", out.Blockers)
+	}
+	if out.Passed {
+		t.Error("gate must not pass")
+	}
+}
+
+func TestCriteriaAuthority_GateAcceptsAnApprovedStandard(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != 2 {
+		t.Fatalf("the fixture declares two criteria, one per destination; got %+v", current)
+	}
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if gateHasCode(gateCodeFor(t, "graded").Blockers, "criteria-authority-missing") {
+		t.Error("an approved standard should pass this gate")
+	}
+}
+
+// The friction the old gate was disliked for, proven end to end: the standard
+// is what was approved, so regenerating derived work asks nothing.
+func TestCriteriaAuthority_GateStillPassesAfterUnrelatedArtifactEdits(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, _ := CurrentCriteria(cfg, "graded")
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change something real that is not a criterion.
+	surface := filepath.Join(dir, "spec", "intents", "graded", "surface.yaml")
+	body, _ := os.ReadFile(surface)
+	edited := strings.Replace(string(body), "region: main", "region: sidebar", 1)
+	if err := os.WriteFile(surface, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if gateHasCode(gateCodeFor(t, "graded").Blockers, "criteria-authority-missing") {
+		t.Error("moving a fragment between regions does not change what it must do; reapproval is friction with no question in it")
+	}
+}
+
+func TestCriteriaAuthority_GateRefusesAfterTheStandardChanges(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, _ := CurrentCriteria(cfg, "graded")
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	surface := filepath.Join(dir, "spec", "intents", "graded", "surface.yaml")
+	body, _ := os.ReadFile(surface)
+	edited := strings.Replace(string(body), "the archive button is disabled while invoices are unpaid",
+		"the archive button is hidden while invoices are unpaid", 1)
+	if err := os.WriteFile(surface, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := gateCodeFor(t, "graded")
+	var msg string
+	for _, b := range out.Blockers {
+		if b.Code == "criteria-authority-missing" {
+			msg = b.Message
+		}
+	}
+	if msg == "" {
+		t.Fatalf("a rewritten standard is not the approved one; blockers=%+v", out.Blockers)
+	}
+	if !strings.Contains(msg, "no longer") || !strings.Contains(msg, "now:") {
+		t.Errorf("the refusal must show what changed rather than only that something did: %q", msg)
+	}
+}
+
+// A hand-edited hash must not authorize stored evidence of a different
+// standard.
+func TestCriteriaAuthority_GateRefusesATamperedRecord(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, _ := CurrentCriteria(cfg, "graded")
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	path := criteriaAuthorityPath(cfg, "graded")
+	body, _ := os.ReadFile(path)
+	tampered := strings.Replace(string(body), "archiving a customer with unpaid invoices is rejected",
+		"anything at all is fine", 1)
+	if err := os.WriteFile(path, []byte(tampered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !gateHasCode(gateCodeFor(t, "graded").Blockers, "criteria-authority-missing") {
+		t.Error("a record whose hash disagrees with the criteria it stores authorizes nothing")
+	}
+}
+
+// The gate reports what is true of the feature. Exercising a waiver is
+// something an invocation does, so the gate must not answer that governance
+// question for a caller that never asked.
+func TestCriteriaAuthority_GateDoesNotSelfAuthorizeEvenWhenPolicyAllows(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfgDir := filepath.Join(dir, ".parlay")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"),
+		[]byte("ai-agent: Claude Code\ncriterion-authority.allow-machine: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !gateHasCode(gateCodeFor(t, "graded").Blockers, "criteria-authority-missing") {
+		t.Error("policy permits a waiver; it does not exercise one")
 	}
 }
