@@ -10,7 +10,7 @@ Diagnosis-first: you determine which checks apply by looking at the project,
 not by asking the designer to know which of a dozen commands they need.
 
 This replaces the previous per-operation skills — the former sync,
-collect-questions, review-coverage, and five migrate-* skills. Every underlying
+collect-questions and five migrate-* skills. Every underlying
 CLI command still exists and can be run directly; this skill is the front door
 that decides which ones matter right now.
 
@@ -142,8 +142,12 @@ repair, or an artifact edit without explicit confirmation.
   unambiguous fixes.
 - **Coverage gaps** — offer to generate dialog templates for uncovered
   intents (all, or a chosen subset).
-- **Coverage review** — when a feature is ready for the codegen gate, run
-  `parlay review-coverage @{feature}` to walk its suites and record approvals.
+- **Criterion authority** — when a feature's criteria have never been approved,
+  or have changed since they were, `parlay internal criteria-authority @{feature}`
+  reports the standard and what moved. Approval belongs to the artifacts phase,
+  where the mapping from each intent bullet to the criterion it became is shown;
+  offer to route there rather than recording an approval from here, since
+  approving a standard nobody was shown is what the retired suite-name gate did.
 
 ## Hard rules
 

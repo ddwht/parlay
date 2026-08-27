@@ -557,19 +557,24 @@ The fix is structural: the baseline and code-hashes are written together by a si
 <!-- parlay-extends: parlay-tool/multi-adapter/coverage-review-gate -->
 <!-- parlay-extends: parlay-tool/multi-adapter/codegen-flow-ordered-layer-generation-and-fixed-read-set -->
 
-When the project's `.parlay/adapter-set.yaml` has more than the presentation slot filled, codegen consults `.parlay/build/<feature>/coverage-review.yaml` BEFORE any other read. Run `parlay internal check-review-gate @{feature}` early in the skill — the CLI loads buildfile + testcases + review file, computes canonical-form hashes, runs every gate rule, emits structured JSON, and exits non-zero on any failure. The skill MUST stop on non-zero and surface the `issues[]` array. Presentation-only projects get `ready: true` automatically.
+Codegen does not consult a coverage review. That gate is retired: it asked a
+person to approve a list of suite NAMES with the default set to yes, recorded
+whoever the environment said was running, and proved that somebody answered
+rather than that anybody looked.
 
-**Gate-inactive is a recorded outcome, not a skip to improvise (F3).** When `check-review-gate` reports `ready: true` AND no `coverage-review.yaml` exists — the presentation-only / single-target shape, where the gate short-circuits — there is no review to consult and nothing to block on. Record `coverage-review gate inactive (no coverage-review.yaml; review-gate ready) — proceeding` and continue past this gate. This is the documented unattended path (record-skipped-with-reason); do NOT invent a coverage review the project's shape does not call for, and do NOT treat the absent file as `coverage-review-missing` (that code fires only for a *multi-target* project, where the gate is active and the file is genuinely required).
+What guards this boundary now is the injected **Step 0 — Gate**, which
+aggregates it: a person approved the criteria this feature is graded against
+(`criteria-authority`), the tests mechanically discharge that standard
+(`testcases-readiness`), and any recorded exception is still bound to the
+contract it was granted against (`coverage-exceptions`). A non-zero exit stops
+this module exactly as before, and its `blockers[]` name what to fix.
 
-| Code | When it fires |
-|---|---|
-| `coverage-review-missing` | The file does not exist. |
-| `coverage-review-stale` | `buildfile_hash` differs from the canonical-form hash of the on-disk file, or — for a review without `suite_hashes` — `testcases_hash` differs. |
-| `coverage-review-suite-stale` | A review with `suite_hashes` approved a suite whose canonical form has since changed. Fires per drifted suite. |
-| `coverage-review-suite-unapproved` | A suite present in `testcases.yaml` is absent from `approved_suites:` and has no exemption. |
-| `coverage-review-uncovered` | A canonical-form-required term lacks both a covering testcase and an explicit exemption. |
-
-Hashes are computed over canonical form (sorted keys, normalized whitespace) — cosmetic edits don't drift the hash. Run `parlay review-coverage @<feature>` to record approval; codegen does NOT auto-record. When the gate reports `stale_suites`, only those suites lost their approval — name them to the reviewer so the re-review walks exactly the drifted suites instead of all of them.
+Two things follow. Regenerating testcases no longer invalidates anything: what
+was approved is the standard, not the suites derived from it. And a run carrying
+`--authorize-criteria=machine`, in a project that has opted in, advances without
+human approval and records that waiver at this boundary — the record says the
+separation between authoring a standard and grading against it was waived, not
+satisfied.
 
 ### Codegen read-set
 

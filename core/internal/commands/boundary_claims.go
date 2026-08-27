@@ -69,7 +69,6 @@ const (
 	claimCoverageExcept    = "coverage-exceptions"
 	claimTestcasesReady    = "testcases-readiness"
 	claimGeneratedState    = "generated-state"
-	claimReviewGate        = "legacy-review-gate"
 )
 
 // boundaryClaims is the registry every stage is assembled from.
@@ -123,11 +122,6 @@ var boundaryClaims = []boundaryClaim{
 		Stages: []string{gateStageDone}, Blocking: true,
 		Check: claimGeneratedStateCheck,
 	},
-	{
-		ID: claimReviewGate, What: "the retired coverage-review gate",
-		Stages: []string{gateStageDone}, Blocking: true,
-		Check: claimReviewGateCheck,
-	},
 }
 
 // claimsForStage returns the claims a stage is assembled from, in registry
@@ -150,9 +144,23 @@ func runStageClaims(cfg *config.Context, slug, featurePath, stage string) (block
 		r := c.Check(cfg, slug, featurePath)
 		blockers = append(blockers, r.Blockers...)
 		warnings = append(warnings, r.Warnings...)
-		if r.Pending != nil {
-			pending = r.Pending
+		if r.Pending == nil {
+			continue
 		}
+		if pending != nil {
+			// Two claims proposing a state effect is not something to resolve
+			// by last-writer-wins: one of them would be silently dropped, and a
+			// side effect nobody can account for is the shape of every defect
+			// this registry exists to prevent. Only criterion authority
+			// produces one today, so this is a guard against a future second
+			// rather than a live case.
+			blockers = append(blockers, gateBlocker{
+				Code:    "boundary-conflicting-side-effects",
+				Message: "more than one claim proposed a state effect at this boundary; refusing rather than dropping one silently",
+			})
+			continue
+		}
+		pending = r.Pending
 	}
 	return blockers, warnings, pending
 }
@@ -297,21 +305,6 @@ func claimGeneratedStateCheck(cfg *config.Context, slug, featurePath string) cla
 			Message: fmt.Sprintf("%s was recorded as generated but is gone from disk", f.Path),
 			Fix:     "re-run /parlay-generate-code, or drop the component",
 		})
-	}
-	return r
-}
-
-// claimReviewGateCheck is the retired blanket gate, registered so the registry
-// describes the boundary as it IS rather than as it will be. It leaves with the
-// implementation, and the registry then shows the before and after rather than
-// treating that direct call as outside the model.
-func claimReviewGateCheck(cfg *config.Context, slug, featurePath string) claimResult {
-	var r claimResult
-	rg := computeReviewGate(cfg, slug)
-	for _, iss := range rg.Issues {
-		if iss.Severity == "error" {
-			r.Blockers = append(r.Blockers, gateBlocker{Code: iss.Code, Message: iss.Message})
-		}
 	}
 	return r
 }

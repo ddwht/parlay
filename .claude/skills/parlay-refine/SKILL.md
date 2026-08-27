@@ -575,39 +575,24 @@ report — which mode ran is part of what was blessed.
    that already succeeded; the next run's pre-flight shows it, and
    re-running save-build-state on an unchanged tree is a no-op.
 
-10. **Re-review coverage** — but ask the gate what actually needs it first:
-    `parlay internal check-review-gate @{feature}` reports `stale_suites` —
-    the approved suites whose testcases changed since the review. When the
-    review carries per-suite hashes, a one-suite refinement stales exactly
-    one suite, and the re-review walk is that suite, not all of them. Tell
-    the reviewer which suites they are re-approving and why those.
+10. **Check the standard still holds** — a refinement that changed criteria
+    changed what this feature is graded against, and the approval was bound to
+    the old set. `parlay internal criteria-authority @{feature}` reports whether
+    the current criteria are approved and, when they are not, exactly which
+    bullets were added or removed.
 
-    **The gate may be inactive — that is a documented outcome, not a skip to
-    improvise.** When `parlay internal check-review-gate` reports `ready: true` AND no
-    `.parlay/build/{feature}/coverage-review.yaml` exists, this project does
-    not run the coverage-review gate at all — it is single-target /
-    presentation-only, and the gate short-circuits to ready for exactly that
-    shape. There is nothing to re-review and nothing the next codegen run will
-    trip on. Record `coverage re-review skipped: gate inactive (no
-    coverage-review.yaml; review-gate ready)` in the step-11 report and
-    proceed to step 11. Do NOT run `review-coverage` to manufacture a review
-    the project's shape does not call for. (`ready: true` WITH a
-    coverage-review.yaml present means the existing review still holds after
-    this change; re-review anyway per the next paragraph so its pinned hashes
-    track the new buildfile.)
+    An unchanged standard needs nothing: what was approved is the criteria, not
+    the testcases derived from them, so regenerating suites re-approves nothing
+    and asks nobody. A changed one routes back to the artifacts phase, where the
+    mapping from each intent bullet to the criterion it became is shown and
+    approved — approving from here would approve a standard nobody was shown,
+    which is what the retired suite-name gate did.
 
-    Otherwise — a coverage-review.yaml exists (the gate is active) — run
-    `parlay review-coverage @{feature}`. Not optional, and not
-    tidiness. The refinement changed the buildfile, which invalidates the
-    hashes `coverage-review.yaml` pins, so the review gate exits non-zero on
-    the *next* codegen run — after this command has reported success and
-    everyone has moved on. Chaining it here is what keeps a refined project
-    in a state the next command can actually work from. (A review predating
-    per-suite hashes stales whole-file; the first re-run writes the
-    per-suite form and the narrowing applies from then on.)
-
-    Use `--exempt <suite>:<item>=<reason>` for terms that legitimately have no
-    covering case.
+    If the feature carries coverage exceptions, the same command's ledger check
+    reports any that were granted against criteria that have since moved. Those
+    block until re-reviewed rather than being dropped: a judgment that a
+    specific criterion needs no test says nothing about a criterion that has
+    been rewritten.
 
 11. **Report** — What changed, in this order: the artifact and the span amended;
     the components regenerated; the test result; the baseline and coverage

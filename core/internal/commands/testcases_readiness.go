@@ -65,7 +65,7 @@ func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadines
 		// version returned success here on the belief that the buildfile checks
 		// report a missing testcases.yaml. They do not — computeCheckBuildfile
 		// validates only buildfile.yaml, and the code that emits
-		// testcases-not-found is computeReviewGate, which is the thing being
+		// testcases-not-found came from the coverage-review gate, now
 		// removed. So a feature with an approved criterion set, a valid
 		// buildfile and no tests at all would have passed.
 		criteria, cErr := CurrentCriteria(cfg, slug)
