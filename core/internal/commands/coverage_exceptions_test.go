@@ -603,8 +603,26 @@ exemptions:
 		t.Fatal(err)
 	}
 
+	// Identity now comes from the listing, not from re-deriving (ref, text).
+	entries, _, lErr := loadLegacyEntries(cfg, "graded")
+	if lErr != nil {
+		t.Fatal(lErr)
+	}
+	fpFor := func(ref string) legacyEntry {
+		t.Helper()
+		for _, e := range entries {
+			if e.Ref == ref {
+				return e
+			}
+		}
+		t.Fatalf("fixture has no entry for %s", ref)
+		return legacyEntry{}
+	}
+
 	// Answer the first.
 	resetExcFlags()
+	recordExceptionLegacyFP = fpFor("@graded/operation:customer.archive").Fingerprint
+	recordExceptionLegacyDup = 0
 	recordExceptionRef = "@graded/operation:customer.archive"
 	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
 	recordExceptionReason = "enforced by a database constraint"
@@ -632,11 +650,13 @@ exemptions:
 	}
 
 	// Drop the second deliberately, and the boundary goes quiet.
-	dropLegacyRef = "@graded/fragment:Customer Detail"
-	dropLegacyText = "the archive button is disabled while invoices are unpaid"
+	dropLegacyFP = fpFor("@graded/fragment:Customer Detail").Fingerprint
+	dropLegacyDup = 0
 	dropLegacyReason = "the control was removed in the redesign"
 	dropLegacyBy = "interactive decision"
-	defer func() { dropLegacyRef, dropLegacyText, dropLegacyReason, dropLegacyBy = "", "", "", "" }()
+	defer func() {
+		dropLegacyFP, dropLegacyDup, dropLegacyReason, dropLegacyBy = "", 0, "", ""
+	}()
 
 	cmd := testCommandWithContext(t, cfg)
 	var buf bytes.Buffer
@@ -724,4 +744,119 @@ func TestCoverageExceptions_OneCriterionCannotBeWaivedTwice(t *testing.T) {
 	if !found {
 		t.Fatalf("two waivers on one criterion must still be refused; got %+v", v.Blockers)
 	}
+}
+
+// legacyFixture writes a retired review whose two exemptions share a ref and
+// criterion text but record DIFFERENT judgments. Keyed on (ref, text) alone,
+// answering one marked both answered — so a judgment nobody reviewed passed as
+// reconciled.
+func legacyFixture(t *testing.T, cfg *config.Context, body string) {
+	t.Helper()
+	if err := os.MkdirAll(cfg.BuildPath("graded"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "coverage-review.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const twoJudgmentsOnOneBullet = `schema_version: 1
+feature: graded
+exemptions:
+    - suite: s
+      item: "@graded/operation:customer.archive"
+      criterion_text: archiving a customer with unpaid invoices is rejected
+      reason: enforced by a database constraint
+    - suite: s
+      item: "@graded/operation:customer.archive"
+      criterion_text: archiving a customer with unpaid invoices is rejected
+      reason: the archive path is unreachable from the UI in this release
+`
+
+func TestCoverageExceptions_AnsweringOneJudgmentDoesNotAnswerAnother(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
+
+	entries, _, err := loadLegacyEntries(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("fixture must hold two entries, got %d", len(entries))
+	}
+	if entries[0].Fingerprint == entries[1].Fingerprint {
+		t.Fatal("two judgments differing only in reason must not share a fingerprint — reason is what distinguishes them")
+	}
+
+	resetExcFlags()
+	recordExceptionLegacyFP = entries[0].Fingerprint
+	recordExceptionRef = "@graded/operation:customer.archive"
+	recordExceptionText = "archiving a customer with unpaid invoices is rejected"
+	recordExceptionReason = "still enforced by the constraint"
+	recordExceptionBy = "interactive decision"
+	recordExceptionFromLegacy = true
+	if err := recordExc(t, cfg, "graded"); err != nil {
+		t.Fatal(err)
+	}
+
+	stranded, unreadable := strandedLegacyExemptions(cfg, "graded", mustLoadExc(t, cfg))
+	if unreadable != "" {
+		t.Fatal(unreadable)
+	}
+	if len(stranded) != 1 {
+		t.Fatalf("the second judgment was never reviewed and must still be reported; got %d stranded: %v", len(stranded), stranded)
+	}
+}
+
+// Dispositions answer entries in ONE version of the legacy file. If the file
+// changed after they were written, they no longer demonstrably answer what is
+// there now — an entry may have been added, or one somebody judged reworded
+// into a different judgment.
+func TestCoverageExceptions_EditingTheLegacyFileInvalidatesItsDispositions(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet)
+
+	entries, _, err := loadLegacyEntries(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		resetExcFlags()
+		recordExceptionLegacyFP = e.Fingerprint
+		recordExceptionRef, recordExceptionText = e.Ref, e.Text
+		recordExceptionReason = "still holds"
+		recordExceptionBy = "interactive decision"
+		recordExceptionFromLegacy = true
+		if err := recordExc(t, cfg, "graded"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stranded, _ := strandedLegacyExemptions(cfg, "graded", mustLoadExc(t, cfg)); len(stranded) != 0 {
+		t.Fatalf("both are answered, so nothing should be stranded: %v", stranded)
+	}
+
+	// The file gains a third judgment nobody has seen.
+	legacyFixture(t, cfg, twoJudgmentsOnOneBullet+
+		"    - suite: s\n      item: \"@graded/fragment:Customer Detail\"\n      reason: added later\n")
+
+	stranded, _ := strandedLegacyExemptions(cfg, "graded", mustLoadExc(t, cfg))
+	if len(stranded) == 0 {
+		t.Fatal("the legacy file changed after reconciliation and must not read as still answered")
+	}
+	if !strings.Contains(strings.Join(stranded, " "), "changed after") {
+		t.Errorf("the report should say the file moved under the dispositions; got %v", stranded)
+	}
+}
+
+func mustLoadExc(t *testing.T, cfg *config.Context) *CoverageExceptions {
+	t.Helper()
+	rec, err := loadCoverageExceptions(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec
 }

@@ -13,6 +13,16 @@ import (
 // testcases file whose single case observes that criterion weakly.
 func recordExceptionFixture(t *testing.T, cases string) string {
 	t.Helper()
+	// These are package-level singletons shared with every other test in this
+	// package. A prior test leaving --from-legacy set sends this one looking
+	// for a retired review that is not there, and the failure names a missing
+	// file rather than the leak that caused it.
+	recordExceptionFromLegacy = false
+	recordExceptionLegacyFP, recordExceptionLegacyDup = "", 0
+	t.Cleanup(func() {
+		recordExceptionFromLegacy = false
+		recordExceptionLegacyFP, recordExceptionLegacyDup = "", 0
+	})
 	dir := setupTestDir(t)
 	feat := filepath.Join(dir, "spec", "intents", "demo")
 	build := filepath.Join(dir, ".parlay", "build", "demo")
@@ -66,6 +76,7 @@ func TestRecordException_RefusesADecisionAboutNothing(t *testing.T) {
 			recordExceptionReason = "state is the only honest observation"
 			recordExceptionBy = "interactive decision"
 			recordExceptionSuite, recordExceptionCase = tc.suite, tc.caseName
+			recordExceptionFromLegacy = false
 
 			err := recordExceptionRun(t, "demo")
 			if err == nil {
@@ -88,6 +99,7 @@ func TestRecordException_RefusesACaseThatIsNotWeak(t *testing.T) {
 	recordExceptionReason = "r"
 	recordExceptionBy = "interactive decision"
 	recordExceptionSuite, recordExceptionCase = "Store honesty", "writes land"
+	recordExceptionFromLegacy = false
 
 	err := recordExceptionRun(t, "demo")
 	if err == nil || !strings.Contains(err.Error(), "not state-only") {

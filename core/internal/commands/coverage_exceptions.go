@@ -219,13 +219,20 @@ type CoverageExceptions struct {
 type LegacyDisposition struct {
 	Ref  string `yaml:"ref"`
 	Text string `yaml:"criterion_text,omitempty"`
-	// Occurrence is the entry's position in the legacy file. Two exemptions
-	// may share a ref and criterion text while recording different judgments
-	// for different reasons; keyed on (ref, text) alone, answering one marked
-	// BOTH answered, so an unreviewed legacy judgment passed as reconciled.
-	// The position is only meaningful against the file it was read from, which
-	// is why the record carries that file's hash.
-	Occurrence int `yaml:"occurrence"`
+	// Fingerprint identifies the EXACT legacy entry this answers, over that
+	// entry's whole content — suite, item, criterion text and reason. Two
+	// exemptions may share a ref and criterion text while recording different
+	// judgments for different reasons; keyed on (ref, text) alone, answering
+	// one marked BOTH answered, so an unreviewed legacy judgment passed as
+	// reconciled.
+	//
+	// Content rather than position, because reordering the file must not
+	// change which judgment a disposition answered.
+	Fingerprint string `yaml:"fingerprint"`
+	// Duplicate distinguishes entries whose content is identical in every
+	// field, where the fingerprint alone cannot. It is a 0-based index among
+	// those copies, so one disposition cannot answer two of them.
+	Duplicate int `yaml:"duplicate,omitempty"`
 	// Disposition is "recorded" or "dropped".
 	Disposition string `yaml:"disposition"`
 	Reason      string `yaml:"reason"`
@@ -238,9 +245,23 @@ func legacyKey(ref, text string) string {
 	return ref + "\x00" + agent.CanonicalCriterionText(text)
 }
 
-// legacyOccurrenceKey identifies one EXACT entry in the legacy file.
-func legacyOccurrenceKey(i int, ref, text string) string {
-	return fmt.Sprintf("%d\x00%s", i, legacyKey(ref, text))
+// legacyExemptionFingerprint identifies one EXACT legacy entry by its whole
+// content. Reason is included deliberately: two exemptions on the same bullet
+// recording different justifications are two judgments, and answering one says
+// nothing about the other.
+func legacyExemptionFingerprint(ex parser.CoverageExemption) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		ex.Suite, ex.Item,
+		agent.CanonicalCriterionText(ex.CriterionText),
+		strings.TrimSpace(ex.Reason),
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+// legacyDispositionKey pairs the content fingerprint with the index among
+// byte-identical copies.
+func legacyDispositionKey(fp string, duplicate int) string {
+	return fmt.Sprintf("%s#%d", fp, duplicate)
 }
 
 // legacyFileHash fingerprints the retired review, so dispositions recorded
@@ -538,7 +559,11 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 		}
 		return nil, statErr.Error()
 	}
-	legacy, err := parser.ParseCoverageReview(path)
+	content, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return nil, readErr.Error()
+	}
+	legacy, err := parser.ParseCoverageReviewBytes(path, content)
 	if err != nil {
 		// Present and unreadable is NOT absent. Collapsing the two meant a
 		// malformed legacy review — which may well contain exemptions nobody
@@ -551,17 +576,34 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 		return nil, ""
 	}
 
+	// Dispositions answer entries in ONE version of the legacy file. If that
+	// file changed after they were written, they no longer demonstrably answer
+	// what is there now — an entry may have been added, or one somebody
+	// judged may have been reworded into a different judgment. Refusing the
+	// whole set is right: silently keeping them would let an edit to the
+	// legacy file retire a reconciliation nobody redid.
+	hash := legacyFileHash(content)
+	if rec != nil && len(rec.ReconciledLegacy) > 0 && rec.LegacyFileHash != "" && rec.LegacyFileHash != hash {
+		return []string{fmt.Sprintf(
+			"the retired coverage review at %s changed after its exemptions were reconciled, so the %d recorded disposition(s) no longer demonstrably answer what it now contains. Re-run migrate-coverage-exceptions against the current file",
+			path, len(rec.ReconciledLegacy))}, ""
+	}
+
 	answered := map[string]bool{}
 	if rec != nil {
 		for _, d := range rec.ReconciledLegacy {
-			answered[legacyKey(d.Ref, d.Text)] = true
+			answered[legacyDispositionKey(d.Fingerprint, d.Duplicate)] = true
 		}
 	}
+	seen := map[string]int{}
 	for _, ex := range legacy.Exemptions {
 		if ex.Item == "" {
 			continue
 		}
-		if answered[legacyKey(ex.Item, ex.CriterionText)] {
+		fp := legacyExemptionFingerprint(ex)
+		dup := seen[fp]
+		seen[fp]++
+		if answered[legacyDispositionKey(fp, dup)] {
 			continue
 		}
 		stranded = append(stranded, describeStranded(ex.Item, ex.CriterionText))
