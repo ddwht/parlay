@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/agent"
+	"github.com/ddwht/parlay/core/internal/config"
 )
 
 func crit(ref, text string) AuthorizedCriterion { return AuthorizedCriterion{Ref: ref, Text: text} }
@@ -370,12 +371,70 @@ func TestCriteriaAuthorityCLI_ReportingDoesNotRecordAWaiver(t *testing.T) {
 	}
 }
 
-// The CI path, end to end through the boundary that actually advances.
-func TestCriteriaAuthority_GateExercisesTheWaiverAndRecordsIt(t *testing.T) {
+// The CI path, through the advancing COMMAND rather than the evaluation.
+func runGateCmd_(t *testing.T, slug, stage string) error {
+	t.Helper()
+	prev := gateStage
+	gateStage = stage
+	defer func() { gateStage = prev }()
+	var buf bytes.Buffer
+	cmd := testCommandWithContext(t, testContext(t))
+	cmd.SetOut(&buf)
+	return runInternalGate(cmd, []string{slug})
+}
+
+// The waiver is exercised by the advancing command, only after the whole
+// boundary passed, and only at the code crossing.
+//
+// Driven through commitPendingWaiver with a passing verdict rather than by
+// constructing a feature that clears every unrelated check, so the property
+// under test is the transaction and not the fixture.
+func TestCriteriaAuthority_WaiverIsCommittedOnlyByAPassedCodeBoundary(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := &pendingMachineRun{criteria: current, reason: "authorized"}
+
+	// Passed, at the code boundary: recorded.
+	if err := commitPendingWaiver(cfg, "graded", gateStageCode,
+		gateOutput{Passed: true, PendingWaiver: pending}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadCriteriaAuthority(cfg, "graded")
+	if rec == nil || len(rec.MachineRuns) != 1 {
+		t.Fatalf("expected one waiver, got %+v", rec)
+	}
+	if rec.Approved != nil {
+		t.Error("a waiver must never become approval")
+	}
+
+	// Done, same pipeline: NOT recorded again. A normal loop crosses code and
+	// then done, and logging both writes one pipeline as two runs that
+	// proceeded without human approval.
+	if err := commitPendingWaiver(cfg, "graded", gateStageDone,
+		gateOutput{Passed: true, PendingWaiver: pending}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = loadCriteriaAuthority(cfg, "graded")
+	if len(rec.MachineRuns) != 1 {
+		t.Errorf("the done crossing inherits the code run's authorization rather than logging its own: %+v", rec.MachineRuns)
+	}
+}
+
+// The negative control that matters most: one subcheck permitting the waiver
+// says nothing about the aggregate. Recording before the boundary decided
+// produced an audit trail asserting that a REFUSED run had advanced.
+func TestCriteriaAuthority_NoWaiverIsRecordedWhenSomethingElseBlocks(t *testing.T) {
 	dir := setupTestDir(t)
 	writeCriteriaFixture(t, dir)
 	allowMachineAuthority(t, dir)
 	cfg := testContext(t)
+	// No testcases at all: the criteria subcheck would permit the waiver, and
+	// the boundary still refuses.
 
 	gateAuthorizeCriteria = machineAuthorizationMode
 	defer func() { gateAuthorizeCriteria = "" }()
@@ -384,19 +443,82 @@ func TestCriteriaAuthority_GateExercisesTheWaiverAndRecordsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gateHasCode(out.Blockers, "criteria-authority-missing") {
-		t.Fatalf("project permits it and this run asked: %+v", out.Blockers)
+	if out.Passed {
+		t.Fatal("a feature with criteria and no testcases must not advance")
 	}
-	if !gateHasCode(out.Warnings, "criteria-authority-machine") {
-		t.Errorf("advancing without human approval should be reported, not silent: %+v", out.Warnings)
+	if out.PendingWaiver != nil {
+		t.Error("a boundary that did not pass has no waiver to exercise")
 	}
+	// And the command writes nothing for a verdict that did not pass.
+	if err := commitPendingWaiver(cfg, "graded", gateStageCode, out); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := loadCriteriaAuthority(cfg, "graded"); rec != nil && len(rec.MachineRuns) > 0 {
+		t.Errorf("nothing advanced, so the audit trail must not say one did: %+v", rec.MachineRuns)
+	}
+}
 
-	rec, _ := loadCriteriaAuthority(cfg, "graded")
-	if rec == nil || len(rec.MachineRuns) != 1 {
-		t.Fatalf("the run that advanced should have recorded exactly one waiver: %+v", rec)
+// A typo silently meaning "no waiver" stops the run for a reason its author
+// believes they addressed, with nothing saying the flag was ignored.
+func TestCriteriaAuthority_GateRejectsAnUnknownFlagValue(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	gateAuthorizeCriteria = "yes"
+	defer func() { gateAuthorizeCriteria = "" }()
+
+	if err := runGateCmd_(t, "@graded", gateStageCode); err == nil {
+		t.Error("an unknown mode must be refused, not treated as absent")
 	}
-	if rec.Approved != nil {
-		t.Error("a waiver must never become approval")
+}
+
+// writePassingTestcases writes a current-shape file discharging every criterion
+// the fixture declares, so a test about authorization is not also a test about
+// coverage.
+func writePassingTestcases(t *testing.T, cfg *config.Context, slug string) {
+	t.Helper()
+	buildDir := cfg.BuildPath(slug)
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `schema_version: 3
+feature: graded
+suites:
+  - name: Customer Detail
+    kind: presentation
+    source_refs:
+      - "@graded/fragment:Customer Detail"
+    file: src/CustomerDetail.test.tsx
+    cases:
+      - name: disabled while unpaid
+        criterion:
+          ref: "@graded/fragment:Customer Detail"
+          text: the archive button is disabled while invoices are unpaid
+        exercises: ["@graded/fragment:Customer Detail"]
+        observes: ["@graded/fragment:Customer Detail"]
+        steps:
+          - { type: render, target: "@graded/fragment:Customer Detail" }
+        expectations:
+          - { type: shows, target: "@graded/fragment:Customer Detail" }
+  - name: Archive
+    kind: operation
+    operation: "@graded/operation:customer.archive"
+    source_refs:
+      - "@graded/operation:customer.archive"
+    file: test/archive.spec.ts
+    cases:
+      - name: rejects unpaid
+        criterion:
+          ref: "@graded/operation:customer.archive"
+          text: archiving a customer with unpaid invoices is rejected
+        exercises: ["@graded/operation:customer.archive"]
+        observes: ["@graded/operation:customer.archive"]
+        steps:
+          - { type: invoke, target: "@graded/operation:customer.archive" }
+        expectations:
+          - { type: rejects, target: "@graded/operation:customer.archive" }
+`
+	if err := os.WriteFile(filepath.Join(buildDir, "testcases.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

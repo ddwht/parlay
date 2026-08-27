@@ -11,6 +11,16 @@ Walk a feature end-to-end through the parlay design pipeline — intents → dia
 
 - `feature`: The feature reference in standard parlay form — `{feature}` for a top-level feature, `@{initiative}/{feature}` for a feature nested inside an initiative.
 - `--from {phase}` (optional): Starting phase. Valid values: `intents`, `dialogs`, `artifacts`, `build`, `code`. Default: `intents`.
+- `--authorize-criteria=machine` (optional): Advance boundaries without a person
+  having approved the criteria this feature is graded against. Requires the
+  project to have set `parlay.criterion-authority.allow-machine` — both, or
+  neither counts. **Forward it to every phase-group and to every
+  `parlay internal gate` call**; a phase that does not receive it will stop at
+  the criteria decision, which is the correct behaviour for a run that was not
+  authorized and the wrong one for a run that was. Recorded at the code boundary
+  as a waiver: the separation between authoring a standard and grading against
+  it is not provided for that run, and the record says so rather than claiming
+  approval.
 - `--non-interactive` (optional): Run unattended — take the declared default on advancement decisions, and abort on decisions that have no safe default. See **Non-interactive mode**. Interactive is the default; the flag never makes a run quieter than this, only less attended.
 
 ## Correlating the run (feedback mode)
@@ -186,7 +196,8 @@ A phase that emits a decision request must have left the filesystem in a coheren
 
 6. **Enter the build phase-group** (at the designer→build boundary):
    - End the designer subagent; tell the user the context is clearing — make it explicit, not surprising.
-   - Run `parlay internal gate @{feature-ref} --stage build`. This is one command and one exit code where there used to be a bare check-readiness: the gate aggregates check-readiness (including the `unapplied-amendments` error), the ledger's integrity findings, its unapplied tail, and the amendment ledger's own validation — the drift and ledger findings the driver previously only saw at planning time (step 3). **A non-zero exit is a hard block** — not acknowledgeable; surface its `blockers[]` and route the user back to the artifacts phase, or to `/parlay-refine` when a blocker names the ledger tail (`unapplied-amendments`). `warnings[]` are informational, exactly as readiness warnings were.
+   - Run `parlay internal gate @{feature-ref} --stage build` (adding
+     `--authorize-criteria=machine` when this run carries it). This is one command and one exit code where there used to be a bare check-readiness: the gate aggregates check-readiness (including the `unapplied-amendments` error), the ledger's integrity findings, its unapplied tail, and the amendment ledger's own validation — the drift and ledger findings the driver previously only saw at planning time (step 3). **A non-zero exit is a hard block** — not acknowledgeable; surface its `blockers[]` and route the user back to the artifacts phase, or to `/parlay-refine` when a blocker names the ledger tail (`unapplied-amendments`). `warnings[]` are informational, exactly as readiness warnings were.
    - Invoke the `parlay-build` subagent with the feature reference, and `--non-interactive` when it was passed.
    - At the end it returns a `phase-boundary` decision; the driver prompts.
 

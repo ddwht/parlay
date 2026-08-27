@@ -64,6 +64,13 @@ type gateBlocker struct {
 }
 
 type gateOutput struct {
+	// PendingWaiver is a machine authorization this boundary would exercise,
+	// set only when the whole boundary passed. Persisting it is the advancing
+	// COMMAND's job: computeGate stays a pure evaluation, so a caller that
+	// merely asks what a boundary would say does not leave a record claiming a
+	// run happened.
+	PendingWaiver *pendingMachineRun `json:"-"`
+
 	Feature  string        `json:"feature"`
 	Stage    string        `json:"stage"`
 	Passed   bool          `json:"passed"`
@@ -85,9 +92,15 @@ func runInternalGate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateAuthorizeCriteriaFlag(gateAuthorizeCriteria); err != nil {
+		return err
+	}
 	slug := parser.FeatureSlug(args[0])
 	out, err := computeGate(cfg, slug, gateStage)
 	if err != nil {
+		return err
+	}
+	if err := commitPendingWaiver(cfg, slug, gateStage, out); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -124,13 +137,14 @@ func computeGate(cfg *config.Context, slug, stage string) (gateOutput, error) {
 	}
 
 	var blockers, warnings []gateBlocker
+	var pending *pendingMachineRun
 	switch stage {
 	case gateStageBuild:
 		blockers, warnings = gateBuild(cfg, slug, featurePath)
 	case gateStageCode:
-		blockers, warnings = gateCode(cfg, slug, featurePath)
+		blockers, warnings, pending = gateCode(cfg, slug, featurePath)
 	case gateStageDone:
-		blockers, warnings = gateDone(cfg, slug)
+		blockers, warnings, pending = gateDone(cfg, slug)
 	default:
 		return out, fmt.Errorf("unknown gate stage %q — supported: %s, %s, %s",
 			stage, gateStageBuild, gateStageCode, gateStageDone)
@@ -139,6 +153,18 @@ func computeGate(cfg *config.Context, slug, stage string) (gateOutput, error) {
 	out.Blockers = dedupeGateFindings(blockers)
 	out.Warnings = dedupeGateFindings(warnings)
 	out.Passed = len(out.Blockers) == 0
+
+	// A waiver is exercised only by a boundary that actually advances. Held
+	// until every check has spoken, because one subcheck permitting it says
+	// nothing about the aggregate — and an audit trail recording that a refused
+	// run "advanced" lies about the single fact it exists to hold.
+	if out.Passed && pending != nil {
+		out.PendingWaiver = pending
+		out.Warnings = append(out.Warnings, gateBlocker{
+			Code:    "criteria-authority-machine",
+			Message: fmt.Sprintf("%s advanced without human approval of its criteria: %s", slug, pending.reason),
+		})
+	}
 	return out, nil
 }
 
@@ -239,7 +265,7 @@ func gateLedgerState(cfg *config.Context, slug, featurePath string) (blockers, w
 
 // gateCode aggregates the build->code boundary: buildfile validity, cross-
 // feature composition coherence, and buildfile freshness against live sources.
-func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker) {
+func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings []gateBlocker, pendingWaiver *pendingMachineRun) {
 	cb := computeCheckBuildfile(cfg, slug)
 	for _, iss := range cb.Issues {
 		switch iss.Severity {
@@ -274,9 +300,10 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
 
-	ab, aw := gateCriteriaAuthority(cfg, slug, machineAuthorized())
+	ab, aw, ap := gateCriteriaAuthority(cfg, slug, machineAuthorized())
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
+	pendingWaiver = ap
 
 	eb, ew := gateCoverageExceptions(cfg, slug)
 	blockers = append(blockers, eb...)
@@ -286,7 +313,7 @@ func gateCode(cfg *config.Context, slug, featurePath string) (blockers, warnings
 	blockers = append(blockers, tb...)
 	warnings = append(warnings, tw...)
 
-	return blockers, warnings
+	return blockers, warnings, pendingWaiver
 }
 
 // gateTestcasesReadiness is the mechanical half of the bargain that replaces
@@ -343,38 +370,32 @@ func gateCoverageExceptions(cfg *config.Context, slug string) (blockers, warning
 // does, and the CLI passes it where the run is actually authorized. Reading it
 // here would let a gate silently answer a governance question on behalf of a
 // caller that never asked.
-func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (blockers, warnings []gateBlocker) {
+// pendingMachineRun is a waiver this boundary would exercise IF it advances.
+type pendingMachineRun struct {
+	criteria []AuthorizedCriterion
+	reason   string
+}
+
+func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (blockers, warnings []gateBlocker, pending *pendingMachineRun) {
 	verdict, current, err := CheckCriteriaAuthority(cfg, slug, machine)
 	if err != nil {
 		return []gateBlocker{{
 			Code:    "criteria-authority-unreadable",
 			Message: fmt.Sprintf("cannot establish which standard %s is graded against: %v", slug, err),
 			Fix:     "repair the contract artifacts, then re-run",
-		}}, nil
+		}}, nil, nil
 	}
 	if verdict.Proceed {
 		if verdict.Machine {
-			// The audit event belongs to the run that ACTUALLY advanced, not to
-			// whoever asked the question. Recording it from a standalone report
-			// meant a waiver could be logged for a run that never proceeded,
-			// while the boundary that did advance refused, having been handed
-			// machineFlag=false by a caller that could not pass anything else.
-			if err := RecordMachineRun(cfg, slug, current,
-				time.Now().UTC().Format(time.RFC3339),
-				"parlay.criterion-authority.allow-machine", runIdentity(),
-				"--authorize-criteria=machine at the "+gateStage+" boundary",
-			); err != nil {
-				return []gateBlocker{{
-					Code:    "criteria-authority-unrecordable",
-					Message: fmt.Sprintf("this run is authorized to proceed without human approval but the waiver could not be recorded: %v — an unrecorded waiver is one nobody can find later", err),
-				}}, nil
-			}
-			warnings = append(warnings, gateBlocker{
-				Code:    "criteria-authority-machine",
-				Message: fmt.Sprintf("%s advanced without human approval of its criteria: %s", slug, verdict.Reason),
-			})
+			// PENDING, not written. Evaluation stays pure: this subcheck
+			// permitting the waiver says nothing about whether the boundary
+			// advances, and a stale buildfile or a broken testcase later in the
+			// aggregation can still block it. Writing here produced an audit
+			// trail asserting that a run which was refused had "advanced" — a
+			// record that lies about the one thing it exists to record.
+			pending = &pendingMachineRun{criteria: current, reason: verdict.Reason}
 		}
-		return nil, warnings
+		return nil, warnings, pending
 	}
 
 	msg := verdict.Reason
@@ -393,7 +414,7 @@ func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (bloc
 		Code:    "criteria-authority-missing",
 		Message: fmt.Sprintf("%s (%d criteria): %s", slug, len(current), msg),
 		Fix:     "approve the criteria interactively, or authorize this run explicitly if the project permits it",
-	}}, nil
+	}}, nil, nil
 }
 
 // gateDone aggregates the code->complete boundary: generated code matches its
@@ -403,7 +424,7 @@ func gateCriteriaAuthority(cfg *config.Context, slug string, machine bool) (bloc
 // ledger state changed, or with earlier stages never run. Certifying completion
 // is the strongest claim the ladder makes and is the wrong place to infer that
 // someone else already checked.
-func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocker) {
+func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocker, pendingWaiver *pendingMachineRun) {
 	verify, err := computeProjectVerifyOutput(cfg)
 	if err == nil && verify != nil {
 		if !verify.HasHashes {
@@ -455,9 +476,10 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	blockers = append(blockers, lb...)
 	warnings = append(warnings, lw...)
 
-	ab, aw := gateCriteriaAuthority(cfg, slug, machineAuthorized())
+	ab, aw, ap := gateCriteriaAuthority(cfg, slug, machineAuthorized())
 	blockers = append(blockers, ab...)
 	warnings = append(warnings, aw...)
+	pendingWaiver = ap
 
 	eb, ew := gateCoverageExceptions(cfg, slug)
 	blockers = append(blockers, eb...)
@@ -467,7 +489,7 @@ func gateDone(cfg *config.Context, slug string) (blockers, warnings []gateBlocke
 	blockers = append(blockers, tb...)
 	warnings = append(warnings, tw...)
 
-	return blockers, warnings
+	return blockers, warnings, pendingWaiver
 }
 
 // refineSanctionsUnappliedTail implements 2b: an unapplied ledger tail is
@@ -634,4 +656,42 @@ func uniqueStrings(in []string) []string {
 // because the question is about a run, not about a feature.
 func machineAuthorized() bool {
 	return gateAuthorizeCriteria == machineAuthorizationMode
+}
+
+// validateAuthorizeCriteriaFlag refuses a value that is neither empty nor the
+// one mode.
+//
+// A typo silently meaning "no waiver" is the worst of both: the run stops for a
+// reason the author believes they addressed, and nothing says the flag was
+// ignored.
+func validateAuthorizeCriteriaFlag(v string) error {
+	if v == "" || v == machineAuthorizationMode {
+		return nil
+	}
+	return fmt.Errorf("--authorize-criteria=%q is not a mode; the only value is %q", v, machineAuthorizationMode)
+}
+
+// commitPendingWaiver persists a machine authorization AFTER the boundary
+// passed, and fails the command if it cannot.
+//
+// Only at the code boundary. A normal loop crosses code and then done, and
+// logging both would record one pipeline as two runs that proceeded without
+// human approval. Code is where unapproved criteria authorize generation, so
+// that is the crossing worth holding; done inherits it.
+//
+// An unrecordable waiver fails the command rather than passing quietly: a
+// waiver nobody can find later is indistinguishable from one that never
+// happened, which defeats the only reason to permit it.
+func commitPendingWaiver(cfg *config.Context, slug, stage string, out gateOutput) error {
+	if out.PendingWaiver == nil || stage != gateStageCode {
+		return nil
+	}
+	if err := RecordMachineRun(cfg, slug, out.PendingWaiver.criteria,
+		time.Now().UTC().Format(time.RFC3339),
+		"parlay.criterion-authority.allow-machine", runIdentity(),
+		"--authorize-criteria=machine at the code boundary",
+	); err != nil {
+		return fmt.Errorf("this run advanced without human approval of its criteria but the waiver could not be recorded: %w", err)
+	}
+	return nil
 }
