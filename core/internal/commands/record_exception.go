@@ -163,9 +163,46 @@ func runRecordException(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s declares no criteria on %s, so there is nothing there to excuse", slug, recordExceptionRef)
 	}
 
+	// A state-only decision must be bound to the case it is about. Writing
+	// suite and case NAMES alone records an approval that keeps matching after
+	// the body is replaced, so the reviewer ends up on record approving an
+	// observation they never saw. Resolving here also refuses the three ways a
+	// decision can be about nothing: a case that does not exist, one that is
+	// not state-only, and one that discharges a different criterion.
+	caseHash := ""
+	if kind == ExceptionStateOnly {
+		tcPath := filepath.Join(cfg.BuildPath(slug), "testcases.yaml")
+		content, err := os.ReadFile(tcPath)
+		if err != nil {
+			return fmt.Errorf("read the cases this decision would be about: %w", err)
+		}
+		cases, err := resolveCases(content)
+		if err != nil {
+			return err
+		}
+		var match *resolvedCase
+		for i := range cases {
+			if cases[i].Suite == recordExceptionSuite && cases[i].Name == recordExceptionCase {
+				match = &cases[i]
+				break
+			}
+		}
+		if match == nil {
+			return fmt.Errorf("%s declares no case %q in suite %q — a decision naming a case that does not exist excuses nothing and reads in the ledger as though it did", tcPath, recordExceptionCase, recordExceptionSuite)
+		}
+		if match.Coverage != "state-only" {
+			return fmt.Errorf("suite %q case %q has coverage %q, not state-only — there is no weakened observation here to accept", recordExceptionSuite, recordExceptionCase, match.Coverage)
+		}
+		if match.Ref != recordExceptionRef || agent.CanonicalCriterionText(match.Text) != agent.CanonicalCriterionText(recordExceptionText) {
+			return fmt.Errorf("suite %q case %q discharges %q, not %q — approving one case's weakening says nothing about a criterion it does not observe", recordExceptionSuite, recordExceptionCase, match.Ref, recordExceptionRef)
+		}
+		caseHash = match.Fingerprint
+	}
+
 	ex := CoverageException{
 		Ref: recordExceptionRef, Text: recordExceptionText, Kind: kind,
 		Reason: recordExceptionReason, Suite: recordExceptionSuite, Case: recordExceptionCase,
+		CaseHash: caseHash,
 	}
 	if recordExceptionText == "" {
 		ex.EntryHash = entryBulletsHash(entryBullets)

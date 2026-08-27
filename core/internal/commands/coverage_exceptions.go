@@ -85,6 +85,19 @@ var exceptionKinds = map[ExceptionKind]bool{
 }
 
 // Accepts reports whether a decision covers this case's downgrade.
+//
+// fingerprint is the case's content as it stands now. A decision carrying a
+// hash accepts only the content it was granted against; one carrying none
+// predates the binding and accepts nothing, so it surfaces for re-confirmation
+// rather than silently continuing to excuse a case nobody can prove is the one
+// that was reviewed.
+func (d DowngradeDecision) AcceptsCase(ref, text, suite, caseName, fingerprint string) bool {
+	if !d.Accepts(ref, text, suite, caseName) {
+		return false
+	}
+	return d.CaseHash != "" && d.CaseHash == fingerprint
+}
+
 func (d DowngradeDecision) Accepts(ref, text, suite, caseName string) bool {
 	return d.Ref == ref && d.Text == agent.CanonicalCriterionText(text) &&
 		d.Suite == suite && d.Case == caseName
@@ -120,6 +133,15 @@ type CoverageException struct {
 	// doing the same thing for a different reason.
 	Suite string `yaml:"suite,omitempty"`
 	Case  string `yaml:"case,omitempty"`
+
+	// CaseHash binds the decision to what that case actually observed when it
+	// was approved. Suite and Case are NAMES, and a name survives its body
+	// being replaced wholesale: a different observation, for different
+	// reasons, still citing this criterion and still marked state-only, keeps
+	// matching a decision keyed on names alone. The reviewer is then recorded
+	// as having approved something they never saw. Empty means the decision
+	// predates this binding and must be re-confirmed.
+	CaseHash string `yaml:"case_hash,omitempty"`
 }
 
 // CoverageExceptions is the per-feature ledger.
@@ -244,6 +266,7 @@ func saveCoverageExceptions(cfg *config.Context, slug string, rec *CoverageExcep
 type DowngradeDecision struct {
 	Ref, Text   string
 	Suite, Case string
+	CaseHash    string
 }
 
 type ExceptionsVerdict struct {
@@ -283,18 +306,29 @@ func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []
 		byEntry[c.Ref] = append(byEntry[c.Ref], c)
 	}
 
-	claimed := map[agent.CriterionRef]bool{}
+	// A waiver's identity is the criterion: one criterion cannot be excused
+	// twice. A state-only decision's identity includes the case, because
+	// several cases may each observe one criterion weakly and each needs its
+	// own judgment. Keying both on (ref, text) alone wedges the ledger the
+	// moment a second case discharges a criterion a first one already
+	// downgraded — a legitimate shape, refused as a duplicate.
+	type claimKey struct{ ref, text, suite, caseName string }
+	claimed := map[claimKey]bool{}
 	for _, ex := range rec.Exceptions {
 		text := agent.CanonicalCriterionText(ex.Text)
 		key := agent.CriterionRef{Ref: ex.Ref, Text: text}
+		ck := claimKey{ref: ex.Ref, text: text}
+		if ex.Kind == ExceptionStateOnly {
+			ck.suite, ck.caseName = ex.Suite, ex.Case
+		}
 
 		// Two exceptions claiming the same thing is an authoring defect: they
 		// cannot be reviewed independently and one silently shadows the other.
-		if claimed[key] {
+		if claimed[ck] {
 			v.Blockers = append(v.Blockers, fmt.Sprintf("%s is excused twice — one claim shadows the other and neither can be reviewed on its own", describeClaim(ex)))
 			continue
 		}
-		claimed[key] = true
+		claimed[ck] = true
 
 		bullets, entryExists := byEntry[ex.Ref]
 		if !entryExists {
@@ -350,7 +384,7 @@ func EvaluateCoverageExceptions(root string, rec *CoverageExceptions, current []
 			// observation, which the readiness walk resolves against the
 			// testcases.
 			v.AcceptedDowngrades = append(v.AcceptedDowngrades, DowngradeDecision{
-				Ref: ex.Ref, Text: text, Suite: ex.Suite, Case: ex.Case,
+				Ref: ex.Ref, Text: text, Suite: ex.Suite, Case: ex.Case, CaseHash: ex.CaseHash,
 			})
 			continue
 		}

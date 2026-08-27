@@ -671,3 +671,57 @@ exemptions:
 		t.Errorf("expected one recorded deletion, got %d", dropped)
 	}
 }
+
+// One criterion may be observed weakly by several cases, each for its own
+// reason, each needing its own judgment. Keying every decision on (ref, text)
+// alone made the second such decision look like a duplicate of the first, so
+// the ledger refused a legitimate shape and the only way forward was to leave
+// one case unreviewed.
+func TestCoverageExceptions_TwoCasesMayEachDowngradeOneCriterion(t *testing.T) {
+	cs := twoCriteria()
+	rec := exceptionsFor(cs,
+		CoverageException{
+			Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionStateOnly,
+			Suite: "Store honesty", Case: "writes land", CaseHash: "aaa",
+			By: "interactive decision", At: "2026-08-27T00:00:00Z",
+			Reason: "state is the only honest observation for a write",
+		},
+		CoverageException{
+			Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionStateOnly,
+			Suite: "Store honesty", Case: "deletes land", CaseHash: "bbb",
+			By: "interactive decision", At: "2026-08-27T00:00:00Z",
+			Reason: "a delete has no return value to assert on",
+		},
+	)
+
+	v := EvaluateCoverageExceptions(t.TempDir(), rec, cs)
+	for _, b := range v.Blockers {
+		if strings.Contains(b, "excused twice") {
+			t.Fatalf("two cases downgrading one criterion is legitimate, not a duplicate claim: %s", b)
+		}
+	}
+	if len(v.AcceptedDowngrades) != 2 {
+		t.Fatalf("both decisions must stand on their own; got %d", len(v.AcceptedDowngrades))
+	}
+}
+
+// A waiver, unlike a downgrade, is a claim about the criterion itself. Two of
+// them cannot both be reviewed — one silently shadows the other.
+func TestCoverageExceptions_OneCriterionCannotBeWaivedTwice(t *testing.T) {
+	cs := twoCriteria()
+	dup := CoverageException{
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived,
+		By: "interactive decision", At: "2026-08-27T00:00:00Z",
+		Reason: "enforced by a database constraint",
+	}
+	v := EvaluateCoverageExceptions(t.TempDir(), exceptionsFor(cs, dup, dup), cs)
+	found := false
+	for _, b := range v.Blockers {
+		if strings.Contains(b, "excused twice") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("two waivers on one criterion must still be refused; got %+v", v.Blockers)
+	}
+}

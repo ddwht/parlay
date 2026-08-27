@@ -217,42 +217,60 @@ func artifactExists(path string) bool {
 // observation is state is exactly what the marker records — so this asks for a
 // decision rather than forbidding one.
 func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecision) []string {
-	var shape struct {
-		Suites []struct {
-			Name  string `yaml:"name"`
-			Cases []struct {
-				Name      string `yaml:"name"`
-				Coverage  string `yaml:"coverage"`
-				Criterion struct {
-					Ref  string `yaml:"ref"`
-					Text string `yaml:"text"`
-				} `yaml:"criterion"`
-			} `yaml:"cases"`
-		} `yaml:"suites"`
-	}
-	if err := yaml.Unmarshal(content, &shape); err != nil {
+	cases, err := resolveCases(content)
+	if err != nil {
 		return nil // the parse failure is already a blocker above
 	}
+
 	var out []string
-	for _, su := range shape.Suites {
-		for _, c := range su.Cases {
-			if c.Coverage != "state-only" {
+	matched := map[int]bool{}
+	for _, c := range cases {
+		if c.Coverage != "state-only" {
+			continue
+		}
+		approved := false
+		var drifted *DowngradeDecision
+		for i, d := range accepted {
+			if !d.Accepts(c.Ref, c.Text, c.Suite, c.Name) {
 				continue
 			}
-			approved := false
-			for _, d := range accepted {
-				if d.Accepts(c.Criterion.Ref, c.Criterion.Text, su.Name, c.Name) {
-					approved = true
-					break
-				}
+			matched[i] = true
+			if d.AcceptsCase(c.Ref, c.Text, c.Suite, c.Name, c.Fingerprint) {
+				approved = true
+				break
 			}
-			if approved {
-				continue
+			copy := d
+			drifted = &copy
+		}
+		if approved {
+			continue
+		}
+		if drifted != nil {
+			why := "its content changed since the decision was recorded"
+			if drifted.CaseHash == "" {
+				why = "the decision predates content binding and cannot be shown to be about this case"
 			}
 			out = append(out, fmt.Sprintf(
-				"[criterion-observed-weakly] %s: suite %q case %q discharges %q by observing STATE rather than what the criterion states (%q), and nobody accepted that. The case passes and cites its criterion correctly, so no other check can see the weakening. Record the decision in coverage-exceptions.yaml as kind: state-only naming this suite and case, or strengthen the case to observe what the criterion says",
-				path, su.Name, c.Name, c.Criterion.Ref, c.Criterion.Text))
+				"[downgrade-approval-stale] %s: suite %q case %q has an accepted state-only decision, but %s. The approval was a judgment about what this case observed; re-record it against the case as it stands, or strengthen the case",
+				path, c.Suite, c.Name, why))
+			continue
 		}
+		out = append(out, fmt.Sprintf(
+			"[criterion-observed-weakly] %s: suite %q case %q discharges %q by observing STATE rather than what the criterion states (%q), and nobody accepted that. The case passes and cites its criterion correctly, so no other check can see the weakening. Record the decision in coverage-exceptions.yaml as kind: state-only naming this suite and case, or strengthen the case to observe what the criterion says",
+			path, c.Suite, c.Name, c.Ref, c.Text))
+	}
+
+	// A decision whose case is gone, or is no longer state-only, is an
+	// approval standing over nothing. Left silent it looks like diligence:
+	// the ledger records a reviewed downgrade that no longer exists, and the
+	// next reader cannot tell that from a live one.
+	for i, d := range accepted {
+		if matched[i] {
+			continue
+		}
+		out = append(out, fmt.Sprintf(
+			"[downgrade-approval-orphaned] %s: an accepted state-only decision names suite %q case %q for %q, but no such state-only case is declared. It was either renamed, removed, or strengthened to full coverage. Drop the decision, or point it at the case that replaced it",
+			path, d.Suite, d.Case, d.Ref))
 	}
 	return out
 }
