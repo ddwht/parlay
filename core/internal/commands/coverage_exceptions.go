@@ -208,8 +208,8 @@ func loadCoverageExceptions(cfg *config.Context, slug string) (*CoverageExceptio
 		if strings.TrimSpace(ex.Reason) == "" {
 			return nil, fmt.Errorf("exception %d for %s records no reason — an exception nobody can review later is not one", i+1, ex.Ref)
 		}
-		if strings.TrimSpace(ex.By) == "" {
-			return nil, fmt.Errorf("exception %d for %s records nothing about what decided it — attribution is per decision, and a ledger that cannot say who made which one cannot be audited", i+1, ex.Ref)
+		if strings.TrimSpace(ex.By) == "" || strings.TrimSpace(ex.At) == "" {
+			return nil, fmt.Errorf("exception %d for %s is missing what decided it or when — attribution is per decision, and a ledger that cannot say who made which one, or in what order, cannot be audited", i+1, ex.Ref)
 		}
 	}
 	for i, d := range rec.ReconciledLegacy {

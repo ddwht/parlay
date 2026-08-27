@@ -196,7 +196,7 @@ steps 3 and 4:
    path has nothing to splice. Apply it with:
 
    ```
-   parlay apply-governance @<feature> --confirm
+   parlay internal apply-governance @<feature> --confirm
    ```
 
    which applies every pending governance amendment on that feature and moves

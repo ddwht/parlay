@@ -26,7 +26,7 @@ func exceptionsFor(cs []AuthorizedCriterion, exs ...CoverageException) *Coverage
 func TestCoverageExceptions_FreshLedgerExcusesTheBulletItNames(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z",
 		Reason: "enforced by a database constraint, not by this operation",
 	})
 
@@ -51,7 +51,7 @@ func TestCoverageExceptions_FreshLedgerExcusesTheBulletItNames(t *testing.T) {
 func TestCoverageExceptions_ExceptionDiesWithTheBulletItNames(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "r",
 	})
 
 	reworded := []AuthorizedCriterion{
@@ -73,7 +73,7 @@ func TestCoverageExceptions_ExceptionDiesWithTheBulletItNames(t *testing.T) {
 func TestCoverageExceptions_AnUnrelatedCriterionChangeDoesNotInvalidateIt(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "r",
 	})
 
 	elsewhere := []AuthorizedCriterion{
@@ -92,7 +92,7 @@ func TestCoverageExceptions_AnUnrelatedCriterionChangeDoesNotInvalidateIt(t *tes
 func TestCoverageExceptions_EntryWideIsAcceptedAndWarned(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Kind: ExceptionWaived, By: "interactive decision", Reason: "legacy, predates bullet identity",
+		Ref: cs[0].Ref, Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "legacy, predates bullet identity",
 		EntryHash: entryBulletsHash([]AuthorizedCriterion{cs[0]}),
 	})
 
@@ -120,7 +120,7 @@ func TestCoverageExceptions_EntryWideIsAcceptedAndWarned(t *testing.T) {
 func TestCoverageExceptions_HandAuthoredMustNameItsTest(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored, By: "interactive decision", Reason: "covered by an integration suite",
+		Ref: cs[0].Ref, Text: cs[0].Text, Kind: ExceptionHandAuthored, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "covered by an integration suite",
 	})
 	if v := EvaluateCoverageExceptions(t.TempDir(), rec, cs); len(v.Blockers) == 0 {
 		t.Error("an uninspectable test that is also unnamed excuses nothing")
@@ -130,7 +130,7 @@ func TestCoverageExceptions_HandAuthoredMustNameItsTest(t *testing.T) {
 func TestCoverageExceptions_ExcusingSomethingTheContractDroppedBlocks(t *testing.T) {
 	cs := twoCriteria()
 	rec := exceptionsFor(cs, CoverageException{
-		Ref: "@f/operation:gone", Text: "x", Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
+		Ref: "@f/operation:gone", Text: "x", Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "r",
 	})
 	// Hash matches; the ref does not exist.
 	rec.CriteriaHash = CriteriaHash(cs)
@@ -201,7 +201,7 @@ func TestCoverageExceptions_GateReportsAStaleLedger(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: current[0].Ref, Text: "a claim this contract never made",
-			Kind: ExceptionWaived, By: "interactive decision", Reason: "r",
+			Kind: ExceptionWaived, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "r",
 		}},
 	})
 
@@ -256,7 +256,7 @@ func TestCoverageExceptions_GateRefusesStateOnlyAsAnExemption(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: current[0].Ref, Text: current[0].Text,
-			Kind: ExceptionStateOnly, By: "interactive decision", Reason: "observed by state",
+			Kind: ExceptionStateOnly, By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "observed by state",
 		}},
 	})
 
@@ -377,7 +377,7 @@ func TestTestcasesReadiness_AcceptedDowngradePasses(t *testing.T) {
 	if err := saveCoverageExceptions(cfg, "graded", &CoverageExceptions{
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
-			Ref: ref, Text: text, Kind: ExceptionStateOnly, Suite: suite, Case: caseName, By: "interactive decision",
+			Ref: ref, Text: text, Kind: ExceptionStateOnly, Suite: suite, Case: caseName, By: "interactive decision", At: "2026-08-27T00:00:00Z",
 			Reason: "the control is rendered by a third-party component this suite cannot reach",
 		}},
 	}); err != nil {
@@ -405,7 +405,7 @@ func TestTestcasesReadiness_DowngradeDecisionIsPerCase(t *testing.T) {
 		Feature: "graded", GrantedAt: "2026-08-27T00:00:00Z",
 		Exceptions: []CoverageException{{
 			Ref: ref, Text: text, Kind: ExceptionStateOnly,
-			Suite: "Some Other Suite", Case: "some other case", By: "interactive decision", Reason: "r",
+			Suite: "Some Other Suite", Case: "some other case", By: "interactive decision", At: "2026-08-27T00:00:00Z", Reason: "r",
 		}},
 	}); err != nil {
 		t.Fatal(err)

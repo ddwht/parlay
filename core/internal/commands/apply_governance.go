@@ -59,7 +59,6 @@ names contract entries, because those have a splice somebody still owes.`,
 }
 
 func init() {
-	rootCmd.AddCommand(applyGovernanceCmd)
 	applyGovernanceCmd.Flags().BoolVar(&applyGovernanceConfirmed, "confirm", false,
 		"required: applying a governance amendment changes what this feature promises, and there is no safe default for that")
 }
