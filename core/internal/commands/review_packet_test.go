@@ -36,20 +36,22 @@ func TestReviewPacket_SubjectIsSerialisedBeforeHistory(t *testing.T) {
 	writeCriteriaFixture(t, dir)
 	legacyFixture(t, testContext(t), twoJudgmentsOnOneBullet)
 
-	raw, err := json.Marshal(packetFor(t, ""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(raw)
-	subject, history := strings.Index(body, `"subject"`), strings.Index(body, `"history"`)
+	d := packetFor(t, "").Display
+	subject := strings.Index(d, "What you are deciding about")
+	history := strings.Index(d, historyLabel)
 	if subject < 0 || history < 0 {
-		t.Fatalf("packet must carry both blocks: %s", body)
+		t.Fatalf("the display must carry both blocks:\n%s", d)
 	}
 	if subject > history {
-		t.Fatal("the subject must be serialised before the historical context")
+		t.Fatalf("the subject must be rendered before the historical context:\n%s", d)
 	}
-	if !strings.Contains(body, historyLabel) {
-		t.Error("the historical block must carry its fixed label, not caller-chosen phrasing")
+	// The options must NOT appear in the evidence. They belong to the chooser,
+	// and stating them twice makes the formatter responsible for duplication
+	// while inviting a caller to parse choices back out of prose.
+	for _, label := range []string{"Still holds", "No longer holds", "I cannot say"} {
+		if strings.Contains(d, label) {
+			t.Errorf("option %q leaked into the rendered evidence", label)
+		}
 	}
 	if !strings.Contains(historyLabel, "NOT WHAT YOU ARE DECIDING") {
 		t.Error("the label must say plainly that history is not the subject")
@@ -67,14 +69,23 @@ func TestReviewPacket_SaysNothingCoversItRatherThanShowingAnEmptyList(t *testing
 	// No testcases.yaml at all — the shape a pre-testcases waiver is in.
 
 	p := packetFor(t, "")
-	if !p.Subject.NothingCovers {
-		t.Fatal("with no cases, the packet must say so explicitly")
+	if !p.subject.NothingCovers {
+		t.Fatal("with no cases, the packet must record that explicitly")
 	}
-	if len(p.Subject.Cases) != 0 {
-		t.Errorf("no cases exist; got %v", p.Subject.Cases)
+	if len(p.subject.Cases) != 0 {
+		t.Errorf("no cases exist; got %v", p.subject.Cases)
 	}
-	if len(p.Subject.Requirements) == 0 {
+	if len(p.subject.Requirements) == 0 {
 		t.Error("the requirement still exists and must be shown even when nothing observes it")
+	}
+	// And it must reach the REVIEWER, not merely the struct. Asserting the
+	// field alone leaves the rendering free to omit it — the same split-path
+	// blind spot as testing a command and its guidance separately.
+	if !strings.Contains(p.Display, "NOTHING covers this") {
+		t.Fatalf("the reviewer must be told nothing covers it, not shown an empty list:\n%s", p.Display)
+	}
+	if !strings.Contains(p.Display, "it stays untested") {
+		t.Errorf("the consequence of re-confirming must be stated:\n%s", p.Display)
 	}
 }
 
@@ -118,15 +129,15 @@ func TestReviewPacket_ShowsWhatCurrentlyObservesTheRequirement(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if p.Subject.NothingCovers {
+		if p.subject.NothingCovers {
 			continue
 		}
 		found = true
-		if len(p.Subject.Cases) == 0 {
+		if len(p.subject.Cases) == 0 {
 			t.Fatal("nothing_covers is false, so cases must be listed")
 		}
-		if !strings.Contains(p.Subject.Cases[0], "state-only") {
-			t.Errorf("the packet must say HOW the case observes, since a weak observation changes the answer: %q", p.Subject.Cases[0])
+		if !strings.Contains(p.subject.Cases[0], "state-only") {
+			t.Errorf("the packet must say HOW the case observes, since a weak observation changes the answer: %q", p.subject.Cases[0])
 		}
 	}
 	if !found {
@@ -172,15 +183,15 @@ operations:
 	legacyFixture(t, cfg, entryWide)
 
 	p := packetFor(t, "")
-	if !p.Subject.EntryWide {
+	if !p.subject.EntryWide {
 		t.Fatal("an exemption naming no criterion text is entry-wide")
 	}
-	if len(p.Subject.Requirements) != 3 {
+	if len(p.subject.Requirements) != 3 {
 		t.Fatalf("re-confirming this grants a waiver over every requirement now on the operation, so all three must be shown; got %d: %v",
-			len(p.Subject.Requirements), p.Subject.Requirements)
+			len(p.subject.Requirements), p.subject.Requirements)
 	}
-	if !strings.Contains(p.Question.Prompt, "ALL 3") {
-		t.Errorf("breadth must be stated in the question, not left inferable from a list nobody counts; got %q", p.Question.Prompt)
+	if !strings.Contains(p.Decision.Question, "ALL 3") {
+		t.Errorf("breadth must be stated in the question, not left inferable from a list nobody counts; got %q", p.Decision.Question)
 	}
 }
 
@@ -192,21 +203,29 @@ func TestReviewPacket_OffersThreeOutcomesAndNoDefault(t *testing.T) {
 	legacyFixture(t, testContext(t), twoJudgmentsOnOneBullet)
 
 	p := packetFor(t, "")
-	if len(p.Question.Outcomes) != 3 {
-		t.Fatalf("exactly three outcomes; got %v", p.Question.Outcomes)
+	if len(p.Decision.Options) != 3 {
+		t.Fatalf("exactly three outcomes; got %+v", p.Decision.Options)
 	}
-	want := map[string]bool{"still-holds": true, "no-longer-holds": true, "cannot-say": true}
-	for _, o := range p.Question.Outcomes {
-		if !want[o] {
-			t.Errorf("unexpected outcome %q", o)
+	want := map[string]bool{OutcomeReconfirm: true, OutcomeDrop: true, OutcomeDefer: true}
+	for _, o := range p.Decision.Options {
+		if !want[o.ID] {
+			t.Errorf("unexpected outcome id %q", o.ID)
 		}
-		delete(want, o)
+		delete(want, o.ID)
+		if strings.TrimSpace(o.Label) == "" || strings.TrimSpace(o.Description) == "" {
+			t.Errorf("option %q needs a label and a description a person can act on", o.ID)
+		}
+		for _, hint := range []string{"recommend", "(default)", "suggested"} {
+			if strings.Contains(strings.ToLower(o.Label+o.Description), hint) {
+				t.Errorf("option %q steers the reviewer with %q", o.ID, hint)
+			}
+		}
 	}
 	if len(want) != 0 {
 		t.Errorf("missing outcomes: %v", want)
 	}
-	if !p.Question.NoDefault || !p.Question.RationaleRequired {
-		t.Error("the packet must state that there is no default and a rationale is required")
+	if !p.Decision.NoDefault || !p.Decision.RationaleRequired {
+		t.Error("the contract must state that there is no default and a rationale is required")
 	}
 	// The old reason must never be positioned as a starting point for the new
 	// one. It appears in History and nowhere else.
@@ -235,14 +254,94 @@ func TestReviewPacket_CarriesPriorAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(p.History.Attempts) != 1 {
-			t.Fatalf("the prior attempt must be carried; got %v", p.History.Attempts)
+		if len(p.history.Attempts) != 1 {
+			t.Fatalf("the prior attempt must be carried; got %v", p.history.Attempts)
 		}
-		if !strings.Contains(p.History.Attempts[0], "alice") ||
-			!strings.Contains(p.History.Attempts[0], "could not find the constraint") {
-			t.Errorf("the attempt must name who and why: %q", p.History.Attempts[0])
+		if !strings.Contains(p.history.Attempts[0], "alice") ||
+			!strings.Contains(p.history.Attempts[0], "could not find the constraint") {
+			t.Errorf("the attempt must name who and why: %q", p.history.Attempts[0])
 		}
 		return
 	}
 	t.Fatal("no deferred occurrence found")
+}
+
+// Every pending occurrence must produce a usable packet. An entry that cannot
+// be rendered is an entry that cannot be answered, and it would block the
+// migration with no way forward.
+func TestReviewPacket_EveryPendingOccurrenceRenders(t *testing.T) {
+	cfg, entries, hash := deferFixture(t)
+	deferLegacyFP, deferLegacyHash = entries[0].Fingerprint, hash
+	deferLegacyBy, deferLegacyReason = "alice", "cannot tell"
+	if err := deferRun(t, cfg, "graded"); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := CollectCoverageMigrationStatus(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, o := range st.Occurrences {
+		if o.State == "answered" {
+			continue
+		}
+		p, err := BuildReviewPacket(cfg, "graded", o)
+		if err != nil {
+			t.Fatalf("%s (%s): %v", o.Label, o.State, err)
+		}
+		if strings.TrimSpace(p.Display) == "" {
+			t.Errorf("%s renders an empty display", o.Label)
+		}
+		if strings.TrimSpace(p.Decision.Question) == "" {
+			t.Errorf("%s asks nothing", o.Label)
+		}
+		if p.Fingerprint == "" {
+			t.Errorf("%s carries no writable token", o.Label)
+		}
+		seen++
+	}
+	if seen != st.PendingTotal {
+		t.Fatalf("checked %d packets for %d pending occurrences", seen, st.PendingTotal)
+	}
+}
+
+// Breadth must reach the chooser, not just the evidence. A reviewer skimming
+// straight to the options should still see that "still holds" means all of
+// them.
+func TestReviewPacket_BreadthReachesTheDecisionNotJustTheDisplay(t *testing.T) {
+	dir := setupTestDir(t)
+	writeCriteriaFixture(t, dir)
+	cfg := testContext(t)
+	caps := `schema_version: 1
+feature: graded
+operations:
+  - id: customer.archive
+    source: '@graded/archive-a-customer'
+    kind: command
+    subject:
+      entity: Customer
+    verify:
+      - archiving a customer with unpaid invoices is rejected
+      - archiving twice is idempotent
+      - an archived customer stops appearing in search
+    steps:
+      - { type: validate-input }
+`
+	if err := os.WriteFile(filepath.Join(cfg.FeaturePath("graded"), "capabilities.yaml"), []byte(caps), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacyFixture(t, cfg, "schema_version: 1\nfeature: graded\nexemptions:\n"+
+		"    - suite: s\n      item: \"@graded/operation:customer.archive\"\n      reason: the whole operation was stubbed\n")
+
+	p := packetFor(t, "")
+	var reconfirm ReviewOption
+	for _, o := range p.Decision.Options {
+		if o.ID == OutcomeReconfirm {
+			reconfirm = o
+		}
+	}
+	if !strings.Contains(reconfirm.Description, "ALL 3") {
+		t.Errorf("the re-confirm option must say it waives all three: %q", reconfirm.Description)
+	}
 }

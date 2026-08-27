@@ -28,16 +28,49 @@ type ReviewPacket struct {
 	Fingerprint string `json:"fingerprint"`
 	Duplicate   int    `json:"duplicate"`
 
-	// Subject is what is being decided ABOUT, and it comes first.
-	Subject SubjectBlock `json:"subject"`
-	// History is context on how it was decided before. It comes second, and it
-	// is labelled as history so it cannot be mistaken for the thing under
-	// review.
-	History HistoryBlock `json:"history"`
+	// Display is the evidence, rendered, subject first and history second. The
+	// skill presents it verbatim and does not assemble its own.
+	Display string `json:"display"`
 
-	// Question is the fixed three-way choice. It carries no default and no
-	// recommendation: this is the point of the whole exercise.
-	Question QuestionBlock `json:"question"`
+	// Decision is the interaction contract: the question and the closed set of
+	// options, with no default and no recommendation. The skill maps it
+	// straight into the chooser.
+	//
+	// Evidence and interaction are separated deliberately. Folding the options
+	// into the rendered prose would show the reviewer the same three choices
+	// twice — once in the packet, once in the chooser — and would make the
+	// formatter responsible for that duplication while inviting later callers
+	// to parse choices back out of prose.
+	Decision DecisionContract `json:"decision"`
+
+	// The structured evidence Display is built from. Deliberately absent from
+	// the JSON: a consumer that could read these could render its own packet,
+	// and two renderings of one occurrence is exactly the divergence Display
+	// exists to prevent.
+	subject SubjectBlock
+	history HistoryBlock
+}
+
+// DecisionContract is what the chooser is built from.
+type DecisionContract struct {
+	Question string         `json:"question"`
+	Options  []ReviewOption `json:"options"`
+	// RationaleRequired: the reviewer supplies their own words AFTER choosing.
+	// It is a second authority-bearing question, never sourced from an option
+	// description — a description the reviewer merely accepted is not a reason
+	// they gave.
+	RationaleRequired bool `json:"rationale_required"`
+	// NoDefault is stated rather than implied by absence, so a consumer cannot
+	// treat "no default given" as licence to pick one.
+	NoDefault bool `json:"no_default"`
+}
+
+// ReviewOption is one outcome. ID is stable and maps to the command that
+// records it; Label and Description are what a person reads.
+type ReviewOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
 }
 
 type SubjectBlock struct {
@@ -67,24 +100,18 @@ type HistoryBlock struct {
 	Attempts []string `json:"prior_attempts,omitempty"`
 }
 
-type QuestionBlock struct {
-	Prompt   string   `json:"prompt"`
-	Outcomes []string `json:"outcomes"`
-	// RationaleRequired restates that the reviewer must supply their own words.
-	RationaleRequired bool `json:"rationale_required"`
-	// NoDefault is emitted so a consumer cannot quietly pick one.
-	NoDefault bool `json:"no_default"`
-}
-
 const historyLabel = "PRIOR DECISION — CONTEXT ONLY, NOT WHAT YOU ARE DECIDING"
 
-// reviewOutcomes is the closed set. Exactly three, in a fixed order, with no
-// element marked preferred.
-var reviewOutcomes = []string{
-	"still-holds",
-	"no-longer-holds",
-	"cannot-say",
-}
+// Outcome IDs are stable and map to the command that records each. They are
+// not display text: a person reads the label.
+const (
+	OutcomeReconfirm = "reconfirm"
+	OutcomeDrop      = "drop"
+	OutcomeDefer     = "defer"
+)
+
+// reviewOutcomeIDs is the closed set. Exactly three, fixed order, none preferred.
+var reviewOutcomeIDs = []string{OutcomeReconfirm, OutcomeDrop, OutcomeDefer}
 
 // BuildReviewPacket assembles one occurrence for review.
 func BuildReviewPacket(cfg *config.Context, slug string, occ MigrationOccurrence) (*ReviewPacket, error) {
@@ -116,38 +143,90 @@ func BuildReviewPacket(cfg *config.Context, slug string, occ MigrationOccurrence
 		attempts = append(attempts, fmt.Sprintf("%s (%s): %s", a.By, a.At, strings.TrimSpace(a.Reason)))
 	}
 
-	prompt := fmt.Sprintf("Does this waiver still hold for %s?", occ.Ref)
+	subject := SubjectBlock{
+		Ref: occ.Ref, Requirements: reqs, EntryWide: entryWide,
+		Cases: cases, NothingCovers: len(cases) == 0,
+	}
+	history := HistoryBlock{
+		Label: historyLabel, Reason: strings.TrimSpace(occ.GrantedBecause),
+		Attempts: attempts,
+	}
+
+	question := fmt.Sprintf("Does this waiver still hold for %s?", occ.Ref)
+	reconfirmDesc := "The requirement still genuinely needs no test. You will write your own reason."
 	if entryWide && len(reqs) > 1 {
-		// Breadth is surfaced in the question itself, not only in the subject
-		// block, because it is the thing a reviewer is most likely to grant
-		// without noticing they granted it.
-		prompt = fmt.Sprintf("Does this waiver still hold for ALL %d requirements now on %s?", len(reqs), occ.Ref)
+		// Breadth belongs in the decision, not only in the evidence. This is
+		// the thing a reviewer is most likely to grant without noticing they
+		// granted it, so it appears where they are actually choosing.
+		question = fmt.Sprintf("Does this waiver still hold for ALL %d requirements now on %s?", len(reqs), occ.Ref)
+		reconfirmDesc = fmt.Sprintf("Waives ALL %d requirements listed above, not just one.", len(reqs))
 	}
 
 	return &ReviewPacket{
 		Label: occ.Label, Fingerprint: occ.Fingerprint, Duplicate: occ.Duplicate,
-		Subject: SubjectBlock{
-			Ref: occ.Ref, Requirements: reqs, EntryWide: entryWide,
-			Cases: cases, NothingCovers: len(cases) == 0,
-		},
-		History: HistoryBlock{
-			Label: historyLabel, Reason: strings.TrimSpace(occ.GrantedBecause),
-			Attempts: attempts,
-		},
-		Question: QuestionBlock{
-			Prompt: prompt, Outcomes: reviewOutcomes,
+		Display: renderReviewDisplay(subject, history),
+		Decision: DecisionContract{
+			Question: question,
+			Options: []ReviewOption{
+				{ID: OutcomeReconfirm, Label: "Still holds", Description: reconfirmDesc},
+				{ID: OutcomeDrop, Label: "No longer holds", Description: "Withdraw it. The requirement goes back to needing a test."},
+				{ID: OutcomeDefer, Label: "I cannot say", Description: "Records that you looked. Does NOT answer it; the boundary keeps reporting it."},
+			},
 			RationaleRequired: true, NoDefault: true,
 		},
+		subject: subject, history: history,
 	}, nil
 }
 
+// renderReviewDisplay writes the evidence in the order it must be read.
+//
+// Subject first is the whole point: the reviewer decides about what the
+// contract says NOW, and the previous reasoning is context they weigh, not the
+// thing under review. Rendering here rather than instructing a caller to render
+// in this order is what makes the ordering a testable property of an artifact
+// instead of a promise about prose.
+func renderReviewDisplay(s SubjectBlock, h HistoryBlock) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "## What you are deciding about\n\n%s\n\n", s.Ref)
+	if s.EntryWide && len(s.Requirements) > 1 {
+		fmt.Fprintf(&b, "This waiver covers ALL %d requirements below.\n\n", len(s.Requirements))
+	}
+	b.WriteString("**Requirements as they read today**\n\n")
+	if len(s.Requirements) == 0 {
+		b.WriteString("- (the contract no longer declares any requirement here)\n")
+	}
+	for _, r := range s.Requirements {
+		fmt.Fprintf(&b, "- %s\n", r)
+	}
+
+	b.WriteString("\n**What currently observes them**\n\n")
+	if s.NothingCovers {
+		// Stated, never left as an empty list. This is frequently the reason
+		// the waiver exists, so rendering silence would hide the most
+		// important fact on the page.
+		b.WriteString("- NOTHING covers this today. If you re-confirm, it stays untested.\n")
+	}
+	for _, c := range s.Cases {
+		fmt.Fprintf(&b, "- %s\n", c)
+	}
+
+	fmt.Fprintf(&b, "\n## %s\n\n", h.Label)
+	if h.Reason != "" {
+		fmt.Fprintf(&b, "It was originally waived because: %s\n", h.Reason)
+	}
+	for _, a := range h.Attempts {
+		fmt.Fprintf(&b, "\n- Earlier review, no decision reached — %s\n", a)
+	}
+	return b.String()
+}
+
 // readTestcases returns the feature's testcases content, or nil when there are
-// none. Absence is not an error here: a legacy waiver frequently predates any
+// none. Absence is not an error: a legacy waiver frequently predates any
 // testcases at all, and refusing to build the packet would make the entries
 // most in need of review the ones that cannot be reviewed.
 func readTestcases(cfg *config.Context, slug string) ([]byte, error) {
-	path := filepath.Join(cfg.BuildPath(slug), "testcases.yaml")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Join(cfg.BuildPath(slug), "testcases.yaml"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
