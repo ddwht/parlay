@@ -692,6 +692,17 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 		}
 	}
 
+	// The label a reader selects by comes from the SAME projection the
+	// walkthrough uses, so a person cannot be shown one handle here and asked
+	// for another there.
+	fps := make([]string, 0, len(legacy.Exemptions))
+	for _, ex := range legacy.Exemptions {
+		if ex.Item != "" {
+			fps = append(fps, legacyExemptionFingerprint(ex))
+		}
+	}
+	short := shortestUniquePrefixes(fps, 8)
+
 	seen := map[string]int{}
 	for _, ex := range legacy.Exemptions {
 		if ex.Item == "" {
@@ -704,7 +715,11 @@ func strandedLegacyExemptions(cfg *config.Context, slug string, rec *CoverageExc
 		if answered[key] {
 			continue
 		}
-		desc := describeStrandedOccurrence(ex.Item, ex.CriterionText, ex.Reason, fp)
+		label := short[fp]
+		if dup > 0 {
+			label = fmt.Sprintf("%s.%d", label, dup)
+		}
+		desc := describeStrandedOccurrence(ex.Item, ex.CriterionText, ex.Reason, label)
 		if tries := deferrals[key]; len(tries) > 0 {
 			latest := tries[len(tries)-1]
 			noun := "review"
@@ -741,8 +756,8 @@ func describeStrandedOccurrence(ref, text, reason, fingerprint string) string {
 	if r := strings.TrimSpace(reason); r != "" {
 		out += fmt.Sprintf(" [granted because: %s]", r)
 	}
-	if len(fingerprint) >= 8 {
-		out += " #" + fingerprint[:8]
+	if fingerprint != "" {
+		out += " #" + fingerprint
 	}
 	return out
 }

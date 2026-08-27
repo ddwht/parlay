@@ -299,9 +299,13 @@ type migrateExceptionsOutput struct {
 	// read from. A writer must pass it back, so a decision recorded after the
 	// file moved is refused rather than silently answering a newer occurrence
 	// than the one the reviewer saw.
-	LegacyFileHash string              `json:"legacy_file_hash"`
-	Pending        []strandedExemption `json:"stranded"`
-	Note           string              `json:"note"`
+	LegacyFileHash string `json:"legacy_file_hash"`
+	// Status is the shared projection. The walkthrough reads its counts and
+	// occurrences rather than deriving its own, so discovery and the tool that
+	// performs the migration can never disagree about what is left.
+	Status  *CoverageMigrationStatus `json:"status"`
+	Pending []strandedExemption      `json:"stranded"`
+	Note    string                   `json:"note"`
 }
 
 func runMigrateExceptions(cmd *cobra.Command, args []string) error {
@@ -345,13 +349,20 @@ func runMigrateExceptions(cmd *cobra.Command, args []string) error {
 	if lErr != nil {
 		return lErr
 	}
+	status, sErr := CollectCoverageMigrationStatus(cfg, slug)
+	if sErr != nil {
+		return sErr
+	}
+
 	out := migrateExceptionsOutput{
 		Feature: slug, Legacy: legacyPath, LegacyFileHash: legacyHash,
+		Status: status,
 		Note: "This command writes nothing. Re-record each judgment that still holds with `parlay internal record-exception --from-legacy --legacy-fingerprint <fingerprint> --legacy-file-hash <legacy_file_hash>`, " +
 			"and drop the rest with `parlay internal drop-legacy-exemption --fingerprint <fingerprint> --legacy-file-hash <legacy_file_hash>`. The boundary keeps reporting these until every one is answered. " +
 			"Whether an old judgment still applies is the one thing nobody but its author can say, " +
 			"so copying them in bulk would assert it for all of them at once. Each fingerprint identifies ONE entry by its whole content, " +
-			"so answering one never answers another that happens to share a ref and criterion.",
+			"so answering one never answers another that happens to share a ref and criterion. " +
+			"Pass the FULL fingerprint from status.occurrences[].fingerprint; the short label is for a person to select by, not to type.",
 	}
 	for _, e := range entries {
 		still := declaredEntry[e.Ref]
