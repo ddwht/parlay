@@ -109,13 +109,34 @@ func TestSupersedesConflicts_TwoHeadsError(t *testing.T) {
 }
 
 // A single fragment superseding a target is a normal chain — no conflict.
+//
+// The target is declared here. It was not before: the fixture superseded
+// "@base/viewport" while no surface in the tree declared it, and the old
+// detect-only pass never looked a target up, so the fixture asserted "clean"
+// over a tree whose supersedes: pointed at nothing. Resolving the edge is what
+// makes the dangling ref visible, so the fixture now has to be sound.
 func TestSupersedesConflicts_SingleHeadOK(t *testing.T) {
 	root := t.TempDir()
+	writeFeatureSurface(t, root, "base",
+		"fragments:\n  - name: Viewport\n    shows: read-collection\n    source: \"@base/intent\"\n    page: dashboard\n    region: main\n")
 	writeFeatureSurface(t, root, "alpha",
 		"fragments:\n  - name: Alpha Panel\n    shows: read-collection\n    source: \"@alpha/intent\"\n    page: dashboard\n    region: main\n    supersedes: \"@base/viewport\"\n")
 
 	if conflicts := supersedesConflicts(filepath.Join(root, config.SpecDir)); len(conflicts) != 0 {
 		t.Errorf("a single superseding fragment must not conflict; got %v", conflicts)
+	}
+}
+
+// The dangling-target shape the fixture above used to have, asserted directly
+// rather than left as an accident of another test's setup.
+func TestSupersedesConflicts_UnknownTargetIsRefused(t *testing.T) {
+	root := t.TempDir()
+	writeFeatureSurface(t, root, "alpha",
+		"fragments:\n  - name: Alpha Panel\n    shows: read-collection\n    source: \"@alpha/intent\"\n    page: dashboard\n    region: main\n    supersedes: \"@base/viewport\"\n")
+
+	conflicts := supersedesConflicts(filepath.Join(root, config.SpecDir))
+	if len(conflicts) != 1 || conflicts[0].Code != "surface-supersedes-target-unknown" {
+		t.Fatalf("expected one surface-supersedes-target-unknown, got %v", conflicts)
 	}
 }
 

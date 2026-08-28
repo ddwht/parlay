@@ -244,6 +244,15 @@ func TestBoundaryClaims_EveryBlockingBranchHasAWitness(t *testing.T) {
 		{claimGeneratedState, branchAdopted}:             "TestBoundaryWitness_GeneratedStateUnrecorded",
 		{claimLedgerState, branchUnappliedTail}:          "TestBoundaryWitness_LedgerUnappliedTail",
 		{claimTestcasesReady, branchDowngradeUnapproved}: "TestBoundaryWitness_TestcasesDowngradeUnapproved",
+
+		// Both need a SECOND feature to do the superseding — the table's
+		// single-feature fixture cannot express a cross-feature retirement,
+		// which is the only shape these branches fire on.
+		{claimRetiredOutput, branchRetiredEmitted}:     "TestBoundaryWitness_RetiredContributionStillEmitted",
+		{claimRetiredOutput, branchRetiredShared}:      "TestBoundaryWitness_RetiredContributionSharedPath",
+		{claimRetiredOutput, branchRetiredUnaccounted}: "TestBoundaryWitness_RetiredContributionUnaccounted",
+		{claimRetiredOutput, branchSubjectUnreadable}:  "TestBoundaryWitness_RetiredContributionUnreadable",
+		{claimRetiredOutput, branchSubjectMissing}:     "TestBoundaryWitness_RetiredContributionBuildfileMissing",
 	}
 
 	witnessed := map[key]bool{}
@@ -838,5 +847,258 @@ func TestBoundaryWitness_TestcasesDowngradeUnapproved(t *testing.T) {
 	// keys on internal branch IDs rather than on rendered codes.
 	if !gateBlockerMentions(out.Blockers, "criterion-observed-weakly") {
 		t.Errorf("a weakened observation nobody accepted must hold the boundary shut: %+v", out.Blockers)
+	}
+}
+
+// supersedeGradedDetail adds a SECOND feature whose fragment retires the clean
+// fixture's "Customer Detail". Nothing inside graded/ is touched — which is the
+// whole point: every feature-local signature stays byte-identical, so this is
+// the exact shape that used to leave graded's component emitting into a slot it
+// no longer owns.
+func supersedeGradedDetail(t *testing.T, dir string) {
+	t.Helper()
+	featDir := filepath.Join(dir, "spec", "intents", "replacement")
+	if err := os.MkdirAll(featDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `feature: replacement
+fragments:
+    - name: Customer Detail V2
+      page: customers
+      region: main
+      shows: detail
+      order: 1
+      actions: invoke
+      source: '@replacement/rework-the-detail'
+      supersedes: '@graded/customer-detail'
+      verify:
+        - the archive button is disabled while invoices are unpaid
+`
+	if err := os.WriteFile(filepath.Join(featDir, "surface.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Witness: claimRetiredOutput / branchRetiredEmitted.
+//
+// The clean control passes, then a sibling retires graded's fragment while
+// graded's plan still writes CustomerDetail.tsx. The boundary must shut: the
+// superseded output would otherwise be emitted and routed beside its
+// replacement — the racing pair supersedes: exists to prevent.
+func TestBoundaryWitness_RetiredContributionStillEmitted(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	supersedeGradedDetail(t, dir)
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "retired-contribution-still-emitted") {
+		t.Fatalf("a retired fragment whose output the plan still writes must hold the boundary shut; blockers=%+v", out.Blockers)
+	}
+}
+
+// Witness: claimRetiredOutput / branchRetiredShared.
+//
+// Same retirement, but the path graded writes is ALSO produced for a
+// still-active component. Here the file must survive — deleting it would take
+// the active contributor's output with it — so the finding has to be the
+// mount/route one, not the emission one. This is the distinction that makes
+// removal keyed by page contribution rather than by fragment name.
+func TestBoundaryWitness_RetiredContributionSharedPath(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	// A second component in graded, sourced from a fragment that is NOT
+	// retired, writing the same path as the one that will be.
+	bf := filepath.Join(cfg.BuildPath("graded"), "buildfile.yaml")
+	data, err := os.ReadFile(bf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := replaceOnce(string(data),
+		`    source: "@graded/fragment:Customer Detail"
+plan:
+  creates:
+    - path: src/features/graded/CustomerDetail.tsx
+      sources: ["component/customer-detail"]`,
+		`    source: "@graded/fragment:Customer Detail"
+  customer-summary:
+    kind: component
+    source: "@graded/fragment:Customer Summary"
+plan:
+  creates:
+    - path: src/features/graded/CustomerDetail.tsx
+      sources: ["component/customer-detail", "component/customer-summary"]`)
+	if patched == string(data) {
+		t.Fatal("fixture patch found nothing to change; the witness would prove nothing")
+	}
+	if err := os.WriteFile(bf, []byte(patched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	supersedeGradedDetail(t, dir)
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "retired-contribution-still-mounted") {
+		t.Fatalf("a shared path must report the mount/route removal, not deletion; blockers=%+v", out.Blockers)
+	}
+	if gateHasCode(out.Blockers, "retired-contribution-still-emitted") {
+		t.Errorf("a shared path must NOT be reported as deletable output — that would remove an active contributor's file; blockers=%+v", out.Blockers)
+	}
+}
+
+func approveGradedCriteria(t *testing.T, cfg *config.Context) {
+	t.Helper()
+	current, err := CurrentCriteria(cfg, "graded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordHumanApproval(cfg, "graded", current, "2026-08-27T00:00:00Z", "interactive decision", "dec-1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Witness: claimRetiredOutput / branchSubjectUnreadable.
+//
+// A feature with retired fragments whose buildfile cannot be parsed must not
+// read as "retires nothing". Before this branch existed every unreadable input
+// returned no findings, so a corrupt buildfile and a clean one produced the
+// identical verdict at the boundary that claims the superseded output is gone.
+func TestBoundaryWitness_RetiredContributionUnreadable(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	// Retire graded's fragment from another feature, then corrupt the
+	// buildfile that would say whether its output is still emitted.
+	supersedeGradedDetail(t, dir)
+	if err := os.WriteFile(filepath.Join(cfg.BuildPath("graded"), "buildfile.yaml"),
+		[]byte("components: [\n  broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "retired-contribution-unresolvable") {
+		t.Fatalf("an unreadable buildfile must not read as 'retires nothing'; blockers=%+v", out.Blockers)
+	}
+}
+
+// Witness: claimRetiredOutput / branchRetiredUnaccounted.
+//
+// The third refusal path, registered because promoting it from warning to
+// error made it an independent way to hold the boundary shut — and an
+// unwitnessed inner branch is exactly what the per-branch completeness
+// mechanism exists to stop.
+//
+// Shape: the retired component's path is neither written by the plan, nor
+// shared with an active contributor, nor listed in plan.deletes. Its
+// previously generated output is left on disk with nothing accounting for it.
+func TestBoundaryWitness_RetiredContributionUnaccounted(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	// Move the component's row out of plan.creates into plan.modifies of a
+	// DIFFERENT path, so the component still resolves and still cites its
+	// source, but its own output path is no longer written, shared or deleted.
+	bf := filepath.Join(cfg.BuildPath("graded"), "buildfile.yaml")
+	data, err := os.ReadFile(bf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := replaceOnce(string(data),
+		`plan:
+  creates:
+    - path: src/features/graded/CustomerDetail.tsx
+      sources: ["component/customer-detail"]`,
+		`plan:
+  deletes: []
+  creates:
+    - path: src/features/graded/Unrelated.tsx
+      sources: ["component/customer-detail"]`)
+	if patched == string(data) {
+		t.Fatal("fixture patch found nothing to change; the witness would prove nothing")
+	}
+	if err := os.WriteFile(bf, []byte(patched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	supersedeGradedDetail(t, dir)
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "retired-contribution-still-emitted") &&
+		!gateHasCode(out.Blockers, "retired-contribution-unaccounted") {
+		t.Fatalf("a retired component whose output nothing accounts for must hold the boundary shut; blockers=%+v", out.Blockers)
+	}
+}
+
+// Witness: claimRetiredOutput / branchSubjectMissing.
+//
+// A missing buildfile is not a clean retirement check. The buildfile can be
+// deleted after code was generated, leaving the superseded output on disk with
+// the one artifact that could have named it gone — so absence of the evidence
+// must not read as evidence of absence.
+func TestBoundaryWitness_RetiredContributionBuildfileMissing(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	supersedeGradedDetail(t, dir)
+	if err := os.Remove(filepath.Join(cfg.BuildPath("graded"), "buildfile.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, "retired-contribution-subject-missing") {
+		t.Fatalf("a lost buildfile with retired fragments must not read as a clean retirement check; blockers=%+v", out.Blockers)
 	}
 }

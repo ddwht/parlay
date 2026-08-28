@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
@@ -62,12 +63,26 @@ func runViewPage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to scan surfaces: %w", err)
 	}
 
-	// Computed: targeted = fragments where page == page-name
+	// Resolve supersession across EVERY surface before looking at this page.
+	//
+	// The field was parsed, validated for forks, and applied by nothing: this
+	// command had no reference to it, so a superseded fragment kept appearing
+	// in the assembled view and kept being routed by codegen — two components
+	// racing to mount the same slot, which is exactly what surface.schema.md
+	// says supersedes: exists to prevent.
+	//
+	// Project-wide first, page filter second, owner filter last. supersedes:
+	// crosses feature boundaries, so a resolver that started from this page's
+	// fragments could not see an edge declared by a feature that contributes
+	// nothing to this page.
+	view := agent.ResolveActiveView(allFragments)
+
+	// Computed: targeted = ACTIVE fragments where page == page-name
 	// Computed: unplaced = fragments where page is empty
 	var targeted []parser.Fragment
 	var unplaced []parser.Fragment
 
-	for _, f := range allFragments {
+	for _, f := range view.Active {
 		if f.Page == pageName {
 			targeted = append(targeted, f)
 		} else if f.Page == "" {
@@ -103,6 +118,47 @@ func runViewPage(cmd *cobra.Command, args []string) error {
 
 	// Element: page-header (text-output → fmt.Println)
 	fmt.Fprintf(cmd.OutOrStdout(), "Assembled view: %s\n\n", pageName)
+
+	// Element: composition-refusals (visible-when: resolution errors exist)
+	//
+	// A fork, a cycle, a missing target or a cross-slot annotation all mean
+	// nobody can say which fragment owns the slot. The resolver leaves those
+	// fragments standing rather than half-composing the page, so the view
+	// below is the UNRESOLVED one and has to say so — a silently unresolved
+	// composition looks identical to one with nothing to resolve.
+	if len(view.Errors) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Composition refusals (%d) — supersession NOT applied for these:\n", len(view.Errors))
+		for _, e := range view.Errors {
+			fmt.Fprintf(cmd.OutOrStdout(), "  [%s] %s\n", e.Code, e.Message)
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+	}
+
+	// Element: retired-fragments (visible-when: this page retired something)
+	//
+	// Named on the page whose composition removed them, because the owning
+	// feature's own surface is unchanged and shows no sign of it.
+	retiredHere := map[string]string{}
+	for _, f := range allFragments {
+		if f.Page != pageName {
+			continue
+		}
+		if by, ok := view.Retired[agent.FragmentRef(f)]; ok {
+			retiredHere[agent.FragmentRef(f)] = by
+		}
+	}
+	if len(retiredHere) > 0 {
+		refs := make([]string, 0, len(retiredHere))
+		for ref := range retiredHere {
+			refs = append(refs, ref)
+		}
+		sort.Strings(refs)
+		fmt.Fprintf(cmd.OutOrStdout(), "Retired by supersession (%d):\n", len(refs))
+		for _, ref := range refs {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s — superseded by %s\n", ref, retiredHere[ref])
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+	}
 
 	// Element: region-blocks (grouped-output → headed-section)
 	for _, region := range regions {
