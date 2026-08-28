@@ -766,13 +766,22 @@ func TestMatrix_SurfaceListCoversTheCheckCommands(t *testing.T) {
 	// matrixSurfaces' doc comment. Listed here so "not covered" is always
 	// an explicit choice.
 	excused := map[string]string{
-		"check-buildfile":   "needs a full valid buildfile per fixture; the fixtures here are fixture-data shaped",
-		"check-readiness":   "reports pipeline phase readiness, not project health",
-		"check-supports":    "multi-target projects only; every fixture here is presentation-only",
-		"check-write-set":   "guards a codegen write set, which none of these fixtures has",
-		"check-review-gate": "gates the coverage-review artifact, which none of these fixtures has",
-		"check-amendments":  "validates the amendment ledger; no fixture here has an amendments/ directory, so it would report an empty ledger for every row (the flag-era wording of this excuse died with the flag in v0.4 — the reason is the fixtures, not a mode)",
-		"check-applied":     "refine's pre-flight, not a project-health verdict: it answers 'is this ask already done' for one skill. Its drift half delegates to detectDrift, so check-drift (in the matrix) already grades that behaviour and the two cannot disagree; its ledger half needs amendments no fixture has",
+		"check-buildfile": "needs a full valid buildfile per fixture; the fixtures here are fixture-data shaped",
+		"check-readiness": "reports pipeline phase readiness, not project health",
+
+		// Deliberately excused rather than added: it is the code boundary's
+		// own computation surfaced early for the producer, so grading it here
+		// would grade CheckTestcasesReadiness twice under two names and let
+		// the copies disagree. Its behaviour is graded where the boundary is —
+		// the testcases-readiness claim and its witnesses. It also needs a
+		// buildfile plus testcases per fixture, which these fixture-data rows
+		// do not carry.
+		"check-testcases-ready": "the code boundary's readiness computation exposed to the build phase; graded at the boundary via the testcases-readiness claim, and needs build artifacts no fixture here has",
+		"check-supports":        "multi-target projects only; every fixture here is presentation-only",
+		"check-write-set":       "guards a codegen write set, which none of these fixtures has",
+		"check-review-gate":     "gates the coverage-review artifact, which none of these fixtures has",
+		"check-amendments":      "validates the amendment ledger; no fixture here has an amendments/ directory, so it would report an empty ledger for every row (the flag-era wording of this excuse died with the flag in v0.4 — the reason is the fixtures, not a mode)",
+		"check-applied":         "refine's pre-flight, not a project-health verdict: it answers 'is this ask already done' for one skill. Its drift half delegates to detectDrift, so check-drift (in the matrix) already grades that behaviour and the two cannot disagree; its ledger half needs amendments no fixture has",
 	}
 
 	entries, err := os.ReadDir(packageSourceDir(t))
