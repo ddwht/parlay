@@ -253,6 +253,18 @@ render-support:        # optional; presentation kind only
 
 Each entry is drawn from the closed set `{mounted, output, content}`. **Absence means the adapter supports no level** — `appears` cannot be emitted against it, so `build-feature` compiles every display-shaped criterion to a store-level assertion and stamps the case `coverage: state-only`. This is the default for every adapter that predates the field. As an adapter grows the ability to render-assert a level, listing it here **lifts** those cases from `state-only` to a real `appears` assertion on the next `build-feature` — no per-case edit, because the criterion already records what it needs and the gate now clears.
 
+### `hit-testing-support:` — whether the adapter can assert pointer reachability
+
+```yaml
+hit-testing-support: true   # optional; presentation kind only; default false
+```
+
+A SEPARATE term from `render-support:`, and deliberately not one of its levels. `render-support` is the closed set {mounted, output, content}; none of them says anything about whether a pointer can reach a component. Before this term existed, the two reachability assertions the assembly suite derives — `hit-reachable` and `not-hit-reachable` — were not merely unsupported but **inexpressible**: no adapter could declare them however capable it was, so the debt could never be paid off.
+
+Kept separate for a second reason: `render-support: mounted` means "I can assert a mount point exists". Letting that stand in as proof of hit-reachability would be exactly the substitution — a weaker observation accepted for a stronger claim — that the criterion machinery exists to prevent.
+
+Absence means false. No bundled adapter declares it today, so every reachability assertion is currently capability debt.
+
 `render-support:` is a declaration the build phase reads, not a codegen input: the per-framework machinery that actually makes an `appears: content` assertion runnable is adapter-implementation work, out of scope for the vocabulary itself.
 
 ## Section 1: Framework vocabulary

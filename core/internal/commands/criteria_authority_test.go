@@ -504,6 +504,30 @@ suites:
           - verify: element
             target: "@graded/fragment:Customer Detail"
             expected: disabled
+  # The derived assembly suite. A schema_version: 3 file that omits it now
+  # blocks: origin: is recordable at v3, so leaving it advisory there would let
+  # the whole composition mechanism be skipped behind a warning nobody must act
+  # on. This fixture's adapter declares neither render-support nor
+  # hit-testing-support, so both derived assertions are capability DEBT rather
+  # than executable cases — the state every project is in today.
+  - name: customers-page-assembly
+    kind: presentation
+    scope: route
+    origin: page-assembly
+    page: customers
+    file: src/customers.assembly.test.tsx
+    source_refs:
+      - "@graded/fragment:Customer Detail"
+    cases: []
+    pending_assertions:
+      - page: customers
+        subject: customer-detail
+        assertion: hit-reachable
+        needs_capability: hit-testing
+      - page: customers
+        subject: customer-detail
+        assertion: mounted
+        needs_capability: mounted
   - name: Archive
     kind: operation
     operation: "@graded/operation:customer.archive"
