@@ -25,6 +25,8 @@ package commands
 import (
 	"fmt"
 
+	"strings"
+
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
@@ -188,6 +190,16 @@ func CheckTestcasesReadiness(cfg *config.Context, slug string) TestcasesReadines
 			r.Warnings = append(r.Warnings, fmt.Sprintf("[%s] %s", o.Code, o.Message))
 		}
 	}
+
+	// The derived per-page assembly suite, diffed against what the composed
+	// page actually derives. Checked here rather than in the walkers above
+	// because it is the only part of testcases.yaml that is COMPUTED — the
+	// walkers ask whether authored cases discharge the standard, and a derived
+	// composition fact discharges nothing.
+	ab, aw := checkAssemblyReadiness(cfg, slug)
+	r.Blockers = append(r.Blockers, ab...)
+	r.Warnings = append(r.Warnings, aw...)
+
 	return r
 }
 
@@ -253,6 +265,24 @@ func unapprovedDowngrades(path string, content []byte, accepted []DowngradeDecis
 			out = append(out, fmt.Sprintf(
 				"[downgrade-approval-stale] %s: suite %q case %q has an accepted state-only decision, but %s. The approval was a judgment about what this case observed; retire it with `parlay internal retire-decision` and record a fresh one against the case as it stands, or strengthen the case",
 				path, c.Suite, c.Name, why))
+			continue
+		}
+		// A case can be stamped state-only while citing NOTHING. The message
+		// below interpolated c.Ref and c.Text unconditionally, so that case
+		// rendered as: discharges "" by observing STATE rather than what the
+		// criterion states (""). It then asserted "The case passes and cites
+		// its criterion correctly" — false, since there is no criterion — and
+		// prescribed `record-exception --kind state-only`, which refuses the
+		// empty ref it was just handed. The reader was told to run a command
+		// with values that do not exist, to fix a defect the text misnamed.
+		//
+		// A blocker that cannot describe itself must say what it actually
+		// found. The two shapes have different remedies and only one of them
+		// is a downgrade decision.
+		if strings.TrimSpace(c.Ref) == "" || strings.TrimSpace(c.Text) == "" {
+			out = append(out, fmt.Sprintf(
+				"[criterion-observed-weakly] %s: suite %q case %q is stamped `coverage: state-only` but cites no criterion, so there is nothing for the downgrade to be about. state-only records that a CONTRACT criterion was observed weakly; a case with no criterion has none to weaken, and no exception can be recorded for it — `record-exception` requires both a ref and a criterion. Either cite the criterion this case actually discharges, or drop the coverage: stamp (a derived composition fact discharges nothing and belongs in an `origin: page-assembly` suite)",
+				path, c.Suite, c.Name))
 			continue
 		}
 		out = append(out, fmt.Sprintf(

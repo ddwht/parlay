@@ -72,6 +72,12 @@ func registerInternalCommands() {
 		reachability(domainImpactCmd, ClassProbe),
 		reachability(schemaDigestCmd, ClassProbe),
 		reachability(emissionGroupsCmd, ClassProbe),
+		// Derives and prints the assembly suites a composed page requires.
+		// A probe: it computes and reports, and writes nothing.
+		reachability(emitAssemblyCmd, ClassProbe),
+		// The code boundary's own readiness computation, exposed to the
+		// phase that can still repair what it finds.
+		reachability(checkTestcasesReadyCmd, ClassProbe),
 		// Inventory, not a decision: it reports what is stranded and writes
 		// nothing. The walkthrough that acts on it is skill-required; this
 		// is the listing anything may read.

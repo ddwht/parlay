@@ -152,6 +152,17 @@ func computeSourceSignatures(featureDir, projectRoot, adapterPath string, unitHa
 		sigs[s.field] = h
 	}
 
+	// composition is the cross-feature term. Every field above is a file this
+	// feature owns, so a sibling retiring one of its fragments — or a manifest
+	// reordering one of its pages — moved nothing and left the buildfile
+	// reading fresh while its generated output no longer matched the composed
+	// page. See composition_signature.go.
+	comp, err := compositionSignatureForFeatureDir(featureDir, projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("composition signature: %w", err)
+	}
+	sigs["composition"] = comp
+
 	// adapter-version is the one required field. Without it the gate cannot
 	// tell an adapter upgrade from a no-op, and an adapter upgrade changes
 	// every emitted file.

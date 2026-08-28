@@ -95,6 +95,7 @@ const (
 	claimCoverageExcept    = "coverage-decisions"
 	claimTestcasesReady    = "testcases-readiness"
 	claimGeneratedState    = "generated-state"
+	claimRetiredOutput     = "retired-contribution"
 )
 
 // Branch IDs name the INDEPENDENT refusal paths a claim owns.
@@ -127,6 +128,9 @@ const (
 	branchSubjectRemoved      = "subject-removed"
 	branchUnappliedTail       = "unapplied-tail"
 	branchDowngradeUnapproved = "downgrade-unapproved"
+	branchRetiredEmitted      = "retired-emitted"
+	branchRetiredShared       = "retired-shared-path"
+	branchRetiredUnaccounted  = "retired-unaccounted"
 )
 
 // boundaryClaims is the registry every stage is assembled from.
@@ -182,6 +186,12 @@ var boundaryClaims = []boundaryClaim{
 		Stages: []string{gateStageCode, gateStageDone}, Blocking: true,
 		Branches: []string{branchSubjectMissing, branchSubjectUnreadable, branchDowngradeUnapproved},
 		Check:    claimTestcasesReadyCheck,
+	},
+	{
+		ID: claimRetiredOutput, What: "no component still emits for a fragment supersession retired",
+		Stages: []string{gateStageCode, gateStageDone}, Blocking: true,
+		Branches: []string{branchRetiredEmitted, branchRetiredShared, branchRetiredUnaccounted, branchSubjectUnreadable, branchSubjectMissing},
+		Check:    claimRetiredOutputCheck,
 	},
 	{
 		ID: claimGeneratedState, What: "generated code matches what was recorded",
@@ -321,6 +331,26 @@ func claimCoverageExceptCheck(cfg *config.Context, slug, featurePath string) cla
 func claimTestcasesReadyCheck(cfg *config.Context, slug, featurePath string) claimResult {
 	b, w := gateTestcasesReadiness(cfg, slug)
 	return claimResult{Blockers: b, Warnings: w}
+}
+
+// claimRetiredOutputCheck is the deletion half of cross-feature supersession.
+//
+// The composition signature forces a REBUILD when a sibling retires one of this
+// feature's fragments; it cannot say what the rebuild owes. Without this claim a
+// rebuilt buildfile may keep emitting and routing the superseded component, so
+// the racing pair supersedes: exists to prevent arrives one build later rather
+// than immediately.
+func claimRetiredOutputCheck(cfg *config.Context, slug, featurePath string) claimResult {
+	var r claimResult
+	for _, f := range checkRetiredContributions(cfg, slug) {
+		b := gateBlocker{Code: f.Code, Message: f.Message, Fix: f.Fix}
+		if f.Severity == "warning" {
+			r.Warnings = append(r.Warnings, b)
+			continue
+		}
+		r.Blockers = append(r.Blockers, b)
+	}
+	return r
 }
 
 // claimGeneratedStateCheck verifies generated code against what was recorded.

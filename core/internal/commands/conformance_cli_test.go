@@ -289,6 +289,8 @@ var buildfileReaderAllowlist = map[string]string{
 
 	"commands/emission_groups.go": "planBuildfile reads plan.creates/modifies, which stays top-level in v2 — per-target rows aggregate into it (WP2.1 audit: v1-only-correct).",
 
+	"commands/retired_contribution.go": "retiredPlan reads only plan: (creates/modifies/deletes, plus the per-target rows that aggregate into it), which stays top-level in v2. Its components come from agent.ResolveBuildfileComponents rather than a local struct, precisely because components: is a relocated section — a local read would see zero components on every multi-target buildfile and clear the check for the projects it matters most to.",
+
 	"commands/composition_flow.go": "route ownership routes through agent.ResolveBuildfileRoutes after WP2.1; the remaining own struct reads only plan:, which stays top-level in v2.",
 
 	"commands/check_write_set.go": "reads plan.creates/modifies only — the write-set allowlist the buildfile's plan declares, top-level and v2-safe.",

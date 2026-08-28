@@ -822,50 +822,19 @@ func sharedRegionWarnings(fragments []parser.Fragment, page *parser.Page, pageNa
 // the way two amendments carrying the same sequence number collide, so it is an
 // error rather than a warning. Reported project-wide because supersedes crosses
 // feature boundaries and no one page owns the pair.
+// Delegates to the resolver rather than re-deriving the answer. This function
+// used to detect two-headed forks with its own walk and nothing applied the
+// result; now the same walk that RESOLVES the composition reports it, so a
+// shape the validator calls clean cannot be one the resolver silently treats
+// differently. It also picks up the three refusals a detect-only pass had no
+// reason to look for — an unknown target, a cycle, and a cross-slot
+// annotation — because you only need those once you try to apply the edge.
 func supersedesConflicts(specDir string) []agent.ValidationError {
 	fragments, err := parser.ScanAllSurfaces(specDir)
 	if err != nil {
 		return nil
 	}
-	type head struct{ feature, fragment string }
-	byTarget := map[string][]head{}
-	var order []string
-	for _, f := range fragments {
-		target := strings.TrimSpace(f.Supersedes)
-		if target == "" {
-			continue
-		}
-		if _, seen := byTarget[target]; !seen {
-			order = append(order, target)
-		}
-		byTarget[target] = append(byTarget[target], head{f.Feature, f.Name})
-	}
-
-	var errs []agent.ValidationError
-	for _, target := range order {
-		heads := byTarget[target]
-		if len(heads) < 2 {
-			continue
-		}
-		sort.Slice(heads, func(i, j int) bool {
-			if heads[i].feature != heads[j].feature {
-				return heads[i].feature < heads[j].feature
-			}
-			return heads[i].fragment < heads[j].fragment
-		})
-		parts := make([]string, 0, len(heads))
-		for _, h := range heads {
-			parts = append(parts, fmt.Sprintf("@%s/%s", h.feature, parser.Slugify(h.fragment)))
-		}
-		errs = append(errs, agent.ValidationError{
-			Code:     "surface-supersedes-conflict",
-			Message:  fmt.Sprintf("%d fragments (%s) all supersede %s — a two-headed chain the composition cannot resolve to one winner", len(heads), strings.Join(parts, ", "), target),
-			Context:  "supersedes",
-			Fix:      "keep one superseding fragment, or chain them (A supersedes B, B supersedes the target) so a single head remains",
-			Severity: "error",
-		})
-	}
-	return errs
+	return agent.ResolveActiveView(fragments).Errors
 }
 
 // sharedInfrastructureConcepts scans every feature's infrastructure.md and
