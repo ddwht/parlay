@@ -303,3 +303,81 @@ func TestAuthoredSignatureIsOrderIndependent(t *testing.T) {
 		t.Error("unit ids and hashes must be delimited, not concatenated")
 	}
 }
+
+// A signature the writer cannot emit is permanently stale.
+//
+// computeSourceSignatures produced "composition" and signatureFieldOrder — the
+// allowlist writeSourceSignatures filters through — did not name it, so the
+// key was computed, compared by the freshness gate, and never written. The
+// gate demanded a property no producer emitted, and the remedy it prescribed
+// (re-run build-feature) could not clear it, because the writer dropped the
+// field again every time. The buildfile was unconditionally stale.
+//
+// That is the same shape as the assembly-suite defect this release repaired,
+// one layer along, so it gets a guardrail rather than only a fix: every field
+// the computer can produce must be one the writer can emit.
+func TestSignatureFieldOrderCoversEveryComputedSignature(t *testing.T) {
+	dir := t.TempDir()
+	featureDir := filepath.Join(dir, "spec", "intents", "graded")
+	if err := os.MkdirAll(featureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"intents.md":        "# graded\n\n## Do The Thing\n",
+		"dialogs.md":        "# graded\n\n### Do The Thing\n",
+		"capabilities.yaml": "feature: graded\n",
+		"infrastructure.md": "# infra\n",
+		"surface.yaml":      "feature: graded\nfragments:\n    - name: Panel\n      page: dashboard\n      region: main\n      shows: detail\n",
+	} {
+		if err := os.WriteFile(filepath.Join(featureDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "page.layout.yaml"), []byte("nodes: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "domain-model.yaml"), []byte("entities: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := filepath.Join(dir, "react.adapter.yaml")
+	if err := os.WriteFile(adapter, []byte("name: react\nkind: presentation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sigs, err := computeSourceSignatures(featureDir, dir, adapter, map[string]string{"engine": "sha256:abc"})
+	if err != nil {
+		t.Fatalf("computeSourceSignatures: %v", err)
+	}
+	if len(sigs) == 0 {
+		t.Fatal("fixture produced no signatures; the test would prove nothing")
+	}
+
+	writable := map[string]bool{}
+	for _, f := range signatureFieldOrder {
+		writable[f] = true
+	}
+	for field := range sigs {
+		if !writable[field] {
+			t.Errorf("computeSourceSignatures produces %q but signatureFieldOrder omits it — the writer will drop the field, so the freshness gate compares a signature no producer can ever write and the buildfile is permanently stale", field)
+		}
+	}
+
+	// And the other direction, end to end: what the writer puts on disk must
+	// carry every computed field, not merely be allowed to.
+	buildfile := filepath.Join(dir, "buildfile.yaml")
+	if err := os.WriteFile(buildfile, []byte("feature: graded\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSourceSignatures(buildfile, sigs); err != nil {
+		t.Fatalf("writeSourceSignatures: %v", err)
+	}
+	written, err := os.ReadFile(buildfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for field := range sigs {
+		if !strings.Contains(string(written), "  "+field+":") {
+			t.Errorf("signature %q was computed but does not appear in the written buildfile", field)
+		}
+	}
+}

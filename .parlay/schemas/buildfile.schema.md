@@ -482,6 +482,7 @@ The `source-signatures:` section records a **content-based** signature for every
 | `domain` | When domain-model.yaml exists | Content hash of the project domain-model.yaml at build time |
 | `layout` | When the feature has a layout-bearing page | Content hash of the page's layout file at build time |
 | `authored` | When the project declares at least one hand-authored unit | Aggregate hash over every unit's declared file set (see `authored.schema.md`) at build time |
+| `composition` | When the feature contributes a fragment to any page | Hash of the RESOLVED composed view of every page this feature touches — sibling contributions, supersession retirements, and page manifests |
 | `adapter-version` | Yes | Content hash or version string of the adapter file at build time |
 
 The field order in this table is the emission order `parlay internal scaffold-signatures` writes, so a regenerated block diffs against a hand-written one as changed hashes rather than as a reordering nobody can read. Adding a field here means adding it to `signatureFieldOrder` in the same change.
@@ -491,6 +492,8 @@ The field order in this table is the emission order `parlay internal scaffold-si
 <!-- /parlay:rationale -->
 
 <!-- parlay:rationale -->
+**Why `composition` is needed.** Every other field hashes a file the feature owns, plus the shared domain model. So when ANOTHER feature retires one of this feature's fragments with `supersedes:`, or a page manifest reorders a page it contributes to, nothing this feature owns changes: the buildfile reads fresh while its generated output no longer matches the composed page. `composition` is the cross-feature term, scoped to the pages the feature touches — a project-wide hash would mark every feature stale on any unrelated page edit, and staleness nobody can act on is staleness everybody ignores.
+
 **Why `capabilities` and `infrastructure` were added.** The freshness gate's job is to catch every source artifact that could change buildfile content out from under a stale build. Before this revision, `source-signatures:` covered `surface`/`domain`/`layout` but not `capabilities.yaml` or `infrastructure.md` — even though both feed the multi-target `operations:` block and `cross-cutting:` entries respectively (see "Section: Multi-target operations and targets blocks" and the Cross-cutting section above). A capabilities or infrastructure edit with no matching surface/domain/layout change previously left the freshness gate silent about a buildfile that no longer reflected its own declared operations or cross-cutting entries. Both are now first-class signature inputs, present whenever the corresponding artifact exists.
 <!-- /parlay:rationale -->
 

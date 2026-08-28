@@ -427,6 +427,7 @@ The `source-signatures:` section records a **content-based** signature for every
 | `domain` | When domain-model.yaml exists | Content hash of the project domain-model.yaml at build time |
 | `layout` | When the feature has a layout-bearing page | Content hash of the page's layout file at build time |
 | `authored` | When the project declares at least one hand-authored unit | Aggregate hash over every unit's declared file set (see `authored.schema.md`) at build time |
+| `composition` | When the feature contributes a fragment to any page | Hash of the RESOLVED composed view of every page this feature touches — sibling contributions, supersession retirements, and page manifests |
 | `adapter-version` | Yes | Content hash or version string of the adapter file at build time |
 
 The field order in this table is the emission order `parlay internal scaffold-signatures` writes, so a regenerated block diffs against a hand-written one as changed hashes rather than as a reordering nobody can read. Adding a field here means adding it to `signatureFieldOrder` in the same change.

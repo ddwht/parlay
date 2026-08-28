@@ -259,9 +259,15 @@ func findTopLevelBlock(lines []string, key string) (int, int) {
 // signatureFieldOrder pins emission order to the schema's field order, so
 // regenerating a hand-written block produces a diff of changed hashes
 // rather than a reordering nobody can read.
+// It is also the writer's ALLOWLIST: writeSourceSignatures emits only fields
+// named here, so a signature this list omits is computed, compared, and never
+// written — permanently stale, with the remedy the blocker prescribes unable
+// to clear it. `composition` shipped in exactly that state. Anything
+// computeSourceSignatures can produce must appear here, and
+// TestSignatureFieldOrderCoversEveryComputedSignature enforces it.
 var signatureFieldOrder = []string{
 	"intents", "dialogs", "surface", "capabilities",
-	"infrastructure", "domain", "layout", "authored", "adapter-version",
+	"infrastructure", "domain", "layout", "composition", "authored", "adapter-version",
 }
 
 // combineUnitHashes folds every unit's aggregate hash into one signature
