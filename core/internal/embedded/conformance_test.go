@@ -420,6 +420,7 @@ var knownUnreachableValidators = map[string]string{
 // trace at runtime — a skipped confirmation looks exactly like a granted
 // one.
 var phaseModules = []string{
+	"create-intents",
 	"add-feature",
 	"scaffold-dialogs",
 	"create-artifacts",

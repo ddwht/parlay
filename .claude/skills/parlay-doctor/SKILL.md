@@ -109,7 +109,24 @@ finding has one right disposition:
   amendment was mutated or deleted. First check for the one non-violation
   case: a feature with these findings and **no** amendments at all is an
   unmigrated pre-v0.4 project — route to `parlay migrate-ledger` (see the
-  migrations table), not to the repairs below. Otherwise present the
+  migrations table), not to the repairs below.
+
+  **Second special case: an intent "removed after freeze" that is still in the
+  file, inside an HTML comment.** Earlier versions parsed `## ` headings inside
+  `<!-- ... -->` as real intents, so a feature built then has a baseline entry
+  for a commented block that the current parser correctly ignores. The generic
+  remedy below is ambiguous here, so ask which the author meant:
+  - It should still be a founding promise — **uncomment the identical block**.
+    The same slug and hash come back and no founding change occurred; nothing
+    to amend.
+  - It was meant to be inactive — that is a lifecycle decision, not a parser
+    artifact. Retire it through supersession (`supersedes_intents:` in an
+    amendment). Do not let it disappear as a side effect of an upgrade.
+
+  Never restamp the baseline to make this finding go away: that would decide
+  the question on the author's behalf, and the whole point of the finding is
+  that the promise set changed and somebody has to say whether that was
+  intended. Otherwise present the
   specific findings and offer exactly two repairs, both
   destructive-adjacent and both needing explicit confirmation:
   - **Restore** — `git checkout` the affected file(s) back to the recorded

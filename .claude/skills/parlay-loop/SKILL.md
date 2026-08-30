@@ -56,7 +56,7 @@ Read the named module and follow it. Because you are the driver, `AskUserQuestio
 
 ## Phase modules
 
-The five phases are not menu entries. Their instructions live at `.parlay/modules/{add-feature,scaffold-dialogs,create-artifacts,build-feature,generate-code}.md`, and the subagent that owns a phase reads the module it needs. Nobody has to know which of five skills comes next — the driver knows the sequence, and each phase-group agent loads its own instructions.
+The five phases are not menu entries. Their instructions live at `.parlay/modules/{create-intents,add-feature,scaffold-dialogs,create-artifacts,build-feature,generate-code}.md`, and the subagent that owns a phase reads the module it needs. `create-intents` is the intents phase's own module: `add-feature` creates the folder, and `create-intents` governs what goes in it. Nobody has to know which of five skills comes next — the driver knows the sequence, and each phase-group agent loads its own instructions.
 
 ## Prerequisites
 
@@ -129,6 +129,8 @@ The driver then:
 A phase that emits a decision request must have left the filesystem in a coherent state first: the decision is a pause, not a half-write. A phase that cannot pause safely must instead complete the safe option and report what it did.
 
 **Inline degradation.** If no subagent surface exists at all, the driver runs the phases inline in its own context. There, `AskUserQuestion` works, so the driver prompts directly at each decision point instead of round-tripping a decision request. This mode is slower to blow context but has no confirmation gap.
+
+Running inline means loading the phase modules the subagent would have loaded — the guidance lives in the modules, not in the agent definitions, and a driver that skips them runs the phases without their instructions. For the intents phase specifically, read `.parlay/modules/create-intents.md` and apply its soft boundaries before the phase boundary, exactly as `parlay-designer` would; `add-feature.md` only creates the folder and says nothing about what belongs in it.
 
 ## Non-interactive mode
 

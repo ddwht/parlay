@@ -219,3 +219,62 @@ func TestBuildBaseline_RecordsLedgerState(t *testing.T) {
 		t.Errorf("expected baseline schema-version 3, got %d", baseline.SchemaVersion)
 	}
 }
+
+// A baseline that counted a commented-out intent must FAIL VISIBLY.
+//
+// ParseIntentsFile used to read `## ` headings inside `<!-- ... -->` as real
+// intents. Any feature built under that behaviour has a baseline entry for a
+// commented block, and under the corrected parser that slug is simply gone —
+// so the promise set silently shrinks unless drift catches it.
+//
+// It does: the slug is reported as removed-after-freeze. That is the right
+// outcome. A parser fix at the base of the pipeline changes what a founding
+// document promises, and the one thing it must not do is change it quietly.
+//
+// Deliberately NOT auto-repaired. The remedy is a decision only the author can
+// make: if the block was meant to stay a founding promise, uncommenting the
+// identical text restores the same slug and hash under the new parser and
+// nothing semantic changed; if it was meant to be inactive, retiring it is a
+// lifecycle act that goes through supersession, not something that should
+// happen as a side effect of upgrading.
+func TestDetectDrift_BaselineCountingACommentedIntentFailsVisibly(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+	saveLedgerBaseline(t, featureDir, func(b *Baseline) {
+		// The entry a legacy build would have written for a commented block.
+		b.Intents["retired-probe"] = IntentHash{ContentHash: "sha256:legacy", Goal: "sha256:legacy"}
+	})
+
+	// The founding doc carries that block, commented out — visible to the old
+	// parser, correctly invisible to the new one.
+	commented := ledgerTestIntents + "\n<!--\n## Retired Probe\n\n**Goal**: An old idea.\n**Persona**: Admin\n-->\n"
+	if err := os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(commented), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Control: the commented block must not parse, or the assertion below
+	// would be about something else entirely.
+	parsed, err := parser.ParseIntentsFile(filepath.Join(featureDir, "intents.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range parsed {
+		if p.Slug == "retired-probe" {
+			t.Fatal("the commented block still parses; this test is not exercising the new semantics")
+		}
+	}
+
+	output, err := detectDrift(testContext(t), "my-feature", featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range output.LedgerIntegrity {
+		if strings.Contains(v, "retired-probe") && strings.Contains(v, "removed after freeze") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a baselined intent that no longer parses must be reported, not silently dropped; ledger_integrity=%v", output.LedgerIntegrity)
+	}
+}

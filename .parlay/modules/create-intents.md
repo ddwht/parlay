@@ -1,0 +1,216 @@
+# create-intents
+
+_Guide the authoring and revision of a feature's intents.md, including the soft boundaries that catch an intent drifting toward the solution_
+
+# Create Intents
+
+Guide the authoring or revision of `spec/intents/{feature}/intents.md`.
+
+Read `intent.schema.md` (or its digest) for the shape: the ten fields, which are
+required, and the parse rules. This module is about the part the schema cannot
+check — whether what the intent SAYS is an intent at all.
+
+<!-- parlay:active-root-aware -->
+## Active root
+
+Every relative path below is interpreted against the **active root** — the parlay project root resolved by the CLI from cwd, the `--root` flag, or `PARLAY_ROOT`. The CLI handles resolution; this skill describes paths abstractly. Two categories matter:
+
+- **Active-root paths** (`.parlay/build/`, `spec/intents/`, etc.) live under whichever root the CLI resolves to.
+- **Repo-level-root paths** (`.parlay/schemas/`, `.parlay/adapters/`, the deployed agent surface) live only at the repo-level root. When the active root is a child, the CLI loads these from the parent automatically.
+
+When invoking the CLI, pass `--ambiguity-as-signal` on commands that might face an ambiguous active root. If a CLI invocation exits with code 11 and emits a JSON envelope on stderr (`{"kind":"ambiguity",...}`), the root cannot be guessed — the candidates are real projects, and picking one writes into the wrong tree.
+
+Who resolves it depends on where you are running. If you own the user interaction — the loop driver, or a skill the user invoked directly — prompt with the listed candidate roots and re-invoke with `--root <chosen>`. If you are a **phase module** running inside a subagent, you have no interactive tool: return an `ambiguity` decision request listing the candidates as options and let the driver ask.
+
+## Asking the user
+
+This skill runs as a **phase module** — normally inside a parlay-loop subagent, where no interactive tool exists. A question asked there is written into a transcript nobody reads, and you then answer it yourself; that is not a confirmation, it is a decision made on the user's behalf. So do not prompt. **Stop and return a decision request** as your final output. The driver prompts and resumes you with the chosen `id`, with your context intact, so you continue exactly where you stopped.
+
+````
+```yaml parlay-decision
+kind: phase-boundary        # phase-boundary | override | overwrite | failure | ambiguity | impasse
+phase: <the phase you are in>
+question: "<the one question, in the user's terms>"
+context: |
+  <what you found, and what is already on disk>
+options:
+  - id: <slug>
+    label: "<what the user picks>"
+    detail: "<the consequence, when it isn't obvious>"
+default: <id>               # advancement kinds ONLY — see below
+resume: "Re-enter with decision: <id>. <what is written so far>"
+```
+````
+
+**The `default:` field.** It names the one option id a driver running `--non-interactive` may take without asking. It exists so an unattended run has a defined answer rather than an inferred one, and it must be an id from your own `options:` list.
+
+Only the two advancement kinds may carry a default: `phase-boundary` (normally `proceed`) and `override` (your recommended set). Those are decisions where one answer is the recommendation and the others are the user electing to intervene — taking the recommendation unattended is what the user asked for by passing the flag.
+
+The other four kinds must NOT carry one, and a driver must abort rather than invent one, because on each of them every available answer is wrong in a way the user would want to know about:
+
+- `ambiguity` — the protocol already forbids resolving one by taking the cheapest reading. A flag must not become the exception that makes it allowed.
+- `overwrite` — one answer destroys work that may have been hand-edited; the other ships a prototype that diverges from its spec. There is no safe default, only a choice about which loss is acceptable.
+- `failure` — the safe-looking answer proceeds past a suite that did not pass, which is the one outcome a CI run exists to prevent.
+- `impasse` — the pipeline cannot express what the spec asks for, and the offered way forward hands the work to a person permanently. Accepting that is a scope reduction nobody can consent to on the user's behalf.
+
+So: when you raise one of those four, omit `default:`. Adding one does not make the run smoother; it makes an unattended run take an action nobody authorized.
+
+**`impasse` vs `ambiguity`.** An ambiguity has two readings and you cannot pick between them; an impasse has none — the pipeline has no way to express what the spec asks for, whichever reading you take. They are separate kinds because their resolutions differ in kind: an ambiguity is settled by the user choosing a reading, an impasse by the user agreeing that this part of the system will be written by hand, declared as a unit, and never generated. Filing an impasse as an ambiguity offers the user a choice between readings that all fail.
+
+Leave the filesystem coherent before you stop — a decision is a pause, not a half-write. If you genuinely cannot pause at that point, take the option that preserves the user's work, never the one that destroys it, and say so in your report.
+
+Two things not to do: never narrow the options to spare the user a question, and never resolve an ambiguity by taking the reading that is cheapest to implement. Both turn a decision the user should own into one you made quietly.
+
+## Why this module exists
+
+An intent has almost no content rules. Six of its ten fields — Context, Action,
+Objects, Constraints, Verify, Questions — carry no structural validation at
+all, nothing anywhere forbids interface language, and the whole file freezes at
+the feature's first green build.
+
+The founding text is then immutable, but the project is not stuck: current
+authority moves on through the amendment ledger, and a founding intent can be
+retired with `supersedes_intents:`. What a drifted intent costs is therefore
+not permanence — it is that every artifact derived at birth inherits the drift,
+and correcting it later means amendments against a contract that was wrong from
+the start rather than a conversation before anything was built. Catching it
+here costs one exchange. Missing it costs the ledger.
+
+## Freeze pre-flight — run this first
+
+These boundaries are an authoring-time aid, and `intents.md` freezes at the
+feature's first green build. Before reviewing anything, run:
+
+```
+parlay internal check-applied @{feature}
+```
+
+- `has_baseline: true` — the founding docs are frozen. **Do not review the
+  prose and do not raise a single wording finding.** There is no legal edit, so
+  a finding could only nag. If something about the founding text genuinely
+  looks wrong, the question is whether the CONTRACT is wrong today: check the
+  amendment ledger and the contract artifacts, and route a real problem to
+  `/parlay-refine`. Clumsy founding wording with a correct contract is left
+  alone — history is allowed to be imperfect.
+- `has_baseline: false` and an empty `amendments` ledger — the feature is at
+  birth. Review normally.
+- The probe cannot be read or does not parse — **stop and say so**. Do not
+  infer freeze from whether a buildfile or artifacts happen to exist: guessing
+  wrong in the permissive direction means advising edits to a frozen document,
+  which is the one outcome this pre-flight exists to prevent.
+
+## The one failure mode
+
+Intents drift toward the **solution**. Not toward being vague — toward being
+specific about the wrong thing: the screen that will show it, the control that
+will trigger it, the record the system will write.
+
+This happens because the author usually knows what they are going to build, and
+describing the build is easier than describing the need. `Action` is where it
+enters most often, since it is the field that asks *how*.
+
+## Two rules that govern every boundary
+
+**Route, do not delete.** Drifted content is usually misplaced, not wrong. A
+technical mechanism belongs in `infrastructure.md`; an interaction belongs in
+`dialogs.md`; a rendering belongs in the surface. Always say where it goes —
+an author who is told only that something is wrong will delete real
+information.
+
+**Domain is per product.** "Interface noun" is not a fixed list. `Component`,
+`Route` and `Screen` are domain concepts for a UI builder; `command-argument`
+and `generated-file` are domain concepts for a CLI toolkit, and parlay's own
+intents use them correctly. The test is whether a term is meaningful in THIS
+product's domain, never whether it sounds like a widget. Getting this wrong
+produces confident, wrong corrections on exactly the projects whose domain IS
+software.
+
+## Working the boundaries
+
+`intent.schema.md` § Soft boundaries carries the full table, marked
+**Obligation** or **Heuristic**. Apply them like this:
+
+1. Read the block as a whole first, for cohesion, before looking at fields.
+   Every field can be individually clean and still be stitched from different
+   intents. Read it as a sentence: *this role, in this situation, does this to
+   these things, so that this outcome holds, and here is how you would know.*
+   If that sentence does not survive, the intent is describing more than one
+   thing — and that is worth raising before any wording note.
+
+2. Then the two critical fields, `Action` and `Objects`. These carry the drift
+   most often and are the hardest to repair later, because dialogs and surface
+   derive from them directly.
+
+3. Then the rest.
+
+## Worked examples
+
+Drawn from a tax-filing domain. The bad column is not a strawman — each is the
+shape an author reaches for when they already know the screen.
+
+| Field | Drifted | Repaired |
+|---|---|---|
+| Goal | "create an object in the accounting system" | "be in good standing with the tax authorities" |
+| Persona | "accountant" | "a person sending the tax report" |
+| Context | "the user opens the reports page" | "the quarterly reporting period has closed" |
+| Action | "upload the tax report to the system" | "fill in the tax report and send it to the tax authority" |
+| Objects | "tax modal window, send report button" | "tax report, tax number" |
+| Constraints | "the screen fits only 10 tax entities" | "the tax report must be sent before 1 March" |
+
+Note what the `Action` repair keeps: it is still an action performed largely in
+software. The correction is task-level versus control-level, NOT outside versus
+inside the product. "Approve the invoice" and "reconcile the account" are
+proper actions. What drifts is "click Approve", "open the reconciliation
+screen", "select from the dropdown".
+
+Note what the `Constraints` repair loses: nothing. "The screen fits only 10
+entries" is a real constraint — it belongs in `infrastructure.md`. Say so.
+
+## How to present findings
+
+Never rewrite an intent silently, and never present a finding as a verdict.
+Offer three responses per finding:
+
+- **Revise** — the suggested wording, so the author can accept it directly.
+- **Keep, with reason** — the author knows their domain. `Objects: Route` is
+  correct for a UI builder, and being asked twice is worse than not being
+  asked. **This suppression lasts for the current authoring conversation
+  only** — there is nowhere durable to record it, and claiming otherwise would
+  promise something no later session can honour. If an exception is worth
+  keeping permanently, fold the reason into the wording so the intent explains
+  itself to the next reader (`Objects: Route (a routing entry the user
+  authors, not a navigation target)`). That survives; a remembered decision
+  does not.
+- **Reroute** — the content is real and belongs elsewhere. Name the artifact
+  and carry the text over rather than making the author retype it.
+  **Never remove the only copy before the destination exists.** Dialogs and
+  artifacts are later phases, and a user may stop after intents; a phase
+  decision is not durable workflow state. So either complete the move within
+  this session, or leave the text in place and record the intended destination
+  in the phase-boundary `context:`. "Route, do not delete" must not itself
+  delete information between sittings.
+
+Fold the findings into the intents phase-boundary decision's `context:`,
+alongside the existing gap analysis. They are advisory, and that has a concrete
+consequence for the decision you raise: a soft-boundary finding never becomes
+the `question:`, never removes the advancing option, and never changes the
+`default:`. It is context the user reads while deciding, not a reason the
+phase cannot end. A run under `--non-interactive` therefore advances past every
+finding here, which is correct — wording is not a gate.
+
+## What not to do
+
+- **Do not lint by word list.** These are semantic judgments. A word list fires
+  on "form" in a medical product and misses "the place where they pick the
+  thing" in any product.
+- **Do not check `Objects` against `domain-model.yaml` here.** The dependency
+  runs the other way at birth: `create-domain-model` derives entities FROM
+  Objects, so a missing entry means "not modelled yet" far more often than it
+  means drift. And plenty of legitimate Objects — documents, policies, events,
+  contextual nouns — never become entities at all.
+- **Do not apply any of this to a frozen `intents.md`.** After the first green
+  build there is no legal edit, so a finding could only nag. If a concern
+  surfaces later in `/parlay-doctor` or `/parlay-refine`, route it to current
+  authority: if the CONTRACT is wrong today, record an amendment or supersede
+  the intent; if only the founding wording is clumsy, do nothing. History is
+  allowed to be imperfect.

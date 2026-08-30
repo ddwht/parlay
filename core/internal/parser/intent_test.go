@@ -102,3 +102,57 @@ func TestParseIntentsFile(t *testing.T) {
 		t.Errorf("Context should be empty, got %q", i2.Context)
 	}
 }
+
+// A commented-out intent is not an intent.
+//
+// This scanner has no Markdown state, so before the comment handling any
+// `## ` inside `<!-- ... -->` became an intent and its `**Goal**:` lines were
+// consumed as fields. That made `no-intents` — which errors at build — pass on
+// a feature nobody had authored, and it made the scaffolded template parse as
+// real content.
+func TestParseIntents_IgnoresHTMLComments(t *testing.T) {
+	dir := t.TempDir()
+
+	multiline := filepath.Join(dir, "multiline.md")
+	if err := os.WriteFile(multiline, []byte(
+		"# F\n\n---\n\n<!--\n## Commented Intent\n\n**Goal**: g\n**Persona**: p\n-->\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseIntentsFile(multiline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("a commented block parsed as %d intent(s): %+v", len(got), got)
+	}
+
+	sameLine := filepath.Join(dir, "sameline.md")
+	if err := os.WriteFile(sameLine, []byte(
+		"# F\n\n<!-- ## Hidden -->\n\n## Real Intent\n\n**Goal**: g\n**Persona**: p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ParseIntentsFile(sameLine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Title != "Real Intent" {
+		t.Fatalf("same-line comment mishandled; got %+v", got)
+	}
+
+	// Visible intent syntax after a closed comment is still read. This is
+	// intents.md's own line grammar — the file has a line-oriented format, not
+	// a CommonMark parser — so this is a deliberate policy choice, not an
+	// inherited Markdown heading rule.
+	trailing := filepath.Join(dir, "trailing.md")
+	if err := os.WriteFile(trailing, []byte(
+		"# F\n\n<!-- note --> ## Visible\n\n**Goal**: g\n**Persona**: p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ParseIntentsFile(trailing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Title != "Visible" {
+		t.Fatalf("text after a closed comment was dropped; got %+v", got)
+	}
+}
