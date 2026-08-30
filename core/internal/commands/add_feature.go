@@ -64,7 +64,7 @@ func writeAuthoredUnit(unitPath, slug, displayName string) error {
 		summary = displayName
 	}
 
-	intentsContent := fmt.Sprintf("# %s\n\n> \n\n---\n\n", displayName)
+	intentsContent := scaffoldedIntents(displayName)
 	if err := os.WriteFile(filepath.Join(unitPath, "intents.md"), []byte(intentsContent), 0644); err != nil {
 		return fmt.Errorf("creating intents.md: %w", err)
 	}
@@ -160,7 +160,7 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	intentsContent := fmt.Sprintf("# %s\n\n> \n\n---\n\n", displayName)
+	intentsContent := scaffoldedIntents(displayName)
 	if err := os.WriteFile(filepath.Join(featurePath, "intents.md"), []byte(intentsContent), 0644); err != nil {
 		return fmt.Errorf("creating intents.md: %w", err)
 	}
@@ -236,7 +236,7 @@ func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, 
 		return nil
 	}
 
-	intentsContent := fmt.Sprintf("# %s\n\n> \n\n---\n\n", displayName)
+	intentsContent := scaffoldedIntents(displayName)
 	if err := os.WriteFile(filepath.Join(featurePath, "intents.md"), []byte(intentsContent), 0644); err != nil {
 		return fmt.Errorf("creating intents.md: %w", err)
 	}
@@ -271,4 +271,52 @@ func toTitleCase(s string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// scaffoldedIntents is the starting text of a new feature's intents.md.
+//
+// It used to be a heading, an empty blockquote and a rule — an author opened a
+// blank document with no prompt of any kind. That is where drift starts: with
+// nothing to write against, the easiest thing to describe is the screen you
+// already have in mind, and intents.md freezes at the first green build with
+// whatever that produced.
+//
+// The commented block is a template, not an example: it names each field and
+// the distinction that field most often gets wrong, so the prompt travels with
+// the file rather than living only in a module the author may never open.
+// Commented because a scaffold must parse as an intents.md with ZERO intents —
+// `no-intents` warns while authoring and errors at build, and a fake example
+// intent would satisfy that check falsely.
+func scaffoldedIntents(displayName string) string {
+	return fmt.Sprintf(`# %s
+
+> 
+
+---
+
+<!--
+Write one intent per `+"`## `"+` heading. Delete this comment when you have one.
+
+## <What the user wants, not what the product has>
+
+**Goal**: <the user-world outcome and why it matters — not the operation the system performs>
+**Persona**: <the role doing THIS job — "a person sending the tax report", not "accountant">
+**Priority**: <P0 | P1 | P2 — cost of leaving the USER OUTCOME unmet, not build order>
+**Context**: <the situation that makes this task arise — not "the user opens the X page">
+**Action**: <the task-level act — "send the report to the authority", not "click Upload">
+**Objects**: <domain concepts this touches — "tax report, tax number", not "the modal">
+
+**Constraints**:
+- <a limit the world imposes; an implementation limit belongs in infrastructure.md>
+
+**Verify**:
+- <independently testable evidence the outcome happened — one claim per bullet>
+
+**Questions**:
+- <a design choice genuinely still open>
+
+Full guidance, including what to do when your domain IS software:
+.parlay/schemas/intent.schema.md, section "Soft boundaries".
+-->
+`, displayName)
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 func TestAddFeature_CreatesFeatureFolder(t *testing.T) {
@@ -299,5 +300,75 @@ func TestAddFeature_AuthoredRequiresSources(t *testing.T) {
 	}
 	if _, statErr := os.Stat(testContext(t).FeaturePath("codec-core")); statErr == nil {
 		t.Error("the refusal must happen before any directory is created")
+	}
+}
+
+// The scaffold must prompt without pretending to be an intent.
+//
+// `no-intents` warns while authoring and ERRORS at build, so a scaffold whose
+// template parsed as a real intent would satisfy that check falsely — a
+// feature would look authored when nobody had written anything.
+//
+// Checked through parser.ParseIntentsFile, not by inspecting the string. The
+// first version of this test truncated the scaffold at `<!--` and then
+// asserted no `## ` remained, which is an invented parser path: the real
+// scanner had no comment state and DID parse the commented template as an
+// intent titled "<What the user wants...>". The test passed while the thing it
+// claimed to prevent was happening.
+func TestScaffoldedIntents_PromptsWithoutFakingAnIntent(t *testing.T) {
+	out := scaffoldedIntents("Tax Filing")
+
+	if !strings.HasPrefix(out, "# Tax Filing\n") {
+		t.Errorf("scaffold must open with the feature heading; got %q", out[:40])
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "intents.md")
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, err := parser.ParseIntentsFile(path)
+	if err != nil {
+		t.Fatalf("scaffold does not parse: %v", err)
+	}
+	if len(parsed) != 0 {
+		t.Fatalf("scaffold parsed as %d intent(s) — no-intents would pass on an unauthored feature: %+v", len(parsed), parsed)
+	}
+
+	// And the graded verdict, not just the parse: authoring warns, build errors.
+	for _, tc := range []struct {
+		mode agent.ValidationMode
+		want agent.Severity
+	}{{agent.ModeAuthoring, agent.SeverityWarning}, {agent.ModeBuild, agent.SeverityError}} {
+		found := false
+		for _, o := range agent.ValidateIntentsDeep(tc.mode, path, []byte(out)) {
+			if o.Code == "no-intents" {
+				found = true
+				if o.Severity != tc.want {
+					t.Errorf("no-intents severity in %v = %v, want %v", tc.mode, o.Severity, tc.want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("scaffold did not report no-intents in %v — it is being read as authored", tc.mode)
+		}
+	}
+
+	// The prompt has to actually carry the boundaries, or it is the old empty
+	// file with extra bytes.
+	for _, field := range []string{"**Goal**", "**Persona**", "**Priority**", "**Context**",
+		"**Action**", "**Objects**", "**Constraints**", "**Verify**", "**Questions**"} {
+		if !strings.Contains(out, field) {
+			t.Errorf("scaffold omits %s", field)
+		}
+	}
+	for _, cue := range []string{"not \"click Upload\"", "not \"accountant\"", "infrastructure.md"} {
+		if !strings.Contains(out, cue) {
+			t.Errorf("scaffold omits the guidance cue %q", cue)
+		}
+	}
+	if !strings.Contains(out, "Soft boundaries") {
+		t.Error("scaffold does not point at the full guidance")
 	}
 }

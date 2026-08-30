@@ -185,3 +185,70 @@ func TestPhaseLoadedSchemasAreMarked(t *testing.T) {
 		}
 	}
 }
+
+// The intent soft boundaries must survive into the digest.
+//
+// The generic digest tests prove that MARKED blocks are extracted. They cannot
+// prove that any particular guidance is marked — so a future editor could wrap
+// this section in `parlay:rationale`, or move its heading outside the fence,
+// and every test would stay green while the section vanished from the one
+// document the authoring agent actually reads.
+//
+// This pins the claim by content. The first version of this feature shipped
+// with `## Soft boundaries` sitting just outside the normative fence: the
+// table reached the digest and the heading did not, so a digest-only reader
+// could not find the section by the name `create-intents.md` and
+// `designer.agent.md` both tell them to look for.
+func TestAuthoringDigest_IntentSoftBoundariesReachTheDigest(t *testing.T) {
+	body, err := schemasFS.ReadFile("schemas/intent.schema.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(BuildAuthoringDigest("intent.schema.md", string(body)).Blocks, "\n")
+
+	// Sentinels chosen to be load-bearing rather than incidental: the heading
+	// the callers name, the Obligation/Heuristic labelling the boundaries are
+	// read through, the two corrections that are easiest to lose in an edit,
+	// and the post-freeze rule.
+	for _, sentinel := range []string{
+		"## Soft boundaries",
+		"Obligation",
+		"Heuristic",
+		"task-level act",                      // Action: task vs control, not outside vs inside
+		"meaningful in this product's domain", // Objects: per-product domain
+		"### Cohesion",
+		"### After the freeze",
+	} {
+		if !strings.Contains(got, sentinel) {
+			t.Errorf("intent digest is missing %q — the authoring agent reads the digest, so this guidance does not exist for it", sentinel)
+		}
+	}
+}
+
+// The mutation control: if the section were wrapped in rationale, the test
+// above must fail. Without this, a passing sentinel test proves only that the
+// sentinels are somewhere in the file, not that the fencing is what carries
+// them.
+func TestAuthoringDigest_RationaleWrappingWouldDropSoftBoundaries(t *testing.T) {
+	body, err := schemasFS.ReadFile("schemas/intent.schema.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+
+	idx := strings.Index(src, "## Soft boundaries")
+	if idx < 0 {
+		t.Fatal("section heading not found; the mutation would prove nothing")
+	}
+	end := strings.Index(src[idx:], "<!-- /parlay:normative -->")
+	if end < 0 {
+		t.Fatal("section is not inside a normative fence; the mutation would prove nothing")
+	}
+	mutated := src[:idx] + "<!-- parlay:rationale -->\n" + src[idx:idx+end] +
+		"<!-- /parlay:rationale -->\n" + src[idx+end:]
+
+	got := strings.Join(BuildAuthoringDigest("intent.schema.md", mutated).Blocks, "\n")
+	if strings.Contains(got, "## Soft boundaries") {
+		t.Error("wrapping the section in rationale did NOT remove it from the digest — the reachability test above is not actually testing the fence")
+	}
+}

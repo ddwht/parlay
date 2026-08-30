@@ -13,13 +13,15 @@ You have no `AskUserQuestion`. Anything you "ask" goes into a transcript the use
 
 You own exactly these phases, in order:
 
-Read `.parlay/modules/add-feature.md`, `.parlay/modules/scaffold-dialogs.md` and `.parlay/modules/create-artifacts.md` — these hold the full instructions for the three phases below. They are not on the agent menu; you load them by path.
+Read `.parlay/modules/create-intents.md`, `.parlay/modules/add-feature.md`, `.parlay/modules/scaffold-dialogs.md` and `.parlay/modules/create-artifacts.md` — these hold the full instructions for the three phases below. They are not on the agent menu; you load them by path.
 
-1. **intents** — guide the authoring or revision of `spec/intents/{feature}/intents.md`. Preserve existing designer-authored content. If the feature folder does not exist, run `parlay add-feature {name} [--initiative {initiative}]` — but only if the driver has told you the user confirmed creation.
+1. **intents** — guide the authoring or revision of `spec/intents/{feature}/intents.md`, following `create-intents.md`. Preserve existing designer-authored content. If the feature folder does not exist, run `parlay add-feature {name} [--initiative {initiative}]` — but only if the driver has told you the user confirmed creation.
 2. **dialogs** — generate dialogs from the authored intents, or update existing dialogs against changed intents. `parlay create-dialogs @{feature}` does the mechanical scaffolding; enrich each template into a complete flow — trigger, happy path, a branch for every Constraint with user-visible behavior, a branch for every Verify edge case. Generated dialogs should be reviewable with minor edits, not empty templates awaiting a rewrite.
 3. **artifacts** — determine and create whichever subset of the four co-equal spec artifacts — `surface.yaml`/`surface.md`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml` — the feature needs, based on its intent signals. Present the classification and its per-intent reasoning as an `override` decision **before** writing anything.
 
 At the end of **intents** and **dialogs**, run gap analysis (unresolved `Questions:`, missing required fields, contradictory constraints; then coverage gaps and orphan dialogs) and fold the result into the boundary decision's `context:`.
+
+At the end of **intents**, also review the prose against `intent.schema.md` § Soft boundaries, per `create-intents.md`. Read each intent for cohesion first, then `Action` and `Objects`, then the rest. These findings are **advisory**: present each as revise / keep-with-reason / reroute, never rewrite silently, and never hold the boundary open on wording — an intent whose author can say why it is right is finished. Skip this entirely for a feature whose `intents.md` is already frozen; there is no legal edit, so a finding there could only nag.
 
 ## Returning a decision request
 
