@@ -433,6 +433,29 @@ plan:
     - path: internal/commands/retirement_journal.go
       sources:
         - cross-cutting/mutation-order-rollback-resumable-journal
+decisions:
+  - id: journal-vocabulary-owns-directory-removal
+    component: cross-cutting/mutation-order-rollback-resumable-journal
+    decided: "Removing the retired root's directory is a sub-action of the deregister-root journal step (directory first, index second), not a third vocabulary member."
+    why: "The step vocabulary is closed at {write-record, deregister-root}; folding the move into deregister-root keeps it closed while preserving never-deregistered-while-the-directory-stands."
+    enforced-by:
+      - internal/commands/retirement_journal.go
+    obsolete-when: "The infrastructure fragment widens the journal step vocabulary."
+  - id: target-match-name-or-relative-path
+    component: cross-cutting/retirement-target-and-destination-preconditions
+    decided: "A target matches a child by registered name OR by registered relative path; matching two distinct children this way is the more-than-one-candidate refusal."
+    why: "With name-only matching, the index's own uniqueness rules make more than one candidate unreachable, leaving the mandated multi-candidate refusal dead code."
+    enforced-by:
+      - internal/commands/retire_root.go
+    obsolete-when: "Target addressing gains an explicit disambiguator that separates name-addressing from path-addressing."
+  - id: rehomed-ownership-nonblocking-at-sweep
+    component: cross-cutting/project-wide-source-aware-inbound-sweep
+    decided: "An ownership-marker finding whose feature a disposition re-homes is reported but non-blocking at sweep level; re-home readiness separately requires the surviving file to already carry the target's marker."
+    why: "The sweep's blocks-unless-re-homed clause and readiness's already-claims condition would otherwise contradict on the same file; splitting blocking authority this way satisfies both invariants."
+    enforced-by:
+      - internal/commands/root_retirement_sweep.go
+      - internal/commands/root_dispositions.go
+    obsolete-when: "Marker re-claiming becomes an action the retirement run performs itself."
 source-signatures:
   intents: "sha256:eecc1d8e6f0b4d90b3fec7bf7e6e719c8eae72d269173bbbca868ca2ec105ace"
   dialogs: "sha256:148a59d61716acc7453546ff0836bb585fbbb531fab2e0bb4aa7e8d666e21533"

@@ -470,6 +470,8 @@ func init() {
 	// Multi-root commands.
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
+	rootCmd.AddCommand(retireRootCmd)
+	rootCmd.AddCommand(retiredRootsCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(domainEditCmd)
 

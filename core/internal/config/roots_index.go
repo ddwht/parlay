@@ -110,6 +110,35 @@ func AppendRootToIndex(idx *RootsIndex, child Root) (*RootsIndex, error) {
 	return idx, SaveRootsIndex(idx)
 }
 
+// RemoveRootFromIndex removes the named child from the index, persists,
+// and returns the updated index. The counterpart of AppendRootToIndex,
+// with the same persist-or-refuse shape: it refuses when the named child
+// is absent rather than succeeding vacuously, because the caller
+// (root retirement) treats "the registration no longer names the root"
+// as the completion of a mutation it performed, not as a state it found.
+//
+// parlay-feature: parlay-tool/root-retirement
+// parlay-component: cross-cutting/mutation-order-rollback-resumable-journal
+func RemoveRootFromIndex(idx *RootsIndex, name string) (*RootsIndex, error) {
+	if idx == nil {
+		return nil, fmt.Errorf("nil index")
+	}
+	kept := make([]Root, 0, len(idx.Children))
+	found := false
+	for _, existing := range idx.Children {
+		if existing.Name == name {
+			found = true
+			continue
+		}
+		kept = append(kept, existing)
+	}
+	if !found {
+		return nil, fmt.Errorf("child root %q is not registered", name)
+	}
+	idx.Children = kept
+	return idx, SaveRootsIndex(idx)
+}
+
 // readParentPointer reads the parent: field from <root>/.parlay/config.yaml.
 // Returns "" (not an error) when the field is absent, when the file does
 // not exist, or when the file does not parse — making the caller treat
