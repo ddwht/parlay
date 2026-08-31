@@ -312,6 +312,15 @@ System: Here they are.
 }
 
 // writeBaselineApplied pins how far the ledger has been applied.
+// writeBaselineApplied marks a feature applied THROUGH seq, with the evidence
+// a real applied record carries.
+//
+// The evidence is not decoration. Current-state resolution refuses a record at
+// or below the marker with no recorded hash, because resolving without it
+// answers with the text that preceded it — so a fixture that stamps a marker
+// and records nothing is a hand-advanced capsule, which is exactly the state
+// the rule exists to catch. It stopped being a usable shortcut the moment
+// promises could be revised rather than only retired.
 func writeBaselineApplied(t *testing.T, slug string, seq int) {
 	t.Helper()
 	cfg := testContext(t)
@@ -319,7 +328,25 @@ func writeBaselineApplied(t *testing.T, slug string, seq int) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	b := Baseline{SchemaVersion: BaselineSchemaVersion, LastAppliedAmendment: seq}
+	hashes := map[string]string{}
+	records, err := parser.LoadFeatureAmendments(cfg.FeaturePath(slug))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range records {
+		if a.Seq > seq {
+			continue
+		}
+		h, ok := hashWholeFile(a.Path)
+		if !ok {
+			t.Fatalf("hash %s", a.Path)
+		}
+		hashes[filepath.Base(a.Path)] = h
+	}
+	b := Baseline{
+		SchemaVersion: BaselineSchemaVersion, LastAppliedAmendment: seq,
+		Sources: &HashedSources{Amendments: hashes},
+	}
 	data, err := yaml.Marshal(&b)
 	if err != nil {
 		t.Fatal(err)

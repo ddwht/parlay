@@ -115,7 +115,18 @@ func AmendmentFileNameValid(name string) bool {
 // here — check-amendments reports them; the loader's job is only to read
 // what is well-named.
 func LoadFeatureAmendments(featureDir string) ([]Amendment, error) {
-	dir := AmendmentsDir(featureDir)
+	return LoadAmendmentsFromDir(AmendmentsDir(featureDir))
+}
+
+// LoadAmendmentsFromDir reads amendment records from one directory.
+//
+// Split out from LoadFeatureAmendments because the compacted archive is a
+// second directory holding the same kind of record, and it must be readable
+// with the same parser and the same filename grammar. Anything that resolves
+// applied history has to see both: LoadFeatureAmendments skips subdirectories,
+// so a record moved to amendments/archive/ is invisible to it, and an applied
+// decision that has been compacted would otherwise silently stop counting.
+func LoadAmendmentsFromDir(dir string) ([]Amendment, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -151,6 +162,28 @@ func LoadFeatureAmendments(featureDir string) ([]Amendment, error) {
 
 // ParseAmendmentBytes parses one amendment file: YAML frontmatter between
 // `---` fences, then markdown sections `## Change`, `## Why`, `## Acceptance`.
+// ParseAmendmentRecord parses one amendment from bytes ALREADY IN HAND, and
+// fills in the sequence and slug its filename carries.
+//
+// Exists so a caller can read a record's bytes exactly once and then both
+// authenticate and interpret that same slice. Anything that hashes a path and
+// separately parses that path is comparing two different reads, and the gap
+// between them is where a swap goes: forged bytes get parsed, genuine bytes get
+// hashed, and the forgery leaves authenticated.
+func ParseAmendmentRecord(path string, content []byte) (*Amendment, error) {
+	a, err := ParseAmendmentBytes(path, content)
+	if err != nil {
+		return nil, err
+	}
+	m := amendmentFilePattern.FindStringSubmatch(filepath.Base(path))
+	if m == nil {
+		return nil, fmt.Errorf("parse amendment %s: filename is not NNN-slug.md", path)
+	}
+	a.Seq, _ = strconv.Atoi(m[1])
+	a.FileSlug = m[2]
+	return a, nil
+}
+
 func ParseAmendmentBytes(path string, content []byte) (*Amendment, error) {
 	text := string(content)
 	frontmatter, body, err := splitAmendmentFrontmatter(text)

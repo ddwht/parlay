@@ -214,8 +214,15 @@ func TestWP5_DestinationCollisionRefusesBeforeMoving(t *testing.T) {
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	existing := "---\namendment: readiness-wording\ndate: 2026-08-01\naffects:\n" +
+		"  - \"@my-feature/operation:x\"\n---\n\n## Change\nA different history.\n\n" +
+		"## Acceptance\n- Different.\n"
+	// A REAL record, not a garbage file. A destination collision in practice is
+	// a different history under the same name, and a well-formed one — the
+	// archive is now read as applied history, so an unparseable file there is
+	// its own refusal and would mask the collision this test is about.
 	if err := os.WriteFile(filepath.Join(archive, "002-readiness-wording.md"),
-		[]byte("a different history\n"), 0o644); err != nil {
+		[]byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -234,7 +241,7 @@ func TestWP5_DestinationCollisionRefusesBeforeMoving(t *testing.T) {
 	}
 	// And the pre-existing archived file is untouched.
 	data, err := os.ReadFile(filepath.Join(archive, "002-readiness-wording.md"))
-	if err != nil || string(data) != "a different history\n" {
+	if err != nil || string(data) != existing {
 		t.Error("existing archived history must never be overwritten")
 	}
 }
@@ -680,6 +687,14 @@ func TestWP5_RecoveryRefusesWhenRecordedEvidenceVanished(t *testing.T) {
 	// missing-hash check is the only thing that can catch this. That is also
 	// the honest shape of the scenario: a journal naming a record with no
 	// recorded evidence is one this tool would never have written.
+	// The crash FIRST, then the evidence disappears. That is the sequence the
+	// production message describes — "the authority state changed while the run
+	// was interrupted" — and it is the only order the fixture can be built in
+	// now: capturing a projection over a capsule that is already missing
+	// evidence for an applied record refuses at capture time, because
+	// current-state resolution will not answer from a ledger it cannot
+	// establish.
+	simulateCrashMidCompaction(t, cfg, featureDir, "my-feature")
 	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
 	delete(bl.Sources.Amendments, "001-first.md")
 	data, err := marshalBaseline(&bl)
@@ -689,7 +704,6 @@ func TestWP5_RecoveryRefusesWhenRecordedEvidenceVanished(t *testing.T) {
 	if err := os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	simulateCrashMidCompaction(t, cfg, featureDir, "my-feature")
 
 	err = recoverCompaction(cfg, "my-feature")
 	if err == nil {

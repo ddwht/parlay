@@ -203,22 +203,20 @@ func recoverCompaction(cfg *config.Context, slug string) error {
 		return incompleteRecovery(slug, path, problems)
 	}
 
-	// Locations restored. Now the harder question: is this the state the
-	// journal described?
-	after, projErr := computeAuthorityProjectionTx(cfg, slug, true)
-	if projErr != nil {
-		return incompleteRecovery(slug, path, []string{
-			fmt.Sprintf("the authority projection could not be recomputed: %v", projErr)})
-	}
-	if after.canonical() != j.BeforeProjection {
-		return incompleteRecovery(slug, path, []string{
-			"the restored ledger does not reproduce the projection recorded before the " +
-				"interrupted run, so something else changed while it was interrupted"})
-	}
-
-	// And the bytes themselves. The projection carries the baseline's STORED
-	// evidence, so it cannot notice a record whose content changed in the
-	// window; only hashing what is now on disk can.
+	// Locations restored. The BYTES come first, before anything is asked to
+	// interpret them.
+	//
+	// Ordering matters here and used to be the other way round. Current-state
+	// resolution now refuses a record whose bytes do not match the recorded
+	// evidence, so recomputing the projection first meant this check could
+	// never be reached: the refusal was still correct, but it came from a
+	// generic resolver rather than from the operation that had just moved the
+	// file, and "moving it back would launder a change into the active ledger"
+	// is the thing somebody recovering a compaction needs to be told.
+	//
+	// The projection carries the baseline's STORED evidence, so it could not
+	// notice a record whose content changed in the window anyway; only hashing
+	// what is now on disk can.
 	capsule, capErr := observeAppliedAuthority(cfg, slug)
 	if capErr != nil {
 		return incompleteRecovery(slug, path, []string{
@@ -247,6 +245,19 @@ func recoverCompaction(cfg *config.Context, slug string) error {
 				fmt.Sprintf("%s was restored but its bytes no longer match the evidence recorded "+
 					"for it — moving it back would launder a change into the active ledger", name)})
 		}
+	}
+
+	// Bytes verified. Now the harder question: is this the state the journal
+	// described?
+	after, projErr := computeAuthorityProjectionTx(cfg, slug, true)
+	if projErr != nil {
+		return incompleteRecovery(slug, path, []string{
+			fmt.Sprintf("the authority projection could not be recomputed: %v", projErr)})
+	}
+	if after.canonical() != j.BeforeProjection {
+		return incompleteRecovery(slug, path, []string{
+			"the restored ledger does not reproduce the projection recorded before the " +
+				"interrupted run, so something else changed while it was interrupted"})
 	}
 
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

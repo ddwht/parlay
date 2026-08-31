@@ -430,6 +430,10 @@ func init() {
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(addFeatureCmd)
+	// `spec` is read-only and is the answer to "what does this feature promise
+	// now" — a question a person asks at a terminal, so it belongs on the
+	// visible surface rather than under `internal`.
+	rootCmd.AddCommand(reachability(specCmd, ClassDirectHuman))
 	rootCmd.AddCommand(createDialogsCmd)
 	rootCmd.AddCommand(viewPageCmdImpl)
 	rootCmd.AddCommand(lockPageCmdImpl)

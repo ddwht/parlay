@@ -1,11 +1,19 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 // The authority projection (WP5).
@@ -32,6 +40,23 @@ import (
 type authorityProjection struct {
 	// ActiveIntents are the founding intents still in force.
 	ActiveIntents []string
+	// ActiveVersions is what each of those promises currently SAYS, and which
+	// decision put that text there, as `<amendment>|<mode>|<text fingerprint>`.
+	//
+	// Slugs alone were not enough. Compaction moves applied records to
+	// amendments/archive/, and a projection comparing only slugs passes
+	// unchanged while the promise text silently reverts to its founding
+	// version — the equivalence the operation advertises could not detect the
+	// one class of loss the operation can cause. The resolver now reads the
+	// archive, so this would no longer regress; it is recorded anyway, because
+	// an equivalence check that cannot see a field is not evidence about it.
+	//
+	// Provenance is in the value, not only the text. `parlay spec` reports
+	// which decision put a promise's text there, so compaction must not be able
+	// to change that answer and still pass. Two amendments producing identical
+	// snapshots are a real possibility — a revert, a reapplied wording — and a
+	// bare text hash cannot tell them apart.
+	ActiveVersions map[string]string
 	// SupersededIntents maps a retired founding intent to the amendment
 	// identity that retired it — the winning head. Archiving that amendment
 	// without this changing is the whole risk.
@@ -68,6 +93,7 @@ func computeAuthorityProjection(cfg *config.Context, slug string) (authorityProj
 // else while it decides what to do about it.
 func computeAuthorityProjectionTx(cfg *config.Context, slug string, allowInFlightCompaction bool) (authorityProjection, error) {
 	out := authorityProjection{
+		ActiveVersions:    map[string]string{},
 		SupersededIntents: map[string]string{},
 		SupersededBy:      map[string][]string{},
 		Evidence:          map[string]string{},
@@ -101,20 +127,39 @@ func computeAuthorityProjectionTx(cfg *config.Context, slug string, allowInFligh
 	out.RetiredBy = ca.RetiredBy
 
 	// Active founding intents: declared minus superseded.
-	res, err := resolveActiveIntents(cfg, slug)
-	if err != nil {
-		return out, fmt.Errorf("resolve active intents: %w", err)
+	//
+	// ONE ACQUISITION for the intents, their provenance, the marker and the
+	// evidence. Composing those from separate observations let a concurrent
+	// authority writer produce a projection whose parts never coexisted — and
+	// the projection's whole job is to say two states are the same, which it
+	// cannot do honestly if either state is a mixture.
+	featDir := cfg.FeaturePath(slug)
+	snap, serr := acquireAppliedLedger(cfg, slug, featDir)
+	if serr != nil {
+		return out, fmt.Errorf("read %s's applied history: %w", slug, serr)
 	}
+	intents, ierr := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if ierr != nil {
+		return out, fmt.Errorf("read %s's founding promises: %w", slug, ierr)
+	}
+	res := resolveIntentsFrom(snap, intents, agent.AppliedAuthority)
+	version, mode := intentProvenanceFrom(snap)
 	for _, in := range res.Active {
 		out.ActiveIntents = append(out.ActiveIntents, in.Slug)
+		fp, ferr := intentVersionFingerprint(in)
+		if ferr != nil {
+			return out, ferr
+		}
+		by := version[in.Slug]
+		if by == "" {
+			by = "founding"
+		}
+		out.ActiveVersions[in.Slug] = fmt.Sprintf("%s|%s|%s", by, mode[in.Slug], fp)
 	}
 	sort.Strings(out.ActiveIntents)
 
-	capsule, err := observeAppliedAuthority(cfg, slug)
-	if err != nil {
-		return out, fmt.Errorf("read applied authority: %w", err)
-	}
-	out.AppliedThrough = capsule.Through
+	capsule := snap.Capsule
+	out.AppliedThrough = snap.Through
 	for _, a := range ca.Amendments {
 		if a.Seq > capsule.Through {
 			out.PendingTail = append(out.PendingTail, fmt.Sprintf("%03d-%s", a.Seq, a.Slug))
@@ -141,6 +186,10 @@ func (p authorityProjection) canonical() string {
 	b.WriteString("active-intents:\n")
 	for _, s := range p.ActiveIntents {
 		fmt.Fprintf(&b, "  - %s\n", s)
+	}
+	b.WriteString("active-versions:\n")
+	for _, k := range sortedKeys(p.ActiveVersions) {
+		fmt.Fprintf(&b, "  %s: %s\n", k, p.ActiveVersions[k])
 	}
 	b.WriteString("pending-tail:\n")
 	for _, s := range p.PendingTail {
@@ -194,4 +243,28 @@ func sortedStringSliceKeys(m map[string][]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// intentVersionFingerprint hashes what a promise currently says.
+//
+// The whole snapshot, not a chosen subset: any field of a version can change
+// what the promise means, and a projection that watches three of them is
+// evidence about three of them. Through the storage encoding first, for the
+// same reason every other digest here is — a value compared in two different
+// shapes is not one value.
+func intentVersionFingerprint(in parser.Intent) (string, error) {
+	encoded, err := yaml.Marshal(in)
+	if err != nil {
+		return "", fmt.Errorf("fingerprint the promise %q: %w", in.Slug, err)
+	}
+	var round parser.Intent
+	if err := yaml.Unmarshal(encoded, &round); err != nil {
+		return "", fmt.Errorf("fingerprint the promise %q: %w", in.Slug, err)
+	}
+	data, err := json.Marshal(round)
+	if err != nil {
+		return "", fmt.Errorf("fingerprint the promise %q: %w", in.Slug, err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
