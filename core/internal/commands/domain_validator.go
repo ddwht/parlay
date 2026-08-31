@@ -32,11 +32,12 @@ import (
 // and Diff, so the reverse edge would close a cycle. domainmodel declares what
 // it needs (domainmodel.ValidatorFunc); this layer knows agent satisfies it.
 //
-// Authoring mode is load-bearing, not a default. It is what keeps
-// domain-operations-deprecated a warning instead of an error, and therefore what
-// lets a model carrying a deprecated operations block still be saved through
-// the write path. Build mode would promote it and the save gate would refuse
-// drafts that `parlay validate` accepts.
+// Authoring mode is load-bearing, not a default: it is the mode the save
+// gate validates in, so the gate and `parlay validate` agree on severity.
+// Note domain-operations-unsupported is an ERROR in both modes (the field was
+// removed in v0.3); what lets a legacy model carrying an unchanged operations
+// block still be saved is the monotonic non-worsening gate, not a severity
+// downgrade.
 //
 // domainmodel.StdinLabel is passed for the same reason the CLI's --json mode uses
 // "<stdin>": a draft in memory has no path, and anchoring both entry points on

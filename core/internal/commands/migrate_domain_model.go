@@ -1,6 +1,5 @@
 // parlay-feature: studio-support/domain-model-yaml-migration
 // parlay-component: migrate-domain-model-command
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-dry-run
 // parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-force
 // parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-multi-root
 // parlay-extends: studio-support/domain-model-yaml-migration/md-deprecation-header
@@ -48,14 +47,9 @@ The actual translation requires an AI agent. Use the
 	RunE: runMigrateDomainModel,
 }
 
-var (
-	migrateDomainModelDryRun bool
-	migrateDomainModelForce  bool
-)
+var migrateDomainModelForce bool
 
 func init() {
-	migrateDomainModelCmd.Flags().BoolVar(&migrateDomainModelDryRun, "dry-run", false,
-		"Print the planned YAML and a diff against any existing artifact; touch nothing on disk")
 	migrateDomainModelCmd.Flags().BoolVar(&migrateDomainModelForce, "force", false,
 		"Re-parse the .md and overwrite an existing domain-model.yaml; warns once on stderr")
 }
