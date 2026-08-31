@@ -223,13 +223,16 @@ cross-cutting:
       mention; that judgment belongs to a person, and until now the
       person had nowhere to record it, so the only way past an assessed
       finding was to delete the sentence that caused it. Add an optional
-      `acknowledged-references:` section of {path, reference, rationale}
-      entries, decoded under the same KnownFields(true) strictness and
-      requiring all three fields non-empty. An entry dismisses ONE
-      finding: the reference must be identical and the artifact must be
-      the same file, with the path written either relative to the
-      project root or absolutely (the preview reports one form and a
-      person may copy either). No prefix, no pattern, no wildcard — an
+      `acknowledged-references:` section of {path, position, reference,
+      kind, rationale} entries, decoded under the same KnownFields(true)
+      strictness and requiring all five fields non-empty. An entry
+      dismisses ONE finding — the full identity the preview reports:
+      reference, position and kind must all be identical and the
+      artifact must be the same file, with the path written either
+      relative to the project root or absolutely (the preview reports
+      one form and a person may copy either). No prefix, no pattern, no
+      wildcard, and no position-blind match that would silently cover a
+      second occurrence or a future one — an
       acknowledgment covering findings the operator has not read is
       indistinguishable from switching the check off. The preflight
       partitions the blocking findings: matched ones move to

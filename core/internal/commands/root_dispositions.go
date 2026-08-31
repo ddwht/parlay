@@ -95,8 +95,17 @@ type AcknowledgedReference struct {
 	// reports it — either the path relative to the project root or the
 	// absolute path.
 	Path string `yaml:"path"`
+	// Position is the finding's position exactly as the preview
+	// reports it (e.g. "line 17"). Requiring it makes an acknowledgment
+	// name ONE finding: the same reference appearing twice in a file is
+	// two findings, and a future identical reference added elsewhere in
+	// the file is a new finding nobody has read yet.
+	Position string `yaml:"position"`
 	// Reference is the reference exactly as the finding carries it.
 	Reference string `yaml:"reference"`
+	// Kind is the finding's kind exactly as reported
+	// (e.g. "path-reference"); part of the finding's identity.
+	Kind string `yaml:"kind"`
 	// Rationale says why this one is prose rather than dependency. As
 	// with a disposition's rationale it is never parsed; requiring it
 	// is what keeps the dismissal checkable by a second reader.
@@ -121,14 +130,16 @@ type DispositionRecord struct {
 }
 
 // matches reports whether this acknowledgment dismisses that exact
-// finding. The reference must be identical and the artifact must be the
-// same file; the path may be written relative to the project root or
-// absolutely, since the preview reports one form and a person may
-// reasonably copy either. Nothing else matches — no prefix, no pattern,
-// no wildcard — because an acknowledgment covering findings the operator
-// has not read is indistinguishable from switching the check off.
+// finding: reference, position and kind must all be identical, and the
+// artifact must be the same file; the path may be written relative to
+// the project root or absolutely, since the preview reports one form
+// and a person may reasonably copy either. Nothing else matches — no
+// prefix, no pattern, no wildcard, and no position-blind match that
+// would silently cover a second occurrence or a future one — because an
+// acknowledgment covering findings the operator has not read is
+// indistinguishable from switching the check off.
 func (a AcknowledgedReference) matches(parentPath string, f RootSweepFinding) bool {
-	if a.Reference != f.Ref {
+	if a.Reference != f.Ref || a.Position != f.Position || a.Kind != f.Kind {
 		return false
 	}
 	want := filepath.ToSlash(filepath.Clean(a.Path))
@@ -236,6 +247,12 @@ func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 		}
 		if strings.TrimSpace(a.Reference) == "" {
 			return nil, fmt.Errorf("disposition record %s: the acknowledged reference in %s names no reference — the reference must match the finding exactly, so an empty one would dismiss whatever happened to be found there", path, a.Path)
+		}
+		if strings.TrimSpace(a.Position) == "" {
+			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no position — an acknowledgment names ONE finding, and without its position it would also dismiss every other occurrence, present or future", path, a.Reference, a.Path)
+		}
+		if strings.TrimSpace(a.Kind) == "" {
+			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no kind — the kind is part of the finding's identity as the preview reports it", path, a.Reference, a.Path)
 		}
 		if strings.TrimSpace(a.Rationale) == "" {
 			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no rationale — a dismissal nobody can check is the thing this section exists to avoid",

@@ -647,7 +647,9 @@ func TestRetireRoot_AnAcknowledgedReferenceNoLongerBlocksAndIsListed(t *testing.
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/history.md
+    position: line 1
     reference: demo-group/demo-feature
+    kind: group-qualified-reference
     rationale: a sentence about what used to be, not an instruction that reads the root
 `
 	retireRootDispositions = writeDispositionsFile(t, dispositions)
@@ -692,7 +694,9 @@ func TestRetireRoot_AnUnacknowledgedReferenceStillRefuses(t *testing.T) {
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/history.md
+    position: line 1
     reference: demo-group/demo-feature
+    kind: group-qualified-reference
     rationale: prose about what used to be
 `)
 	retireRootNonInteractive = true
@@ -716,19 +720,41 @@ func TestRetireRoot_AnAcknowledgmentMustMatchExactly(t *testing.T) {
 		{
 			name: "wrong-path",
 			ack: `  - path: docs/other.md
+    position: line 1
     reference: demo-group/demo-feature
+    kind: group-qualified-reference
     rationale: assessed`,
 		},
 		{
 			name: "wrong-reference",
 			ack: `  - path: docs/history.md
+    position: line 1
     reference: demo-group/demo-feature/phases
+    kind: group-qualified-reference
+    rationale: assessed`,
+		},
+		{
+			name: "wrong-position",
+			ack: `  - path: docs/history.md
+    position: line 2
+    reference: demo-group/demo-feature
+    kind: group-qualified-reference
+    rationale: assessed`,
+		},
+		{
+			name: "wrong-kind",
+			ack: `  - path: docs/history.md
+    position: line 1
+    reference: demo-group/demo-feature
+    kind: path-reference
     rationale: assessed`,
 		},
 		{
 			name: "path-prefix-is-not-a-match",
 			ack: `  - path: docs
+    position: line 1
     reference: demo-group/demo-feature
+    kind: group-qualified-reference
     rationale: assessed`,
 		},
 	}
@@ -767,7 +793,9 @@ func TestRetireRoot_AnAcknowledgmentMatchingNothingIsReported(t *testing.T) {
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/typo.md
+    position: line 1
     reference: demo-group/demo-feature
+    kind: group-qualified-reference
     rationale: assessed
 `)
 	retireRootPreview = true
@@ -788,10 +816,12 @@ func TestDispositions_AcknowledgmentsAreReadStructurallyClosed(t *testing.T) {
 acknowledged-references:
 `
 	for _, tc := range []struct{ name, entry, want string }{
-		{"unknown-field", "  - path: docs/x.md\n    reference: a/b\n    rationale: ok\n    reson: typo\n", "reson"},
-		{"no-path", "  - reference: a/b\n    rationale: ok\n", "names no path"},
-		{"no-reference", "  - path: docs/x.md\n    rationale: ok\n", "names no reference"},
-		{"no-rationale", "  - path: docs/x.md\n    reference: a/b\n", "no rationale"},
+		{"unknown-field", "  - path: docs/x.md\n    position: line 1\n    reference: a/b\n    kind: path-reference\n    rationale: ok\n    reson: typo\n", "reson"},
+		{"no-path", "  - position: line 1\n    reference: a/b\n    kind: path-reference\n    rationale: ok\n", "names no path"},
+		{"no-reference", "  - path: docs/x.md\n    position: line 1\n    kind: path-reference\n    rationale: ok\n", "names no reference"},
+		{"no-position", "  - path: docs/x.md\n    reference: a/b\n    kind: path-reference\n    rationale: ok\n", "no position"},
+		{"no-kind", "  - path: docs/x.md\n    position: line 1\n    reference: a/b\n    rationale: ok\n", "no kind"},
+		{"no-rationale", "  - path: docs/x.md\n    position: line 1\n    reference: a/b\n    kind: path-reference\n", "no rationale"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := loadRecord(t, base+tc.entry)
@@ -804,7 +834,7 @@ acknowledged-references:
 		})
 	}
 
-	rec, err := loadRecord(t, base+"  - path: docs/x.md\n    reference: a/b\n    rationale: assessed as prose\n")
+	rec, err := loadRecord(t, base+"  - path: docs/x.md\n    position: line 1\n    reference: a/b\n    kind: path-reference\n    rationale: assessed as prose\n")
 	if err != nil {
 		t.Fatalf("a well-formed acknowledgment must be accepted: %v", err)
 	}

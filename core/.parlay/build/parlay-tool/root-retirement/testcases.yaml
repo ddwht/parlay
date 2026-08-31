@@ -527,7 +527,7 @@ suites:
         - name: an acknowledgment matches only an exact artifact and reference
           criterion:
             ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
-            text: "An acknowledgment matches only on an exact artifact and an exact reference; a different path, a different reference or a path that is merely a prefix of the finding's dismisses nothing."
+            text: "An acknowledgment matches only on the finding's full identity: a different path, position, reference or kind — or a path that is merely a prefix of the finding's — dismisses nothing, so a second occurrence of the same reference is a second judgment."
           exercises: [retire-root-preflight]
           observes: [disposition-preflight, retire-root-preflight]
           steps:
@@ -553,7 +553,7 @@ suites:
         - name: an incomplete or unrecognized acknowledgment is refused
           criterion:
             ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
-            text: "An acknowledgment carrying no path, no reference, no rationale, or a key the shape does not define, is refused like any other part of the record."
+            text: "An acknowledgment carrying no path, no position, no reference, no kind, no rationale, or a key the shape does not define, is refused like any other part of the record."
           exercises: [disposition-preflight]
           observes: [disposition-preflight, disposition-record-file]
           steps:
