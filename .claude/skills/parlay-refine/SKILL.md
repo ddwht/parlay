@@ -668,18 +668,46 @@ report — which mode ran is part of what was blessed.
    declaration and the applied authority, so a yes given for one state cannot be
    carried to another.
 
-   The amendment must declare `scope_impact:` with `version: 1` and
-   `preserves_unlisted: true`. Do not add it yourself to make the command
-   proceed — it is the author's claim that every attributed entry it does not
+   The amendment must declare `scope_impact:` with `version: 1`, and
+   `preserves_unlisted: true` whenever any transition leaves a promise behind.
+   Do not add it yourself to make the command proceed — it is the author's claim that every attributed entry it does not
    list still holds, and inventing it means approving a claim nobody made.
 
-   **`narrow` and `retire` are refused for now**, as is any `revise` declaring a
-   scope exception. Those take support away from contract entries, and the
-   accounting that collects those consequences is not built yet.
+   **All four modes apply here: `extend`, `revise`, `narrow` and `retire`.**
+   The last two take support away from contract entries, so they must declare
+   what becomes of each one that loses it, using `scope_impact.exceptions`:
+   `retained` (still supported by the changed promise), `revised` (survives, and
+   may now be justified elsewhere), `removed` (gone, nothing takes it over), or
+   `replaced-by` with `replaced_by:` naming where the work went. The tool checks
+   each against the artifacts, so a disposition that contradicts what is on disk
+   is refused rather than recorded.
 
-   **If this refinement withdraws a founding promise.** An amendment carrying
-   both `affects:` and `supersedes_intents:` has a splice to record AND promises
-   to withdraw, and neither half may be applied without the other. That is the
+   **A retirement is presented as an ending, not a delta**, and has no closure:
+   every entry the promise justified owes a consequence, and nothing may still
+   name the retired promise as its source afterwards. `retained` is impossible
+   there — there is no promise left to retain anything. So a retire-only record
+   must OMIT `preserves_unlisted:`; asserting it is refused, because the claim
+   is that unlisted entries stay supported by the promise and there is none. On
+   a record that retires one promise and revises another, keep
+   `preserves_unlisted: true` — it applies to the living lineage only. The two ordinary
+   consequences are `revised` for an entry that survives re-sourced to whatever
+   justifies it now, and `replaced-by` for one that is gone with another
+   carrying its work.
+
+   **Capture the pre-splice inventory before you splice.** `refine-journal
+   --step amendment-written --amendment N` records what each lineage justified
+   at that moment. Run it after writing the amendment and BEFORE editing the
+   artifacts: afterwards a removed entry is invisible, and for a retirement the
+   whole population is, so a late capture would show nothing lost.
+
+   **If this refinement withdraws a founding promise in the LEGACY spelling.**
+   New records should end a promise with `amends_intents:` and `mode: retire`,
+   which goes through the ceremony above. `supersedes_intents:` records no mode,
+   so what its author meant was never captured and it cannot be executed as any
+   particular one; it keeps the path below, which asks rather than assumes.
+
+   An amendment carrying both `affects:` and `supersedes_intents:` has a splice
+   to record AND promises to withdraw, and neither half may be applied without the other. That is the
    shape step 3.5 produces whenever the retiring promise still has live contract
    entries, so it is ordinary, not exotic. The save will refuse it. Apply it
    with:

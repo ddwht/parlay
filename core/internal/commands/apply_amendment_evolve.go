@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,17 +20,24 @@ import (
 	"github.com/ddwht/parlay/core/internal/parser"
 )
 
-// The evolve ceremony: applying a transition that keeps a lineage alive.
+// The evolve ceremony: applying a transition in the amends_intents: vocabulary.
 //
-// Deliberately narrow. Only the PRESERVATION form is supported — an extend, or
-// a revise whose scope declaration lists no exception — because a general
-// revise can narrow support while the lineage stays alive, and until the scope
-// accounting exists there is nothing to collect the consequences of a declared
-// loss. Approving a loss whose consequences nobody accounted for would be the
-// bypass this whole line of work exists to close, wearing a new verb.
+// All four modes. Three of them — extend, revise and narrow — leave a promise
+// behind and are presented as a DELTA against the version currently in force.
+// The fourth, retire, ends the promise and is presented as an ENDING: the whole
+// proposition shown in full, because a before/after with every field blanking
+// reads like a rewrite and asks the human a different question than the one
+// they are being asked.
 //
-// Not pretending preservation is machine-provable. It records a human assertion
-// against an exact inventory, and says so.
+// A transition that can take support away from contract entries — narrow,
+// retire, or a revise declaring exceptions — must account for every entry that
+// loses it, against a pre-splice inventory the artifacts can no longer supply.
+// Approving a loss whose consequences nobody accounted for would be the bypass
+// this whole line of work exists to close, wearing a new verb.
+//
+// Nothing here pretends the human's claim is machine-provable. It records an
+// assertion against an exact inventory, names what was not checked, and says so
+// per promise rather than in one sentence that fits neither mode.
 
 func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir string, record parser.Amendment, pending []parser.Amendment, prior appliedAuthority) error {
 	// All-or-nothing. One unsupported transition refuses the whole record;
@@ -37,6 +45,7 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 	// which no reader could classify.
 	var lineages []string
 	narrowing := map[string]bool{}
+	retiring := map[string]bool{}
 	for _, tr := range record.IntentTransitions() {
 		switch tr.Mode {
 		case parser.IntentExtend, parser.IntentRevise:
@@ -44,15 +53,27 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 		case parser.IntentNarrow:
 			lineages = append(lineages, tr.Intent)
 			narrowing[tr.Intent] = true
+		case parser.IntentRetire:
+			// retire is the end of a promise, not a change to one, and the
+			// ceremony below presents it as such: no delta, the full promise
+			// being ended, and an accounting for EVERY entry it justified
+			// rather than only those outside a closure. It shares this path
+			// because the machinery it needs — the pre-splice capture, the
+			// consequence checks, the authority transaction — is the same
+			// machinery, and a second copy of it would be a second place for
+			// the guarantees to drift.
+			lineages = append(lineages, tr.Intent)
+			narrowing[tr.Intent] = true
+			retiring[tr.Intent] = true
 		default:
-			// retire still belongs to the withdrawal ceremony, which shows the
-			// promise list rather than a delta: ending a promise and rewording
-			// one are different approvals, and one form cannot stand in for
-			// the other.
-			return fmt.Errorf("%s ends lineage %q with mode %q, which is not a change to a "+
-				"promise but the end of one — it goes through the withdrawal ceremony, not this "+
-				"one. The whole record is refused rather than partly applied",
-				amendmentIdentity(record), tr.Intent, tr.Mode)
+			// The legacy spelling has UNKNOWN semantics by construction, so it
+			// cannot be executed as any particular mode. It keeps the two-proof
+			// withdrawal path, which shows the promise list and asks the human
+			// what the record actually meant.
+			return fmt.Errorf("%s ends lineage %q with mode %q, whose meaning was never "+
+				"recorded — it goes through the withdrawal ceremony, which asks what the record "+
+				"meant rather than assuming. The whole record is refused rather than partly "+
+				"applied", amendmentIdentity(record), tr.Intent, tr.Mode)
 		}
 	}
 	if len(lineages) == 0 {
@@ -124,7 +145,7 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 			"for and no other", amendmentIdentity(record), err)
 	}
 
-	consequences := checkScopeConsequences(cfg, slug, record, journal.ScopeBefore, scopes, narrowing)
+	consequences := checkScopeConsequences(cfg, slug, record, journal.ScopeBefore, scopes, narrowing, retiring)
 	if len(consequences.Problems) > 0 {
 		return fmt.Errorf("%s: the declared consequences do not match the contract:\n  - %s",
 			amendmentIdentity(record), joinLines(consequences.Problems))
@@ -163,7 +184,7 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 			applyAmendmentConfirm, digest)
 	}
 
-	if err := commitEvolveTransition(cfg, slug, featDir, record, lineages, si, prior, payload, digest, journal.ScopeBefore, narrowing); err != nil {
+	if err := commitEvolveTransition(cfg, slug, featDir, record, lineages, si, prior, payload, digest, journal.ScopeBefore, narrowing, retiring); err != nil {
 		return err
 	}
 	out.Confirmed = true
@@ -209,23 +230,58 @@ func buildEvolutionSubjects(cfg *config.Context, slug, featDir string, record pa
 	for _, lineage := range sorted {
 		b, okB := beforeBySlug[lineage]
 		a, okA := afterBySlug[lineage]
-		if !okB || !okA {
-			return nil, fmt.Errorf("%s changes lineage %q, which is not in force — a transition "+
-				"applies to a promise the feature currently makes",
-				amendmentIdentity(record), lineage)
-		}
 		mode := parser.IntentMode("")
 		for _, tr := range record.IntentTransitions() {
 			if tr.Intent == lineage {
 				mode = tr.Mode
 			}
 		}
+		if !okB {
+			return nil, fmt.Errorf("%s changes lineage %q, which is not in force — a transition "+
+				"applies to a promise the feature currently makes",
+				amendmentIdentity(record), lineage)
+		}
+		// The after state is the inverse for a retirement, and asserting it is
+		// how the ceremony knows the record it is about to approve actually
+		// ends the promise rather than merely claiming to.
+		//
+		// Defence in depth, not a pinned guard: this compares two independently
+		// computed things — what the record says it does, and what the resolver
+		// says the feature will promise once it is applied — and I could not
+		// construct a document where they disagree, because the resolver treats
+		// any lineage-ending claim as winning. It stays because the two are
+		// separate subsystems that can drift, and a silent disagreement between
+		// them is exactly the kind of thing an approval must not be built on.
+		if mode == parser.IntentRetire {
+			if okA {
+				return nil, fmt.Errorf("%s retires lineage %q, but that promise is still in "+
+					"force once this record is applied — the resolver and the record disagree "+
+					"about what this change does", amendmentIdentity(record), lineage)
+			}
+			a = parser.Intent{}
+		} else if !okA {
+			return nil, fmt.Errorf("%s changes lineage %q, but that promise is no longer in "+
+				"force once this record is applied — a change to a promise leaves one behind",
+				amendmentIdentity(record), lineage)
+		}
+		delta := diffVersions(b, a)
+		if mode == parser.IntentRetire {
+			// A delta against an empty promise would render as every field
+			// being blanked, which reads like a rewrite rather than an ending.
+			// The presentation below shows the promise being ended in full.
+			delta = nil
+		}
 		out = append(out, &evolutionSubject{
 			Lineage: lineage, Mode: string(mode),
-			Before: b, After: a, Delta: diffVersions(b, a),
-			Attestation:       parser.AttestationFor(mode),
-			Scope:             scopeBySlug[lineage],
-			PreservesUnlisted: si.PreservesUnlisted,
+			Before: b, After: a, Delta: delta,
+			Attestation: parser.AttestationFor(mode),
+			Scope:       scopeBySlug[lineage],
+			// PER LINEAGE, not the record's global flag. A record may retire
+			// one promise and revise another; the closure claim belongs to the
+			// living one and is false for the ending one, so recording the
+			// record-level bool against a retirement would store an assertion
+			// the author is not making.
+			PreservesUnlisted: si.PreservesUnlisted && mode != parser.IntentRetire,
 		})
 	}
 	return out, nil
@@ -233,7 +289,7 @@ func buildEvolutionSubjects(cfg *config.Context, slug, featDir string, record pa
 
 // commitEvolveTransition re-derives the mutable half of the subject under the
 // lock and advances.
-func commitEvolveTransition(cfg *config.Context, slug, featDir string, record parser.Amendment, lineages []string, si *parser.ScopeImpact, prior appliedAuthority, payload transitionPayload, digest string, journalScopeBefore []lineageScope, narrowing map[string]bool) error {
+func commitEvolveTransition(cfg *config.Context, slug, featDir string, record parser.Amendment, lineages []string, si *parser.ScopeImpact, prior appliedAuthority, payload transitionPayload, digest string, journalScopeBefore []lineageScope, narrowing, retiring map[string]bool) error {
 	return withVerifiedAuthority(cfg, slug, prior, func(current appliedAuthority) error {
 		// The capsule comparison the boundary performs says nothing about
 		// attribution, which comes from mutable contract artifacts. Re-derive
@@ -258,7 +314,7 @@ func commitEvolveTransition(cfg *config.Context, slug, featDir string, record pa
 		// revised entry that moved elsewhere. Re-derive the consequence
 		// subjects too, or an edit to a replacement between approval and write
 		// would change what the human agreed to while leaving the token valid.
-		nowConsequences := checkScopeConsequences(cfg, slug, record, journalScopeBefore, mustScopes(featDir, slug, lineages, record.Affects), narrowing)
+		nowConsequences := checkScopeConsequences(cfg, slug, record, journalScopeBefore, mustScopes(featDir, slug, lineages, record.Affects), narrowing, retiring)
 		if len(nowConsequences.Problems) > 0 {
 			return fmt.Errorf("the declared consequences no longer hold:\n  - %s",
 				joinLines(nowConsequences.Problems))
@@ -340,21 +396,43 @@ func emitEvolvePreflight(cmd *cobra.Command, out applyAmendmentPreflight, subjec
 		out.Amendment, len(subjects), out.Feature)
 	for _, s := range subjects {
 		fmt.Fprintf(w, "\n── %s (%s) ──\n", s.Lineage, s.Mode)
-		if len(s.Delta) == 0 {
-			fmt.Fprintln(w, "  (no field changes)")
+		if s.Mode == string(parser.IntentRetire) {
+			// An ending is shown in full, never as a delta. A retirement
+			// rendered as every field blanking reads like a rewrite, and the
+			// human is being asked for a different approval than that: not
+			// "is this the right new text" but "is this promise over".
+			fmt.Fprintln(w, "  This promise ENDS. Nothing takes it over.")
+			fmt.Fprintf(w, "\n  The promise being ended, in full:\n")
+			writeWholeIntent(w, "    ", s.Before)
+		} else {
+			if len(s.Delta) == 0 {
+				fmt.Fprintln(w, "  (no field changes)")
+			}
+			for _, d := range s.Delta {
+				fmt.Fprintf(w, "  %s\n    before: %s\n    after:  %s\n", d.Field, d.Before, d.After)
+			}
 		}
-		for _, d := range s.Delta {
-			fmt.Fprintf(w, "  %s\n    before: %s\n    after:  %s\n", d.Field, d.Before, d.After)
+		if s.Mode == string(parser.IntentRetire) {
+			fmt.Fprintf(w, "\n  Contract entries this promise justified, all of which lose it:\n")
+			for _, c := range s.Consequences {
+				fmt.Fprintf(w, "    %s\n", c.Ref)
+			}
+			if len(s.Consequences) == 0 {
+				fmt.Fprintln(w, "    (none — this promise supported no contract entry)")
+			}
+		} else {
+			fmt.Fprintf(w, "\n  Contract entries attributed to this promise:\n")
+			if len(s.Scope.Named) == 0 && len(s.Scope.Unlisted) == 0 {
+				fmt.Fprintln(w, "    (none)")
+			}
 		}
-		fmt.Fprintf(w, "\n  Contract entries attributed to this promise:\n")
-		if len(s.Scope.Named) == 0 && len(s.Scope.Unlisted) == 0 {
-			fmt.Fprintln(w, "    (none)")
-		}
-		for _, r := range refsOf(s.Scope.Named) {
-			fmt.Fprintf(w, "    %s   [this record declares it changed]\n", r)
-		}
-		for _, r := range refsOf(s.Scope.Unlisted) {
-			fmt.Fprintf(w, "    %s   [not declared changed]\n", r)
+		if s.Mode != string(parser.IntentRetire) {
+			for _, r := range refsOf(s.Scope.Named) {
+				fmt.Fprintf(w, "    %s   [this record declares it changed]\n", r)
+			}
+			for _, r := range refsOf(s.Scope.Unlisted) {
+				fmt.Fprintf(w, "    %s   [not declared changed]\n", r)
+			}
 		}
 		if len(s.Consequences) > 0 {
 			fmt.Fprintf(w, "\n  What becomes of the entries this record does declare:\n")
@@ -366,18 +444,77 @@ func emitEvolvePreflight(cmd *cobra.Command, out applyAmendmentPreflight, subjec
 			}
 		}
 		fmt.Fprintf(w, "\n  You are asserting: %s\n", s.Attestation)
-		fmt.Fprintln(w, "  And: every entry above marked [not declared changed] remains")
-		fmt.Fprintln(w, "  supported by the new promise.")
+		// The closure claim is about entries that stay supported by the new
+		// promise. A retirement leaves no new promise, so there is no such
+		// claim to make and printing one would ask for an assertion that
+		// cannot be true.
+		if s.Mode != string(parser.IntentRetire) {
+			fmt.Fprintln(w, "  And: every entry above marked [not declared changed] remains")
+			fmt.Fprintln(w, "  supported by the new promise.")
+		}
 	}
-	fmt.Fprintln(w, "\nNothing checks those two claims. The tool can see that a lineage still")
-	fmt.Fprintln(w, "resolves; it cannot see whether a revised promise still entails an entry")
-	fmt.Fprintln(w, "attributed to it. That judgement is yours.")
+	// The epistemic footer is per subject, not one global sentence. A record can
+	// carry a revision and a retirement at once, and the unchecked claims are
+	// different in kind: for a living promise the tool cannot see whether the
+	// new text still entails an entry attributed to it; for a retirement there
+	// is no closure claim at all, and the lineage specifically must NOT resolve
+	// afterwards. Printing the living sentence over a retirement describes a
+	// check the tool did not make about a promise that no longer exists.
+	fmt.Fprintln(w, "\nWhat the tool cannot check, per promise:")
+	for _, s := range subjects {
+		if s.Mode == string(parser.IntentRetire) {
+			fmt.Fprintf(w, "  %s — that this promise SHOULD end, and that each consequence above\n",
+				s.Lineage)
+			fmt.Fprintln(w, "    is the right fate for the work it justified. The tool checked that")
+			fmt.Fprintln(w, "    every entry is accounted for and that none still names this promise;")
+			fmt.Fprintln(w, "    it cannot judge whether ending it is correct.")
+			continue
+		}
+		fmt.Fprintf(w, "  %s — that the new text still entails every entry attributed to it.\n",
+			s.Lineage)
+		fmt.Fprintln(w, "    The tool can see the lineage still resolves; it cannot read the promise")
+		fmt.Fprintln(w, "    and the entry and tell you one follows from the other.")
+	}
+	fmt.Fprintln(w, "\nThat judgement is yours.")
 	fmt.Fprintf(w, "\nTo apply:\n\n  parlay internal apply-amendment @%s --confirm %s\n",
 		out.Feature, out.Digest)
 	return nil
 }
 
-var _ = strings.TrimSpace
+// writeWholeIntent prints every field of a promise, absent ones included.
+//
+// A withdrawal approval is over the COMPLETE proposition being ended, so an
+// omitted field is not a tidier rendering — it is a part of the promise the
+// human was never shown before agreeing it is over. Absence prints as (none)
+// rather than vanishing, so what is missing is visible as missing.
+func writeWholeIntent(w io.Writer, indent string, in parser.Intent) {
+	line := func(label, v string) {
+		if strings.TrimSpace(v) == "" {
+			v = "(none)"
+		}
+		fmt.Fprintf(w, "%s%-12s %s\n", indent, label+":", v)
+	}
+	list := func(label string, vs []string) {
+		if len(vs) == 0 {
+			fmt.Fprintf(w, "%s%-12s (none)\n", indent, label+":")
+			return
+		}
+		fmt.Fprintf(w, "%s%s:\n", indent, label)
+		for _, v := range vs {
+			fmt.Fprintf(w, "%s  - %s\n", indent, v)
+		}
+	}
+	line("title", in.Title)
+	line("goal", in.Goal)
+	line("persona", in.Persona)
+	line("priority", in.Priority)
+	line("context", in.Context)
+	line("action", in.Action)
+	list("objects", in.Objects)
+	list("constraints", in.Constraints)
+	list("verify", in.Verify)
+	list("questions", in.Questions)
+}
 
 // mustScopes re-derives the post-splice population, treating a derivation
 // failure as an empty population so the comparison below refuses rather than

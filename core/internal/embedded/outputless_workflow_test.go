@@ -133,7 +133,23 @@ func TestRefineNamesTheEvolveCeremony(t *testing.T) {
 		t.Error("the guidance must forbid the agent inventing the author's scope claim — " +
 			"manufacturing it means approving a claim nobody made")
 	}
-	if !strings.Contains(section, "refused for now") {
-		t.Error("the guidance must say which modes have no applier yet")
+	// The vocabulary is complete here now, so the guidance must say so rather
+	// than name a subset — an agent told only about the supported modes will
+	// route a retirement to the legacy path, which asks a question the author
+	// already answered.
+	for _, mode := range []string{"extend", "revise", "narrow", "retire"} {
+		if !strings.Contains(section, mode) {
+			t.Errorf("the evolve guidance must cover mode %q", mode)
+		}
+	}
+	if !strings.Contains(section, "before you splice") &&
+		!strings.Contains(section, "BEFORE editing") {
+		t.Error("the guidance must tell the agent to capture the inventory before the splice — " +
+			"a late capture shows a retirement losing nothing")
+	}
+	for _, d := range []string{"retained", "revised", "removed", "replaced-by"} {
+		if !strings.Contains(section, d) {
+			t.Errorf("the evolve guidance must name disposition %q", d)
+		}
 	}
 }

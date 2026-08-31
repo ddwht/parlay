@@ -30,14 +30,17 @@ import (
 // So the ceremony lives here and the storage stays there. Internally this
 // reuses the same capsule writer, hashing and atomic write.
 //
-// SCOPE, deliberately narrow. Today it recognises exactly one shape: an
-// amendment carrying BOTH affects: and a governance withdrawal, which is the
-// shape the accounting rule produces for any feature whose retiring promise
-// still has live contract entries, and which no other command can apply. Every
-// other shape fails closed and names the command that owns it. Future
-// transition modes (extend, revise, narrow) are a separate design and are NOT
-// inferred from today's frontmatter — a record is never classified into a mode
-// it does not declare.
+// SCOPE. Two shapes, each with its own ceremony:
+//
+//   - a COMBINED record carrying both affects: and a legacy governance
+//     withdrawal, which no other command can apply; and
+//   - an INTENT EVOLUTION record in the amends_intents: vocabulary, in any of
+//     its four modes — extend, revise, narrow and retire.
+//
+// Every other shape fails closed and names the command that owns it. A mode is
+// never inferred from frontmatter: a record is only ever classified into the
+// transition it declares, which is why the legacy spelling keeps the withdrawal
+// ceremony rather than being executed as a retirement it never claimed to be.
 //
 // The command boundary is named for what it does rather than for this one
 // mode, because the mode set will grow and the public surface should not have
@@ -45,12 +48,18 @@ import (
 
 const (
 	transitionModeWithdrawAndSplice = "withdraw-and-splice"
-	// transitionModeEvolve applies an intent transition that keeps the lineage
-	// alive. Only the preservation form is supported: extend, or a revise
-	// whose scope declaration lists no exception. A revision that declares an
-	// entry loses support, and every narrow or retire, waits for the stage
-	// that wires the orphan accounting — approving a loss whose consequences
-	// the ledger never collected would be the bypass in a new spelling.
+	// transitionModeEvolve applies an intent transition in the amends_intents:
+	// vocabulary. All four modes: extend, revise, narrow and retire.
+	//
+	// The three that can take support away from contract entries — narrow,
+	// retire, and a revise declaring exceptions — must account for what becomes
+	// of each entry that loses it, checked against the artifacts and against a
+	// pre-splice inventory. Approving a loss whose consequences nobody
+	// collected would have been the original bypass in a new spelling.
+	//
+	// retire shares this path because the machinery it needs is this machinery;
+	// it differs in PRESENTATION (an ending shown in full rather than a delta)
+	// and in having no closure to assert.
 	transitionModeEvolve = "evolve"
 )
 
@@ -64,10 +73,13 @@ var applyAmendmentCmd = &cobra.Command{
 	Short: "Apply one amendment under the proof bundle its transition requires",
 	Long: `Apply a feature's single pending amendment, given proof of what it did.
 
-Currently supports one transition: a COMBINED record carrying both affects: and
-a governance withdrawal. That record has a splice somebody performed and
-promises somebody must approve, and neither half may be applied without the
-other — which is why no other command will touch it.
+Supports two transitions. A COMBINED record carries both affects: and a legacy
+governance withdrawal: it has a splice somebody performed and promises somebody
+must approve, and neither half may be applied without the other, which is why
+no other command will touch it. An INTENT EVOLUTION record uses the
+amends_intents: vocabulary in any of its four modes — extend, revise, narrow
+and retire — and is approved against the promise delta, or for a retirement the
+whole promise being ended, plus what becomes of every contract entry affected.
 
 Two proofs are required and both are bound to the exact record:
 
@@ -402,7 +414,12 @@ type evolutionSubject struct {
 	// pre-splice. Stored so the receipt records what was approved rather than
 	// leaving a later reader to reconstruct a population that no longer exists.
 	ScopeBefore lineageScope `yaml:"scope-before" json:"scope_before"`
-	// PreservesUnlisted is the author's closure declaration.
+	// PreservesUnlisted is the author's closure declaration AS IT APPLIES TO
+	// THIS LINEAGE. Always false for a retirement: the claim is that unlisted
+	// entries stay supported by the changed promise, and a retirement leaves no
+	// promise to support them. A record that retires one lineage and revises
+	// another therefore stores true on one subject and false on the other,
+	// which is what the author actually asserted.
 	PreservesUnlisted bool `yaml:"preserves-unlisted" json:"preserves_unlisted"`
 	// Consequences are the checked, structured results for each declared
 	// exception — which entry, as it was, what became of it, and where the

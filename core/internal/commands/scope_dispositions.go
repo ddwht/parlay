@@ -116,7 +116,7 @@ type ConsequenceReceipt struct {
 //   - ATTRIBUTION — was it justified by this lineage? Answered BEFORE the
 //     splice, because a removed entry is invisible afterwards.
 //   - DECLARED MUTATION — does affects: name it? Provenance, never existence.
-func checkScopeConsequences(cfg *config.Context, slug string, record parser.Amendment, before, after []lineageScope, narrowing map[string]bool) scopeConsequences {
+func checkScopeConsequences(cfg *config.Context, slug string, record parser.Amendment, before, after []lineageScope, narrowing, retiring map[string]bool) scopeConsequences {
 	out := scopeConsequences{ByLineage: map[string][]ConsequenceReceipt{}}
 	// Existence is answered by the resolver over the whole ref grammar, not by
 	// one feature's index: `replaced_by` and a disposition subject both accept
@@ -237,6 +237,14 @@ func checkScopeConsequences(cfg *config.Context, slug string, record parser.Amen
 				"%s is dispositioned %q, which says it is gone, but it is still in the contract — "+
 					"the splice and the declaration disagree", canon, ex.Disposition))
 		}
+		if retiring[lineage] && rule.MustResolve && rule.MustStayAttributed {
+			out.Problems = append(out.Problems, fmt.Sprintf(
+				"%s is dispositioned %q under %q, which claims that promise still supports it — "+
+					"but this record ends that promise. Nothing can be retained by a promise "+
+					"that is over; say where the work went, or that it is gone",
+				canon, ex.Disposition, lineage))
+			continue
+		}
 		if rule.MustStayAttributed && !survives[lineage][canon] {
 			out.Problems = append(out.Problems, fmt.Sprintf(
 				"%s is dispositioned %q under %q, which claims that promise still supports it — "+
@@ -311,10 +319,42 @@ func checkScopeConsequences(cfg *config.Context, slug string, record parser.Amen
 		}
 	}
 
+	// A retirement has NO CLOSURE to shelter under. `preserves_unlisted` says
+	// the entries this record does not list remain supported by the promise —
+	// and when the promise ends, there is no promise to support them. So every
+	// entry the lineage justified owes a consequence (the completeness loop
+	// above, since survival cannot excuse one here), and nothing may still name
+	// the retired promise as its source.
+	//
+	// Work moving elsewhere is not what this catches: an entry re-sourced to
+	// another promise has left this lineage's population and is accounted for
+	// by `revised` or `replaced-by`. What it catches is an entry left pointing
+	// at a promise that no longer exists.
+	for lineage := range retiring {
+		for _, ref := range sortedRefs(survives[lineage]) {
+			out.Problems = append(out.Problems, fmt.Sprintf(
+				"%s still names %q as its source after this record retires that promise — a "+
+					"retired promise cannot justify anything, so the splice and the record "+
+					"disagree about what happened", ref, lineage))
+		}
+	}
+
 	// A narrowing that loses nothing is a revision. Checked PER LINEAGE: a
 	// consequence on one narrowed lineage says nothing about another.
 	for lineage := range narrowing {
 		if len(dispositioned[lineage]) == 0 {
+			if retiring[lineage] {
+				// Only when the promise justified something. A promise that
+				// supported nothing can end with nothing to account for.
+				if len(attributedTo[lineage]) > 0 {
+					out.Problems = append(out.Problems, fmt.Sprintf(
+						"%s is retired but the record declares no consequence for any of the %d "+
+							"entr(y/ies) it justified — ending a promise that supported work "+
+							"has to say what becomes of that work",
+						lineage, len(attributedTo[lineage])))
+				}
+				continue
+			}
 			out.Problems = append(out.Problems, fmt.Sprintf(
 				"%s is narrowed but the record declares no consequence for it — a narrowing that "+
 					"takes nothing away is a revision, and should say so", lineage))
@@ -366,14 +406,21 @@ func captureScopeBefore(cfg *config.Context, slug string, journal *refineJournal
 		return fmt.Errorf("amendment %d does not exist in %s's ledger, so there is nothing to "+
 			"record and nothing to capture", seq, slug)
 	}
+	// Every lineage the evolve ceremony will need an inventory for — which is
+	// every AUTHORED mode, not only the ones that carry new text. A retirement
+	// is the case that needs it most: once the promise is gone, nothing it
+	// justified can be recovered from the artifacts, so a capture taken after
+	// the splice would show an empty population and every lost entry would
+	// look like it was never there. Legacy supersessions are excluded because
+	// their meaning was never recorded and they go through the other path.
 	var lineages []string
 	for _, tr := range record.IntentTransitions() {
-		if tr.Mode.CarriesNewText() {
+		if parser.KnownIntentMode(tr.Mode) {
 			lineages = append(lineages, tr.Intent)
 		}
 	}
 	if len(lineages) == 0 {
-		return nil // a found, valid record that changes no promise text
+		return nil // a found, valid record that declares no authored transition
 	}
 	scopes, err := deriveLineageScope(featDir, slug, lineages, record.Affects)
 	if err != nil {
@@ -392,6 +439,17 @@ func captureScopeBefore(cfg *config.Context, slug string, journal *refineJournal
 	journal.ScopeBeforeLineages = lineages
 	journal.ScopeBeforeDigest = scopeInventoryDigest(scopes)
 	return nil
+}
+
+// sortedRefs gives a deterministic order for a ref set, so a refusal reads the
+// same way twice.
+func sortedRefs(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // validSHA256 reports whether s is a full hex-encoded SHA-256 digest.

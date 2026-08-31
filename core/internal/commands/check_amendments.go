@@ -250,6 +250,7 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		for _, a := range amendments {
 			trustedApplied[a.Seq] = amendmentTrustedApplied(capsule, featDir, a)
 		}
+		reportMissingTransitionReceipts(capsule, amendments, trustedApplied, &out)
 	}
 
 	for _, a := range amendments {
@@ -314,6 +315,10 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 			supersessions = append(supersessions, intentClaim{
 				seq: a.Seq, fileSlug: a.FileSlug, intent: slug,
 				supersedes: a.Supersedes, affects: a.Affects,
+				// Authored in the evolution vocabulary, so the ceremony owns
+				// this claim's scope accounting rather than the ledger rule
+				// below. See reportUnaccountedScope.
+				authored: len(a.AmendsIntents) > 0,
 			})
 		}
 
@@ -412,6 +417,9 @@ type intentClaim struct {
 	intent     string
 	supersedes []string // amendment slugs this claim's amendment replaces
 	affects    []string
+	// authored marks a claim written in the amends_intents: vocabulary, whose
+	// scope accounting belongs to the apply ceremony rather than to this file.
+	authored bool
 }
 
 // resolveIntentSupersessions runs the ledger-level half of intent supersession:
@@ -735,6 +743,21 @@ func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants
 	intentsOf := map[string][]string{}
 	for intent, heads := range claimants {
 		for _, c := range heads {
+			// A claim authored in the evolution vocabulary is accounted for by
+			// scope_impact dispositions, which the apply ceremony checks. That
+			// accounting is strictly stronger than this one: `removed`,
+			// `replaced-by`, `revised` and `retained` each state what BECAME of
+			// the entry and are verified against the artifacts, where affects:
+			// only records that the amendment touched it. Running both would
+			// ask the author to say the same thing twice, in the weaker form
+			// second, and would report a record as unsound for omitting the
+			// redundant half.
+			//
+			// This rule keeps the legacy `supersedes_intents:` spelling, which
+			// has no dispositions and no ceremony that could check them.
+			if c.authored {
+				continue
+			}
 			if accountedBy[c.fileSlug] == nil {
 				accountedBy[c.fileSlug] = map[string]bool{}
 			}
@@ -791,6 +814,55 @@ func reportUnaccountedScope(cfg *config.Context, slug, featDir string, claimants
 		Severity: "error", Code: "intent-supersession-unaccounted-affect",
 		Message: fmt.Sprintf("retiring these intents leaves %d contract entr%s with no disposition: %s — name each in affects: to say whether it is replaced, removed or retained, or the generated scope outlives the promise that justified it", len(unaccounted), plural(len(unaccounted), "y", "ies"), strings.Join(unaccounted, ", ")),
 	})
+}
+
+// reportMissingTransitionReceipts requires an applied record in the evolution
+// vocabulary to carry the ceremony receipt its dispositions replaced.
+//
+// This is the other half of dropping intent-supersession-unaccounted-affect for
+// authored claims. That rule was the durable, re-checkable evidence that a
+// retirement's contract entries were accounted for; the dispositions are a
+// stronger accounting, but only if they were ever actually checked. Trusted
+// applied means the marker covers the record and its stored hash matches the
+// retained bytes — it does NOT mean a ceremony ran. observeAppliedAuthority
+// validates receipts that exist; nothing required one to exist.
+//
+// So without this, a capsule advanced by hand with the right amendment hash and
+// no receipt is trusted, the old rule skips it as authored, and there is no
+// evidence anywhere that consequence accounting ever happened. That is not
+// hypothetical here: a hand-advanced marker with matching hashes is exactly the
+// state this repository was in when this work started.
+//
+// Pending records need no receipt. Their ceremony has not run yet and is what
+// will create one.
+func reportMissingTransitionReceipts(capsule appliedAuthority, amendments []parser.Amendment, trustedApplied map[int]bool, out *checkAmendmentsOutput) {
+	for _, a := range amendments {
+		if len(a.AmendsIntents) == 0 || !trustedApplied[a.Seq] {
+			continue
+		}
+		name := filepath.Base(a.Path)
+		receipt, ok := capsule.Receipts[name]
+		if !ok {
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-transition-receipt-missing",
+				Message: fmt.Sprintf("%03d-%s is recorded applied and changes founding promises "+
+					"in the amends_intents: vocabulary, but the baseline holds no transition "+
+					"receipt for it — nothing shows the approval ceremony ever ran, and the "+
+					"dispositions that replaced the older affects: accounting are only evidence "+
+					"if they were checked. Re-apply it with `parlay internal apply-amendment`",
+					a.Seq, a.FileSlug),
+			})
+			continue
+		}
+		if problems := auditEvolutionReceipt(a, receipt); len(problems) > 0 {
+			out.Issues = append(out.Issues, amendmentIssue{
+				Severity: "error", Code: "amendment-transition-receipt-invalid",
+				Message: fmt.Sprintf("%03d-%s changes founding promises in the amends_intents: "+
+					"vocabulary, but its transition receipt does not describe this record:\n  - %s",
+					a.Seq, a.FileSlug, strings.Join(problems, "\n  - ")),
+			})
+		}
+	}
 }
 
 func plural(n int, one, many string) string {

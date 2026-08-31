@@ -118,6 +118,8 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `amendment-compaction-incomplete` | A compaction of this feature was interrupted and its journal is still in place, so the ledger may be half-moved. Every authority writer refuses while it stands — `save-build-state` and `apply-governance` both stop — because recording authority over a half-moved ledger blesses a state nobody intended and that recovery is about to undo. Re-running `parlay internal compact @<feature>` recovers and clears it. |
 | `amendment-intent-lineage-unknown` | A transition names a founding promise this feature does not declare. |
 | `amendment-intent-lineage-ended` | A transition changes a lineage a previous record already ended. |
+| `amendment-transition-receipt-missing` | A trusted-applied `amends_intents:` record has no transition receipt in the baseline. Nothing shows its approval ceremony ran, so its dispositions evidence nothing. |
+| `amendment-transition-receipt-invalid` | The receipt exists but does not describe this record: wrong ceremony mode, a promise approved twice or not at all, a closure value that contradicts the mode, or a consequence whose disposition, replacement or fingerprints disagree with the amendment. |
 | `amendment-intent-transition-malformed` | An `amends_intents:` entry has an unknown mode, authors the read-only `legacy_supersession`, supplies no new goal for a mode that requires one, supplies text for `retire`, names one lineage twice, or states a lineage in both vocabularies. |
 | `amendment-authority-unreadable` | The feature's `.baseline.yaml` exists but its applied-authority record could not be read, so no amendment can be shown applied. Reported rather than degraded to "nothing applied", which would turn every historical ref back into a fatal one and read as drift rather than as a broken baseline. |
 | `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
@@ -269,12 +271,85 @@ The third is what makes this more than side-by-side text. A revision can stop
 supporting an entry while the lineage stays alive and resolving, so the entry is
 never referentially orphaned and no structural check can see the loss.
 
-**`scope_impact:` is required and is the author's.** `version: 1`,
-`preserves_unlisted: true`, and an `exceptions:` list. The closure assertion —
-that every attributed entry the record does not list remains supported by the
-new promise — is a human claim nothing establishes. It is declared rather than
-inferred from the mode, because inferring it would mean the ceremony
-manufacturing a preservation claim the amendment never made.
+**`scope_impact:` is required and is the author's.** `version: 1`, an
+`exceptions:` list, and — for every mode that leaves a promise behind —
+`preserves_unlisted: true`. The closure assertion is that every attributed entry
+the record does not list remains supported by the new promise: a human claim
+nothing establishes. It is declared rather than inferred from the mode, because
+inferring it would mean the ceremony manufacturing a preservation claim the
+amendment never made.
+
+**The assertion is MODE-AWARE, because it is a claim about a promise that still
+exists.** A retirement leaves no new promise, so on a record whose every
+transition is a `retire` the assertion is not merely unnecessary — it is false,
+and `preserves_unlisted: true` there is refused as contradictory. Omit it; the
+exceptions are the complete account, since a retirement has no closure and every
+entry the promise justified owes a consequence.
+
+On a MIXED record — one promise retired, another revised — the flag is a claim
+about the living lineages only. It stays **one authored bool**: there is no way
+to make independent closure choices per lineage, and none is offered. What is
+per-subject is its *interpretation and its record*: the receipt stores `false`
+against a retirement subject and `true` against its revising sibling, because a
+single record-level value carried into the receipt would either attribute a
+false claim to the retirement or drop a real one from the revision.
+
+**An applied record in this vocabulary must carry its receipt.** The ledger's
+`intent-supersession-unaccounted-affect` rule does not run for authored claims
+because the dispositions replaced it — and that is only sound while something
+durable shows the dispositions were checked. Trusted-applied means the marker
+covers the record and its stored hash matches the retained bytes; it does not
+mean a ceremony ran. So `check-amendments` requires a transition receipt for
+every trusted-applied `amends_intents` record, and audits it against the record and
+against itself:
+
+- one subject per declared transition, with matching mode, the mode-scoped
+  closure value, the mode's exact attestation, and — for a living mode — the
+  promise text materialised from the amendment's own `version:` block, with a
+  delta its own before and after actually describe. A retirement's subject
+  leaves nothing behind and carries no delta;
+- every declared exception has a consequence whose disposition, replacement,
+  fingerprints and human-readable claim match; no exception is filed under a
+  lineage the record does not transition;
+- every consequence is present in the subject's own captured pre-splice
+  inventory with the same fingerprint. That inventory is itself validated —
+  present and exact lineage, canonical unique refs, real digests, no entry both
+  declared and undeclared, and a `Named`/`Unlisted` partition matching the
+  amendment's canonical `affects:` — before anything rests on it. Otherwise a
+  synthesised digest-shaped string passes as evidence that the promise ever
+  justified the entry, which is the plausible-absent-ref problem the capture
+  exists to close, one layer in;
+- the same validation applies to the subject's recorded surviving population,
+  and the two are related to each other. A retirement records none: nothing is
+  justified by a promise that is over. For a living mode, a captured entry left
+  to the closure must appear among the survivors — the closure claims a
+  survival, and a receipt that does not show it is asserting one it has no
+  record of. A survivor with neither a consequence nor a closure over it is in
+  the record for no stated reason;
+- wherever a consequence's after subject also appears among the survivors, the
+  two must describe the same entry. Not byte identity with the before
+  fingerprint — an affected surviving entry may legitimately change — but
+  subject continuity. `retained` additionally requires that appearance, because
+  its whole claim is that this promise still supports the entry. `revised` is
+  exempt from being required to be present, since a revision may re-source an
+  entry to whatever justifies it now — but exemption from being required is not
+  exemption from agreeing when present, and a receipt binding an entry to one
+  thing while recording another as surviving contradicts itself however it got
+  that way;
+- every captured entry is covered: by a consequence always, or by the closure
+  where a living mode asserts one. A retirement has no closure, so a captured
+  entry with no consequence is unaccounted for however the exception list reads. Missing is
+`amendment-transition-receipt-missing`; mismatched is
+`amendment-transition-receipt-invalid`. Both are errors, never a fallback to the
+weaker legacy accounting.
+
+The adversary here is a **re-digested** receipt. The digest already refuses one
+whose bytes were edited, but it proves a receipt is self-consistent and never
+that it describes the record beside it — so the audit compares receipt to
+amendment, which is the thing a digest cannot do for itself. This is consistency
+and audit validation, not authenticity: the baseline is unsigned, and anyone who
+can write it can write a consistent forgery. What the audit removes is the
+forgery that is consistent and **still wrong about this record**.
 
 The digest binds the promise text, the exact attributed population **with a
 semantic fingerprint per entry**, its partition, the scope declaration, the
@@ -383,11 +458,42 @@ A `narrow` must declare at least one consequence. A narrowing that takes nothing
 away is a revision, and should say so — otherwise `narrow` becomes a quieter
 `revise` that skips the delta approval a revision owes.
 
-**Supported: `extend`, `revise` and `narrow`.** `retire` goes through the
-withdrawal ceremony instead, which shows the promise list rather than a delta:
-ending a promise and rewording one are different approvals, and one form cannot
-stand in for the other. A record touching several lineages is all-or-nothing,
-because a partly applied one leaves a state no reader can classify.
+**All four authored modes apply here: `extend`, `revise`, `narrow` and
+`retire`.** A record touching several lineages is all-or-nothing, because a
+partly applied one leaves a state no reader can classify.
+
+`retire` is presented as an ENDING, not as a delta. A retirement rendered as a
+before/after with every field blanking reads like a rewrite, and the human is
+being asked a different question than that — not "is this the right new text"
+but "is this promise over". So the ceremony shows the promise being ended in
+full, and asks for no closure assertion: `preserves_unlisted` claims the entries
+this record does not list stay supported by the promise, and a retirement leaves
+no promise to support them.
+
+That is also why a retirement has **no closure**. Every entry the lineage
+justified owes a consequence, and nothing may still name the retired promise as
+its source afterwards. Two consequences carry most retirements:
+
+- an entry that SURVIVES, re-sourced to whatever justifies it now, is `revised`
+  — it is still in the contract, so nothing replaced it; what changed is which
+  promise supports it;
+- an entry that is gone, with another carrying its work, is `replaced-by`.
+
+`retained` cannot appear under a retirement at all, and is refused in those
+terms: it claims the changed promise still supports the entry, and there is no
+promise left to do so.
+
+The ledger's `intent-supersession-unaccounted-affect` rule does not run for a
+claim authored in this vocabulary. The dispositions ARE that accounting and a
+stricter form of it — each says what BECAME of the entry and is checked against
+the artifacts, where `affects:` only records that the amendment touched it.
+Requiring both would ask the author to say the same thing twice, the second time
+more weakly. The rule keeps the legacy `supersedes_intents:` spelling, which has
+no dispositions to check.
+
+The legacy spelling still goes to the withdrawal ceremony, for a different
+reason: its mode was never recorded, so it cannot be executed as any particular
+one, and that ceremony asks what the record meant rather than assuming.
 
 ### Applying a combined record
 

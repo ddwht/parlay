@@ -321,16 +321,21 @@ func applyRevision(in parser.Intent, applied, latest map[string]intentRevision, 
 		return in
 	}
 
-	return materialise(in.Slug, chosen.version)
+	return MaterialiseIntent(in.Slug, chosen.version)
 }
 
-// materialise builds the current promise from its immutable lineage slug and a
-// complete version snapshot.
+// MaterialiseIntent builds the current promise from its immutable lineage slug
+// and a complete version snapshot.
+//
+// Exported because the receipt audit has to reconstruct the same "after" a
+// ceremony recorded, from the same amendment, using the same rule. Two copies of
+// snapshot semantics would drift, and the audit would then be comparing a
+// receipt against a second opinion rather than against the record.
 //
 // Snapshot semantics, deliberately: every field comes from the version, so a
 // field omitted there is ABSENT rather than inherited. Only the slug survives,
 // because attribution binds to it and a transition may never change it.
-func materialise(slug string, v *parser.IntentVersion) parser.Intent {
+func MaterialiseIntent(slug string, v *parser.IntentVersion) parser.Intent {
 	if v == nil {
 		return parser.Intent{Slug: slug}
 	}
@@ -352,7 +357,7 @@ func materialise(slug string, v *parser.IntentVersion) parser.Intent {
 // currentVersionOf returns the promise as the applied ledger leaves it.
 func currentVersionOf(in parser.Intent, applied map[string]intentRevision) parser.Intent {
 	if r, ok := applied[in.Slug]; ok {
-		return materialise(in.Slug, r.version)
+		return MaterialiseIntent(in.Slug, r.version)
 	}
 	return in
 }

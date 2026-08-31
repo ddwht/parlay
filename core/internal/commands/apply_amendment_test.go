@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"gopkg.in/yaml.v3"
@@ -1205,8 +1207,11 @@ func TestStage1b_CeremonyShowsDeltaAttestationAndScope(t *testing.T) {
 	if !strings.Contains(prose, "You are asserting") || !strings.Contains(prose, "before/after replacement") {
 		t.Errorf("the ceremony must state the claim the human is making; got:\n%s", prose)
 	}
-	if !strings.Contains(prose, "Nothing checks those two claims") {
-		t.Error("the ceremony must not imply the mode was verified")
+	// Per subject now, not one global sentence: a record can carry a revision
+	// and a retirement at once, and what the tool cannot check differs by mode.
+	if !strings.Contains(prose, "What the tool cannot check, per promise") ||
+		!strings.Contains(prose, "still entails every entry attributed to it") {
+		t.Errorf("the ceremony must not imply the mode was verified; got:\n%s", prose)
 	}
 	// Which subjects — both attributed entries, partitioned.
 	if !strings.Contains(prose, "@my-feature/operation:x   [this record declares it changed]") {
@@ -1275,16 +1280,32 @@ func TestStage1b_ConfirmedEvolveAppliesAndReceiptsTheSubject(t *testing.T) {
 func TestStage2_UnsupportedTransitionsRefuseByReason(t *testing.T) {
 	cases := []struct{ name, frontmatter, want string }{
 		{
-			name: "retire belongs to the withdrawal ceremony",
+			// A retirement has no closure to shelter behind: preserves_unlisted
+			// says the entries this record does not list stay supported by the
+			// promise, and there is no promise left to support them.
+			name: "retirement declaring no consequence at all",
 			frontmatter: `amends_intents:
   - intent: check-readiness
     mode: retire
 scope_impact:
   version: 1
-  preserves_unlisted: true
   exceptions: []
 `,
-			want: "not a change to a promise but the end of one",
+			want: "ending a promise that supported work",
+		},
+		{
+			name: "retirement leaving an entry still attributed",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: retire
+scope_impact:
+  version: 1
+  exceptions:
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: removed
+`,
+			want: "still names \"check-readiness\" as its source",
 		},
 		{
 			name: "no scope declaration at all",
@@ -2086,7 +2107,7 @@ func TestStage2_DispositionsAreCheckedAgainstTheContract(t *testing.T) {
 	// before == after here: nothing was spliced away, so a "survives"
 	// disposition is coherent and a "gone" one contradicts the contract.
 	check := func(a parser.Amendment) scopeConsequences {
-		return checkScopeConsequences(cfg, "my-feature", a, scopes, scopes, nil)
+		return checkScopeConsequences(cfg, "my-feature", a, scopes, scopes, nil, nil)
 	}
 	cases := []struct{ name, disp, replacedBy, want string }{
 		{"removed but still present", "removed", "", "still in the contract"},
@@ -2207,7 +2228,7 @@ func TestStage2_ConsequenceOverAnUnjustifiedEntryRefuses(t *testing.T) {
 			}},
 		},
 	}
-	got := checkScopeConsequences(cfg, "my-feature", rec, before, before, nil)
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, before, nil, nil)
 	var found bool
 	for _, p := range got.Problems {
 		if strings.Contains(p, "did not justify it before this change") {
@@ -2257,7 +2278,7 @@ func TestStage2_ConsequencesAreOwnedPerLineage(t *testing.T) {
 		},
 	}
 	got := checkScopeConsequences(cfg, "my-feature", rec, before, before,
-		map[string]bool{"check-readiness": true, "survives": true})
+		map[string]bool{"check-readiness": true, "survives": true}, nil)
 
 	var named bool
 	for _, p := range got.Problems {
@@ -2327,7 +2348,7 @@ func TestStage2_ReSourcedEntryIsNotRemoved(t *testing.T) {
 			}},
 		},
 	}
-	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil)
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil, nil)
 	var caught bool
 	for _, p := range got.Problems {
 		if strings.Contains(p, "still in the contract") {
@@ -2453,7 +2474,7 @@ func TestStage2_RetainedRequiresContinuedAttribution(t *testing.T) {
 			}},
 		},
 	}
-	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil)
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil, nil)
 	var caught bool
 	for _, p := range got.Problems {
 		if strings.Contains(p, "no longer justified by that promise") {
@@ -3114,4 +3135,1186 @@ func TestStage2_CaptureFingerprintMustBeRealHex(t *testing.T) {
 	if !strings.Contains(err.Error(), "no usable fingerprint") {
 		t.Errorf("the refusal must name the fingerprint; got: %v", err)
 	}
+}
+
+// --- retire: the fourth mode ---
+
+// retireAmendment ends check-readiness. Its two entries go different ways on
+// purpose, because a retirement where everything simply vanishes is the easy
+// case and not the common one:
+//
+//   - x SURVIVES, re-sourced to the promise that now justifies it. That is
+//     `revised`, not `replaced-by` — the entry is still in the contract, so
+//     nothing replaced it; what changed is which promise supports it.
+//   - y is gone outright and w carries its work. That is `replaced-by`.
+//
+// %s is filled with the disposition block under test.
+const retireAmendment = `---
+amendment: retired
+date: 2026-09-02
+amends_intents:
+  - intent: check-readiness
+    mode: retire
+affects:
+  - "@my-feature/operation:x"
+scope_impact:
+  version: 1
+  exceptions:
+%s---
+
+## Change
+The feature no longer promises to report readiness.
+
+## Why
+The cluster reports its own health now.
+
+## Acceptance
+- Nothing reports readiness from here.
+`
+
+const retireDispositions = `    - intent: check-readiness
+      ref: "@my-feature/operation:x"
+      disposition: revised
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: replaced-by
+      replaced_by: "@my-feature/operation:w"
+`
+
+// setupRetirement writes the record FIRST, captures the pre-splice inventory
+// against it, and only then splices. Any other order captures a population the
+// change has already emptied, which for a retirement means capturing nothing at
+// all — every entry the promise justified would look like it was never there.
+func setupRetirement(t *testing.T, dir, dispositions string) (*config.Context, string) {
+	t.Helper()
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-retired.md",
+		fmt.Sprintf(retireAmendment, dispositions))
+	// w exists before the change and belongs to the promise that survives.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n"+
+			"  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: w\n    kind: query\n    summary: reports what is left\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	// The splice: y gone, x re-sourced away from the retired promise.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n"+
+			"  - id: x\n    kind: command\n    summary: does x, now for the surviving promise\n    source: \"@my-feature/survives\"\n"+
+			"  - id: w\n    kind: query\n    summary: reports what is left\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, featureDir
+}
+
+// The end-to-end witness for the fourth mode. Before this, `retire` was in the
+// documented vocabulary with NO route at all: the evolve ceremony refused it
+// and pointed at the withdrawal ceremony, which refuses evolution records. A
+// designer writing the documented thing was sent somewhere that would also
+// turn them away.
+func TestStage2_RetirementAppliesThroughTheCeremony(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := setupRetirement(t, dir, retireDispositions)
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("a retirement whose consequences are declared and consistent must apply: %v", err)
+	}
+	// An ending is presented as an ending, not as a delta that blanks every
+	// field: the human is being asked "is this promise over", not "is this the
+	// right new text".
+	if !strings.Contains(prose, "This promise ENDS") {
+		t.Errorf("the ceremony must present a retirement as an ending; got:\n%s", prose)
+	}
+	if !strings.Contains(prose, "See if the cluster is ready") {
+		t.Errorf("the ceremony must show the promise being ended in full; got:\n%s", prose)
+	}
+	if strings.Contains(prose, "remains") && strings.Contains(prose, "supported by the new promise") {
+		t.Error("a retirement leaves no new promise, so no closure assertion may be requested")
+	}
+	if !strings.Contains(prose, "nothing takes it over") &&
+		!strings.Contains(prose, "Nothing takes it over") {
+		t.Errorf("the attestation must say what retirement means; got:\n%s", prose)
+	}
+
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed retirement: %v", err)
+	}
+
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	if bl.LastAppliedAmendment != 1 {
+		t.Fatalf("marker = %d, want 1", bl.LastAppliedAmendment)
+	}
+	ev := bl.TransitionReceipts["001-retired.md"].Payload.Evolution
+	if len(ev) != 1 || ev[0].Mode != "retire" {
+		t.Fatalf("the receipt must record the retirement; got %+v", ev)
+	}
+	if len(ev[0].Consequences) != 2 {
+		t.Fatalf("both entries the promise justified must be accounted for; got %+v",
+			ev[0].Consequences)
+	}
+	byRef := map[string]ConsequenceReceipt{}
+	for _, c := range ev[0].Consequences {
+		byRef[c.Ref] = c
+	}
+	// x survives, re-sourced: the receipt binds it as it now is, so a later
+	// reader can see which entry the approval was actually about.
+	if got := byRef["@my-feature/operation:x"]; got.Disposition != "revised" ||
+		got.AfterRef != "@my-feature/operation:x" || !validSHA256(got.AfterFingerprint) {
+		t.Errorf("a revised survivor must be bound as it now is; got %+v", got)
+	}
+	if got := byRef["@my-feature/operation:y"]; got.Disposition != "replaced-by" ||
+		got.AfterRef != "@my-feature/operation:w" || !validSHA256(got.AfterFingerprint) {
+		t.Errorf("the replacement must be named and bound; got %+v", got)
+	}
+	// The promise is actually gone from what the feature now promises.
+	res, err := resolveActiveIntents(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range res.Active {
+		if in.Slug == "check-readiness" {
+			t.Error("the promise is still in force after its retirement was applied")
+		}
+	}
+}
+
+// `retained` claims the changed promise still supports the entry. A retirement
+// leaves no promise to do that, so the claim cannot be true — and saying so in
+// its own terms is worth more than letting it fail as a generic attribution
+// miss, which would send the author looking at the artifacts rather than at
+// the contradiction in what they wrote.
+func TestStage2_RetainedIsImpossibleUnderARetirement(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := setupRetirement(t, dir, `    - intent: check-readiness
+      ref: "@my-feature/operation:x"
+      disposition: retained
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: removed
+`)
+
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("retained under a retirement must refuse")
+	}
+	if !strings.Contains(err.Error(), "Nothing can be retained by a promise that is over") {
+		t.Errorf("the refusal must name the contradiction, not a generic attribution miss; got: %v", err)
+	}
+}
+
+// A retirement is bound to its consequences under the lock like any other
+// transition: the replacement it names must still be what it was.
+func TestStage2_RetirementReplacementMutatedBeforeTheLockRefuses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRetirement(t, dir, retireDispositions)
+	pf := evolvePreflight(t, cfg)
+	caps := filepath.Join(featureDir, "capabilities.yaml")
+	blBefore, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var once sync.Once
+	authorityLockAttemptHook = func(string) {
+		once.Do(func() {
+			_ = os.WriteFile(caps, []byte("operations:\n"+
+				"  - id: x\n    kind: command\n    summary: does x, now for the surviving promise\n    source: \"@my-feature/survives\"\n"+
+				"  - id: w\n    kind: query\n    summary: reports nothing of the sort\n    source: \"@my-feature/survives\"\n"), 0o644)
+		})
+	}
+	t.Cleanup(func() { authorityLockAttemptHook = nil })
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("a retirement whose replacement changed after approval must refuse")
+	} else if !strings.Contains(err.Error(), "changed between approval and write") {
+		t.Errorf("the refusal must identify the consequence check; got: %v", err)
+	}
+	blAfter, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blBefore) != string(blAfter) {
+		t.Error("the baseline was written for a retirement whose replacement had changed")
+	}
+}
+
+// --- The closure assertion is a claim about a promise that still exists ---
+
+// preserves_unlisted says: the entries this record does not list remain
+// supported by the changed promise. A retirement leaves no changed promise, so
+// on a retire-only record the assertion is not merely unnecessary — it is
+// FALSE. Requiring it meant every retirement carried a false statement into the
+// amendment and into the digest that signs it, and hiding it from the printed
+// ceremony did not remove it from what was signed.
+func TestStage2_RetirementMustNotAssertAClosureItCannotHave(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRetirement(t, dir, retireDispositions)
+	// Precondition: the fixture, which omits the assertion, applies.
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("a retirement omitting the closure assertion must be applicable: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(featureDir, "amendments", "001-retired.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withClosure := strings.Replace(string(body), "  version: 1\n",
+		"  version: 1\n  preserves_unlisted: true\n", 1)
+	if withClosure == string(body) {
+		t.Fatal("the fixture did not change; the assertion was not inserted")
+	}
+	writeAmendment(t, featureDir, "001-retired.md", withClosure)
+	writeRefineJournal(t, cfg, "my-feature", 1)
+
+	armApplyAmendment(t, "", false)
+	_, err = runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a retirement asserting preserves_unlisted must refuse — the claim cannot be true")
+	}
+	if !strings.Contains(err.Error(), "no promise left to keep supporting") {
+		t.Errorf("the refusal must say why the claim cannot be true; got: %v", err)
+	}
+}
+
+// A living transition still owes the assertion — the rule must not have been
+// loosened for everyone in the course of exempting retirements.
+func TestStage2_LivingTransitionStillOwesTheClosureAssertion(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-reworded.md", `---
+amendment: reworded
+date: 2026-09-02
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: T
+      goal: A reworded promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  exceptions: []
+---
+
+## Change
+Reworded.
+
+## Why
+Clarity.
+
+## Acceptance
+- Clearer.
+`)
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a revision omitting preserves_unlisted must refuse")
+	}
+	if !strings.Contains(err.Error(), "does not assert preserves_unlisted") {
+		t.Errorf("the refusal must name the missing assertion; got: %v", err)
+	}
+}
+
+// A record that retires one promise and revises another asserts the closure for
+// the living lineage only. A single global flag would either force a false
+// claim onto the retirement or drop a real one from the revision.
+func TestStage2_MixedRecordScopesTheClosureToTheLivingLineage(t *testing.T) {
+	cfg := applyMixedRecord(t)
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	byLineage := map[string]evolutionSubject{}
+	for _, sub := range bl.TransitionReceipts["001-mixed.md"].Payload.Evolution {
+		byLineage[sub.Lineage] = *sub
+	}
+	if got := byLineage["check-readiness"]; got.PreservesUnlisted {
+		t.Error("the retirement stored a closure claim the author did not make — there is no " +
+			"promise left for unlisted entries to remain supported by")
+	}
+	if got := byLineage["survives"]; !got.PreservesUnlisted {
+		t.Error("the revision lost the closure claim the author DID make")
+	}
+}
+
+// applyMixedRecord applies a record that retires one promise and revises
+// another, which is the ordinary shape once a feature has more than one.
+func applyMixedRecord(t *testing.T) *config.Context {
+	t.Helper()
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-mixed.md", `---
+amendment: mixed
+date: 2026-09-02
+affects:
+  - "@my-feature/operation:x"
+amends_intents:
+  - intent: check-readiness
+    mode: retire
+  - intent: survives
+    mode: revise
+    version:
+      title: Survives
+      goal: Something that stays, said better.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions:
+    - intent: check-readiness
+      ref: "@my-feature/operation:x"
+      disposition: revised
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: removed
+---
+
+## Change
+One promise ends; another is reworded.
+
+## Why
+Both at once, which is ordinary.
+
+## Acceptance
+- Both landed.
+`)
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x for the surviving promise\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("a mixed record whose closure covers only the living lineage must apply: %v", err)
+	}
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed mixed record: %v", err)
+	}
+	return cfg
+}
+
+// --- What the human is shown before agreeing a promise is over ---
+
+// A withdrawal approval is over the COMPLETE proposition. An omitted field is
+// not a tidier rendering; it is part of the promise the human never saw before
+// agreeing it should end.
+func TestStage2_RetirementShowsTheWholePromise(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRetirement(t, dir, retireDispositions)
+	// Give the promise every field, so an omission in the renderer shows up as
+	// a missing one rather than as an empty one that was never there.
+	intents, err := os.ReadFile(filepath.Join(featureDir, "intents.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched := strings.Replace(string(intents), "**Persona**: Admin",
+		"**Persona**: Admin\n**Priority**: P1\n**Context**: During a rollout.\n"+
+			"**Action**: Poll the readiness endpoint.\n\n"+
+			"**Objects**:\n- Cluster\n\n**Constraints**:\n- Must not block the rollout\n\n"+
+			"**Verify**:\n- A ready cluster reports ready\n\n**Questions**:\n- What counts as ready?", 1)
+	if enriched == string(intents) {
+		t.Fatal("the fixture promise was not enriched")
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "intents.md"), []byte(enriched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	for _, want := range []string{
+		"P1", "During a rollout.", "Poll the readiness endpoint.",
+		// Each string is unique to ONE field. "cluster" would have been
+		// satisfied by the goal line, so dropping the objects list entirely
+		// still passed — the assertion has to be able to fail.
+		"upgrade", "Must not block the rollout", "A ready cluster reports ready",
+		"What counts as ready?",
+	} {
+		if !strings.Contains(prose, want) {
+			t.Errorf("the promise being ended must be shown in full; missing %q from:\n%s",
+				want, prose)
+		}
+	}
+	// The footer must not describe a check that does not apply to an ending.
+	if strings.Contains(prose, "lineage still resolves") {
+		t.Error("a retiring lineage specifically must NOT resolve afterwards; the footer " +
+			"describes the living case")
+	}
+	if strings.Contains(prose, "those two claims") {
+		t.Error("a retirement makes no closure claim, so there are not two claims to disclaim")
+	}
+}
+
+// --- The receipt is the evidence the dispositions replaced ---
+
+// Dropping intent-supersession-unaccounted-affect for authored claims is only
+// sound if the stronger accounting is DURABLE. Trusted-applied means the marker
+// covers the record and its stored hash matches the retained bytes; it does not
+// mean a ceremony ran. Without this check, a capsule advanced by hand with the
+// right hash and no receipt is trusted, the old rule skips it as authored, and
+// nothing anywhere evidences that consequence accounting ever happened.
+func TestStage2_AppliedAuthoredRecordMustCarryItsReceipt(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRetirement(t, dir, retireDispositions)
+
+	// The real path first: apply it properly and confirm the ledger is clean.
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed retirement: %v", err)
+	}
+	if issues := errorsOf(computeCheckAmendments(cfg, "my-feature")); len(issues) > 0 {
+		t.Fatalf("a properly applied retirement must leave a clean ledger; got %v", issues)
+	}
+
+	// Now the forgery: same marker, same amendment hash, receipt removed. This
+	// is the shape a hand-advanced capsule has, and it is exactly the state
+	// this repository was in when this work began.
+	blPath := baselinePath(cfg, "my-feature")
+	bl := readFeatureBaseline(t, blPath)
+	if len(bl.TransitionReceipts) != 1 {
+		t.Fatalf("expected one receipt to remove; got %d", len(bl.TransitionReceipts))
+	}
+	bl.TransitionReceipts = nil
+	data, err := marshalBaseline(&bl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issues := errorsOf(computeCheckAmendments(cfg, "my-feature"))
+	if len(issues) == 0 {
+		t.Fatal("an applied evolution record with no receipt must be reported — otherwise the " +
+			"dispositions that replaced the older accounting are evidence of nothing")
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Code == "amendment-transition-receipt-missing" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the finding must name the missing receipt; got %v", issues)
+	}
+	_ = featureDir
+}
+
+// A receipt is evidence about a SPECIFIC record, and the digest cannot make it
+// so: re-digesting proves a receipt is self-consistent, never that it describes
+// the amendment beside it. So the forgeries below are all internally sound —
+// edited and then re-digested, which is what someone with the code would do —
+// and every one of them must still be caught by comparing the receipt to the
+// record on disk.
+//
+// The headline is not the evidence. An earlier version of this check compared
+// only lineage and mode, and the emptied-consequences case below sailed
+// straight through it while nothing showed a single retired entry had been
+// accounted for.
+func TestStage2_ForgedReceiptIsAuditedAgainstTheRecord(t *testing.T) {
+	cases := []struct {
+		name    string
+		forge   func(t *testing.T, r *TransitionReceipt)
+		wantErr string
+	}{
+		{
+			// The bypass the whole rule exists to close.
+			name: "consequences deleted",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Consequences = nil
+			},
+			wantErr: "records no consequence for it",
+		},
+		{
+			name: "disposition rewritten",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				cs := r.Payload.Evolution[0].Consequences
+				for i := range cs {
+					if cs[i].Ref == "@my-feature/operation:y" {
+						cs[i].Disposition = "removed"
+						cs[i].AfterRef, cs[i].AfterFingerprint = "", ""
+					}
+				}
+			},
+			wantErr: "as \"removed\", but the record declares \"replaced-by\"",
+		},
+		{
+			name: "replacement repointed",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				cs := r.Payload.Evolution[0].Consequences
+				for i := range cs {
+					if cs[i].Ref == "@my-feature/operation:y" {
+						cs[i].AfterRef = "@my-feature/operation:x"
+					}
+				}
+			},
+			wantErr: "but the record names @my-feature/operation:w",
+		},
+		{
+			// A map keyed by lineage collapses these to one, which is how the
+			// first version of the check missed them.
+			name: "duplicate approved promise",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				dup := *r.Payload.Evolution[0]
+				r.Payload.Evolution = append(r.Payload.Evolution, &dup)
+			},
+			wantErr: "approves \"check-readiness\" twice",
+		},
+		{
+			name: "before fingerprint erased",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Consequences[0].BeforeFingerprint = ""
+			},
+			wantErr: "no usable fingerprint",
+		},
+		{
+			name: "closure claim flipped onto a retirement",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].PreservesUnlisted = true
+			},
+			wantErr: "records the closure claim",
+		},
+		{
+			// The plausible-absent-ref problem, one layer in. Without linking
+			// the consequence to the receipt's OWN captured inventory, any
+			// digest-shaped string passes as evidence that the promise once
+			// justified the entry.
+			name: "consequence for an entry the capture never held",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				sub := r.Payload.Evolution[0]
+				sub.ScopeBefore.Named = nil
+				var kept []scopedEntry
+				for _, e := range sub.ScopeBefore.Unlisted {
+					if e.Ref != "@my-feature/operation:y" {
+						kept = append(kept, e)
+					}
+				}
+				sub.ScopeBefore.Unlisted = kept
+			},
+			wantErr: "does not show that promise justifying it",
+		},
+		{
+			name: "before fingerprint does not match the capture",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				cs := r.Payload.Evolution[0].Consequences
+				cs[0].BeforeFingerprint = strings.Repeat("ab", 32)
+			},
+			wantErr: "not the entry its own captured inventory holds",
+		},
+		{
+			// A retirement has no closure, so a captured entry with no
+			// consequence is unaccounted for however the exception list reads.
+			name: "captured entry dropped along with its consequence",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				sub := r.Payload.Evolution[0]
+				var keptC []ConsequenceReceipt
+				for _, c := range sub.Consequences {
+					if c.Ref != "@my-feature/operation:y" {
+						keptC = append(keptC, c)
+					}
+				}
+				sub.Consequences = keptC
+			},
+			wantErr: "records no consequence for it",
+		},
+		{
+			name: "captured inventory holds a non-canonical ref",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].ScopeBefore.Unlisted[0].Ref = "operation:x"
+			},
+			wantErr: "not a canonical contract reference",
+		},
+		{
+			name: "captured inventory holds an entry twice",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				sc := &r.Payload.Evolution[0].ScopeBefore
+				sc.Unlisted = append(sc.Unlisted, sc.Unlisted[0])
+			},
+			wantErr: "twice",
+		},
+		{
+			name: "captured inventory holds an unusable fingerprint",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].ScopeBefore.Unlisted[0].Fingerprint = strings.Repeat("z", 64)
+			},
+			wantErr: "records no usable fingerprint",
+		},
+		{
+			name: "captured entry is both declared and undeclared",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				sc := &r.Payload.Evolution[0].ScopeBefore
+				sc.Named = append(sc.Named, sc.Unlisted[0])
+			},
+			wantErr: "both declared and undeclared",
+		},
+		{
+			// The subject says one promise, the consequence inside it says
+			// another. A consequence belongs to the promise that justified the
+			// entry, and filing it elsewhere lets one lineage's accounting
+			// stand in for another's.
+			name: "consequence filed under the wrong promise",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Consequences[0].Lineage = "survives"
+			},
+			wantErr: "while the consequence itself names",
+		},
+		{
+			// The shared validator's invariant holds for the empty population
+			// too. deriveLineageScope names every scope it returns, so an
+			// unowned inventory is never something the ceremony produced — and
+			// exempting the one case that reaches it would suppress the check
+			// exactly where a forger is freest.
+			name: "retirement's empty surviving inventory has no owner",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Scope.Lineage = ""
+			},
+			wantErr: "recorded surviving inventory for \"check-readiness\" is filed under \"\"",
+		},
+		{
+			// A retirement leaves nothing justified by the promise, so a
+			// recorded surviving population records something that cannot be
+			// true — and every ref and fingerprint in it is individually valid.
+			name: "retirement records a population that survives it",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Scope = lineageScope{
+					Lineage: "check-readiness",
+					Unlisted: []scopedEntry{{
+						Ref: "@my-feature/operation:w", Fingerprint: strings.Repeat("ab", 32)}},
+				}
+			},
+			wantErr: "as still justified by \"check-readiness\" after that promise is retired",
+		},
+		{
+			// An inventory with no owner is not evidence about any promise, so
+			// blank must be refused as firmly as wrong. The foreign-lineage
+			// case below does not cover it.
+			name: "captured inventory has no owner at all",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].ScopeBefore.Lineage = ""
+			},
+			wantErr: "is filed under \"\"",
+		},
+		{
+			name: "captured inventory filed under another promise",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].ScopeBefore.Lineage = "survives"
+			},
+			wantErr: "is filed under \"survives\"",
+		},
+		{
+			name: "claim contradicts its own disposition",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				cs := r.Payload.Evolution[0].Consequences
+				cs[0].Claim = "this entry is gone from the contract, and nothing takes it over"
+			},
+			wantErr: "the stored words and the stored disposition disagree",
+		},
+		{
+			name: "attestation rewritten",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Attestation = "I confirm the new version adds to this promise and removes or weakens none of it."
+			},
+			wantErr: "records the attestation for",
+		},
+		{
+			name: "a promise left standing after its retirement",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].After = parser.Intent{
+					Slug: "check-readiness", Title: "Check Readiness", Goal: "Still here.",
+				}
+			},
+			wantErr: "records a promise still standing",
+		},
+		{
+			name: "approves a promise the record does not change",
+			forge: func(t *testing.T, r *TransitionReceipt) {
+				r.Payload.Evolution[0].Lineage = "survives"
+				cs := r.Payload.Evolution[0].Consequences
+				for i := range cs {
+					cs[i].Lineage = "survives"
+				}
+			},
+			wantErr: "approves nothing for \"check-readiness\"",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := applyRealRetirement(t)
+			// Precondition: the honest receipt audits clean, so the finding
+			// below is attributable to the forgery and nothing else.
+			if issues := errorsOf(computeCheckAmendments(cfg, "my-feature")); len(issues) > 0 {
+				t.Fatalf("the real applied retirement must be clean; got %v", issues)
+			}
+
+			blPath := baselinePath(cfg, "my-feature")
+			bl := readFeatureBaseline(t, blPath)
+			r := bl.TransitionReceipts["001-retired.md"]
+			tc.forge(t, &r)
+			// Re-digested, so the receipt is internally sound and the generic
+			// validator has nothing to object to.
+			d, err := transitionDigest(r.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Digest = d
+			bl.TransitionReceipts["001-retired.md"] = r
+			data, err := marshalBaseline(&bl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(blPath, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			var found *amendmentIssue
+			for _, iss := range errorsOf(computeCheckAmendments(cfg, "my-feature")) {
+				if iss.Code == "amendment-transition-receipt-invalid" {
+					c := iss
+					found = &c
+				}
+			}
+			if found == nil {
+				t.Fatal("a re-digested forgery must still be caught by comparing the receipt to " +
+					"the record — the digest only proves self-consistency")
+			}
+			if !strings.Contains(found.Message, tc.wantErr) {
+				t.Errorf("the finding must name what does not match; want %q, got:\n%s",
+					tc.wantErr, found.Message)
+			}
+		})
+	}
+}
+
+// applyRealRetirement runs the genuine ceremony end to end and returns the
+// context, so a forgery test starts from an honest receipt rather than a
+// hand-built one.
+func applyRealRetirement(t *testing.T) *config.Context {
+	t.Helper()
+	dir := setupTestDir(t)
+	cfg, _ := setupRetirement(t, dir, retireDispositions)
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed retirement: %v", err)
+	}
+	return cfg
+}
+
+// An exception filed under a lineage the record does not transition belongs to
+// neither sweep in the audit: the per-lineage pass runs over TRANSITIONS and the
+// extra-subject pass runs over receipt SUBJECTS. The operational checker rejects
+// such a record, but the operational checker does not run over history — so a
+// record applied by an older binary, with a re-digested receipt that simply
+// omits the foreign group, would audit clean.
+//
+// Called directly, because the state cannot be reached through today's
+// pipeline: applying such a record is refused, and the amendment cannot be
+// edited afterwards without breaking the hash that makes it trusted.
+func TestStage2_ExceptionUnderAnUntransitionedLineageIsRejected(t *testing.T) {
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{{
+			Intent: "check-readiness", Mode: parser.IntentRetire,
+		}},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1,
+			Exceptions: []parser.ScopeException{{
+				Intent: "some-other-promise", Ref: "@my-feature/operation:q",
+				Disposition: "removed",
+			}},
+		},
+	}
+	receipt := TransitionReceipt{Payload: transitionPayload{
+		Mode: transitionModeEvolve,
+		Evolution: []*evolutionSubject{{
+			Lineage: "check-readiness", Mode: string(parser.IntentRetire),
+			Attestation: parser.AttestationFor(parser.IntentRetire),
+		}},
+	}}
+	problems := auditEvolutionReceipt(rec, receipt)
+	var found bool
+	for _, p := range problems {
+		if strings.Contains(p, "which it does not change") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("an exception under an untransitioned lineage must be rejected; got %v", problems)
+	}
+}
+
+// A retirement has no closure, so an entry its own capture shows the promise
+// justified owes a consequence whatever the exception list says. The exception
+// list and the capture are two different populations: the first is what the
+// author chose to declare, the second is what actually existed.
+//
+// Called directly for the same reason as the foreign-lineage case: applying a
+// retirement whose exceptions do not cover its capture is refused, so the state
+// only arises in history — a record applied before the rule existed.
+func TestStage2_CapturedEntryWithNoConsequenceIsUnaccountedFor(t *testing.T) {
+	fp := strings.Repeat("ab", 32)
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{{
+			Intent: "check-readiness", Mode: parser.IntentRetire,
+		}},
+		ScopeImpact: &parser.ScopeImpact{Version: 1},
+	}
+	receipt := TransitionReceipt{Payload: transitionPayload{
+		Mode: transitionModeEvolve,
+		Evolution: []*evolutionSubject{{
+			Lineage: "check-readiness", Mode: string(parser.IntentRetire),
+			Attestation: parser.AttestationFor(parser.IntentRetire),
+			ScopeBefore: lineageScope{
+				Lineage:  "check-readiness",
+				Unlisted: []scopedEntry{{Ref: "@my-feature/operation:x", Fingerprint: fp}},
+			},
+		}},
+	}}
+	var found bool
+	for _, p := range auditEvolutionReceipt(rec, receipt) {
+		if strings.Contains(p, "no closure to leave it under") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a captured entry with no consequence must be unaccounted for under a "+
+			"retirement; got %v", auditEvolutionReceipt(rec, receipt))
+	}
+
+	// And the case that separates the retirement rule from the closure rule: a
+	// MIXED record does assert the closure, for its living lineage. If the
+	// retiring lineage inherited that shelter, its uncovered entries would go
+	// unreported — which is the whole reason the closure is mode-scoped.
+	rec.AmendsIntents = append(rec.AmendsIntents, parser.IntentAmendment{
+		Intent: "survives", Mode: parser.IntentRevise,
+		Version: &parser.IntentVersion{Title: "Survives", Goal: "Still here.", Persona: "Admin"},
+	})
+	rec.ScopeImpact.PreservesUnlisted = true
+	receipt.Payload.Evolution = append(receipt.Payload.Evolution, &evolutionSubject{
+		Lineage: "survives", Mode: string(parser.IntentRevise),
+		Attestation:       parser.AttestationFor(parser.IntentRevise),
+		PreservesUnlisted: true,
+		After: agent.MaterialiseIntent("survives", &parser.IntentVersion{
+			Title: "Survives", Goal: "Still here.", Persona: "Admin"}),
+		ScopeBefore: lineageScope{Lineage: "survives"},
+	})
+	found = false
+	for _, p := range auditEvolutionReceipt(rec, receipt) {
+		if strings.Contains(p, "no closure to leave it under") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a retiring lineage must not inherit the closure its living sibling asserts; "+
+			"got %v", auditEvolutionReceipt(rec, receipt))
+	}
+}
+
+// The living half of the promise-text audit. A receipt can carry the right
+// disposition headline while lying about the text the human approved, and After
+// is recomputable from the amendment's own version block.
+func TestStage2_ForgedLivingPromiseTextIsCaught(t *testing.T) {
+	cases := []struct {
+		name    string
+		forge   func(sub *evolutionSubject)
+		wantErr string
+	}{
+		{"promise text rewritten", func(sub *evolutionSubject) {
+			sub.After.Goal = "Something the amendment never said."
+		}, "records a different promise"},
+		{"delta does not describe its own before and after", func(sub *evolutionSubject) {
+			sub.Delta = nil
+		}, "does not describe"},
+		{"attestation rewritten", func(sub *evolutionSubject) {
+			sub.Attestation = parser.AttestationFor(parser.IntentExtend)
+		}, "records the attestation for"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			forgeMixedLivingSubject(t, tc.forge, tc.wantErr)
+		})
+	}
+}
+
+// A `retained` consequence claims THIS promise still supports the entry, so the
+// receipt's own surviving population must show it — bound to the entry the
+// consequence recorded, not merely present at the same address.
+// The bridge the audit exists to complete: amendment, to captured population,
+// to dispositions and closure, to the stored surviving population. Each break
+// below leaves every ref and fingerprint individually valid and breaks one
+// relationship BETWEEN them, which is exactly what a re-digested receipt can do.
+//
+// Built directly and round-tripped through the storage encoding, because a
+// living narrowing with a declared entry, a retained entry and a sheltered one
+// is the shape that exercises all four rules, and reaching it through the
+// pipeline would take a fixture larger than the test.
+func TestStage2_ReceiptScopeRelationshipsAreAudited(t *testing.T) {
+	fpX := strings.Repeat("ab", 32)
+	fpS := strings.Repeat("cd", 32)
+	other := strings.Repeat("ef", 32)
+	version := &parser.IntentVersion{Title: "S", Goal: "g", Persona: "Admin"}
+
+	base := func(t *testing.T) (parser.Amendment, TransitionReceipt) {
+		t.Helper()
+		rec := parser.Amendment{
+			Affects: []string{"@my-feature/operation:x"},
+			AmendsIntents: []parser.IntentAmendment{{
+				Intent: "survives", Mode: parser.IntentNarrow, Version: version,
+			}},
+			ScopeImpact: &parser.ScopeImpact{
+				Version: 1, PreservesUnlisted: true,
+				Exceptions: []parser.ScopeException{{
+					Intent: "survives", Ref: "@my-feature/operation:x", Disposition: "retained",
+				}},
+			},
+		}
+		after := agent.MaterialiseIntent("survives", version)
+		sub := &evolutionSubject{
+			Lineage: "survives", Mode: string(parser.IntentNarrow),
+			Attestation: parser.AttestationFor(parser.IntentNarrow), After: after,
+			Delta:             diffVersions(parser.Intent{}, after),
+			PreservesUnlisted: true,
+			ScopeBefore: lineageScope{Lineage: "survives",
+				Named:    []scopedEntry{{Ref: "@my-feature/operation:x", Fingerprint: fpX}},
+				Unlisted: []scopedEntry{{Ref: "@my-feature/operation:s", Fingerprint: fpS}}},
+			Scope: lineageScope{Lineage: "survives",
+				Named:    []scopedEntry{{Ref: "@my-feature/operation:x", Fingerprint: fpX}},
+				Unlisted: []scopedEntry{{Ref: "@my-feature/operation:s", Fingerprint: fpS}}},
+			Consequences: []ConsequenceReceipt{{
+				Lineage: "survives", Ref: "@my-feature/operation:x",
+				BeforeFingerprint: fpX, Disposition: "retained",
+				Claim:    dispositionRules["retained"].Claim,
+				AfterRef: "@my-feature/operation:x", AfterFingerprint: fpX,
+			}},
+		}
+		// As it reads back from the baseline. A receipt built in memory has nil
+		// slices where a stored one has empty ones, and comparing the two
+		// directly reports every honest receipt as a mismatch.
+		payload, err := asStored(transitionPayload{
+			Mode: transitionModeEvolve, Evolution: []*evolutionSubject{sub}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rec, TransitionReceipt{Payload: payload}
+	}
+
+	// Precondition: the coherent version audits clean, so each break below is
+	// attributable to itself and to nothing else in the fixture.
+	rec, receipt := base(t)
+	if problems := auditEvolutionReceipt(rec, receipt); len(problems) > 0 {
+		t.Fatalf("the coherent receipt must audit clean; got %v", problems)
+	}
+
+	cases := []struct {
+		name    string
+		forge   func(sub *evolutionSubject)
+		wantErr string
+	}{
+		{
+			// Named means "this amendment declares it changed", which is
+			// affects: and nothing else. Moving an entry across the partition
+			// rewrites what the record claims about it while every ref and
+			// fingerprint stays intact.
+			"declared entry moved to the undeclared partition",
+			func(sub *evolutionSubject) {
+				sub.ScopeBefore.Unlisted = append(sub.ScopeBefore.Unlisted, sub.ScopeBefore.Named...)
+				sub.ScopeBefore.Named = nil
+			},
+			"but the amendment's affects: does name it",
+		},
+		{
+			"undeclared entry promoted to the declared partition",
+			func(sub *evolutionSubject) {
+				sub.Scope.Named = append(sub.Scope.Named, sub.Scope.Unlisted...)
+				sub.Scope.Unlisted = nil
+			},
+			"does not name it",
+		},
+		{
+			// The closure asserted and unbacked: the receipt says the promise
+			// still supports the entry while its own record of what that
+			// promise justifies does not include it.
+			"closure claims a survival the receipt does not show",
+			func(sub *evolutionSubject) {
+				sub.Scope.Unlisted = nil
+			},
+			"the closure claims a survival the receipt does not show",
+		},
+		{
+			// A survivor with neither a consequence nor a closure over it is in
+			// the record for no stated reason: nothing says why the human
+			// agreed it should still be there.
+			"survivor with no consequence and no closure",
+			func(sub *evolutionSubject) {
+				sub.PreservesUnlisted = false
+			},
+			"with no consequence and no closure to cover it",
+		},
+		{
+			"retained entry missing from the surviving population",
+			func(sub *evolutionSubject) {
+				sub.Scope.Named = nil
+			},
+			"does not include it",
+		},
+		{
+			// Not byte identity — an affected surviving entry may legitimately
+			// change. What must hold is that the consequence and the population
+			// describe the SAME entry.
+			"retained entry bound to one thing and surviving as another",
+			func(sub *evolutionSubject) {
+				sub.Scope.Named[0].Fingerprint = other
+			},
+			"records another as surviving",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, receipt := base(t)
+			tc.forge(receipt.Payload.Evolution[0])
+			problems := auditEvolutionReceipt(rec, receipt)
+			if !containsProblem(problems, tc.wantErr) {
+				t.Errorf("want %q; got %v", tc.wantErr, problems)
+			}
+		})
+	}
+
+	// `revised` is exempt from being REQUIRED in this lineage's surviving
+	// population, because it may be re-sourced. It is not exempt from AGREEING
+	// with that population when it is there: both halves are individually valid
+	// digests and the receipt still contradicts itself.
+	t.Run("revised entry that stayed disagrees with the population", func(t *testing.T) {
+		rec, receipt := base(t)
+		rec.ScopeImpact.Exceptions[0].Disposition = "revised"
+		sub := receipt.Payload.Evolution[0]
+		sub.Consequences[0].Disposition = "revised"
+		sub.Consequences[0].Claim = dispositionRules["revised"].Claim
+		// Precondition: coherent before the disagreement is introduced.
+		if problems := auditEvolutionReceipt(rec, receipt); len(problems) > 0 {
+			t.Fatalf("the revised fixture must audit clean first; got %v", problems)
+		}
+		sub.Scope.Named[0].Fingerprint = other
+		problems := auditEvolutionReceipt(rec, receipt)
+		if !containsProblem(problems, "records another as surviving") {
+			t.Errorf("a revised entry that stayed must agree with the population; got %v", problems)
+		}
+	})
+
+	// The exemption itself, stated as a test so it cannot be tightened by
+	// accident: a `revised` entry re-sourced away from this promise has left
+	// this lineage's population, and that is a legitimate outcome rather than a
+	// loss. It must still audit clean.
+	t.Run("revised entry re-sourced away audits clean", func(t *testing.T) {
+		rec, receipt := base(t)
+		rec.ScopeImpact.Exceptions[0].Disposition = "revised"
+		sub := receipt.Payload.Evolution[0]
+		sub.Consequences[0].Disposition = "revised"
+		sub.Consequences[0].Claim = dispositionRules["revised"].Claim
+		// Gone from this lineage, still named by the record as changed.
+		sub.Scope.Named = nil
+		if problems := auditEvolutionReceipt(rec, receipt); len(problems) > 0 {
+			t.Errorf("a re-sourced revised entry must not be reported as missing; got %v", problems)
+		}
+	})
+}
+
+func containsProblem(problems []string, want string) bool {
+	for _, p := range problems {
+		if strings.Contains(p, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// forgeMixedLivingSubject applies the mixed record honestly, forges its living
+// subject, re-digests, and requires the audit to catch it.
+func forgeMixedLivingSubject(t *testing.T, forge func(*evolutionSubject), wantErr string) {
+	t.Helper()
+	cfg := applyMixedRecord(t)
+	if issues := errorsOf(computeCheckAmendments(cfg, "my-feature")); len(issues) > 0 {
+		t.Fatalf("the real applied record must be clean; got %v", issues)
+	}
+	blPath := baselinePath(cfg, "my-feature")
+	bl := readFeatureBaseline(t, blPath)
+	r := bl.TransitionReceipts["001-mixed.md"]
+	var living *evolutionSubject
+	for _, sub := range r.Payload.Evolution {
+		if sub.Lineage == "survives" {
+			living = sub
+		}
+	}
+	if living == nil {
+		t.Fatal("the fixture must carry a living subject to forge")
+	}
+	forge(living)
+	d, err := transitionDigest(r.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Digest = d
+	bl.TransitionReceipts["001-mixed.md"] = r
+	data, err := marshalBaseline(&bl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var found *amendmentIssue
+	for _, iss := range errorsOf(computeCheckAmendments(cfg, "my-feature")) {
+		if iss.Code == "amendment-transition-receipt-invalid" {
+			c := iss
+			found = &c
+		}
+	}
+	if found == nil {
+		t.Fatal("a re-digested forgery of the promise text must be caught")
+	}
+	if !strings.Contains(found.Message, wantErr) {
+		t.Errorf("want %q; got:\n%s", wantErr, found.Message)
+	}
+}
+
+// errorsOf returns just the error-severity issues.
+func errorsOf(out checkAmendmentsOutput) []amendmentIssue {
+	var errs []amendmentIssue
+	for _, iss := range out.Issues {
+		if iss.Severity == "error" {
+			errs = append(errs, iss)
+		}
+	}
+	return errs
 }

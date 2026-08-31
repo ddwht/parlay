@@ -318,11 +318,41 @@ func (a *Amendment) ValidateScopeImpact() []string {
 		problems = append(problems, fmt.Sprintf(
 			"scope_impact declares version %d; this build understands version 1", si.Version))
 	}
-	if !si.PreservesUnlisted {
-		problems = append(problems,
-			"scope_impact does not assert preserves_unlisted — the declaration is a closure over "+
-				"the entries it does not list, so without that assertion it states nothing about "+
-				"them and the transition cannot be approved against an inventory")
+	// The closure assertion is MODE-AWARE, because it is a claim about a
+	// promise that still exists.
+	//
+	// preserves_unlisted says: the entries this record does not list remain
+	// supported by the changed promise. A retirement leaves no changed promise,
+	// so on a retire-only record the assertion is not merely unnecessary — it is
+	// false, and requiring it meant every retirement carried a false statement
+	// into the amendment and into the digest that signs it. Hiding it from the
+	// printed ceremony did not remove it from what was signed.
+	living, retiring := 0, 0
+	for _, tr := range a.IntentTransitions() {
+		switch {
+		case tr.Mode == IntentRetire:
+			retiring++
+		case KnownIntentMode(tr.Mode):
+			living++
+		}
+	}
+	switch {
+	case living == 0 && retiring > 0:
+		if si.PreservesUnlisted {
+			problems = append(problems,
+				"scope_impact asserts preserves_unlisted, but every transition in this record "+
+					"ends a promise — there is no promise left to keep supporting the entries "+
+					"the record does not list, so the assertion cannot be true. Omit it; the "+
+					"exceptions are the complete account")
+		}
+	case living > 0:
+		if !si.PreservesUnlisted {
+			problems = append(problems,
+				"scope_impact does not assert preserves_unlisted — the declaration is a closure "+
+					"over the entries it does not list, so without that assertion it states "+
+					"nothing about them and the transition cannot be approved against an "+
+					"inventory")
+		}
 	}
 	seen := map[string]bool{}
 	for _, ex := range si.Exceptions {
