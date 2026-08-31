@@ -28,8 +28,10 @@
 // caught only when it changes some finding (a dropped operations block, a
 // re-typed scalar). A lost VALID field leaves every diagnostic set empty and
 // is invisible to this comparison — that property is witnessed separately by
-// TestDomainParity_RoundTripPreservesValidFields below, which asserts the
-// typed decode+serialize round-trip reproduces the clean fixture's content.
+// TestDomainParity_SeamDraftPreservesValidFields below, which captures the
+// exact draft the seam hands the validator and asserts it preserves the
+// submitted content (with TestDomainParity_PersistenceSerializerPreserves-
+// ValidFields covering the separate persistence serializer).
 // The CLI leg covers the label and the JSON projection. A mismatch means a
 // wrapper changed the model or the finding on the way through.
 //
@@ -247,16 +249,11 @@ func TestValidatesWithNoBinary(t *testing.T) {
 	}
 }
 
-// TestDomainParity_RoundTripPreservesValidFields witnesses the property the
-// diagnostic comparison above cannot: a VALID field survives the typed
-// decode+serialize round-trip. Diagnostics stay empty whether or not a valid
-// field is lost, so preservation has to be asserted on the content itself. A
-// richer clean fixture exercises every field the wire model carries — enum
-// with label and tone, ref with target, enum-typed field with its companion
-// key, a relationship with a field.relationship back-reference, and the
-// required flag in both states.
-func TestDomainParity_RoundTripPreservesValidFields(t *testing.T) {
-	fixture := `schema_version: 1
+// parityPreservationFixture exercises every field the wire model carries —
+// enum with label and tone (and a value carrying neither), ref with target,
+// enum-typed field with its companion key, a relationship with a
+// field.relationship back-reference, and the required flag in both states.
+const parityPreservationFixture = `schema_version: 1
 enums:
   - name: OrderStatus
     values:
@@ -290,8 +287,60 @@ relationships:
     to: Customer
     cardinality: many-to-one
 `
+
+// TestDomainParity_SeamDraftPreservesValidFields witnesses the property the
+// diagnostic comparison cannot, ON THE SEAM ITSELF: the draft that
+// domainmodel.Validate marshals for the validator (the private
+// validationDraft path, distinct from the persistence serializer) preserves
+// every valid submitted field. Diagnostics stay empty whether or not a valid
+// field is lost, so preservation is asserted on the captured draft bytes —
+// twice: a typed re-decode compared to the submitted model (asymmetric
+// loss), and a generic YAML-tree comparison against the raw fixture
+// (symmetric loss: a key dropped by the typed structs themselves vanishes
+// from the captured tree but not from the fixture's).
+func TestDomainParity_SeamDraftPreservesValidFields(t *testing.T) {
+	var submitted domainmodel.Model
+	if err := yaml.Unmarshal([]byte(parityPreservationFixture), &submitted); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	var captured []byte
+	spy := func(_ context.Context, draftYAML []byte) []domainmodel.CoreFinding {
+		captured = append([]byte(nil), draftYAML...)
+		return nil
+	}
+	if _, err := domainmodel.Validate(context.Background(), spy, submitted); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(captured) == 0 {
+		t.Fatal("the seam never handed the validator a draft")
+	}
+	var redecoded domainmodel.Model
+	if err := yaml.Unmarshal(captured, &redecoded); err != nil {
+		t.Fatalf("re-decode captured draft: %v", err)
+	}
+	if !reflect.DeepEqual(submitted, redecoded) {
+		t.Errorf("the seam draft changed the model:\nsubmitted: %+v\ncaptured:  %+v\ndraft:\n%s", submitted, redecoded, captured)
+	}
+	var fixtureTree, capturedTree any
+	if err := yaml.Unmarshal([]byte(parityPreservationFixture), &fixtureTree); err != nil {
+		t.Fatalf("generic-decode fixture: %v", err)
+	}
+	if err := yaml.Unmarshal(captured, &capturedTree); err != nil {
+		t.Fatalf("generic-decode captured draft: %v", err)
+	}
+	if !reflect.DeepEqual(fixtureTree, capturedTree) {
+		t.Errorf("the seam draft's YAML tree differs from the fixture's — a modeled key was lost or reshaped:\nfixture:  %#v\ncaptured: %#v", fixtureTree, capturedTree)
+	}
+}
+
+// TestDomainParity_PersistenceSerializerPreservesValidFields is the same
+// preservation property on the OTHER serializer — domainmodel.Serialize, the
+// persistence path — which the seam deliberately does not use (it splices
+// rawOperations; the seam renders parsed Operations). Persistence coverage,
+// not seam coverage.
+func TestDomainParity_PersistenceSerializerPreservesValidFields(t *testing.T) {
 	var first domainmodel.Model
-	if err := yaml.Unmarshal([]byte(fixture), &first); err != nil {
+	if err := yaml.Unmarshal([]byte(parityPreservationFixture), &first); err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
 	out, err := domainmodel.Serialize(first)
