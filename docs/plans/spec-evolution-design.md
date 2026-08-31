@@ -355,8 +355,90 @@ verify it against the reducer before considering any other. OpenSpec
 demonstrates replayable requirement replacement; it does not demonstrate that
 every document decomposes safely into requirements.
 
-Stages 1–3 deliver most of the requirement and touch none of the codegen
-pipeline. The expense is concentrated in Stage 5.
+Stages 0–4 deliver the requirement and touch none of the codegen pipeline. That
+was written as 1–3 while this was a plan, before Stage 4 existed as anything
+more than a sentence about time queries; the built shape is 0–4, and the
+accounting below is the authority. The expense is concentrated in Stage 5, which
+is why it is gated rather than scheduled.
+
+### Stage 5 assessment — the gate, run
+
+**Verdict: NO BUILD, deferred for evidence and for an authority design.** Not
+"not yet scheduled". The gate was run, and it came out no for two reasons that
+are independent: there is no representative subject to verify a reducer against,
+and the question of where replayable content lives is unsettled. Building anyway
+would turn an architectural experiment into production machinery.
+
+**The structural preconditions are PARTLY satisfied, not confirmed.** Checked
+against this checkout rather than assumed:
+
+| precondition | finding |
+|---|---|
+| stable entry identities | **UNRESOLVED.** `id` is unique within one current file (`capabilities-duplicate-operation-id`), which is not identity across time. A reducer must know whether deleting `task.create` and later adding `task.create` is resurrection of one entry, a new version of one lineage, or reuse of a label for a different subject. Nothing decides that today. It needs an immutable entry-lineage rule, or an explicit no-reuse rule, before `id` is replay identity |
+| tombstones for deletion | **PARTIAL.** Stage 2's `removed` and `replaced-by` are the seed of tombstone semantics and real accounting evidence — they prove the fate of a captured subject and retain refs and fingerprints. They are not yet what a reducer needs: no complete replayable snapshot of the removed entry, no coverage of deletions and additions outside an intent transition, and no bar on later id reuse |
+| ordering keys | satisfied: order carries no meaning, the schema states none, and no consumer indexes the list positionally |
+| container metadata | satisfied: two scalars, `schema_version` and `feature` |
+| cross-entry invariants | satisfied: one, id uniqueness |
+| prose owned by no entry | satisfied: the schema models none, and no file in the corpus carries a comment, anchor or merge key |
+
+So the artifact is *close* to reducible and two real design questions stand
+between it and being so.
+
+**Worth could not be demonstrated, and that is the stronger reason.** The pilot
+the doc asks for — make the file generated, verify it against the reducer —
+needs ledger history for contract entries to replay. This checkout retains
+twelve records: ten active and two archived under `studio-cli-hooks`. **None of
+the twelve touches an operation ref.** A reducer would replay nothing, and the
+verification would compare an empty derivation against a hand-written file: a
+test with no subject. Counting only the active ten would have repeated in this
+assessment the exact error Stage 3 had just corrected in code — location does
+not decide semantic relevance, and archived records are retained history.
+
+**Where replayable content lives is unsettled, and it is not a two-way choice.**
+
+- *In the amendment.* Replay works from history, which is what makes the result
+  trustworthy. But every refinement touching an operation must write the entry's
+  full new text into the record, and until the artifact is genuinely generated
+  the same content exists twice — a NEW drift surface, created by the change
+  meant to remove one.
+- *In the baseline receipt.* No authoring burden: the evolve ceremony already
+  holds each entry and fingerprints it. But the baseline is derived state a
+  project may legitimately rebuild, and history that cannot be reconstructed
+  does not belong in a file whose contract is that it can be.
+- *In an append-only, source-controlled contract-entry sidecar* written by the
+  apply ceremony. Tool-owned but authoritative, unlike the rebuildable baseline,
+  and structured, so it does not bloat amendment prose. It carries its own costs
+  — a second authority ledger, with its own atomicity, compaction, migration and
+  review ergonomics — so it does not reverse the gate. Recorded so a future
+  designer does not mistake today's two bad fits for the whole option space.
+
+**A bootstrap route exists, and is named without being recommended.** Establish
+the current capabilities file as a genesis snapshot and require replayable entry
+events only from that cutoff forward. It cannot reconstruct pre-cutoff contract
+history, but it means the absence of old operation-affecting amendments is not
+permanently fatal. A representative external project, or a purpose-built
+longitudinal fixture, could then test the model on a real subject. Neither that
+evidence nor the event-authority design exists today.
+
+**What Stages 0–4 leave true.** The promise half is derived, projectable,
+queryable and provenance-protected. The contract half remains a stored snapshot
+with recorded provenance — which is what every stage has *said* it is, in the
+output and in the schema, rather than quietly implying otherwise.
+
+**A separately scoped proposal, not a substitute.** `HashedSources.Capabilities`
+is a whole-file hash, and its own comment says so: "no per-operation or
+per-fragment granularity". Per-entry fingerprints there would give **granular
+drift localisation** — "operation X changed since the baseline" instead of
+"capabilities.yaml changed". That is the honest scope of the claim. It does NOT
+on its own answer "and no amendment accounts for it": that needs the changed
+canonical refs correlated with `affects:` and authority state, plus a definition
+of what counts as accounted — a pending declaration, an applied receipt, or
+both — which is a separate capability to prove. Nor is it free: it needs
+baseline schema and migration semantics, canonical keys, a rule for raw versus
+resolved fingerprints, handling for additions and removals, a reading for legacy
+absence, diff output changes and tests. Far cheaper than replayable projection,
+and likely worthwhile — on its own argument, not under a gate that was about
+something else.
 
 ## Migration
 
