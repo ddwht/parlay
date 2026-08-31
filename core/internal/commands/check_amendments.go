@@ -23,7 +23,6 @@ import (
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var checkAmendmentsCmd = &cobra.Command{
@@ -61,11 +60,16 @@ type checkAmendmentsOutput struct {
 	// long-applied refs as dirty forever. Deduplicated in first-seen order.
 	DirtySet []string `json:"dirty_set"`
 	// AllAffects is the cumulative union of EVERY amendment's resolvable
-	// affects: refs, deduplicated in first-seen order — the whole ledger's
+	// affects: refs PLUS the tolerated trusted-historical refs that no longer
+	// resolve, deduplicated in first-seen order — the whole ledger's
 	// footprint, regardless of what has been applied. This is the former
 	// dirty_set semantics, kept under an honest name for consumers that want
 	// the full history (audit, cross-feature pressure surveys) rather than the
 	// rebuild-scoping tail.
+	//
+	// The tolerated refs belong here precisely because they stopped resolving:
+	// omitting them would make the audit footprint silently lose the retired
+	// history that "Applied history and resolution" exists to preserve.
 	AllAffects []string `json:"all_affects"`
 	// SupersededBy is the computed reverse of every amendment's supersedes:
 	// forward links keyed by the superseded slug, valued by the slugs of the
@@ -125,13 +129,40 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 	// into generated code. A missing/unreadable baseline (never built, or
 	// pre-v3) reads as 0, so every amendment counts as unapplied — the
 	// conservative reading, matching a from-scratch build.
-	lastApplied := 0
-	if blData, readErr := os.ReadFile(baselinePath(cfg, slug)); readErr == nil {
-		var baseline Baseline
-		if yaml.Unmarshal(blData, &baseline) == nil {
-			lastApplied = baseline.LastAppliedAmendment
-		}
+	// An unfinished compaction leaves the ledger half-moved. Surface it as an
+	// error rather than letting the listing look merely shorter: every gate
+	// that reads this output should stop, and doctor should show it.
+	inFlight, inFlightErr := compactionInFlight(cfg, slug)
+	switch {
+	case inFlightErr != nil:
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-compaction-incomplete",
+			Message: inFlightErr.Error() + " — refusing to treat an unreadable transaction " +
+				"marker as the absence of one",
+		})
+	case inFlight:
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-compaction-incomplete",
+			Message: "a compaction of this feature was interrupted and its journal is still in " +
+				"place, so the ledger may be half-moved. Run `parlay internal compact @" + slug +
+				"` to recover before anything else reads or writes this feature's authority",
+		})
 	}
+
+	// The authority capsule: the marker AND the stored hashes that prove which
+	// records were honoured to reach it. Acquired fail-closed and reported as
+	// its own finding when unreadable — degrading to "nothing is applied"
+	// would quietly turn every historical ref back into a fatal one, which
+	// looks like drift rather than like a broken baseline.
+	capsule, capsuleErr := observeAppliedAuthority(cfg, slug)
+	if capsuleErr != nil {
+		out.Issues = append(out.Issues, amendmentIssue{
+			Severity: "error", Code: "amendment-authority-unreadable",
+			Message: fmt.Sprintf("the applied-authority record cannot be read (%v), so no "+
+				"amendment can be shown applied and no historical ref can be trusted", capsuleErr),
+		})
+	}
+	lastApplied := capsule.Through
 
 	amendments, err := parser.LoadFeatureAmendments(featDir)
 	if err != nil {
@@ -164,6 +195,18 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 	// exists, whether two amendments claim the same one, and whether retiring
 	// them all would leave the feature promising nothing.
 	var supersessions []intentClaim
+	// Which records are TRUSTED applied, computed once. A record is trusted
+	// only when the marker covers it and its stored hash still matches the
+	// bytes history retains — in amendments/ or, after compaction, in
+	// amendments/archive/. A hand-moved marker with no evidence behind it
+	// buys nothing here.
+	trustedApplied := map[int]bool{}
+	if capsuleErr == nil {
+		for _, a := range amendments {
+			trustedApplied[a.Seq] = amendmentTrustedApplied(capsule, featDir, a)
+		}
+	}
+
 	for _, a := range amendments {
 		entry := amendmentEntry{Seq: a.Seq, Slug: a.Slug, Date: a.Date, Affects: a.Affects, Supersedes: a.Supersedes}
 		out.Amendments = append(out.Amendments, entry)
@@ -235,6 +278,19 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 			}
 			affectsCanon[canonicalAmendmentRef(ref)] = true
 			if resolveErr := resolveAmendmentRef(cfg, ref); resolveErr != nil {
+				// A ref declared by a TRUSTED APPLIED record is history, and
+				// history does not have to keep resolving against a contract
+				// that has legitimately moved on — otherwise retirement can
+				// never dispose of the artifacts it is required to dispose of.
+				// Trust here is a checked fact, not a claim: marker covers the
+				// record AND its stored hash still matches retained bytes.
+				if historicalRefTolerated(ref, slug, trustedApplied[a.Seq]) {
+					// Still part of the cumulative audit footprint. Dropping it
+					// would make all_affects silently lose exactly the retired
+					// history this tolerance exists to preserve.
+					out.AllAffects = appendUniqueRef(out.AllAffects, raw)
+					continue
+				}
 				out.Issues = append(out.Issues, amendmentIssue{
 					Severity: "error", Code: "amendment-affects-unresolved",
 					Message: fmt.Sprintf("%03d-%s: %s", a.Seq, a.FileSlug, resolveErr.Error()),

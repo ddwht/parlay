@@ -113,8 +113,94 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `feature-retirement-scan-incomplete` | An artifact could not be read or parsed, so nothing was established. Unknown is not clean. |
 | `feature-retirement-still-referenced` | Something still points at the feature. Names each owning artifact, position and ref. |
 | `intent-supersession-unaccounted-affect` | A contract entry whose `source:` names a superseded intent has no disposition in `affects:`. |
-| `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts. |
+| `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts, and the record declaring it is not trusted applied history (see *Applied history and resolution*). |
+| `amendment-compaction-incomplete` | A compaction of this feature was interrupted and its journal is still in place, so the ledger may be half-moved. Every authority writer refuses while it stands — `save-build-state` and `apply-governance` both stop — because recording authority over a half-moved ledger blesses a state nobody intended and that recovery is about to undo. Re-running `parlay internal compact @<feature>` recovers and clears it. |
+| `amendment-authority-unreadable` | The feature's `.baseline.yaml` exists but its applied-authority record could not be read, so no amendment can be shown applied. Reported rather than degraded to "nothing applied", which would turn every historical ref back into a fatal one and read as drift rather than as a broken baseline. |
 | `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
+
+### Applied history and resolution
+
+An `affects:` ref is resolved against the **current** contract. For a record in
+the unapplied tail that is non-negotiable: the entry it claims to change must
+exist, or the amendment is describing work against something that is not there.
+
+For a record that is **trusted applied history**, resolution is relinquished.
+This is what makes retirement possible at all: `feature-retirement-has-output`
+requires a retiring feature's `capabilities.yaml`, `surface.yaml`,
+`infrastructure.md` and `domain-model.yaml` to be gone, while whole-ledger
+resolution required the entries inside them to exist forever. The two cannot
+both hold.
+
+**Trusted applied is a checked fact, never a claim.** A record qualifies only
+when *both*:
+
+- `seq` is at or below the baseline's `last-applied-amendment`, **and**
+- the baseline's `sources.amendments` entry **for that exact filename** matches
+  the whole-file hash of the bytes history retains — in `amendments/`, or after
+  compaction in `amendments/archive/`.
+
+A marker moved by hand with no recorded evidence buys nothing. A stored hash
+that no longer matches the record buys nothing. A record above the marker is
+pending however good its hash looks.
+
+### How a record was applied
+
+The baseline records the *method* alongside the evidence, in the same file and
+the same atomic write:
+
+- `last-applied-amendment` — how far the ledger is applied. Not the ledger's
+  highest sequence: a save moves it only as far as the caller could **prove**,
+  and the earlier reading ("a save follows a green build, so the ledger is by
+  definition fully applied") is what let a partial save carry a pending
+  governance record past it.
+- `sources.amendments` — per-filename whole-file hashes: the evidence.
+- `outputless-amendments` — optional, per exact amendment **filename**, marking
+  a record blessed on a confirmed output-less claim rather than on emitted
+  files. Additive, so no schema version changes.
+
+  **Presence** positively records a confirmed output-less blessing. **Absence
+  records only that no method was written by the baseline version or path that
+  produced the file** — never that the record was blessed the ordinary way. A
+  baseline predating the field has none regardless of how its authority was
+  obtained, and a marker advanced by hand carries none either. Legacy method is
+  unknown, and no rule may read absence as permission or as trust. A future
+  rule that wants to infer ordinary application from absence needs a version
+  bump and a migration.
+
+All three are copied forward untouched when a save proves no advance, appended
+to only for records an advance actually earned, and never recomputed or removed
+by a later save. Re-deriving a hash for an already-applied record would
+re-bless an edit to it and mint fresh trusted evidence for a write-once
+violation.
+
+The method belongs here rather than in the project-level baseline for three
+reasons, each of which loses it: the project baseline is written in a later
+stage, so a failure between them leaves authority with no explanation; the next
+unrelated save replaces it wholesale; and it is keyed by feature, which cannot
+identify *which* amendment was blessed. The project baseline's `outputless:`
+list remains, as current-run reporting only.
+
+**Scope is the three feature-local kinds only.** `operation`, `surface` and
+`infrastructure` resolve against files retirement deletes, and only they
+deadlock. A `domain` ref is root-scoped — it outlives its own feature's
+retirement — and a cross-feature ref resolves against another feature's
+contract, whose disposal is that feature's own drift responsibility. Neither
+gains an exemption.
+
+**The trade, stated rather than discovered.** After trusted application the
+tool keeps **file-level** detection that a contract artifact was deleted or
+mutated: the baseline's whole-file hashes for `capabilities.yaml`,
+`infrastructure.md` and `surface.yaml` still move, and `source-signatures:`
+remains the hard emission gate. What is relinquished is **entry-level
+historical attribution** — drift reports that `capabilities.yaml` changed, not
+that operation `X`, which amendment 002 once edited, is gone. That is the price
+of letting retirement dispose of feature-local contracts, and it is deliberately
+paid.
+
+A tolerated historical ref stays in `all_affects`, which is the cumulative
+audit footprint; dropping it would make that footprint silently lose exactly
+the retired history this rule preserves. It never enters `dirty_set`, which is
+tail-only and scopes rebuilds.
 
 ## Superseding a founding intent
 
@@ -193,7 +279,7 @@ map; the handoff projection renders the same links in its History section. An am
 
 `check-amendments` emits `dirty_set` — the resolvable `affects:` refs of the **unapplied tail** only: amendments whose sequence exceeds the feature baseline's `last-applied-amendment`. Everything at or below that sequence was already folded into generated code when the baseline was saved, so it is not what a rebuild must touch. This is the **declared** counterpart of what `parlay internal diff` **infers** by hashing: consumers scope rebuilds, prompts, and (later) test selection with it, while the hash comparison remains as trust-but-verify. A disagreement between the declared set and the observed diff is a bug signal — in the amendment or in the apply — not something to proceed past.
 
-*Which reading won and why (L7):* the tail, not the cumulative union. `dirty_set` names what has changed since the last build — the same question `parlay internal diff` answers — so the two agree. The union kept naming long-applied refs as dirty forever and never converged with the observed diff. The full union is still available, honestly named, as `all_affects` (every amendment's resolvable refs regardless of application state) for consumers that want the whole ledger footprint rather than the rebuild-scoping tail. With no baseline (never built, or pre-v3) `last-applied-amendment` reads as 0, so `dirty_set` equals `all_affects` — the conservative from-scratch reading.
+*Which reading won and why (L7):* the tail, not the cumulative union. `dirty_set` names what has changed since the last build — the same question `parlay internal diff` answers — so the two agree. The union kept naming long-applied refs as dirty forever and never converged with the observed diff. The full union is still available, honestly named, as `all_affects` (every amendment's resolvable refs regardless of application state, plus the tolerated trusted-historical refs that no longer resolve — see *Applied history and resolution*) for consumers that want the whole ledger footprint rather than the rebuild-scoping tail. With no baseline (never built, or pre-v3) `last-applied-amendment` reads as 0, so `dirty_set` equals `all_affects` — the conservative from-scratch reading.
 
 ## Forward links: `superseded_by`
 
