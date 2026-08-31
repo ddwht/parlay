@@ -278,3 +278,67 @@ func TestDetectDrift_BaselineCountingACommentedIntentFailsVisibly(t *testing.T) 
 		t.Fatalf("a baselined intent that no longer parses must be reported, not silently dropped; ledger_integrity=%v", output.LedgerIntegrity)
 	}
 }
+
+// Compaction moves applied amendments to amendments/archive/ (the schema's
+// documented post-compaction shape). Integrity must keep hash-checking them
+// there: a compacted file is history retained, an edited one is still a
+// write-once violation, and only a file in NEITHER place was erased. The
+// active tail must see only active amendments throughout.
+func TestDetectDrift_CompactedAmendmentsRemainHashChecked(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+	writeAmendment(t, featureDir, "001-first.md", "---\namendment: first\ndate: 2026-08-13\naffects: [\"@my-feature/operation:x\"]\n---\n## Change\na\n## Acceptance\n- b\n")
+	saveLedgerBaseline(t, featureDir, func(b *Baseline) {
+		b.LastAppliedAmendment = 1
+		b.Sources.Amendments = map[string]string{}
+		if hash, ok := hashWholeFile(filepath.Join(featureDir, "amendments", "001-first.md")); ok {
+			b.Sources.Amendments["001-first.md"] = hash
+		}
+	})
+
+	// Compact: move 001 into archive/.
+	archive := filepath.Join(featureDir, "amendments", "archive")
+	if err := os.MkdirAll(archive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(featureDir, "amendments", "001-first.md"),
+		filepath.Join(archive, "001-first.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := detectDrift(testContext(t), "my-feature", featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.LedgerIntegrity) != 0 {
+		t.Errorf("a compacted amendment byte-identical in archive/ is retained history, not an integrity finding; got %v", out.LedgerIntegrity)
+	}
+	if len(out.UnappliedAmendments) != 0 {
+		t.Errorf("archived amendments must not join the active tail; got %v", out.UnappliedAmendments)
+	}
+
+	// An EDIT to the archived file is still caught.
+	if err := os.WriteFile(filepath.Join(archive, "001-first.md"),
+		[]byte("---\namendment: first\ndate: 2026-08-13\naffects: [\"@my-feature/operation:x\"]\n---\n## Change\nrewritten history\n## Acceptance\n- b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err = detectDrift(testContext(t), "my-feature", featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.LedgerIntegrity) != 1 || !strings.Contains(out.LedgerIntegrity[0], "mutated") {
+		t.Errorf("an edited archived amendment is a write-once violation; got %v", out.LedgerIntegrity)
+	}
+
+	// Gone from BOTH places = erased.
+	if err := os.Remove(filepath.Join(archive, "001-first.md")); err != nil {
+		t.Fatal(err)
+	}
+	out, err = detectDrift(testContext(t), "my-feature", featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.LedgerIntegrity) != 1 || !strings.Contains(out.LedgerIntegrity[0], "removed from the ledger") {
+		t.Errorf("an amendment in neither the ledger nor archive/ was erased; got %v", out.LedgerIntegrity)
+	}
+}

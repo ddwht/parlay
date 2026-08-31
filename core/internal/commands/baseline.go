@@ -553,12 +553,26 @@ func detectLedgerFindings(baseline *Baseline, featurePath string, output *driftO
 			output.UnappliedAmendments = append(output.UnappliedAmendments, filepath.Base(a.Path))
 		}
 	}
+	// Compaction moves applied history into amendments/archive/ — the
+	// documented post-compaction ledger shape. Archived files are OUT of the
+	// active tail (LoadFeatureAmendments ignores the subdirectory, so they
+	// never count as unapplied), but they are still the history the baseline
+	// hashed, so integrity keeps checking them where they now live: a
+	// compacted amendment must exist in archive/ byte-identical, and an edit
+	// there is the same write-once violation it would be in the ledger
+	// proper. Only a file present in NEITHER place was erased.
+	archiveDir := filepath.Join(featurePath, "amendments", "archive")
 	for name, stored := range baseline.Sources.Amendments {
 		cur, present := currentByName[name]
+		if !present {
+			if hash, ok := hashWholeFile(filepath.Join(archiveDir, name)); ok {
+				cur, present = hash, true
+			}
+		}
 		switch {
 		case !present:
 			output.LedgerIntegrity = append(output.LedgerIntegrity,
-				"amendments/"+name+" removed from the ledger — history is retained, not erased")
+				"amendments/"+name+" removed from the ledger — history is retained (compaction moves it to amendments/archive/), not erased")
 		case cur != stored:
 			output.LedgerIntegrity = append(output.LedgerIntegrity,
 				"amendments/"+name+" mutated after being recorded — an amendment is written once; a correction is a new amendment")
