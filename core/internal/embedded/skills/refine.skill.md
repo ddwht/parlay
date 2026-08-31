@@ -571,6 +571,69 @@ report — which mode ran is part of what was blessed.
    `emitted:` for audit. (See `schema-versioning.schema.md`, "Per-feature
    blessing instants".)
 
+   **If the manifest is empty — a spec-only feature.** Step 6 writes nothing
+   when the amended artifacts drive no generated file. The ordinary command
+   then blesses nothing: the manifest resolves to no feature, so this feature's
+   baseline never advances and the amendment you just spliced stays pending
+   forever, blocking every advancing boundary. There is no other sanctioned
+   route to "applied" for such a feature.
+
+   Do NOT reach for this whenever a run happens to write nothing. First
+   establish that it is genuinely output-less:
+
+   - The manifest must be **present and empty**, not missing. A missing
+     manifest means this run did not record what it wrote, which is a
+     different problem.
+   - Read the feature's `buildfile.yaml`. If its `plan:` names any `creates:`
+     or `modifies:` entry, the feature **owes** generated code and an empty
+     manifest means codegen did not write it. That is a failure to fix, not a
+     feature to bless — raise a `failure` decision.
+   - The command re-checks both, and also refuses if the feature already owns
+     tracked generated files.
+
+   Then **ask the user**. Ask the precise question rather than a paraphrase —
+   it is the one judgement no check can make — and ask the one that matches
+   what you actually found, because the two cases rest on different evidence:
+
+   **A readable plan that names nothing:**
+
+   > `{feature}` emitted no files this run, and its buildfile plans none.
+   > Confirm this feature owes no generated code, so its amendment can be
+   > recorded applied?
+
+   **No buildfile, or no plan to read:**
+
+   > `{feature}` emitted no files this run, and it has no buildfile plan, so
+   > nothing mechanical can establish whether it owes generated code.
+   > Confirm from your own knowledge that this feature owes none, so its
+   > amendment can be recorded applied?
+
+   Never ask the first question when there is no plan. "Its buildfile plans
+   none" is false about a feature that has no buildfile, and a confirmation
+   obtained by telling the user something untrue is not a confirmation.
+
+   Only on an explicit yes:
+
+   ```
+   parlay internal save-build-state --source-root {root} --partial \
+     --emitted .parlay/build/_project/.emitted \
+     --outputless-feature @{feature} --confirm-outputless
+   ```
+
+   Never infer that answer, never pass `--confirm-outputless` on the ordinary
+   path, and never pass it for a non-empty manifest. It confirms exactly one
+   thing — that this feature owes no generated code — and it is recorded
+   durably against the exact amendment in the baseline, because a human
+   judgement nothing can reconstruct afterwards is what the recorded authority
+   rests on.
+
+   **It confirms nothing about promises.** A governance amendment, or a
+   combined one carrying both `affects:` and `supersedes_intents:`, stays
+   refused on this path however empty the manifest is. Governance goes through
+   `parlay internal apply-governance @{feature} --confirm`, which prints the
+   promises that would stop being in force — and that list, not this flag, is
+   what withdrawing them requires.
+
    **Then end the run's recoverable window**, in this order:
    `parlay internal refine-journal @{feature} --step re-baselined` followed by
    `parlay internal refine-journal @{feature} --clear`. The save is the
