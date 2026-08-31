@@ -84,12 +84,12 @@ const modelLockName = "domain-model.lock"
 // same file blocks on the first. Nothing in this package nests withModelLock,
 // and nothing should start.
 //
-// On os.Root: retire-root routes its mutations through a rooted handle because
-// the relative path it deletes comes from user input, and an intermediate
-// component could be swapped for a symlink between the containment check and
-// the delete. Neither half of that applies here — the model path is the
-// configured root joined with two fixed names, so there is no attacker-chosen
-// component to swap and no check-then-act gap to widen — and flock opens its
+// On os.Root: a destructive operation whose relative path comes from user
+// input would route its mutations through a rooted handle, because an
+// intermediate component could be swapped for a symlink between a containment
+// check and the action. Neither half of that applies here — the model path is
+// the configured root joined with two fixed names, so there is no
+// attacker-chosen component to swap and no check-then-act gap to widen — and flock opens its
 // file by path, so a rooted handle could not cover the lock anyway. Adopting
 // os.Root here would be half a defense against a threat this path does not
 // have.

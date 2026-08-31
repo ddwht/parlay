@@ -468,8 +468,6 @@ func init() {
 	// Multi-root commands.
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
-	rootCmd.AddCommand(retireRootCmd)
-	rootCmd.AddCommand(retiredRootsCmd)
 	rootCmd.AddCommand(statusCmd)
 
 	// Agent-facing probes live under `parlay internal`; the AI-agent stubs
