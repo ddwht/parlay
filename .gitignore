@@ -3,3 +3,6 @@
 
 # Compiled binary produced by `make build`
 /parlay
+
+# Advisory lock guarding domain-model.yaml writes (core/internal/domainmodel)
+**/.parlay/domain-model.lock
