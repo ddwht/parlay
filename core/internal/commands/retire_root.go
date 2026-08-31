@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -127,8 +128,12 @@ func resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, 
 	switch len(candidates) {
 	case 1:
 		// Registration is not path authorization. Before the registered
-		// path can become an archive source or a deletion target, it
-		// must resolve strictly inside the project root.
+		// name and path can become an archive source, a destination, a
+		// journal filename or a deletion target, both must be shown to
+		// address nothing but their own place inside the project root.
+		if err := validateRootName(candidates[0].Name); err != nil {
+			return config.Root{}, fmt.Errorf("refusing to retire %q: %w", name, err)
+		}
 		if _, err := resolveContainedChildDir(parentPath, candidates[0].RelativePath); err != nil {
 			return config.Root{}, fmt.Errorf("refusing to retire %q: %w", candidates[0].Name, err)
 		}
@@ -220,6 +225,97 @@ func resolveContainedChildDir(parentPath, relPath string) (string, error) {
 	return childDir, nil
 }
 
+// rootNameRe is the shape a registered root NAME must have to be usable
+// as a path component: lowercase alphanumerics in dash-separated words.
+// No separators, no dots, no leading or trailing dash, nothing empty.
+var rootNameRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// validateRootName refuses a registered root name that is not a plain
+// slug.
+//
+// The name is not decoration: it is concatenated into the staging
+// directory, the archive destination and the journal filename, all three
+// of which are then created, renamed and removed. A name carrying a
+// separator or a traversal segment would place those somewhere other
+// than under the retired-roots directory — and the destination is
+// rolled back with a recursive delete, so a name is as much a deletion
+// target as a path is. Registration is not authorization here either:
+// roots.yaml is an ordinary file, and a name read out of it reaches the
+// same destructive calls a path does.
+//
+// Restricting the shape rather than escaping it is deliberate. Escaping
+// asks every future caller to remember to escape; a closed shape is
+// checked once, at the boundary, and everything downstream can treat
+// the name as a single safe path component. Every name parlay itself
+// generates already satisfies it.
+func validateRootName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("registered root name is empty — a name is a path component of the archive destination and the journal, and an empty one names no location")
+	}
+	if !rootNameRe.MatchString(name) {
+		return fmt.Errorf("registered root name %q is not a plain slug (lowercase letters, digits and dashes) — the name becomes a path component of the staging directory, the archive destination and the journal file, each of which this operation creates, renames and removes, so a name that can address a location other than its own is refused rather than escaped", name)
+	}
+	return nil
+}
+
+// The retirement's on-disk locations, expressed RELATIVE to the project
+// root so they can be reached through a rooted handle (see
+// mutateUnderParent). Every one of them is under the retired-roots
+// directory, and every rootName reaching them has passed
+// validateRootName, so none can be anything but a leaf under it.
+func retiredRootsRel() string {
+	return filepath.Join(config.ParlayDir, "retired")
+}
+
+func retirementDestinationRel(rootName string) string {
+	return filepath.Join(retiredRootsRel(), rootName)
+}
+
+func retirementStagingRel(rootName string) string {
+	return filepath.Join(retiredRootsRel(), ".staging-"+rootName)
+}
+
+func retirementJournalRel(rootName string) string {
+	return filepath.Join(retiredRootsRel(), rootName+journalFileSuffix)
+}
+
+func retirementRecordRel(rootName string) string {
+	return filepath.Join(retirementDestinationRel(rootName), retirementRecordFile)
+}
+
+// mutateUnderParent runs fn against a handle rooted at the project root.
+//
+// This is the answer to the gap a lexical containment check leaves open.
+// resolveContainedChildDir resolves and compares a path, and then the
+// caller acts on that path some microseconds later; in between, an
+// intermediate directory can be replaced with a symlink pointing out of
+// the project, and the ordinary os.RemoveAll that follows would follow
+// it. Checking again would only narrow the window, not close it.
+//
+// os.Root closes it. The handle references the project root directory
+// itself (a file descriptor on every platform this tool targets), and
+// every operation through it refuses a name whose components resolve
+// outside that root — the resolution and the operation are the same
+// syscall sequence, so there is no interval between them to exploit.
+// Every destructive step of a retirement goes through here.
+func mutateUnderParent(parentPath string, fn func(root *os.Root) error) error {
+	root, err := os.OpenRoot(parentPath)
+	if err != nil {
+		return fmt.Errorf("open project root %s: %w", parentPath, err)
+	}
+	defer root.Close()
+	return fn(root)
+}
+
+// removeUnderParent deletes relPath through a rooted handle, refusing
+// any path that leaves the project however the filesystem changes
+// underneath it.
+func removeUnderParent(parentPath, relPath string) error {
+	return mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.RemoveAll(relPath)
+	})
+}
+
 // checkRetirementDestination enforces the destination-absence
 // precondition: the archive destination is stat'd before anything else
 // is read, and an existing destination refuses the run naming both
@@ -249,12 +345,27 @@ type retirementRecord struct {
 	Features         []Disposition `yaml:"feature-dispositions"`
 }
 
-func writeRetirementRecord(destination string, record *retirementRecord) error {
+// retirementRecordFile is the record's name inside the destination.
+const retirementRecordFile = "retirement-record.yaml"
+
+// writeRetirementRecord writes the record through a handle rooted at the
+// project, like every other step of the retirement that changes the
+// filesystem. Nothing about a write makes it safer than a delete here:
+// .parlay/retired, or the destination directory itself, can be replaced
+// with a link out of the project between one step and the next, and a
+// path-based write would then create a file somewhere the project does
+// not own.
+func writeRetirementRecord(parentPath, rootName string, record *retirementRecord) error {
+	if err := validateRootName(rootName); err != nil {
+		return fmt.Errorf("write retirement record: %w", err)
+	}
 	data, err := yaml.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal retirement record: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(destination, "retirement-record.yaml"), data, 0o644); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.WriteFile(retirementRecordRel(rootName), data, 0o644)
+	}); err != nil {
 		return fmt.Errorf("write retirement record: %w", err)
 	}
 	return nil
@@ -463,22 +574,33 @@ func runRetireRoot(cmd *cobra.Command, args []string) error {
 // registration change.
 func executeRetirement(cmd *cobra.Command, parentPath string, idx *config.RootsIndex, pf *retirementPreflight) error {
 	target := pf.Target
+	// The name has passed validateRootName at resolution, so it is a
+	// single path component and these three locations are leaves under
+	// the retired-roots directory by construction.
 	dest := retirementDestination(parentPath, target.Name)
 	staging := filepath.Join(retiredRootsDir(parentPath), ".staging-"+target.Name)
+	stagingRel := retirementStagingRel(target.Name)
+	destRel := retirementDestinationRel(target.Name)
 
 	_, retiredDirErr := os.Lstat(retiredRootsDir(parentPath))
 	createdRetiredDir := os.IsNotExist(retiredDirErr)
-	if err := os.MkdirAll(retiredRootsDir(parentPath), 0o755); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.MkdirAll(retiredRootsRel(), 0o755)
+	}); err != nil {
 		return fmt.Errorf("create retired-roots directory: %w", err)
 	}
 	// A pre-archive failure restores exactly the prior state: the staged
 	// directory is removed — and so is the retired/ directory when this
-	// run created it and nothing else lives there (os.Remove refuses a
-	// non-empty directory, which is exactly the guard needed).
+	// run created it and nothing else lives there (Remove refuses a
+	// non-empty directory, which is exactly the guard needed). Both
+	// deletions go through the rooted handle, like every other
+	// destructive step.
 	cleanupStaging := func() {
-		_ = os.RemoveAll(staging)
+		_ = removeUnderParent(parentPath, stagingRel)
 		if createdRetiredDir {
-			_ = os.Remove(retiredRootsDir(parentPath))
+			_ = mutateUnderParent(parentPath, func(root *os.Root) error {
+				return root.Remove(retiredRootsRel())
+			})
 		}
 	}
 
@@ -500,7 +622,9 @@ func executeRetirement(cmd *cobra.Command, parentPath string, idx *config.RootsI
 		cleanupStaging()
 		return fmt.Errorf("read disposition record for preservation: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(staging, "dispositions.yaml"), recData, 0o644); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.WriteFile(filepath.Join(stagingRel, "dispositions.yaml"), recData, 0o644)
+	}); err != nil {
 		cleanupStaging()
 		return fmt.Errorf("preserve disposition record: %w", err)
 	}
@@ -509,24 +633,35 @@ func executeRetirement(cmd *cobra.Command, parentPath string, idx *config.RootsI
 		cleanupStaging()
 		return err
 	}
-	if err := os.Rename(staging, dest); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.Rename(stagingRel, destRel)
+	}); err != nil {
 		cleanupStaging()
 		return fmt.Errorf("promote archive to %s: %w", dest, err)
 	}
 
+	// The journal names the archive it belongs to. Computed from the
+	// promoted manifest, so the value recorded is the one a resumed run
+	// will re-derive from the same file.
+	digest, err := manifestDigest(filepath.Join(dest, "manifest.yaml"))
+	if err != nil {
+		_ = removeUnderParent(parentPath, destRel)
+		return err
+	}
 	journal := &RetirementJournal{
-		Root:         target.Name,
-		RelativePath: filepath.ToSlash(target.RelativePath),
-		Outstanding:  []string{journalStepWriteRecord, journalStepDeregisterRoot},
+		Root:           target.Name,
+		RelativePath:   filepath.ToSlash(target.RelativePath),
+		Outstanding:    []string{journalStepWriteRecord, journalStepDeregisterRoot},
+		ManifestDigest: digest,
 	}
 	if err := retirementEvent("write-journal"); err != nil {
 		// The journal is what makes the destination resumable; without
 		// it the archive must not stand, so restore the prior state.
-		_ = os.RemoveAll(dest)
+		_ = removeUnderParent(parentPath, destRel)
 		return err
 	}
 	if err := WriteRetirementJournal(parentPath, journal); err != nil {
-		_ = os.RemoveAll(dest)
+		_ = removeUnderParent(parentPath, destRel)
 		return err
 	}
 

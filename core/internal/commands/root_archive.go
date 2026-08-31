@@ -316,26 +316,160 @@ func verifyStagedArchive(contentsDir string, members []memberEntry) error {
 	if err := retirementEvent("verify-archive"); err != nil {
 		return err
 	}
+	listed := make([]ManifestMember, 0, len(members))
 	for _, m := range members {
-		staged := filepath.Join(contentsDir, filepath.FromSlash(m.RelPath))
+		listed = append(listed, ManifestMember{Path: m.RelPath, SHA256: m.SHA256})
+	}
+	return verifyArchivedMembers(contentsDir, listed)
+}
+
+// verifyArchivedMembers re-reads every member the manifest names from
+// the directory holding the archived copy and requires its bytes to
+// hash to the recorded value.
+//
+// It is used at two moments, for the same reason each time. Before an
+// archive is promoted, it establishes that the copy matches the
+// manifest written beside it. Before a resumed run acts on an archive
+// it did not make, it establishes the same thing again — because the
+// manifest's self-covering hash proves only that the LIST is internally
+// consistent, which a list invented from nothing satisfies perfectly.
+// Hashing the members is what makes the manifest a statement about
+// files rather than about itself.
+func verifyArchivedMembers(contentsDir string, members []ManifestMember) error {
+	for _, m := range members {
+		archived := filepath.Join(contentsDir, filepath.FromSlash(m.Path))
+		info, err := os.Lstat(archived)
+		if err != nil {
+			return fmt.Errorf("verify archived member %s: %w", m.Path, err)
+		}
 		var got string
-		if m.IsSymlink {
-			target, err := os.Readlink(staged)
+		if info.Mode()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(archived)
 			if err != nil {
-				return fmt.Errorf("verify archived symlink %s: %w", m.RelPath, err)
+				return fmt.Errorf("verify archived symlink %s: %w", m.Path, err)
 			}
 			got = hashBytes([]byte(target))
 		} else {
-			sum, err := archiveHashFile(staged)
+			sum, err := archiveHashFile(archived)
 			if err != nil {
-				return fmt.Errorf("verify archived member %s: %w", m.RelPath, err)
+				return fmt.Errorf("verify archived member %s: %w", m.Path, err)
 			}
 			got = sum
 		}
 		if got != m.SHA256 {
 			return fmt.Errorf("verify archived member %s: the preserved bytes hash to %s but the manifest records %s — the archive does not match what it claims to preserve, so nothing is retired",
-				m.RelPath, got, m.SHA256)
+				m.Path, got, m.SHA256)
 		}
+	}
+	return nil
+}
+
+// manifestDigest is the hash of the manifest FILE's bytes — distinct
+// from the manifest's own self-covering hash over its member list.
+//
+// The self-covering hash travels with the list, so rewriting the list
+// and recomputing the hash leaves a manifest that still verifies. This
+// digest is recorded somewhere else (in the journal, when the journal
+// is written), which is what lets a later run notice that the manifest
+// it is reading is not the manifest the run that wrote the journal
+// produced.
+func manifestDigest(manifestPath string) (string, error) {
+	sum, err := archiveHashFile(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("digest archive manifest %s: %w", manifestPath, err)
+	}
+	return "sha256:" + sum, nil
+}
+
+// archivePreservesLiveContents requires every byte still standing in
+// the root's directory to be provably preserved in the archive.
+//
+// This is the invariant a retirement can actually keep, and it is worth
+// being exact about why it is this one. Every artifact in the chain —
+// the journal, the manifest, the record, the digest — is writable by
+// whoever runs the tool, so no comparison among them can establish that
+// they came from a genuine run. Consistency is checkable; AUTHENTICITY
+// is not, absent a trust anchor outside the repository. What IS
+// checkable is the property that actually matters before a delete: that
+// nothing about to be destroyed is being lost.
+//
+// So while the removal step is outstanding, every live file is hashed
+// and required to equal the hash the manifest records for that same
+// path. Combined with verifyArchivedMembers — which establishes that the
+// ARCHIVED bytes hash to those same values — the chain is
+// live == manifest == archived, and the deletion proceeds only over
+// content that demonstrably exists in the preserved copy. Comparing
+// filenames alone would not do it: an archive holding the right paths
+// and the wrong bytes would authorize destroying the real ones.
+//
+// A mismatch refuses, and that includes the honest case of a file
+// legitimately edited while the retirement was interrupted. Refusing is
+// the correct answer there, not an inconvenience to work around: the
+// archive is stale, the edit is not in it, and completing the run would
+// destroy the newer bytes. The remedy is to start the retirement again
+// so the archive is taken from what is actually there, and the refusal
+// says so.
+func archivePreservesLiveContents(childDir string, members []ManifestMember) error {
+	archived := make(map[string]string, len(members))
+	for _, m := range members {
+		archived[m.Path] = m.SHA256
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(childDir)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", childDir, err)
+	}
+	var unpreserved []string
+	note := func(rel, why string) error {
+		unpreserved = append(unpreserved, rel+" ("+why+")")
+		if len(unpreserved) > 4 {
+			return fs.SkipAll
+		}
+		return nil
+	}
+	walkErr := filepath.WalkDir(resolvedRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		isLink := d.Type()&fs.ModeSymlink != 0
+		if d.IsDir() && !isLink {
+			return nil
+		}
+		rel, relErr := filepath.Rel(resolvedRoot, path)
+		if relErr != nil {
+			return relErr
+		}
+		relSlash := filepath.ToSlash(rel)
+		want, named := archived[relSlash]
+		if !named {
+			return note(relSlash, "not named by the archive at all")
+		}
+		var got string
+		if isLink {
+			target, linkErr := os.Readlink(path)
+			if linkErr != nil {
+				// Unreadable is not preserved-and-verified.
+				return note(relSlash, "cannot be read: "+linkErr.Error())
+			}
+			got = hashBytes([]byte(target))
+		} else {
+			sum, hashErr := archiveHashFile(path)
+			if hashErr != nil {
+				return note(relSlash, "cannot be read: "+hashErr.Error())
+			}
+			got = sum
+		}
+		if got != want {
+			return note(relSlash, "holds different bytes from the archived copy")
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return walkErr
+	}
+	if len(unpreserved) > 0 {
+		sort.Strings(unpreserved)
+		return fmt.Errorf("the archive does not preserve %s — a retirement destroys the root's contents only once every one of them is provably in the preserved copy, so this run is refused; if the archive is simply out of date, remove it and its journal and run the retirement again against what is actually there",
+			strings.Join(unpreserved, ", "))
 	}
 	return nil
 }
