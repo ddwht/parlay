@@ -191,6 +191,29 @@ repair, or an artifact edit without explicit confirmation.
   where the mapping from each intent bullet to the criterion it became is shown;
   offer to route there rather than recording an approval from here, since
   approving a standard nobody was shown is what the retired suite-name gate did.
+- **A long applied ledger** — a feature carrying many applied amendments can
+  have its history compacted into `amendments/archive/`, shortening the active
+  ledger without changing what the feature promises:
+
+  ```
+  parlay internal compact @{feature} --confirm
+  ```
+
+  Offer this only as hygiene, and only when the user asks for a tidier ledger.
+  It is **not** a fix for anything: applied history no longer has to resolve
+  against the current contract, so nothing is blocked by an uncompacted ledger.
+
+  Without `--confirm` it reports what it would archive and stops. It moves only
+  records the baseline can prove were applied — marker plus matching stored
+  hash — and refuses rather than splitting a `supersedes:` edge, archiving a
+  record that retires a founding intent nothing else restates, or moving the
+  terminal retirement record. It captures the feature's authority projection
+  before the move and rolls back if it differs after.
+
+  Tell the user what compaction genuinely costs: archived records leave the
+  ledger walk, so the amendment listing and `all_affects` shrink. Authority is
+  preserved; the audit view is deliberately shortened. That trade is the whole
+  operation, and it is not reversible through this command.
 
 ## Hard rules
 
