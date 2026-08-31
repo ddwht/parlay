@@ -5,6 +5,7 @@ package domainmodel
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -211,12 +212,17 @@ func writeModel(path string, model Model) (Etag, error) {
 // crash mid-write leaves the original target intact. The parent directory is
 // created if it does not yet exist.
 //
-// The temp file gets a unique name from os.CreateTemp rather than a fixed
-// path+".tmp". A fixed name is a second, unlocked write path onto a shared
-// filename: two writers land in the same temp file, and the one that renames
-// first leaves the other writing into a file that is no longer there — or
-// worse, publishing bytes that are a splice of both. Uniqueness makes the
-// rename the only step two writers can contend on, and rename is atomic.
+// The temp file gets a unique name rather than a fixed path+".tmp". A fixed
+// name is a second, unlocked write path onto a shared filename: two writers
+// land in the same temp file, and the one that renames first leaves the other
+// writing into a file that is no longer there — or worse, publishing bytes
+// that are a splice of both. Uniqueness makes the rename the only step two
+// writers can contend on, and rename is atomic.
+//
+// The temp file is opened exclusively with mode 0o644 — the same mode the
+// direct write always used — so the process umask applies exactly as before
+// and no chmod is needed after the content fsync (a mode change after the
+// fsync would be metadata the fsync never covered).
 //
 // The directory is fsynced after the rename. The file's own fsync makes its
 // contents durable; only the directory fsync makes the name pointing at those
@@ -227,11 +233,10 @@ func writeFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("domainmodel: mkdir %s: %w", dir, err)
 	}
-	f, err := os.CreateTemp(dir, ".domain-model-*.tmp")
+	f, tmp, err := createExclusiveTemp(dir)
 	if err != nil {
 		return fmt.Errorf("domainmodel: create temp: %w", err)
 	}
-	tmp := f.Name()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
@@ -246,13 +251,6 @@ func writeFileAtomic(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("domainmodel: close temp: %w", err)
 	}
-	// os.CreateTemp makes the file 0o600; the model file has always been
-	// world-readable, and the mode has to be right before the rename so no
-	// reader ever sees the target under the stricter one.
-	if err := os.Chmod(tmp, 0o644); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("domainmodel: chmod temp: %w", err)
-	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("domainmodel: rename temp: %w", err)
@@ -263,6 +261,29 @@ func writeFileAtomic(path string, data []byte) error {
 		return fmt.Errorf("domainmodel: fsync dir %s after rename (the model file was replaced; only its durability is unconfirmed): %w", dir, err)
 	}
 	return nil
+}
+
+// createExclusiveTemp opens a uniquely-named temp file in dir with
+// O_EXCL and mode 0o644, retrying on the (astronomically unlikely)
+// name collision. Opening at the final mode, umask-sensitively, is the
+// point: it is what the direct write did, and it means the mode is
+// settled before the content fsync rather than patched after it.
+func createExclusiveTemp(dir string) (*os.File, string, error) {
+	for range 10 {
+		var suffix [8]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return nil, "", err
+		}
+		tmp := filepath.Join(dir, fmt.Sprintf(".domain-model-%x.tmp", suffix))
+		f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			return f, tmp, nil
+		}
+		if !os.IsExist(err) {
+			return nil, "", err
+		}
+	}
+	return nil, "", fmt.Errorf("could not find a free temp name in %s", dir)
 }
 
 // fsyncDir flushes a directory's own metadata so a rename into it survives a

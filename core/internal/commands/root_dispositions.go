@@ -86,7 +86,8 @@ type Disposition struct {
 // place to record it instead, and it is what makes the promised human
 // dismissal real rather than notional.
 //
-// It dismisses ONE finding: the path and the reference must both match
+// It dismisses ONE finding: path, position, reference and kind — the
+// finding's full identity as the preview reports it — must all match
 // exactly. There is no pattern, no prefix and no wildcard, because an
 // acknowledgment that covers findings the operator has not read is
 // indistinguishable from switching the check off.
