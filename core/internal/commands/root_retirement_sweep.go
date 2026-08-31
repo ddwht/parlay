@@ -211,6 +211,26 @@ func groupQualifiedFeatureRes(features []string) []*regexp.Regexp {
 	return out
 }
 
+// isSeparateCheckout reports whether dir is the root of a git checkout
+// of its own — a linked worktree, a submodule, a vendored clone.
+//
+// Git marks all three the same way: a .git entry at the top of the
+// checkout, a directory for an ordinary clone and a file pointing at the
+// real git directory for a worktree or a submodule. Either answers the
+// only question that matters here, which is whether the files below are
+// this project's content or another commit's copy of it.
+//
+// The distinction is not pedantic. A linked worktree under the project
+// holds whatever the features were called at the commit it has checked
+// out, and those markers read exactly like live inbound references to a
+// retiring root — reported as blocking, and impossible for the operator
+// to resolve, since editing a checkout of an old commit into agreement
+// with the present one is not a thing anyone should do.
+func isSeparateCheckout(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
+	return err == nil
+}
+
 // sweepRootRetirement runs the project-wide, source-aware inbound sweep
 // for the retiring root. It walks the parent root's whole tree —
 // covering the parent and every registered child, since children live
@@ -272,6 +292,10 @@ func sweepRootRetirement(parentPath string, target config.Root, dispositions *Di
 
 	retiredDir := retiredRootsDir(parentPath)
 	targetAbs := filepath.Clean(target.Path)
+	exemptPath := ""
+	if dispositions != nil && dispositions.Path != "" {
+		exemptPath = filepath.Clean(dispositions.Path)
+	}
 
 	walkErr := filepath.WalkDir(parentPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -294,12 +318,33 @@ func sweepRootRetirement(parentPath string, target config.Root, dispositions *Di
 				return filepath.SkipDir
 			case name == ".git" || name == "node_modules":
 				return filepath.SkipDir
+			case clean != filepath.Clean(parentPath) && isSeparateCheckout(path):
+				// A nested git checkout — a linked worktree, a
+				// submodule, a vendored clone — is another checkout of
+				// history that happens to sit inside this directory
+				// tree. Its files are not project content: they are some
+				// other commit's version of it, and the markers in them
+				// name whatever the features were called then. Reading
+				// them reports a retiring root as still referenced by
+				// its own past, which is both wrong and unfixable — the
+				// operator cannot edit a checkout of an old commit into
+				// agreement with the present one.
+				return filepath.SkipDir
 			case strings.HasPrefix(name, ".") && name != config.ParlayDir && name != ".claude" && clean != filepath.Clean(parentPath):
 				// Other dot-directories are tool internals — but .parlay
 				// (modules, schemas, build state) and .claude (deployed
 				// skills) are exactly where shipped guidance lives.
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// The operator's own disposition record necessarily names every
+		// feature in the retiring root — that is what it is for — so
+		// scanning it reports the operator's answers back as evidence
+		// against them. Exactly the resolved path in use is exempt, and
+		// nothing broader: another file that merely looks like a
+		// disposition record is scanned like anything else.
+		if exemptPath != "" && filepath.Clean(path) == exemptPath {
 			return nil
 		}
 		data, readErr := os.ReadFile(path)

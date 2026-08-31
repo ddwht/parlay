@@ -375,15 +375,54 @@ func writeRetirementRecord(parentPath, rootName string, record *retirementRecord
 // mutation — what the preview shows and what execution is authorized
 // against.
 type retirementPreflight struct {
-	Target       config.Root
-	Features     []string
-	Record       *DispositionRecord
-	RecordErrs   []error
-	Sweep        RootSweepResult
+	Target     config.Root
+	Features   []string
+	Record     *DispositionRecord
+	RecordErrs []error
+	Sweep      RootSweepResult
+	// Acknowledged are blocking findings the disposition record
+	// explicitly dismisses, and Unmatched are acknowledgments that
+	// matched no finding. Both are reported: a dismissal nobody sees is
+	// the same as a check nobody ran.
+	Acknowledged []acknowledgedFinding
+	Unmatched    []AcknowledgedReference
 	RehomeErrs   []error
 	Members      []memberEntry
 	WalkErr      error
 	MissingBlock []string // human summary of everything that blocks execution
+}
+
+// acknowledgedFinding pairs a dismissed finding with the dismissal, so
+// the preview can show both what was found and why it was accepted.
+type acknowledgedFinding struct {
+	Finding RootSweepFinding
+	Ack     AcknowledgedReference
+}
+
+// unmatchedAcknowledgments returns acknowledgments that dismissed
+// nothing. They are harmless — an acknowledgment cannot widen anything
+// — but reporting them is what stops the silent-misspelling failure,
+// where an operator believes a finding is dismissed, sees the run still
+// refuse, and cannot tell that their acknowledgment simply never
+// matched.
+func unmatchedAcknowledgments(parentPath string, record *DispositionRecord, sweep RootSweepResult) []AcknowledgedReference {
+	if record == nil {
+		return nil
+	}
+	var out []AcknowledgedReference
+	for _, a := range record.Acknowledged {
+		matched := false
+		for _, f := range sweep.Findings {
+			if a.matches(parentPath, f) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // runRetirementPreflight performs target resolution and destination
@@ -431,9 +470,20 @@ func runRetirementPreflight(parentPath string, idx *config.RootsIndex, target co
 	for _, e := range pf.RecordErrs {
 		pf.MissingBlock = append(pf.MissingBlock, e.Error())
 	}
+	// A finding the operator has read and accepted as prose stops
+	// blocking — but it is listed, not dropped, and only an exact
+	// artifact-and-reference match dismisses one. Everything else still
+	// refuses, so fail-closed is intact: the sweep never decides that a
+	// mention is only a mention, and a person cannot dismiss what they
+	// have not named.
 	for _, f := range sweep.BlockingFindings() {
+		if ack, ok := pf.Record.acknowledges(parentPath, f); ok {
+			pf.Acknowledged = append(pf.Acknowledged, acknowledgedFinding{Finding: f, Ack: ack})
+			continue
+		}
 		pf.MissingBlock = append(pf.MissingBlock, "inbound reference: "+f.String())
 	}
+	pf.Unmatched = unmatchedAcknowledgments(parentPath, pf.Record, sweep)
 	for _, f := range sweep.Failures {
 		pf.MissingBlock = append(pf.MissingBlock, "scan failure (cannot tell is not none): "+f.String())
 	}
@@ -470,9 +520,27 @@ func printRetirementPreview(cmd *cobra.Command, parentPath string, pf *retiremen
 	}
 
 	blocking := pf.Sweep.BlockingFindings()
-	fmt.Fprintf(out, "  Inbound sweep: %d blocking finding(s), %d scan failure(s)\n", len(blocking), len(pf.Sweep.Failures))
+	acknowledged := map[string]bool{}
+	for _, a := range pf.Acknowledged {
+		acknowledged[a.Finding.Path+"\x00"+a.Finding.Ref] = true
+	}
+	fmt.Fprintf(out, "  Inbound sweep: %d blocking finding(s), %d acknowledged, %d scan failure(s)\n",
+		len(blocking)-len(pf.Acknowledged), len(pf.Acknowledged), len(pf.Sweep.Failures))
 	for _, f := range blocking {
+		if acknowledged[f.Path+"\x00"+f.Ref] {
+			continue
+		}
 		fmt.Fprintf(out, "    - %s\n", f)
+	}
+	if len(pf.Acknowledged) > 0 {
+		fmt.Fprintf(out, "  Acknowledged (accepted by the disposition record as prose, not dependency):\n")
+		for _, a := range pf.Acknowledged {
+			fmt.Fprintf(out, "    - %s\n      because: %s\n", a.Finding, a.Ack.Rationale)
+		}
+	}
+	for _, a := range pf.Unmatched {
+		fmt.Fprintf(out, "  Acknowledgment matched no finding: %s in %s — check the path and the reference against the findings above\n",
+			a.Reference, a.Path)
 	}
 	for _, f := range pf.Sweep.Failures {
 		fmt.Fprintf(out, "    - [ERR] %s\n", f)

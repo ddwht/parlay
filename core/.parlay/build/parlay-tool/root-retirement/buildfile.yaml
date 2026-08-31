@@ -215,10 +215,38 @@ cross-cutting:
       a `target:` carried under a term that names no target: the term moves
       nothing while the target says authority moved, and honouring either
       statement decides on the operator's behalf which was meant.
+
+
+      THE RECORD ALSO CARRIES THE OPERATOR'S JUDGMENTS ABOUT INBOUND
+      REFERENCES. The sweep is deliberately wide and fail-closed and
+      cannot decide on its own that a particular mention is only a
+      mention; that judgment belongs to a person, and until now the
+      person had nowhere to record it, so the only way past an assessed
+      finding was to delete the sentence that caused it. Add an optional
+      `acknowledged-references:` section of {path, reference, rationale}
+      entries, decoded under the same KnownFields(true) strictness and
+      requiring all three fields non-empty. An entry dismisses ONE
+      finding: the reference must be identical and the artifact must be
+      the same file, with the path written either relative to the
+      project root or absolutely (the preview reports one form and a
+      person may copy either). No prefix, no pattern, no wildcard — an
+      acknowledgment covering findings the operator has not read is
+      indistinguishable from switching the check off. The preflight
+      partitions the blocking findings: matched ones move to
+      pf.Acknowledged and are printed in the preview under their own
+      heading WITH THE RATIONALE (listed, never silently dropped);
+      everything else still populates MissingBlock and still refuses, so
+      fail-closed is unchanged. Acknowledgments matching no finding are
+      reported as such, so a misspelling is visible rather than looking
+      like a refusal nobody can explain.
     introduces:
       - "DispositionRecord / Disposition types + LoadDispositionRecord(path string) — strict (KnownFields) YAML decode with closed-vocabulary term validation, single-document enforcement, and term/target contradiction refusal"
       - "checkDispositionCompleteness(enumerated []string, record *DispositionRecord) []error — no-missing / no-extra / no-duplicate comparison"
       - "the closed term set {delivered-and-deleted, built-but-undelivered, authority-re-homed-to}"
+      - "AcknowledgedReference {Path, Reference, Rationale} + the acknowledged-references section — the operator's recorded dismissal of one exactly-named inbound finding"
+      - "AcknowledgedReference.matches / DispositionRecord.acknowledges — exact artifact-and-reference matching, relative or absolute path, no prefixes or patterns"
+      - "DispositionRecord.Path — where the record was read from, resolved, so the sweep exempts exactly that file"
+      - "unmatchedAcknowledgments(...) []AcknowledgedReference — acknowledgments that dismissed nothing, reported so a misspelling is visible"
     caching: none
     backward-compatible: true
 
@@ -297,12 +325,36 @@ cross-cutting:
       the reference as written — the same triple the feature-retirement
       Inventory reports, reused as a shape precedent. The sweep runs to
       completion before any mutation.
+
+
+      TWO EXCLUSIONS, both found by running the real thing against this
+      repository. First, skip any directory below the project root that
+      is a git checkout of its own — isSeparateCheckout tests for a .git
+      entry, FILE OR DIRECTORY, since a linked worktree marks itself
+      with a file and a submodule or vendored clone with a directory.
+      Such a tree is another commit's copy of the project: its markers
+      name whatever the features were called then, they read exactly
+      like live inbound references, and the operator cannot resolve them
+      because editing a checkout of an old commit into agreement with
+      the present one is not a thing anyone should do. Skipping is
+      SkipDir, so nothing below becomes a scan failure either, and
+      re-home readiness — which judges the findings the sweep produced —
+      is thereby never judged against a stale checkout. Second, exempt
+      the disposition record actually in use, at exactly its resolved
+      path (DispositionRecord.Path, set by LoadDispositionRecord and
+      never decoded from the file): the record necessarily enumerates
+      every feature in the retiring root, so scanning it reports the
+      operator's own answers back as evidence against them. Exactly that
+      path and nothing broader — no suffix or name matching — so a
+      second file shaped like a disposition record is scanned like
+      anything else.
     introduces:
       - "sweepRootRetirement(parentPath string, target config.Root, dispositions *DispositionRecord) (RootSweepResult, error)"
       - "RootSweepFinding {Path, Position, Ref, Kind, Feature, Blocking} and RootSweepResult {Findings, Failures} types — fail-closed aggregation"
       - "path-space matcher: reference detection against the root's namespace, not only its enumerated features"
       - "groupQualifiedFeatureRes(features []string) []*regexp.Regexp — word-bounded, path-ish-guarded matcher for plain group-qualified and component-qualified feature references"
       - "the sweepKindGroupQualifiedReference finding kind"
+      - "isSeparateCheckout(dir string) bool — a .git entry (file or directory) marks a nested checkout, whose contents are another commit's copy of the project rather than project content"
     caching: none
     backward-compatible: true
 
