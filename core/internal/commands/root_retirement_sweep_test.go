@@ -483,3 +483,335 @@ func TestSweep_IsALineBasedLexicalScanThatRefusesWhatItCannotRead(t *testing.T) 
 		t.Errorf("an unreadable file must refuse the retirement; got: %v", err)
 	}
 }
+
+// --- Suite 3 (continued): what is project content, and what is not -----
+//
+// Both of these came out of a real preview run against this repository,
+// where the sweep reported findings the operator could not act on: one
+// set from a checkout of an old commit that happened to sit inside the
+// tree, and one from the operator's own disposition record being read
+// back at them as evidence.
+
+// plantNestedCheckout creates a directory that git would recognize as a
+// checkout of its own — a linked worktree marks itself with a .git FILE
+// rather than a directory — holding content that names the retiring
+// root exactly as live content would.
+func plantNestedCheckout(t *testing.T, parent, rel, gitEntry string, files map[string]string) string {
+	t.Helper()
+	dir := filepath.Join(parent, filepath.FromSlash(rel))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	switch gitEntry {
+	case "file":
+		if err := os.WriteFile(filepath.Join(dir, ".git"),
+			[]byte("gitdir: /somewhere/.git/worktrees/old\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	case "dir":
+		if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, body := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func TestSweep_ANestedCheckoutIsNotProjectContent(t *testing.T) {
+	// A worktree marks itself with a .git file; a submodule or vendored
+	// clone with a .git directory. Both are another commit's copy of the
+	// project, holding whatever the features were called then.
+	for _, gitEntry := range []string{"file", "dir"} {
+		t.Run(gitEntry, func(t *testing.T) {
+			parent, retiring := groupSweepFixture(t)
+			plantNestedCheckout(t, parent, ".claude/worktrees/agent-stale", gitEntry, map[string]string{
+				"internal/old.go": "// parlay-feature: design-loop/design-loop\n" +
+					"// The stale checkout still calls it design-loop/design-loop.\n" +
+					"package old\n",
+				"docs/guide.md": "Run parlay build-feature --root old to rebuild.\n",
+			})
+
+			result := runSweep(t, parent, retiring, nil)
+			for _, f := range result.Findings {
+				if strings.Contains(f.Path, "agent-stale") {
+					t.Errorf("a checkout of another commit is not project content and must not be swept: %+v", f)
+				}
+			}
+			for _, f := range result.Failures {
+				if strings.Contains(f.Path, "agent-stale") {
+					t.Errorf("a skipped checkout must not be a scan failure either: %+v", f)
+				}
+			}
+		})
+	}
+}
+
+func TestSweep_ANestedCheckoutDoesNotBlockOrFailReHomeReadiness(t *testing.T) {
+	// The readiness check asks whether the surviving files already carry
+	// the target's marker, and it asks it of the findings the sweep
+	// produced — so a stale checkout that still names the retiring
+	// feature would fail readiness against a file nobody can fix.
+	parent, retiring := groupSweepFixture(t)
+	writeParentFile(t, parent, "internal/shared/kept.go",
+		"// parlay-feature: keeper\n// parlay-extends: design-loop/design-loop/helper\npackage shared\n")
+	plantNestedCheckout(t, parent, ".claude/worktrees/agent-stale", "file", map[string]string{
+		"internal/shared/kept.go": "// parlay-feature: design-loop/design-loop\npackage shared\n",
+	})
+
+	rec, err := loadRecord(t, `dispositions:
+  - feature: design-loop/design-loop
+    term: authority-re-homed-to
+    target: "@keeper"
+    rationale: keeper carries the helper now
+  - feature: studio-foundation/studio-deployer
+    term: delivered-and-deleted
+    rationale: gone
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := runSweep(t, parent, retiring, rec)
+	for _, f := range result.Findings {
+		if strings.Contains(f.Path, "agent-stale") {
+			t.Fatalf("the stale checkout must not reach readiness at all: %+v", f)
+		}
+	}
+	idx, err := config.LoadRootsIndex(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range checkRehomeTargets(parent, idx, retiring, rec, result) {
+		if strings.Contains(e.Error(), "agent-stale") {
+			t.Errorf("re-home readiness must not be judged against a checkout of another commit: %v", e)
+		}
+	}
+}
+
+func TestSweep_TheDispositionRecordItselfIsExempt(t *testing.T) {
+	// The record necessarily names every feature in the retiring root —
+	// that is what it is for — so scanning it reports the operator's own
+	// answers back as evidence against them.
+	parent, retiring := groupSweepFixture(t)
+	// Inside the project tree, so the walk reaches it.
+	recPath := writeParentFile(t, parent, "docs/plans/retirement-dispositions.yaml",
+		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+	rec, err := LoadDispositionRecord(recPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := runSweep(t, parent, retiring, rec)
+	for _, f := range result.Findings {
+		if strings.Contains(f.Path, "retirement-dispositions.yaml") {
+			t.Errorf("the disposition record in use must not be swept: %+v", f)
+		}
+	}
+
+	// Exactly that file, and nothing broader: another file that merely
+	// looks like a disposition record is scanned like anything else.
+	writeParentFile(t, parent, "docs/plans/other-dispositions.yaml",
+		deliveredDispositions("design-loop/design-loop"))
+	again := runSweep(t, parent, retiring, rec)
+	found := false
+	for _, f := range again.Findings {
+		if strings.Contains(f.Path, "other-dispositions.yaml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the exemption must cover exactly the record in use, not every file shaped like one")
+	}
+}
+
+// --- Suite 2 (continued): the operator's dismissal, written down -------
+
+func TestRetireRoot_AnAcknowledgedReferenceNoLongerBlocksAndIsListed(t *testing.T) {
+	parent, _ := groupSweepFixture(t)
+	writeParentFile(t, parent, "docs/history.md",
+		"Phase ordering used to live in design-loop/design-loop before the split.\n")
+
+	dispositions := `dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+  - feature: studio-foundation/studio-deployer
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/history.md
+    reference: design-loop/design-loop
+    rationale: a sentence about what used to be, not an instruction that reads the root
+`
+	retireRootDispositions = writeDispositionsFile(t, dispositions)
+	retireRootPreview = true
+	cmd, out := retireCmd(t, parent, "")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatalf("the preview should run: %v", err)
+	}
+	if !strings.Contains(out.String(), "Acknowledged (accepted by the disposition record") {
+		t.Errorf("an acknowledged finding must be listed under its own heading, not silently dropped; got:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "not an instruction that reads the root") {
+		t.Errorf("the preview must show why it was accepted; got:\n%s", out.String())
+	}
+
+	// And execution is no longer blocked by it.
+	retireRootPreview = false
+	retireRootNonInteractive = true
+	cmd, _ = retireCmd(t, parent, "")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("the unattended refusal should still apply")
+	}
+	if strings.Contains(err.Error(), "history.md") {
+		t.Errorf("an acknowledged finding must not block execution; got: %v", err)
+	}
+}
+
+func TestRetireRoot_AnUnacknowledgedReferenceStillRefuses(t *testing.T) {
+	parent, _ := groupSweepFixture(t)
+	writeParentFile(t, parent, "docs/history.md",
+		"Phase ordering used to live in design-loop/design-loop before the split.\n")
+	writeParentFile(t, parent, "docs/runbook.md",
+		"Rebuild design-loop/design-loop before shipping.\n")
+
+	retireRootDispositions = writeDispositionsFile(t, `dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+  - feature: studio-foundation/studio-deployer
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/history.md
+    reference: design-loop/design-loop
+    rationale: prose about what used to be
+`)
+	retireRootNonInteractive = true
+	cmd, _ := retireCmd(t, parent, "")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil || !strings.Contains(err.Error(), "runbook.md") {
+		t.Fatalf("a finding nobody acknowledged must still refuse — fail-closed is not traded for the dismissal; got: %v", err)
+	}
+	if strings.Contains(err.Error(), "history.md") {
+		t.Errorf("the acknowledged one must not still be listed as blocking; got: %v", err)
+	}
+}
+
+func TestRetireRoot_AnAcknowledgmentMustMatchExactly(t *testing.T) {
+	// Neither half may be approximate: an acknowledgment that covers
+	// findings the operator has not read is the check switched off.
+	cases := []struct {
+		name string
+		ack  string
+	}{
+		{
+			name: "wrong-path",
+			ack: `  - path: docs/other.md
+    reference: design-loop/design-loop
+    rationale: assessed`,
+		},
+		{
+			name: "wrong-reference",
+			ack: `  - path: docs/history.md
+    reference: design-loop/design-loop/phases
+    rationale: assessed`,
+		},
+		{
+			name: "path-prefix-is-not-a-match",
+			ack: `  - path: docs
+    reference: design-loop/design-loop
+    rationale: assessed`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent, _ := groupSweepFixture(t)
+			writeParentFile(t, parent, "docs/history.md",
+				"Phase ordering used to live in design-loop/design-loop before the split.\n")
+			retireRootDispositions = writeDispositionsFile(t, `dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+  - feature: studio-foundation/studio-deployer
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+`+tc.ack+"\n")
+			retireRootNonInteractive = true
+			cmd, _ := retireCmd(t, parent, "")
+			err := runRetireRoot(cmd, []string{"old"})
+			if err == nil || !strings.Contains(err.Error(), "history.md") {
+				t.Fatalf("an acknowledgment that does not name the finding exactly must not dismiss it; got: %v", err)
+			}
+		})
+	}
+}
+
+func TestRetireRoot_AnAcknowledgmentMatchingNothingIsReported(t *testing.T) {
+	parent, _ := groupSweepFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, `dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+  - feature: studio-foundation/studio-deployer
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/typo.md
+    reference: design-loop/design-loop
+    rationale: assessed
+`)
+	retireRootPreview = true
+	cmd, out := retireCmd(t, parent, "")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Acknowledgment matched no finding") {
+		t.Errorf("an acknowledgment that dismissed nothing must say so, or a misspelling looks like a refusal nobody can explain; got:\n%s", out.String())
+	}
+}
+
+func TestDispositions_AcknowledgmentsAreReadStructurallyClosed(t *testing.T) {
+	base := `dispositions:
+  - feature: alpha
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+`
+	for _, tc := range []struct{ name, entry, want string }{
+		{"unknown-field", "  - path: docs/x.md\n    reference: a/b\n    rationale: ok\n    reson: typo\n", "reson"},
+		{"no-path", "  - reference: a/b\n    rationale: ok\n", "names no path"},
+		{"no-reference", "  - path: docs/x.md\n    rationale: ok\n", "names no reference"},
+		{"no-rationale", "  - path: docs/x.md\n    reference: a/b\n", "no rationale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadRecord(t, base+tc.entry)
+			if err == nil {
+				t.Fatalf("an acknowledgment that is not fully written down must be refused")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the refusal must say what is wrong (want %q); got: %v", tc.want, err)
+			}
+		})
+	}
+
+	rec, err := loadRecord(t, base+"  - path: docs/x.md\n    reference: a/b\n    rationale: assessed as prose\n")
+	if err != nil {
+		t.Fatalf("a well-formed acknowledgment must be accepted: %v", err)
+	}
+	if len(rec.Acknowledged) != 1 || rec.Acknowledged[0].Reference != "a/b" {
+		t.Errorf("the acknowledgment must decode as written: %+v", rec.Acknowledged)
+	}
+	if rec.Path == "" {
+		t.Error("the record must remember where it was read from, so the sweep can exempt exactly that file")
+	}
+}

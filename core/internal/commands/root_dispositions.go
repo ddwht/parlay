@@ -73,11 +73,83 @@ type Disposition struct {
 	Rationale string `yaml:"rationale"`
 }
 
+// AcknowledgedReference is one inbound finding the operator has read
+// and accepted as historical prose rather than a live dependency.
+//
+// The sweep is deliberately fail-closed and deliberately wide: it
+// reports anything that names the retiring root's namespace, because a
+// check whose purpose is to establish that nothing points here cannot
+// decide on its own that a particular mention is only a mention. That
+// leaves the judgment where it belongs — with a person — but until now
+// the person had nowhere to record it, so the only way past a finding
+// they had genuinely assessed was to delete the sentence. This is the
+// place to record it instead, and it is what makes the promised human
+// dismissal real rather than notional.
+//
+// It dismisses ONE finding: the path and the reference must both match
+// exactly. There is no pattern, no prefix and no wildcard, because an
+// acknowledgment that covers findings the operator has not read is
+// indistinguishable from switching the check off.
+type AcknowledgedReference struct {
+	// Path is the artifact holding the reference, as the preview
+	// reports it — either the path relative to the project root or the
+	// absolute path.
+	Path string `yaml:"path"`
+	// Reference is the reference exactly as the finding carries it.
+	Reference string `yaml:"reference"`
+	// Rationale says why this one is prose rather than dependency. As
+	// with a disposition's rationale it is never parsed; requiring it
+	// is what keeps the dismissal checkable by a second reader.
+	Rationale string `yaml:"rationale"`
+}
+
 // DispositionRecord is the operator-authored file passed via
 // --dispositions: every feature in the retiring root, mapped to exactly
-// one disposition.
+// one disposition, plus any inbound findings the operator has assessed
+// and accepted.
 type DispositionRecord struct {
 	Dispositions []Disposition `yaml:"dispositions"`
+	// Acknowledged lists inbound sweep findings the operator accepts as
+	// historical prose. Optional; absent means nothing is dismissed.
+	Acknowledged []AcknowledgedReference `yaml:"acknowledged-references,omitempty"`
+	// Path is where this record was read from, resolved. Never decoded
+	// from the file — a record does not get to say where it lives — and
+	// used to exempt exactly this file from the inbound sweep, which
+	// would otherwise report the operator's own answers back as
+	// evidence against them.
+	Path string `yaml:"-"`
+}
+
+// matches reports whether this acknowledgment dismisses that exact
+// finding. The reference must be identical and the artifact must be the
+// same file; the path may be written relative to the project root or
+// absolutely, since the preview reports one form and a person may
+// reasonably copy either. Nothing else matches — no prefix, no pattern,
+// no wildcard — because an acknowledgment covering findings the operator
+// has not read is indistinguishable from switching the check off.
+func (a AcknowledgedReference) matches(parentPath string, f RootSweepFinding) bool {
+	if a.Reference != f.Ref {
+		return false
+	}
+	want := filepath.ToSlash(filepath.Clean(a.Path))
+	if want == filepath.ToSlash(filepath.Clean(f.Path)) {
+		return true
+	}
+	rel, err := filepath.Rel(parentPath, f.Path)
+	return err == nil && want == filepath.ToSlash(rel)
+}
+
+// acknowledges reports whether the record dismisses this exact finding.
+func (r *DispositionRecord) acknowledges(parentPath string, f RootSweepFinding) (AcknowledgedReference, bool) {
+	if r == nil {
+		return AcknowledgedReference{}, false
+	}
+	for _, a := range r.Acknowledged {
+		if a.matches(parentPath, f) {
+			return a, true
+		}
+	}
+	return AcknowledgedReference{}, false
 }
 
 // byFeature indexes the record. Duplicates are checked by
@@ -156,6 +228,27 @@ func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 		if strings.TrimSpace(d.Rationale) == "" {
 			return nil, fmt.Errorf("disposition record %s: %s carries term %s with no rationale — a term with no rationale is a classification nobody can check",
 				path, d.Feature, d.Term)
+		}
+	}
+	for i, a := range rec.Acknowledged {
+		if strings.TrimSpace(a.Path) == "" {
+			return nil, fmt.Errorf("disposition record %s: acknowledged reference %d names no path — an acknowledgment dismisses one finding in one artifact, so it has to say which", path, i+1)
+		}
+		if strings.TrimSpace(a.Reference) == "" {
+			return nil, fmt.Errorf("disposition record %s: the acknowledged reference in %s names no reference — the reference must match the finding exactly, so an empty one would dismiss whatever happened to be found there", path, a.Path)
+		}
+		if strings.TrimSpace(a.Rationale) == "" {
+			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no rationale — a dismissal nobody can check is the thing this section exists to avoid",
+				path, a.Reference, a.Path)
+		}
+	}
+	// Where the record was read from, resolved, so the sweep can exempt
+	// exactly this file and nothing else.
+	if abs, err := filepath.Abs(path); err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			rec.Path = filepath.Clean(resolved)
+		} else {
+			rec.Path = filepath.Clean(abs)
 		}
 	}
 	return &rec, nil

@@ -508,6 +508,74 @@ suites:
             - verify: state
               target: disposition-record-file
               expected: "loaded, with every field decoded as written"
+        - name: an acknowledged reference stops blocking and is listed with its reason
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledged reference naming an artifact, a reference and a rationale stops that one finding blocking the retirement, and the preview lists it under its own heading with the reason given rather than dropping it silently."
+          exercises: [retire-root-preflight]
+          observes: [disposition-preflight, sweep-findings, retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a preview with a record acknowledging a finding by its artifact and reference"
+            - verify: text
+              target: retire-root-preflight
+              expected: "the finding appears under an acknowledged heading with the rationale given"
+            - verify: state
+              target: retire-root-preflight
+              expected: "it no longer blocks execution"
+        - name: an acknowledgment matches only an exact artifact and reference
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment matches only on an exact artifact and an exact reference; a different path, a different reference or a path that is merely a prefix of the finding's dismisses nothing."
+          exercises: [retire-root-preflight]
+          observes: [disposition-preflight, retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "runs whose acknowledgment names a different path, a different reference, and a path that is only a prefix of the finding's"
+            - verify: error
+              target: retire-root-preflight
+              expected: "each still refuses naming the finding, since none of the three dismisses it"
+        - name: an unacknowledged finding still refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A finding nobody acknowledged still refuses the retirement, so the dismissal narrows nothing about what is reported."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a run with two findings and an acknowledgment covering one"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused naming the unacknowledged finding, and not naming the acknowledged one"
+        - name: an incomplete or unrecognized acknowledgment is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment carrying no path, no reference, no rationale, or a key the shape does not define, is refused like any other part of the record."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight, disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "records whose acknowledgment omits the path, the reference, the rationale, and one carrying an undefined key"
+            - verify: error
+              target: disposition-preflight
+              expected: "each is refused, naming what is wrong"
+        - name: an acknowledgment matching no finding says so
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment that matches no finding is reported as having matched none, so a misspelling is visible rather than looking like a refusal nobody can explain."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a preview whose acknowledgment names an artifact no finding came from"
+            - verify: text
+              target: retire-root-preflight
+              expected: "the preview reports that the acknowledgment matched no finding"
     # ===========================================================================
     # Suite 3 — Project-wide, source-aware inbound sweep
     # ===========================================================================
@@ -768,6 +836,48 @@ suites:
             - verify: state
               target: sweep-failures
               expected: "no failure is recorded for the binary file"
+        - name: a nested git checkout is skipped whole
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A nested git checkout below the project root — marked by a .git file or directory, as a worktree, submodule or vendored clone is — is skipped whole: its contents are another commit's copy of the project, and neither its markers nor its instructions are findings."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding a nested checkout, marked by a .git file and again by a .git directory, whose files carry ownership markers and command instructions naming the retiring root"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding comes from the nested checkout in either case"
+        - name: a skipped checkout is not a scan failure and does not reach readiness
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A skipped checkout is not a scan failure either, and re-home readiness is never judged against one."
+          exercises: [root-sweep]
+          observes: [sweep-failures, rehome-readiness]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project whose nested checkout holds a stale marker naming a re-homed feature"
+            - verify: state
+              target: sweep-failures
+              expected: "no failure names the checkout"
+            - verify: state
+              target: rehome-readiness
+              expected: "no readiness error names a file inside it"
+        - name: the disposition record in use is exempt, and nothing broader
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "The disposition record passed to the run is exempt from the sweep, at exactly its resolved path; another file shaped like a disposition record is scanned like anything else."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep with the disposition record inside the project tree, alongside a second file of the same shape and a similar name"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding names the record in use, and the second file is scanned like any other"
     # ===========================================================================
     # Suite 4 — Re-home target readiness
     # ===========================================================================
