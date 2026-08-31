@@ -1950,3 +1950,12 @@ suites:
             - verify: error
               target: rehome-validation
               expected: "refused — only a live feature can own surviving work; a record of an ending cannot"
+      - name: acknowledged-quoted-marker-does-not-fail-readiness
+        intent: refuse-while-anything-outside-the-root-still-stands-on-it
+        criterion:
+          source: infrastructure
+          text: "A marker occurrence the disposition record acknowledges does not fail readiness: a document quoting a marker is not a file owned by the retiring feature. An unacknowledged marker on a surviving file still refuses."
+        given: "a surviving document quotes the re-homed feature's ownership marker verbatim, and the disposition record acknowledges that exact occurrence (path, position, reference, kind) as prose"
+        when: "re-home readiness is checked"
+        then: "the acknowledged occurrence produces no readiness error; removing the acknowledgment makes the same occurrence refuse again"
+

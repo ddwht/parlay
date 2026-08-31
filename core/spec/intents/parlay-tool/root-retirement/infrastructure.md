@@ -125,6 +125,7 @@ Beyond that, the sweep does not decide that a mention is only a mention, and it 
 - A re-home target that exists and is active but does not yet claim the surviving work refuses the retirement.
 - A re-home target satisfying all three conditions permits the retirement to proceed, and the check runs before any mutation.
 - Target resolution crosses root boundaries.
+- A marker occurrence the disposition record acknowledges does not fail readiness: a document quoting a marker (an inventory, an amendment) is not a file owned by the retiring feature, and the acknowledgment answered exactly the question readiness asks about that occurrence. An unacknowledged marker on a surviving file still refuses.
 **Source**: @root-retirement/refuse-while-anything-outside-the-root-still-stands-on-it, @root-retirement/say-what-became-of-every-feature-in-the-root
 **Caching**: none
 **Backward-Compatible**: yes

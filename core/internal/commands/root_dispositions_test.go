@@ -480,3 +480,33 @@ func TestDispositions_ClosedReadingStillAcceptsAWellFormedRecord(t *testing.T) {
 		t.Errorf("the record must decode as written: %+v", rec.Dispositions)
 	}
 }
+
+// A quoted marker in a document the operator has acknowledged as prose must
+// not fail re-home readiness: the acknowledgment answered exactly the
+// question readiness asks about that occurrence. An unacknowledged marker on
+// a real file still refuses.
+func TestRehomeReadiness_AcknowledgedQuotedMarkerDoesNotBlock(t *testing.T) {
+	// A document QUOTING the retiring feature's marker (an inventory, a
+	// report) produces an ownership-marker finding without the file being
+	// owned; the fixture's marker file plays that role.
+	parent, idx, retiring, rec, sweep := rehomeFixture(t,
+		"@keeper", "// parlay-feature: mover\n")
+	writeChildFeature(t, parent, "keeper")
+	if len(sweep.Findings) == 0 {
+		t.Fatal("fixture produced no findings")
+	}
+	quoted := sweep.Findings[0]
+	rec.Acknowledged = []AcknowledgedReference{{
+		Path: quoted.Path, Position: quoted.Position,
+		Reference: quoted.Ref, Kind: quoted.Kind,
+		Rationale: "the file quotes the marker as evidence; it owns nothing",
+	}}
+	if errs := checkRehomeTargets(parent, idx, retiring, rec, sweep); len(errs) != 0 {
+		t.Fatalf("an acknowledged quoted marker must not fail readiness: %v", errs)
+	}
+	// Without the acknowledgment the same finding still refuses.
+	rec.Acknowledged = nil
+	if errs := checkRehomeTargets(parent, idx, retiring, rec, sweep); len(errs) == 0 {
+		t.Fatal("an unacknowledged ownership marker must still fail readiness")
+	}
+}

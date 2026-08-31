@@ -100,22 +100,26 @@ These are the dependencies D10 must dispose of. Every one of them is a marker
 on a file that is *not* in the deletion set, so it will still be on disk after
 `parlay retire-root studio` runs — pointing at a root that no longer exists.
 
+(Markers below are quoted with an arrow in place of the colon so the
+retirement sweep's lexical scan does not read a quotation as a live marker;
+the on-disk originals use `parlay-feature:`/`parlay-extends:` syntax.)
+
 | Marker | File:line | Disposition |
 |---|---|---|
-| `parlay-feature: studio-foundation/studio-deployer` | `core/internal/atomicfile/atomicfile.go:1` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
-| `parlay-extends: studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency` | `core/internal/atomicfile/atomicfile.go:3` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
-| `parlay-feature: studio-foundation/studio-deployer` | `core/internal/atomicfile/atomicfile_test.go:1` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
-| `parlay-extends: studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency` | `core/internal/atomicfile/atomicfile_test.go:3` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
-| `parlay-feature: domain-model-editor/domain-model-editor-validation` | `core/internal/commands/domain_validator.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` |
-| `parlay-feature: domain-model-editor/domain-model-editor-validation` | `core/internal/commands/domain_parity_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` |
-| `parlay-feature: domain-model-editor/feature-contributions` | `core/internal/agent/domain_contribution.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
-| `parlay-feature: domain-model-editor/feature-contributions` | `core/internal/agent/domain_contribution_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
-| `parlay-feature: domain-model-editor/feature-contributions` | `core/internal/commands/domain_impact.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
-| `parlay-feature: domain-model-editor/feature-contributions` | `core/internal/commands/domain_impact_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
-| `parlay-feature: design-loop/vocabulary-validation` | `core/internal/commands/root.go:456` | marker corrected; feature retired built-but-undelivered, NOT re-homed |
-| `parlay-feature: design-loop/design-loop` | `core/internal/embedded/schemas/layout.schema.md:58` | removed with the `figma:` block (user-authorized 2026-08-31) |
+| `parlay-feature → studio-foundation/studio-deployer` | `core/internal/atomicfile/atomicfile.go:1` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
+| `parlay-extends → studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency` | `core/internal/atomicfile/atomicfile.go:3` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
+| `parlay-feature → studio-foundation/studio-deployer` | `core/internal/atomicfile/atomicfile_test.go:1` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
+| `parlay-extends → studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency` | `core/internal/atomicfile/atomicfile_test.go:3` | authority-re-homed-to `parlay-tool/atomic-file-writes` |
+| `parlay-feature → domain-model-editor/domain-model-editor-validation` | `core/internal/commands/domain_validator.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` |
+| `parlay-feature → domain-model-editor/domain-model-editor-validation` | `core/internal/commands/domain_parity_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` |
+| `parlay-feature → domain-model-editor/feature-contributions` | `core/internal/agent/domain_contribution.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
+| `parlay-feature → domain-model-editor/feature-contributions` | `core/internal/agent/domain_contribution_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
+| `parlay-feature → domain-model-editor/feature-contributions` | `core/internal/commands/domain_impact.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
+| `parlay-feature → domain-model-editor/feature-contributions` | `core/internal/commands/domain_impact_test.go:1` | authority-re-homed-to `parlay-tool/domain-document-api` (orphan marker — see §5.1) |
+| `parlay-feature → design-loop/vocabulary-validation` | `core/internal/commands/root.go:456` | marker corrected; feature retired built-but-undelivered, NOT re-homed |
+| `parlay-feature → design-loop/design-loop` | `core/internal/embedded/schemas/layout.schema.md:58` | removed with the `figma:` block (user-authorized 2026-08-31) |
 | `parlay-component: cross-cutting/on-disk-artifact-contract` | `core/internal/embedded/schemas/layout.schema.md:59` | removed with the `figma:` block |
-| `parlay-feature: design-loop/design-loop` | `.parlay/schemas/layout.schema.md:58` | removed by `make sync-skills` after the source edit |
+| `parlay-feature → design-loop/design-loop` | `.parlay/schemas/layout.schema.md:58` | removed by `make sync-skills` after the source edit |
 | `parlay-component: cross-cutting/on-disk-artifact-contract` | `.parlay/schemas/layout.schema.md:59` | removed by `make sync-skills` after the source edit |
 | `parlay-feature: design-loop/design-loop` (quoted in prose) | `core/.parlay/build/studio-support/page-layout-field/buildfile.yaml:335` | **CONFLICT — see §5.2** |
 | `parlay-feature: design-loop/design-loop` (quoted in prose) | `core/.parlay/build/studio-support/page-layout-field/testcases.yaml:415` | **CONFLICT — see §5.2** |

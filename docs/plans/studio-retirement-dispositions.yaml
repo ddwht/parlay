@@ -79,7 +79,7 @@ acknowledged-references:
     kind: path-reference
     rationale: "Frozen build-state example prose from when the studio root existed; historical record."
   - path: core/.parlay/build/parlay-tool/root-retirement/buildfile.yaml
-    position: line 296
+    position: line 299
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
     rationale: "The retirement feature's own build instructions quote a studio feature as the worked example of what the sweep must find."
@@ -388,3 +388,243 @@ acknowledged-references:
     reference: "studio/domain-model-editor/domain-model-editor-validation"
     kind: path-reference
     rationale: "Frozen founding doc's historical reference to the Studio half of the original parity contract, retired by amendment 001; prose, not dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 109
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 110
+    reference: "studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 111
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 112
+    reference: "studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 113
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 114
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 119
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 133
+    reference: "studio-foundation/studio-config"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 134
+    reference: "domain-model-editor/domain-model-editor-mvp"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 148
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 158
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 217
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 218
+    reference: "studio/internal/vocabulary"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 219
+    reference: "domain-model-editor/domain-model-editor-mvp"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 220
+    reference: "domain-model-editor/domain-model-editor-relationships"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 221
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 222
+    reference: "studio-ai-authoring/initial-layout-proposal"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 223
+    reference: "studio-ai-authoring/sync-back-ai-classification"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 224
+    reference: "studio-deferred/collaboration-patterns"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 225
+    reference: "studio-deferred/mid-edit-resumability"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 226
+    reference: "studio-deferred/multi-screen-management"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 227
+    reference: "studio-foundation/figma-mcp-client"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 228
+    reference: "studio-foundation/figma-mcp-via-host-agent"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 229
+    reference: "studio-foundation/studio-config"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 230
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 231
+    reference: "studio-foundation/web-server-harness"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 232
+    reference: "studio-multi-adapter/cross-design-system-adapter"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 233
+    reference: "studio-multi-adapter/second-adapter-same-design-system"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 244
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 245
+    reference: "studio/.parlay/adapter-set.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 246
+    reference: "studio/.parlay/adapters/go-studio-app.adapter.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 248
+    reference: "studio/.parlay/build/_project/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 384
+    reference: "studio/spec/intents/domain-model-editor/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 392
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 404
+    reference: '> description: "The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged."'
+    kind: ownership-marker
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 568
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 583
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 588
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 120
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 122
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 124
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 125
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 216
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 249
+    reference: "studio/.parlay/build/"
+    kind: path-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 317
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 415
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 74
+    reference: "studio/spec/intents"
+    kind: path-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 75
+    reference: "studio/.parlay/build/"
+    kind: path-reference
+    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."

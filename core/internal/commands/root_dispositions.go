@@ -414,6 +414,14 @@ func checkRehomeTargets(parentPath string, idx *config.RootsIndex, retiring conf
 			if finding.Kind != sweepKindOwnershipMarker || finding.Feature != d.Feature {
 				continue
 			}
+			// A finding the record acknowledges is one the operator has
+			// already judged prose rather than claim — a document QUOTING
+			// a marker (an inventory, an amendment) is not a file owned by
+			// the retiring feature, and readiness asks exactly the
+			// question the acknowledgment answered.
+			if _, ok := record.acknowledges(parentPath, finding); ok {
+				continue
+			}
 			if !fileClaimsFeature(finding.Path, targetSlug) {
 				errs = append(errs, fmt.Errorf("re-home target %q for %s does not yet claim %s — the file's ownership markers still name the retiring feature, and its claim has not moved",
 					d.Target, d.Feature, finding.Path))
