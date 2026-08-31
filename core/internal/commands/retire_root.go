@@ -390,6 +390,10 @@ type retirementPreflight struct {
 	Members      []memberEntry
 	WalkErr      error
 	MissingBlock []string // human summary of everything that blocks execution
+	// Blocking holds the unacknowledged inbound findings, typed, so the
+	// preview prints exactly the set the machine refuses on — one loop,
+	// one predicate, no second filtering key to drift.
+	Blocking []RootSweepFinding
 }
 
 // acknowledgedFinding pairs a dismissed finding with the dismissal, so
@@ -472,15 +476,16 @@ func runRetirementPreflight(parentPath string, idx *config.RootsIndex, target co
 	}
 	// A finding the operator has read and accepted as prose stops
 	// blocking — but it is listed, not dropped, and only an exact
-	// artifact-and-reference match dismisses one. Everything else still
-	// refuses, so fail-closed is intact: the sweep never decides that a
-	// mention is only a mention, and a person cannot dismiss what they
-	// have not named.
+	// identity match dismisses the class of findings sharing it.
+	// Everything else still refuses, so fail-closed is intact: the sweep
+	// never decides that a mention is only a mention, and a person
+	// cannot dismiss what they have not named.
 	for _, f := range sweep.BlockingFindings() {
 		if ack, ok := pf.Record.acknowledges(parentPath, f); ok {
 			pf.Acknowledged = append(pf.Acknowledged, acknowledgedFinding{Finding: f, Ack: ack})
 			continue
 		}
+		pf.Blocking = append(pf.Blocking, f)
 		pf.MissingBlock = append(pf.MissingBlock, "inbound reference: "+f.String())
 	}
 	pf.Unmatched = unmatchedAcknowledgments(parentPath, pf.Record, sweep)
@@ -519,17 +524,13 @@ func printRetirementPreview(cmd *cobra.Command, parentPath string, pf *retiremen
 		}
 	}
 
-	blocking := pf.Sweep.BlockingFindings()
-	acknowledged := map[string]bool{}
-	for _, a := range pf.Acknowledged {
-		acknowledged[a.Finding.Path+"\x00"+a.Finding.Ref] = true
-	}
+	// The preview prints pf.Blocking — the very list the machine refuses
+	// on — never a re-derivation with its own filtering key, so a
+	// finding the preflight retains can never be hidden from the person
+	// reading the preview.
 	fmt.Fprintf(out, "  Inbound sweep: %d blocking finding(s), %d acknowledged, %d scan failure(s)\n",
-		len(blocking)-len(pf.Acknowledged), len(pf.Acknowledged), len(pf.Sweep.Failures))
-	for _, f := range blocking {
-		if acknowledged[f.Path+"\x00"+f.Ref] {
-			continue
-		}
+		len(pf.Blocking), len(pf.Acknowledged), len(pf.Sweep.Failures))
+	for _, f := range pf.Blocking {
 		fmt.Fprintf(out, "    - %s\n", f)
 	}
 	if len(pf.Acknowledged) > 0 {

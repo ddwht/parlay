@@ -582,49 +582,49 @@ acknowledged-references:
     position: line 120
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 122
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 124
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 125
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 216
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 249
     reference: "studio/.parlay/build/"
     kind: path-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 317
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 415
     reference: "design-loop/design-loop"
     kind: group-qualified-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 74
     reference: "studio/spec/intents"
     kind: path-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
   - path: docs/plans/studio-teardown-inventory.md
     position: line 75
     reference: "studio/.parlay/build/"
     kind: path-reference
-    rationale: "Second occurrence of the same reference on the same line of the inventory (the analysis record of this retirement); same judgment as its twin: historical analysis prose, not a live dependency."
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"

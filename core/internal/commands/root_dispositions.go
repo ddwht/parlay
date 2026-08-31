@@ -86,11 +86,16 @@ type Disposition struct {
 // place to record it instead, and it is what makes the promised human
 // dismissal real rather than notional.
 //
-// It dismisses ONE finding: path, position, reference and kind — the
-// finding's full identity as the preview reports it — must all match
-// exactly. There is no pattern, no prefix and no wildcard, because an
-// acknowledgment that covers findings the operator has not read is
-// indistinguishable from switching the check off.
+// It dismisses one exact IDENTITY CLASS: every finding whose path,
+// position, reference and kind — the full identity the preview reports —
+// all match exactly. Findings sharing that identity (the same reference
+// written twice on one line) are indistinguishable by construction, so
+// one acknowledgment covers them together; there is no per-occurrence
+// ordinal, and a duplicate identical entry is rejected as redundant
+// rather than read as stronger authority. There is no pattern, no prefix
+// and no wildcard, because an acknowledgment that covers findings the
+// operator has not read is indistinguishable from switching the check
+// off.
 type AcknowledgedReference struct {
 	// Path is the artifact holding the reference, as the preview
 	// reports it — either the path relative to the project root or the
@@ -130,13 +135,16 @@ type DispositionRecord struct {
 	Path string `yaml:"-"`
 }
 
-// matches reports whether this acknowledgment dismisses that exact
-// finding: reference, position and kind must all be identical, and the
-// artifact must be the same file; the path may be written relative to
-// the project root or absolutely, since the preview reports one form
-// and a person may reasonably copy either. Nothing else matches — no
-// prefix, no pattern, no wildcard, and no position-blind match that
-// would silently cover a second occurrence or a future one — because an
+// matches reports whether this acknowledgment dismisses that finding's
+// identity class: reference, position and kind must all be identical,
+// and the artifact must be the same file; the path may be written
+// relative to the project root or absolutely, since the preview reports
+// one form and a person may reasonably copy either. Matching is
+// existential over the class, not consuming per occurrence — findings
+// with identical full identity are indistinguishable, so one entry
+// answers them all. Nothing else matches — no prefix, no pattern, no
+// wildcard, and no position-blind match that would silently cover a
+// DIFFERENT line's occurrence or a future one — because an
 // acknowledgment covering findings the operator has not read is
 // indistinguishable from switching the check off.
 func (a AcknowledgedReference) matches(parentPath string, f RootSweepFinding) bool {
@@ -244,13 +252,13 @@ func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 	}
 	for i, a := range rec.Acknowledged {
 		if strings.TrimSpace(a.Path) == "" {
-			return nil, fmt.Errorf("disposition record %s: acknowledged reference %d names no path — an acknowledgment dismisses one finding in one artifact, so it has to say which", path, i+1)
+			return nil, fmt.Errorf("disposition record %s: acknowledged reference %d names no path — an acknowledgment dismisses one finding identity in one artifact, so it has to say which", path, i+1)
 		}
 		if strings.TrimSpace(a.Reference) == "" {
 			return nil, fmt.Errorf("disposition record %s: the acknowledged reference in %s names no reference — the reference must match the finding exactly, so an empty one would dismiss whatever happened to be found there", path, a.Path)
 		}
 		if strings.TrimSpace(a.Position) == "" {
-			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no position — an acknowledgment names ONE finding, and without its position it would also dismiss every other occurrence, present or future", path, a.Reference, a.Path)
+			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no position — an acknowledgment names one exact finding identity, and without its position it would also dismiss every other line's occurrence, present or future", path, a.Reference, a.Path)
 		}
 		if strings.TrimSpace(a.Kind) == "" {
 			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no kind — the kind is part of the finding's identity as the preview reports it", path, a.Reference, a.Path)
@@ -259,6 +267,19 @@ func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 			return nil, fmt.Errorf("disposition record %s: the acknowledgment of %q in %s carries no rationale — a dismissal nobody can check is the thing this section exists to avoid",
 				path, a.Reference, a.Path)
 		}
+	}
+	// Exact duplicate acknowledgments are refused rather than tolerated:
+	// one entry already covers the whole identity class, so a repeat adds
+	// no authority and can only mislead a reader into thinking
+	// multiplicity means something.
+	seenAcks := map[string]int{}
+	for i, a := range rec.Acknowledged {
+		key := a.Path + "\x00" + a.Position + "\x00" + a.Reference + "\x00" + a.Kind
+		if prev, dup := seenAcks[key]; dup {
+			return nil, fmt.Errorf("disposition record %s: acknowledged reference %d duplicates entry %d (%q at %s in %s) — one acknowledgment covers every finding sharing that exact identity; repetition is not stronger authority",
+				path, i+1, prev+1, a.Reference, a.Position, a.Path)
+		}
+		seenAcks[key] = i
 	}
 	// Where the record was read from, resolved, so the sweep can exempt
 	// exactly this file and nothing else.

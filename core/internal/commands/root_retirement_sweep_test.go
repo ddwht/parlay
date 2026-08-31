@@ -845,3 +845,124 @@ acknowledged-references:
 		t.Error("the record must remember where it was read from, so the sweep can exempt exactly that file")
 	}
 }
+
+// Acknowledging line 10 must not hide an unacknowledged occurrence of the
+// SAME reference at line 50 — in the machine's blocking set or in the
+// human preview. This pins the preview to the preflight's own list rather
+// than any re-derived filtering key.
+func TestRetireRoot_AcknowledgingOneLineDoesNotHideAnotherLinesOccurrence(t *testing.T) {
+	parent, _ := groupSweepFixture(t)
+	writeParentFile(t, parent, "docs/history.md",
+		"Line one mentions demo-group/demo-feature as history.\n"+
+			"Line two is unrelated.\n"+
+			"Line three instructs rebuilding demo-group/demo-feature before shipping.\n")
+	retireRootDispositions = writeDispositionsFile(t, `dispositions:
+  - feature: demo-group/demo-feature
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+  - feature: demo-group/other-feature
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/history.md
+    position: line 1
+    reference: demo-group/demo-feature
+    kind: group-qualified-reference
+    rationale: line one is prose
+`)
+	retireRootPreview = true
+	cmd, out := retireCmd(t, parent, "")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatalf("preview should run: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "line 3") {
+		t.Errorf("the unacknowledged line-3 occurrence must be printed as blocking; got:\n%s", got)
+	}
+	// And execution still refuses on it.
+	retireRootPreview = false
+	retireRootNonInteractive = true
+	cmd, _ = retireCmd(t, parent, "")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil || !strings.Contains(err.Error(), "line 3") {
+		t.Fatalf("execution must refuse naming the line-3 occurrence; got: %v", err)
+	}
+}
+
+// Findings sharing the full four-field identity are one identity class:
+// a single acknowledgment covers every one of them. The line scanner
+// emits one finding per line per reference, so identical-identity
+// duplicates cannot arise from a real corpus today — this pins the
+// predicate-level contract directly so the equivalence-class rule holds
+// even if a future scanner produced them, and pins the scanner's
+// one-per-line behavior alongside.
+func TestRetireRoot_OneAcknowledgmentCoversTheWholeIdentityClass(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+	writeParentFile(t, parent, "docs/history.md",
+		"demo-group/demo-feature superseded demo-group/demo-feature in the rewrite.\n")
+	rec, err := loadRecord(t, `dispositions:
+  - feature: demo-group/demo-feature
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/history.md
+    position: line 1
+    reference: demo-group/demo-feature
+    kind: group-qualified-reference
+    rationale: historical sentence quoting the feature twice
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := RootSweepFinding{
+		Path:     filepath.Join(parent, "docs/history.md"),
+		Position: "line 1",
+		Ref:      "demo-group/demo-feature",
+		Kind:     sweepKindGroupQualifiedReference,
+	}
+	two := one // identical identity, distinct value
+	for i, f := range []RootSweepFinding{one, two} {
+		if _, ok := rec.acknowledges(parent, f); !ok {
+			t.Errorf("finding %d of the identity class must be covered by the one entry", i+1)
+		}
+	}
+	// And the scanner's one-per-line behavior: the double-mention line
+	// yields exactly one finding, so the class is currently a singleton.
+	sweep, err := sweepRootRetirement(parent, retiring, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, f := range sweep.Findings {
+		if strings.HasSuffix(f.Path, "docs/history.md") && f.Position == "line 1" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("the line scanner emits one finding per line per reference; got %d", count)
+	}
+}
+
+// A duplicate identical acknowledgment is refused by the loader:
+// repetition is not stronger authority.
+func TestDispositions_DuplicateIdenticalAcknowledgmentRefused(t *testing.T) {
+	_, err := loadRecord(t, `dispositions:
+  - feature: demo-group/demo-feature
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+acknowledged-references:
+  - path: docs/x.md
+    position: line 1
+    reference: a/b
+    kind: path-reference
+    rationale: assessed
+  - path: docs/x.md
+    position: line 1
+    reference: a/b
+    kind: path-reference
+    rationale: assessed again, as if that helped
+`)
+	if err == nil || !strings.Contains(err.Error(), "repetition is not stronger authority") {
+		t.Fatalf("a duplicate identical acknowledgment must be refused; got: %v", err)
+	}
+}
