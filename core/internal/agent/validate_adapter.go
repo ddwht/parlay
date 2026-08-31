@@ -110,7 +110,7 @@ func ValidateAdapter(mode ValidationMode, path string, content []byte) []Validat
 	for cat, e := range a.DesignSystem {
 		if !ClosedSetDesignSystemSources[e.Source] {
 			add("adapter-design-system-source-unknown",
-				fmt.Sprintf("design-system.%s source %q is outside {framework, figma, not-defined}", cat, e.Source))
+				fmt.Sprintf("design-system.%s source %q is outside {framework, not-defined}", cat, e.Source))
 		}
 	}
 

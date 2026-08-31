@@ -106,7 +106,7 @@ through it is a guess.
 6. **Add the optional sections that earn their place** — `compositions:`
    (state + wiring recipes), `conventions:` (team rules with `rule:` +
    `applies-to:`), `design-system:` (each category's `source:` is
-   `framework` / `figma` / `not-defined`), `mount-strategies:` (brownfield
+   `framework` / `not-defined`), `mount-strategies:` (brownfield
    insertion; `detection:` + a `template:` with `{{placeholders}}` +
    `description:`), `patterns:` (framework taste — deliberately unvalidated,
    so use whatever values fit the framework), `componentVocabulary:` /

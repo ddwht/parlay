@@ -46,7 +46,6 @@ The pipeline is the default. Four operations sit alongside it rather than inside
 | Invocation | What it does | Module |
 |---|---|---|
 | `handoff @{feature}` | Generate the engineering specification into `spec/handoff/{feature}/` | `.parlay/modules/generate-enggspec.md` |
-| `design-spec` | Extract a design spec from Figma into the project | `.parlay/modules/reference-design-spec.md` |
 | `domain-model` | Create the project domain model from existing features | `.parlay/modules/create-domain-model.md` |
 | `domain-model --from {path}` | Load and integrate an externally-authored domain model | `.parlay/modules/load-domain-model.md` |
 

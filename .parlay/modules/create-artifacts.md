@@ -125,7 +125,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    - The Goal describes "the codebase is shaped such that …" or "X is constrained to …" rather than "the backend performs …"
    - Dialog turns describe a property of the source tree, the build pipeline, or the runtime environment — not an operation a user triggers
 
-   An intent whose entire content is architectural — for example, "the figma SDK may only be imported from internal/sdk" — flows to `infrastructure.md` without authoring a `capabilities.yaml` entry. Architectural prose does not need to be paraphrased as a fake operation; the two artifacts are co-equal, and either is a valid backend destination depending on the intent's shape.
+   An intent whose entire content is architectural — for example, "the Stripe SDK may only be imported from internal/sdk" — flows to `infrastructure.md` without authoring a `capabilities.yaml` entry. Architectural prose does not need to be paraphrased as a fake operation; the two artifacts are co-equal, and either is a valid backend destination depending on the intent's shape.
 
    **Domain-model signals** (the intent introduces entities, relationships, or shared vocabulary):
    - The Objects field names new entities, value types, or enums not already in `domain-model.yaml`

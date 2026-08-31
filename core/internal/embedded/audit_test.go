@@ -336,35 +336,6 @@ func TestLayoutSchemaVersionFieldIsSnakeCase(t *testing.T) {
 	}
 }
 
-// TestDesignSpecScopedAwayFromLayout guards the Phase 5 design-spec
-// scoping decision: design-spec.yaml must document itself as
-// non-layout enrichment only, with the per-fragment structural layout:
-// field removed and a cross-reference to layout.schema.md.
-//
-// The reverse leg — layout.schema.md carrying a heading back to
-// design-spec.schema.md — was asserted here until layout.schema.md's
-// Design-Loop and Figma claims were removed by governance. layout.schema.md
-// now states its own scope without naming design-spec, so only the
-// design-spec side of the cross-reference is checked.
-func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
-	designSpec, err := schemasFS.ReadFile("schemas/design-spec.schema.md")
-	if err != nil {
-		t.Fatalf("failed to read design-spec.schema.md: %v", err)
-	}
-	designSpecBody := string(designSpec)
-
-	required := []string{
-		"Scope: non-layout enrichment only",
-		"Relationship to layout.schema.md",
-		"motion",
-	}
-	for _, kw := range required {
-		if !strings.Contains(designSpecBody, kw) {
-			t.Errorf("design-spec.schema.md missing %q", kw)
-		}
-	}
-}
-
 // TestCapabilitiesInputTypeNamespaceDocumented guards the 5d addition
 // defining what input.type may contain and where (nowhere, structurally)
 // its field shape is declared — without this section a reader has no

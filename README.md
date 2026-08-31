@@ -3,9 +3,7 @@
 An intent-driven specification framework that turns user goals into working prototypes through a structured pipeline. Describe what users need, not how to code it.
 
 ```
-intent → dialog → artifacts (surface, capabilities, infrastructure, domain-model) → [design-spec] → buildfile → code
-                                                                                        ↑ optional
-                                                                                     (from Figma)
+intent → dialog → artifacts (surface, capabilities, infrastructure, domain-model) → buildfile → code
 ```
 
 Parlay bridges the gap between design and code generation by providing:
@@ -184,16 +182,6 @@ Generated infrastructure fragments look like:
 **Backward-Compatible**: yes
 ```
 
-### Enrich with Figma (Optional)
-
-If a Figma design exists for the feature, enrich the surface with visual details:
-
-```
-/parlay-reference-design-spec @task-list <figma-link>
-```
-
-This reads Figma via MCP, maps Figma components to surface fragments, and generates `.parlay/build/task-list/design-spec.yaml` with per-fragment widget specifics, layout, tokens, variants, spacing, and colors. Build-feature uses it automatically when present.
-
 ### Define the Blueprint
 
 Edit `.parlay/blueprint.yaml` to describe how your app is wired together. For a CLI app this is minimal:
@@ -368,7 +356,6 @@ spec/
     <feature>/                  (or) <initiative>/<feature>/
       buildfile.yaml              Structured build spec
       testcases.yaml              Verification tests
-      design-spec.yaml            Visual details from Figma (optional)
       .baseline.yaml              Source hash baseline
     _project/
       .baseline.yaml              Merged section hashes
@@ -398,7 +385,6 @@ Parlay has 24 schemas defining every artifact. Key schemas include:
 | `adapter.schema.md` | Widget mappings, design system, compositions, conventions, patterns |
 | `adapter-set.schema.md` | Adapter-kind slots, per-target source roots, cross-kind link relations (multi-target projects) |
 | `blueprint.schema.md` | Shells, navigation, authorization, data, errors, state, platform |
-| `design-spec.schema.md` | Per-fragment visual details from Figma (widget, layout, tokens, variants) |
 | `buildfile.schema.md` | Fixtures, routes, components, cross-cutting entries, operations, bindings |
 | `testcases.schema.md` | Suites, cases, steps, verification types |
 | `page.schema.md` | Cross-feature page manifests with region ordering |
@@ -418,7 +404,6 @@ After `parlay init`, all workflow operations happen through AI agent skills. The
 | `/parlay-onboard` | Onboard an existing codebase and draft a matching adapter |
 | `/parlay-scaffold-dialogs @<feature>` | Generate complete dialog flows from authored intents |
 | `/parlay-create-artifacts @<feature>` | Decide between surface, infrastructure, or both — then generate |
-| `/parlay-reference-design-spec @<feature> <figma-link>` | Extract visual details from Figma into design-spec.yaml |
 | `/parlay-build-feature @<feature>` | Generate buildfile.yaml + testcases.yaml |
 | `/parlay-generate-code` | Generate prototype code (project-level, all features) |
 | `/parlay-generate-enggspec @<feature>` | Generate engineering specification for handoff |
@@ -491,7 +476,7 @@ The adapter is the bridge between framework-agnostic surface vocabulary and fram
 | `shows:` | Maps each Show type to framework widgets | Rarely (framework upgrade) |
 | `actions:` | Maps each Action type to framework widgets | Rarely |
 | `flows:` | Maps Flow patterns to composite patterns | Rarely |
-| `design-system:` | Inventories design tokens per category (colors, spacing, typography, etc.) with `source: framework / figma / not-defined` | Team |
+| `design-system:` | Inventories design tokens per category (colors, spacing, typography, etc.) with `source: framework / not-defined` | Team |
 | `compositions:` | Runtime recipes (e.g., crud-table-with-drawer) | Team |
 | `conventions:` | Structured rules (state management, naming, error handling) | Team |
 | `file-conventions:` | Source root, component pattern, naming, entry point | Team |

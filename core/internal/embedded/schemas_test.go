@@ -21,7 +21,6 @@ func TestWriteSchemas_WritesAllSchemas(t *testing.T) {
 		"adapter.schema.md",
 		"blueprint.schema.md",
 		"buildfile.schema.md",
-		"design-spec.schema.md",
 		"dialog.schema.md",
 		"feature-structure.schema.md",
 		"intent.schema.md",

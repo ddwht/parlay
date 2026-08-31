@@ -294,7 +294,7 @@ var ClosedSetNaming = map[string]bool{
 }
 
 var ClosedSetDesignSystemSources = map[string]bool{
-	"framework": true, "figma": true, "not-defined": true,
+	"framework": true, "not-defined": true,
 }
 
 var ClosedSetComponentCategories = map[string]bool{
