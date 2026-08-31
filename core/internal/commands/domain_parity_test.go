@@ -150,7 +150,7 @@ func directFindings(t *testing.T, model []byte) []string {
 
 // seamFindings runs the fixture through the ValidatorFunc seam: decode to a
 // Model, then let domainmodel.Validate re-serialize it and call domainValidator
-// — the exact path a save takes before it writes.
+// — the exact validation path reserved for the future save gate; no production save calls it yet.
 func seamFindings(t *testing.T, modelYAML []byte) []string {
 	t.Helper()
 
