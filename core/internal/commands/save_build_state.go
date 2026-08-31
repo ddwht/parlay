@@ -38,6 +38,8 @@ write-then-rename pattern for atomicity.`,
 var (
 	saveBuildStateSourceRoot     string
 	saveBuildStateEmitted        string
+	saveBuildStateOutputless     string
+	saveBuildStateConfirmOutless bool
 	saveBuildStateStrict         bool
 	saveBuildStatePartial        bool
 	saveBuildStateAllowNarrowing bool
@@ -75,6 +77,10 @@ func init() {
 		"Path to the newline-delimited manifest of files this run wrote (default .parlay/build/_project/.emitted when present)")
 	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateStrict, "strict", false,
 		"Fail instead of recording when a generated file was changed outside codegen")
+	saveBuildStateCmd.Flags().StringVar(&saveBuildStateOutputless, "outputless-feature", "",
+		"A feature this partial run refined that emits no generated code; requires --confirm-outputless and an explicitly empty --emitted manifest")
+	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateConfirmOutless, "confirm-outputless", false,
+		"required with --outputless-feature: confirms this feature owes no generated code. NOT confirmation of any promise withdrawal")
 	saveBuildStateCmd.Flags().BoolVar(&saveBuildStatePartial, "partial", false,
 		"This run regenerated only part of the project (e.g. `parlay refine`); makes --emitted mandatory")
 	saveBuildStateCmd.Flags().BoolVar(&saveBuildStateAllowNarrowing, "allow-narrowing", false,
@@ -243,6 +249,29 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 		}
 	}
 
+	// Applied-authority preflight (WP1). Read-only, and deliberately here:
+	// after the manifest is loaded (it decides which features this run would
+	// bless) but before anything is written or consumed. A refusal must leave
+	// the tree exactly as it found it, including the manifest the retry needs.
+	// A full save is generate-code's final step; that workflow contract is the
+	// only basis on which an unproven splice tail may advance, and the caller
+	// states it here rather than letting the writer assume it.
+	inference := noInference
+	if !saveBuildStatePartial {
+		inference = fullGreenBuildInference
+	}
+	outputless := outputlessClaim{
+		Feature:   strings.TrimPrefix(saveBuildStateOutputless, "@"),
+		Confirmed: saveBuildStateConfirmOutless,
+	}
+	if err := validateOutputlessClaim(cfg, outputless, features, saveBuildStatePartial, emitted); err != nil {
+		return nil, err
+	}
+	plan, err := planAppliedAuthority(cfg, features, saveBuildStatePartial, emittedFeatures, inference, outputless)
+	if err != nil {
+		return nil, err
+	}
+
 	// --- Stage 1: Per-feature baselines ---
 	for _, slug := range features {
 		// Per-feature blessing (WP6). Under --partial the blessing unit is the
@@ -255,10 +284,10 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 		// signal, the false-stable failure this WP exists to prevent. A full,
 		// non-partial save keeps the world-snapshot semantics: emittedFeatures
 		// is nil, the guard is skipped, every feature is baselined together.
-		if saveBuildStatePartial && !emittedFeatures[slug] {
+		if !plan.Bless[slug] {
 			continue
 		}
-		baseline, err := buildBaseline(cfg, slug)
+		baseline, err := buildBaselineWithAuthority(cfg, slug, plan.Ops[slug])
 		if err != nil {
 			// Feature may not have intents yet, or has an unparseable one.
 			// Either way no baseline is written for it — record that so the
@@ -341,6 +370,7 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 	projectBL := &ProjectBaseline{
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 		Emitted:        sortedFeatureSlugs(emittedFeatures),
+		Outputless:     outputlessRecord(outputless),
 		MergedSections: mergedSections,
 	}
 	projectBLBytes, err := yaml.Marshal(projectBL)
