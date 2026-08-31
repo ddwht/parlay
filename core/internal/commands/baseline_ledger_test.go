@@ -199,7 +199,17 @@ func TestDetectDrift_LedgerAmendmentMutatedOrRemoved(t *testing.T) {
 	}
 }
 
-func TestBuildBaseline_RecordsLedgerState(t *testing.T) {
+// WP2 repointed this test. It used to assert that buildBaseline stamps the
+// LEDGER MAXIMUM — two visible amendments, therefore last-applied 2 and two
+// recorded hashes — with no baseline on disk and nothing proven applied.
+//
+// That is the defect, not the contract. Granting authority for merely being
+// able to SEE a record is what let a partial save sweep a pending governance
+// amendment past the marker and record its hash as proof. buildBaseline now
+// grants nothing; an advance is an explicit operation a caller must have
+// earned. The old expectation is preserved below as the thing that must NOT
+// happen.
+func TestBuildBaseline_GrantsNoAuthorityByItself(t *testing.T) {
 	dir := setupTestDir(t)
 	featureDir := setupLedgerFeature(t, dir)
 	writeAmendment(t, featureDir, "001-first.md", "---\namendment: first\ndate: 2026-08-13\naffects: [\"@my-feature/operation:x\"]\n---\n## Change\na\n## Acceptance\n- b\n")
@@ -209,14 +219,67 @@ func TestBuildBaseline_RecordsLedgerState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseline.LastAppliedAmendment != 2 {
-		t.Errorf("expected last-applied-amendment 2, got %d", baseline.LastAppliedAmendment)
+	if baseline.LastAppliedAmendment != 0 {
+		t.Errorf("last-applied-amendment = %d, want 0: no baseline exists and nothing was proven "+
+			"applied, so seeing two amendments must grant authority over neither",
+			baseline.LastAppliedAmendment)
 	}
-	if len(baseline.Sources.Amendments) != 2 {
-		t.Errorf("expected 2 recorded amendment hashes, got %v", baseline.Sources.Amendments)
+	if len(baseline.Sources.Amendments) != 0 {
+		t.Errorf("recorded hashes = %v, want none: a hash is evidence that a record was honoured, "+
+			"and nothing here honoured one", baseline.Sources.Amendments)
 	}
 	if baseline.SchemaVersion != 3 {
 		t.Errorf("expected baseline schema-version 3, got %d", baseline.SchemaVersion)
+	}
+}
+
+// The advance half. An earned advance records exactly the newly proven
+// records, and — the part that matters — leaves the hashes of already-applied
+// history byte-identical. Re-deriving them would re-bless an edit to a record
+// the tool had already honoured, minting fresh trusted evidence for a
+// write-once violation.
+func TestBuildBaseline_AdvancePreservesPriorEvidence(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+	cfg := testContext(t)
+	writeAmendment(t, featureDir, "001-first.md", "---\namendment: first\ndate: 2026-08-13\naffects: [\"@my-feature/operation:x\"]\n---\n## Change\na\n## Acceptance\n- b\n")
+	writeAmendment(t, featureDir, "002-second.md", "---\namendment: second\ndate: 2026-08-14\naffects: [\"@my-feature/operation:x\"]\n---\n## Change\nc\n## Acceptance\n- d\n")
+
+	// 001 is applied, and its recorded hash is DELIBERATELY not the file's
+	// current hash — as it would be had someone edited 001 after it was
+	// honoured. A correct advance leaves this stale value exactly as it is;
+	// only the drift check may report it.
+	const staleHash = "0000badc0ffee000"
+	prior := appliedAuthority{Through: 1, Hashes: map[string]string{"001-first.md": staleHash}}
+
+	amendments, err := parser.LoadFeatureAmendments(featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newly []parser.Amendment
+	for _, a := range amendments {
+		if a.Seq > 1 {
+			newly = append(newly, a)
+		}
+	}
+
+	baseline, err := buildBaselineWithAuthority(cfg, "my-feature", advanceAuthority(prior, 2, newly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.LastAppliedAmendment != 2 {
+		t.Errorf("last-applied-amendment = %d, want 2", baseline.LastAppliedAmendment)
+	}
+	if got := baseline.Sources.Amendments["001-first.md"]; got != staleHash {
+		t.Errorf("001's recorded hash = %q, want the prior value %q unchanged. Re-hashing "+
+			"already-applied history re-blesses an edit to a record the tool had already "+
+			"honoured", got, staleHash)
+	}
+	if baseline.Sources.Amendments["002-second.md"] == "" {
+		t.Error("the newly proven record's hash must be recorded")
+	}
+	if len(baseline.Sources.Amendments) != 2 {
+		t.Errorf("recorded hashes = %v, want exactly 001 and 002", baseline.Sources.Amendments)
 	}
 }
 

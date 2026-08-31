@@ -43,12 +43,43 @@ type Baseline struct {
 
 	// LastAppliedAmendment is the highest amendment sequence number that had
 	// been applied to the contract artifacts when this baseline was saved.
-	// save-build-state runs after a green build, at which point the ledger
-	// is by definition fully applied — so this records the ledger's highest
-	// sequence at save time. A ledger entry beyond it is the unapplied tail
-	// check-drift reports. Zero means "no amendments
-	// yet" (or a pre-v3 baseline, which is the same statement).
+	//
+	// It is NOT the ledger's highest sequence. It records what a save could
+	// PROVE was applied: the caller supplies an authority operation naming
+	// exactly the records it earned, and this moves only that far. The older
+	// reading — "a save runs after a green build, so the ledger is by
+	// definition fully applied" — let a partial save sweep a pending
+	// governance record past this marker and record its hash as proof.
+	//
+	// A ledger entry beyond it is the unapplied tail check-drift reports.
+	// Zero means "no amendments yet" (or a pre-v3 baseline, the same
+	// statement).
 	LastAppliedAmendment int `yaml:"last-applied-amendment,omitempty"`
+
+	// OutputlessAmendments records, per exact amendment FILENAME, that the
+	// record was blessed on a confirmed output-less claim rather than on
+	// emitted files.
+	//
+	// It lives here, in the same file and the same atomic write as the marker
+	// and the hash it explains, because anywhere else loses it. Beside the
+	// project baseline it would be written in a later stage (a crash between
+	// leaves authority with no explanation), replaced wholesale by the next
+	// unrelated save, and keyed by feature rather than by amendment — so it
+	// could not even be joined to the record it justified.
+	//
+	// Copied forward untouched under preserve; appended to only for the
+	// records an output-less advance actually earned; never recomputed or
+	// removed by a later save.
+	//
+	// PRESENCE positively records a confirmed output-less blessing. ABSENCE
+	// records only that no output-less method was written by the baseline
+	// version or path that produced this file — it is NOT evidence the record
+	// was blessed the ordinary way. This repository's own studio-cli-hooks
+	// closure is the counter-example: its authority came from a hand-advanced
+	// marker, and its baseline carries no method at all. Legacy method is
+	// unknown. Any future rule that wants to read absence as ordinary
+	// application needs a version bump and a migration, not this field.
+	OutputlessAmendments map[string]bool `yaml:"outputless-amendments,omitempty"`
 }
 
 // BaselineSchemaVersion is the current baseline format version.
@@ -198,7 +229,29 @@ func baselinePath(cfg *config.Context, slug string) string {
 // a feature. Best-effort on dialogs and surface fragments — missing files are
 // skipped silently. Does not touch disk; callers (typically saveBuildState)
 // are responsible for serialization and writing.
+// buildBaseline computes a feature's baseline WITHOUT granting any authority.
+//
+// The zero-authority default is the WP2 correction. This function used to
+// stamp LastAppliedAmendment as the ledger maximum and hash every amendment it
+// could see, on a comment's assurance that a save "runs after a green build,
+// at which point the ledger is by definition fully applied". That is false for
+// every partial save, and it granted authority to every caller by saying
+// nothing — including callers that swept a pending governance record past the
+// marker and recorded its hash as proof.
+//
+// Callers that have actually proven an advance use buildBaselineWithAuthority.
 func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
+	prior, err := observeAppliedAuthority(cfg, slug)
+	if err != nil {
+		return nil, err
+	}
+	return buildBaselineWithAuthority(cfg, slug, preserveAuthority(prior))
+}
+
+func buildBaselineWithAuthority(cfg *config.Context, slug string, op authorityOp) (*Baseline, error) {
+	if err := op.validate(); err != nil {
+		return nil, fmt.Errorf("applied authority for %s: %w", slug, err)
+	}
 	featurePath := cfg.FeaturePath(slug)
 
 	intentsPath := filepath.Join(featurePath, "intents.md")
@@ -287,21 +340,8 @@ func buildBaseline(cfg *config.Context, slug string) (*Baseline, error) {
 		baseline.Sources.Authored = unitHashes
 	}
 
-	// The amendment ledger. Recorded unconditionally (a feature with no
-	// amendments/ directory simply records nothing): the file
-	// hashes feed the integrity check, and the highest sequence becomes
-	// LastAppliedAmendment — save-build-state runs after a green build, at
-	// which point the ledger is by definition fully applied.
-	if amendments, err := parser.LoadFeatureAmendments(featurePath); err == nil && len(amendments) > 0 {
-		baseline.Sources.Amendments = make(map[string]string)
-		for _, a := range amendments {
-			if hash, ok := hashWholeFile(a.Path); ok {
-				baseline.Sources.Amendments[filepath.Base(a.Path)] = hash
-			}
-			if a.Seq > baseline.LastAppliedAmendment {
-				baseline.LastAppliedAmendment = a.Seq
-			}
-		}
+	if err := applyAuthorityCapsule(baseline, slug, op); err != nil {
+		return nil, err
 	}
 
 	return baseline, nil
@@ -544,11 +584,7 @@ func detectLedgerFindings(baseline *Baseline, featurePath string, output *driftO
 		output.LedgerIntegrity = append(output.LedgerIntegrity, "amendments: "+err.Error())
 		return
 	}
-	currentByName := map[string]string{}
 	for _, a := range amendments {
-		if hash, ok := hashWholeFile(a.Path); ok {
-			currentByName[filepath.Base(a.Path)] = hash
-		}
 		if a.Seq > baseline.LastAppliedAmendment {
 			output.UnappliedAmendments = append(output.UnappliedAmendments, filepath.Base(a.Path))
 		}
@@ -561,14 +597,13 @@ func detectLedgerFindings(baseline *Baseline, featurePath string, output *driftO
 	// compacted amendment must exist in archive/ byte-identical, and an edit
 	// there is the same write-once violation it would be in the ledger
 	// proper. Only a file present in NEITHER place was erased.
-	archiveDir := filepath.Join(featurePath, "amendments", "archive")
+	//
+	// The lookup is retainedAmendmentHash, shared with the trust predicate in
+	// applied_history.go. Two implementations of "where does history live"
+	// would eventually disagree, and a compacted ledger would then read as
+	// intact to one and erased to the other.
 	for name, stored := range baseline.Sources.Amendments {
-		cur, present := currentByName[name]
-		if !present {
-			if hash, ok := hashWholeFile(filepath.Join(archiveDir, name)); ok {
-				cur, present = hash, true
-			}
-		}
+		cur, present := retainedAmendmentHash(featurePath, name)
 		switch {
 		case !present:
 			output.LedgerIntegrity = append(output.LedgerIntegrity,
@@ -723,4 +758,85 @@ func hashFragmentContent(frag parser.Fragment) string {
 	return sha256Hex(fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%v",
 		frag.Name, frag.Shows, frag.Actions, frag.Source,
 		frag.Page, frag.Region, frag.Order, frag.Notes))
+}
+
+// applyAuthorityCapsule writes an authority operation onto a baseline's
+// capsule fields and NOTHING else.
+//
+// Shared by every writer of applied authority, because two implementations of
+// "what may a save record as applied" is how the forging primitive survived in
+// apply-governance after buildBaseline was corrected: that path re-hashed all
+// applied history on every run and skipped unreadable records silently, so it
+// could both re-bless a mutated amendment and advance past one with no
+// evidence at all — the exact two failures the capsule rules exist to prevent.
+func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) error {
+	if err := op.validate(); err != nil {
+		return fmt.Errorf("applied authority for %s: %w", slug, err)
+	}
+	if baseline.Sources == nil {
+		baseline.Sources = &HashedSources{}
+	}
+	// The applied-authority capsule. It is COPIED, never re-derived.
+	//
+	// Re-hashing records at or below the prior marker is the subtle half of
+	// the old bug: it would preserve the marker while silently replacing an
+	// already-applied amendment's stored hash after someone edited it —
+	// blessing a write-once violation and minting fresh trusted evidence for
+	// it. History's hashes are evidence about the past and must survive
+	// byte-for-byte.
+	baseline.LastAppliedAmendment = op.Prior.Through
+	if len(op.Prior.Hashes) > 0 {
+		baseline.Sources.Amendments = make(map[string]string, len(op.Prior.Hashes))
+		for name, hash := range op.Prior.Hashes {
+			baseline.Sources.Amendments[name] = hash
+		}
+	}
+	if len(op.Prior.Outputless) > 0 {
+		baseline.OutputlessAmendments = make(map[string]bool, len(op.Prior.Outputless))
+		for name, v := range op.Prior.Outputless {
+			baseline.OutputlessAmendments[name] = v
+		}
+	}
+
+	if op.Mode == authorityAdvance {
+		if baseline.Sources.Amendments == nil {
+			baseline.Sources.Amendments = make(map[string]string)
+		}
+		for _, a := range op.Newly {
+			// Defence in depth: the planner only ever populates Newly with
+			// records above Prior.Through, and this refuses to rehash history
+			// even if that ever stopped being true.
+			if a.Seq <= op.Prior.Through {
+				continue
+			}
+			// STRICT. hashWholeFile is advisory elsewhere — it returns false
+			// for a missing or unreadable file so that ordinary hashing never
+			// fails a baseline. Here that would be silent forgery in the other
+			// direction: the marker would advance to To while the evidence for
+			// one of the records it advanced past was quietly dropped, leaving
+			// marker authority with nothing to check it against. A record that
+			// vanished between planning and writing has not been proven.
+			hash, ok := hashWholeFile(a.Path)
+			if !ok {
+				return fmt.Errorf("advancing %s to amendment %d: %s could not be hashed at "+
+					"%s — authority may not be recorded without the evidence that supports it",
+					slug, op.To, filepath.Base(a.Path), a.Path)
+			}
+			baseline.Sources.Amendments[filepath.Base(a.Path)] = hash
+			// The method travels with the evidence, in the same write. A
+			// reader months later must be able to see not just that this
+			// record was applied but on what basis — and an output-less
+			// blessing rests on a human assertion nothing can reconstruct
+			// afterwards.
+			if op.Outputless {
+				if baseline.OutputlessAmendments == nil {
+					baseline.OutputlessAmendments = make(map[string]bool)
+				}
+				baseline.OutputlessAmendments[filepath.Base(a.Path)] = true
+			}
+		}
+		baseline.LastAppliedAmendment = op.To
+	}
+
+	return nil
 }

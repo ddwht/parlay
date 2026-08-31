@@ -81,6 +81,17 @@ func runApplyGovernance(cmd *cobra.Command, args []string) error {
 	slug := parser.FeatureSlug(args[0])
 	featDir := cfg.FeaturePath(slug)
 
+	// A half-moved ledger is not a ledger to apply a decision against.
+	inFlight, inFlightErr := compactionInFlight(cfg, slug)
+	if inFlightErr != nil {
+		return fmt.Errorf("%s: %w", slug, inFlightErr)
+	}
+	if inFlight {
+		return fmt.Errorf("%s has an interrupted compaction still in flight, so its ledger may "+
+			"be half-moved. Run `parlay internal compact @%s` to recover before applying a "+
+			"governance record", slug, slug)
+	}
+
 	amendments, err := parser.LoadFeatureAmendments(featDir)
 	if err != nil {
 		return fmt.Errorf("read ledger: %w", err)
@@ -182,12 +193,22 @@ func runApplyGovernance(cmd *cobra.Command, args []string) error {
 	return enc.Encode(out)
 }
 
-// advanceAppliedMarker moves the baseline's applied tail and records the
-// ledger file hashes alongside it.
+// advanceAppliedMarker moves the baseline's applied tail for the governance
+// records this run applied.
 //
-// The hashes matter as much as the number: the integrity check compares them,
-// so advancing without them would mark the ledger applied while leaving the
-// tool unable to notice a later edit to a file it had already honoured.
+// It goes through the SAME authority capsule boundary every other writer uses.
+// It previously did not, and that was a live forging primitive surviving the
+// correction made elsewhere: it recomputed hashes for ALL applied history on
+// every run, so an edit to an already-applied amendment was silently
+// re-blessed with fresh evidence, and it used advisory hashing, so a newly
+// applied governance record whose file could not be read advanced the marker
+// with no evidence behind it at all. Trusted-applied history now reads exactly
+// these hashes, so both failures were forgeable trust.
+//
+// Only the capsule is touched. The rest of the baseline is whatever the
+// feature's last real build recorded, and a governance amendment changes no
+// artifact, so rebuilding those fields here would silently re-baseline a
+// feature nobody rebuilt.
 func advanceAppliedMarker(cfg *config.Context, slug string, seq int, amendments []parser.Amendment) error {
 	path := baselinePath(cfg, slug)
 	data, err := os.ReadFile(path)
@@ -199,20 +220,26 @@ func advanceAppliedMarker(cfg *config.Context, slug string, seq int, amendments 
 		return fmt.Errorf("parse baseline for %s: %w", slug, err)
 	}
 
-	baseline.LastAppliedAmendment = seq
-	if baseline.Sources == nil {
-		baseline.Sources = &HashedSources{}
+	prior, err := observeAppliedAuthority(cfg, slug)
+	if err != nil {
+		return fmt.Errorf("read applied authority for %s: %w — a governance record may not be "+
+			"recorded over authority state that could not be inspected", slug, err)
 	}
-	if baseline.Sources.Amendments == nil {
-		baseline.Sources.Amendments = map[string]string{}
-	}
+
+	// Exactly the records this run applied: the pending governance tail, and
+	// nothing at or below the prior marker.
+	var newly []parser.Amendment
 	for _, a := range amendments {
-		if a.Seq > seq {
-			continue
+		if a.Seq > prior.Through && a.Seq <= seq {
+			newly = append(newly, a)
 		}
-		if hash, ok := hashWholeFile(a.Path); ok {
-			baseline.Sources.Amendments[filepath.Base(a.Path)] = hash
-		}
+	}
+	if len(newly) == 0 {
+		return fmt.Errorf("advancing %s to %d names no newly applied record", slug, seq)
+	}
+
+	if err := applyAuthorityCapsule(&baseline, slug, advanceAuthority(prior, seq, newly)); err != nil {
+		return err
 	}
 	baseline.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 

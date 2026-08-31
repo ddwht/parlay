@@ -731,7 +731,17 @@ type ProjectBaseline struct {
 	// Empty (and dropped from the file) when no emission manifest scoped the
 	// save — a full world-snapshot save blesses every feature at once and has
 	// nothing narrower to record.
-	Emitted        []string          `yaml:"emitted,omitempty"`
+	Emitted []string `yaml:"emitted,omitempty"`
+	// Outputless names the features THIS RUN blessed on a confirmed
+	// output-less claim.
+	//
+	// Current-run reporting only. It is explicitly NOT the durable evidence:
+	// it is written in a later stage than the authority it describes, the
+	// next unrelated save replaces it wholesale, and a feature slug cannot
+	// identify which amendment was blessed. The durable record is
+	// `outputless-amendments:` in the per-feature baseline, written in the
+	// same file and the same atomic write as the marker and hash it explains.
+	Outputless     []string          `yaml:"outputless,omitempty"`
 	MergedSections map[string]string `yaml:"merged-sections,omitempty"`
 }
 
