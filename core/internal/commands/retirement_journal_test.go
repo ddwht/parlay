@@ -387,3 +387,269 @@ func TestJournal_UnreadableJournalRefusesRatherThanStartingOver(t *testing.T) {
 		t.Errorf("the refusal must name the journal it could not read; got: %v", err)
 	}
 }
+
+// --- Suite 8 (continued): a journal is an instruction to delete --------
+//
+// A resumed run reads a root name and a path out of a journal and
+// removes both the directory and the registration they name — with no
+// preflight, no sweep and no disposition record, because the run that
+// wrote the journal performed all of those. That is the right ordering
+// and it is also a delegation of authority to a file. So the file has to
+// be shown to be this operation's own record, and not something dropped
+// into the journal location that borrows its standing.
+
+// interruptedRetirement leaves a genuine part-finished retirement: a
+// promoted archive with a verifying manifest, an outstanding journal,
+// the child directory still in place and the root still registered.
+// Tampering starts from here, so a refusal is attributable to what the
+// test changed rather than to the state being unfinished.
+func interruptedRetirement(t *testing.T) string {
+	t.Helper()
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	failAt("write-record", 1)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("the interrupted run must fail")
+	}
+	if !journalPresent(parent) || !childDirPresent(parent) || !rootRegistered(t, parent, "old") {
+		t.Fatal("the fixture needs a genuine part-finished retirement")
+	}
+	retirementHook = nil
+	return parent
+}
+
+func writeJournalRaw(t *testing.T, parent, filename, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(retiredRootsDir(parent), filename), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertNothingResumed requires the run to have refused and the two
+// things a resume would have destroyed to still be there.
+func assertNothingResumed(t *testing.T, parent string, err error, want string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("a journal that cannot be shown to be this operation's own record must refuse the run")
+	}
+	if want != "" && !strings.Contains(err.Error(), want) {
+		t.Errorf("the refusal must say what failed (want %q); got: %v", want, err)
+	}
+	if !childDirPresent(parent) {
+		t.Error("nothing may be deleted on the authority of a journal that was refused")
+	}
+	if !rootRegistered(t, parent, "old") {
+		t.Error("nothing may be deregistered on the authority of a journal that was refused")
+	}
+}
+
+func TestJournal_ForgedJournalsAreRefusedWithNothingMutated(t *testing.T) {
+	genuine := "root: old\nrelative-path: old\noutstanding:\n    - write-record\n    - deregister-root\n"
+
+	cases := []struct {
+		name string
+		// tamper rewrites the journal location; it returns the argument
+		// the operator passes to retire-root.
+		tamper func(t *testing.T, parent string) string
+		want   string
+	}{
+		{
+			name: "filename-does-not-name-the-root-it-claims",
+			tamper: func(t *testing.T, parent string) string {
+				if err := os.Remove(retirementJournalPath(parent, "old")); err != nil {
+					t.Fatal(err)
+				}
+				writeJournalRaw(t, parent, "evil"+journalFileSuffix, genuine)
+				return "old"
+			},
+			want: "is filed under",
+		},
+		{
+			name: "root-carries-traversal",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: ../../evil\nrelative-path: old\noutstanding:\n    - deregister-root\n")
+				return "old"
+			},
+			want: "plain slug",
+		},
+		{
+			name: "unknown-fields",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					genuine+"command: rm -rf /\n")
+				return "old"
+			},
+			want: "command",
+		},
+		{
+			name: "steps-shuffled-out-of-execution-order",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: old\noutstanding:\n    - deregister-root\n    - write-record\n")
+				return "old"
+			},
+			want: "tail of the order",
+		},
+		{
+			name: "steps-duplicated",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: old\noutstanding:\n    - deregister-root\n    - deregister-root\n")
+				return "old"
+			},
+			want: "tail of the order",
+		},
+		{
+			name: "steps-empty",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: old\noutstanding: []\n")
+				return "old"
+			},
+			want: "names no outstanding steps",
+		},
+		{
+			name: "unknown-step",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: old\noutstanding:\n    - nuke-everything\n")
+				return "old"
+			},
+			want: "unknown step",
+		},
+		{
+			name: "path-leaves-the-project",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: ../escape\noutstanding:\n    - deregister-root\n")
+				return "old"
+			},
+			want: "not inside the project",
+		},
+		{
+			name: "no-archive-stands-behind-it",
+			tamper: func(t *testing.T, parent string) string {
+				// The journal is genuine in every other respect; the
+				// archive it is supposed to be the tail of is gone.
+				if err := os.RemoveAll(retirementDestination(parent, "old")); err != nil {
+					t.Fatal(err)
+				}
+				return "old"
+			},
+			want: "no archive stands at",
+		},
+		{
+			name: "archive-has-no-verifying-manifest",
+			tamper: func(t *testing.T, parent string) string {
+				if err := os.Remove(filepath.Join(retirementDestination(parent, "old"), "manifest.yaml")); err != nil {
+					t.Fatal(err)
+				}
+				return "old"
+			},
+			want: "no manifest that reads back and verifies",
+		},
+		{
+			name: "second-yaml-document",
+			tamper: func(t *testing.T, parent string) string {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					genuine+"---\nroot: old\nrelative-path: lib\noutstanding:\n    - deregister-root\n")
+				return "old"
+			},
+			want: "more than one YAML document",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := interruptedRetirement(t)
+			arg := tc.tamper(t, parent)
+			cmd, _ := retireCmd(t, parent, "y\n")
+			assertNothingResumed(t, parent, runRetireRoot(cmd, []string{arg}), tc.want)
+		})
+	}
+}
+
+// A hand-written journal naming a live root that no retirement ever
+// started is the plainest forgery there is: writing the file is trivial,
+// and it would otherwise deregister and delete that root on sight.
+func TestJournal_AHandWrittenJournalCannotRetireALiveRoot(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	lib := addRetirementChild(t, parent, "lib", "lib", "helper")
+	interactiveTTY(t)
+	if err := os.MkdirAll(retiredRootsDir(parent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJournalRaw(t, parent, "lib"+journalFileSuffix,
+		"root: lib\nrelative-path: lib\noutstanding:\n    - deregister-root\n")
+
+	before := treeSnapshot(t, lib.Path)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"lib"})
+	if err == nil {
+		t.Fatal("a journal nobody's retirement wrote must not be able to delete a live root")
+	}
+	if !strings.Contains(err.Error(), "no archive stands at") {
+		t.Errorf("the refusal must name the missing archive; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, lib.Path))
+	if !rootRegistered(t, parent, "lib") {
+		t.Error("the live root must still be registered")
+	}
+}
+
+// A forgery in the journal location must not be reachable by retiring
+// some OTHER root either: the scan reads every journal it finds, so an
+// unauthenticatable one refuses the whole run rather than being skipped
+// on its way to a legitimate target.
+func TestJournal_AForgedJournalRefusesEvenARunAimedElsewhere(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	addRetirementChild(t, parent, "lib", "lib", "helper")
+	interactiveTTY(t)
+	if err := os.MkdirAll(retiredRootsDir(parent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJournalRaw(t, parent, "evil"+journalFileSuffix,
+		"root: old\nrelative-path: old\noutstanding:\n    - deregister-root\n")
+
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	before := treeSnapshot(t, parent)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"lib"}); err == nil {
+		t.Fatal("an unauthenticatable journal must refuse the run rather than be passed over")
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
+}
+
+// A file in the journal location whose name is not a root name was not
+// filed by this operation and is refused before its contents are read.
+func TestJournal_AFileNotNamedForARootIsRefusedInTheJournalLocation(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	interactiveTTY(t)
+	if err := os.MkdirAll(retiredRootsDir(parent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJournalRaw(t, parent, "Not A Root"+journalFileSuffix,
+		"root: old\nrelative-path: old\noutstanding:\n    - deregister-root\n")
+
+	_, err := FindRetirementJournal(parent, "old")
+	if err == nil {
+		t.Fatal("a file in the journal location whose name is not a root name must refuse")
+	}
+	if !strings.Contains(err.Error(), "not named for a root") {
+		t.Errorf("the refusal must say the filename is not a root name; got: %v", err)
+	}
+}
+
+// The authentication must not refuse the real thing: a genuine
+// part-finished retirement still resumes.
+func TestJournal_AGenuineJournalStillAuthenticatesAndResumes(t *testing.T) {
+	parent := interruptedRetirement(t)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatalf("a journal this operation actually wrote must authenticate and resume: %v", err)
+	}
+	assertRetirementComplete(t, parent, "old")
+}

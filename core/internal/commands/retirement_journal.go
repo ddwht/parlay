@@ -45,7 +45,9 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,10 +98,118 @@ func retirementJournalPath(parentPath, rootName string) string {
 	return filepath.Join(retiredRootsDir(parentPath), rootName+".journal.yaml")
 }
 
-// LoadRetirementJournal reads the journal for the named root. Returns
-// (nil, nil) when no journal exists — the normal state. Any other read
-// or parse failure is an error: a journal that cannot be read cannot be
-// distinguished from one that names outstanding steps.
+// journalStepOrder is the canonical order of the journal's steps. A
+// persisted journal's outstanding list is always a non-empty SUFFIX of
+// it, because steps are completed from the front and the file is
+// removed when none remain.
+var journalStepOrder = []string{journalStepWriteRecord, journalStepDeregisterRoot}
+
+// authenticateJournal decides whether a file found in the journal
+// location is a journal this operation wrote, or merely a file with the
+// right extension.
+//
+// The distinction matters because a journal is an INSTRUCTION TO
+// DELETE. A resumed run reads a root name and a relative path out of it
+// and removes both the directory and the registration they name, with
+// no preflight, no sweep and no disposition record — every check a fresh
+// run performs was performed by the run that wrote the journal. So the
+// file has to be shown to be that run's, and not something dropped into
+// .parlay/retired/ that borrows its authority.
+//
+// What is checked, each of which a forged file fails:
+//
+//   - The decode is strict. An unknown key is refused rather than
+//     dropped, so a file whose real content sits under keys this shape
+//     does not define cannot present as a sparse valid journal.
+//   - The recorded root is a plain slug, and it EQUALS the filename
+//     stem. The name addresses the destination and the journal file
+//     itself, so a journal named one thing and claiming another is
+//     claiming authority over a root it is not filed under.
+//   - The recorded path stays inside the project, judged on the
+//     resolved path.
+//   - The outstanding steps are a non-empty suffix of the canonical
+//     order: known steps only, no duplicates, no reordering, and
+//     nothing after the terminal step.
+//   - The archive the journal is the tail of actually exists at the
+//     canonical destination for that name, with a manifest that reads
+//     back and verifies. A journal exists only after the archive was
+//     promoted, so one without an archive is describing a state this
+//     operation never produces — and it is exactly the shape a forgery
+//     takes, since writing a file is easy and producing a verified
+//     archive is not.
+//
+// Any failure is loud. Refusing is the safe answer: the cost is a
+// person reading a message, against a deletion nobody authorized.
+func authenticateJournal(parentPath, fileStem string, j *RetirementJournal) error {
+	where := retirementJournalPath(parentPath, fileStem)
+	if err := validateRootName(j.Root); err != nil {
+		return fmt.Errorf("retirement journal %s: %w", where, err)
+	}
+	if j.Root != fileStem {
+		return fmt.Errorf("retirement journal %s records root %q but is filed under %q — a journal names the root it is filed under, and one claiming another root is claiming authority over a retirement it is not the record of",
+			where, j.Root, fileStem)
+	}
+	if _, err := resolveContainedChildDir(parentPath, j.RelativePath); err != nil {
+		return fmt.Errorf("retirement journal %s names a path that is not inside the project: %w", where, err)
+	}
+	if err := validateJournalSteps(where, j.Outstanding); err != nil {
+		return err
+	}
+	// The archive this journal is the tail of must be there, and must
+	// verify. A journal only ever exists after a promoted archive.
+	dest := retirementDestination(parentPath, j.Root)
+	if info, err := os.Stat(dest); err != nil || !info.IsDir() {
+		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but no archive stands at %s — a journal is written only after the archive is complete, so one without an archive records a state this operation never produces and is refused rather than resumed",
+			where, j.Root, dest)
+	}
+	if _, err := ReadManifest(filepath.Join(dest, "manifest.yaml")); err != nil {
+		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but the archive at %s has no manifest that reads back and verifies (%v) — the run this journal would resume deletes the root's directory, and it does that only against a preserved copy that can be shown to be whole",
+			where, j.Root, dest, err)
+	}
+	return nil
+}
+
+// validateJournalSteps requires the outstanding list to be a non-empty
+// suffix of the canonical order. That single rule covers every way the
+// list can be wrong — an unknown step, a duplicate, a reordering, a step
+// after the terminal one, an empty list that would complete a
+// retirement by doing nothing — and it is the only shape the writer
+// produces.
+func validateJournalSteps(where string, outstanding []string) error {
+	if len(outstanding) == 0 {
+		return fmt.Errorf("retirement journal %s names no outstanding steps — a journal exists only while steps remain, and one naming none would complete a retirement by performing nothing", where)
+	}
+	for _, step := range outstanding {
+		known := false
+		for _, k := range journalStepOrder {
+			if step == k {
+				known = true
+			}
+		}
+		if !known {
+			return fmt.Errorf("retirement journal %s names unknown step %q (known: %s)", where, step, strings.Join(journalStepOrder, ", "))
+		}
+	}
+	start := len(journalStepOrder) - len(outstanding)
+	if start < 0 {
+		return fmt.Errorf("retirement journal %s names %d steps, more than the %d this operation has — a repeated or invented step is refused rather than executed",
+			where, len(outstanding), len(journalStepOrder))
+	}
+	for i, step := range outstanding {
+		if step != journalStepOrder[start+i] {
+			return fmt.Errorf("retirement journal %s names its steps as %s, which is not a tail of the order they must happen in (%s) — steps are completed from the front, so any other list has been rewritten",
+				where, strings.Join(outstanding, ", "), strings.Join(journalStepOrder, ", "))
+		}
+	}
+	return nil
+}
+
+// LoadRetirementJournal reads and AUTHENTICATES the journal filed under
+// the given root name. Returns (nil, nil) when no journal exists — the
+// normal state. Every other outcome is an error: a journal that cannot
+// be read, cannot be parsed, or cannot be shown to be this operation's
+// own record is not distinguishable from one that names outstanding
+// steps, and the difference decides whether a directory is deleted.
 func LoadRetirementJournal(parentPath, rootName string) (*RetirementJournal, error) {
 	path := retirementJournalPath(parentPath, rootName)
 	data, err := os.ReadFile(path)
@@ -109,9 +219,23 @@ func LoadRetirementJournal(parentPath, rootName string) (*RetirementJournal, err
 		}
 		return nil, fmt.Errorf("read retirement journal %s: %w", path, err)
 	}
+	// Strict decode: a key this shape does not define is refused, not
+	// dropped. A dropped key is how a file that is mostly something else
+	// presents as a sparse valid journal.
 	var j RetirementJournal
-	if err := yaml.Unmarshal(data, &j); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&j); err != nil && err != io.EOF {
 		return nil, fmt.Errorf("parse retirement journal %s: %w", path, err)
+	}
+	var extra RetirementJournal
+	if err := dec.Decode(&extra); err == nil {
+		return nil, fmt.Errorf("retirement journal %s carries more than one YAML document — a journal is one record of one part-finished run", path)
+	} else if err != io.EOF {
+		return nil, fmt.Errorf("parse retirement journal %s: %w", path, err)
+	}
+	if err := authenticateJournal(parentPath, rootName, &j); err != nil {
+		return nil, err
 	}
 	return &j, nil
 }
@@ -153,16 +277,23 @@ func FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) 
 		if e.IsDir() || !strings.HasSuffix(e.Name(), journalFileSuffix) {
 			continue
 		}
-		root := strings.TrimSuffix(e.Name(), journalFileSuffix)
-		j, err := LoadRetirementJournal(parentPath, root)
+		stem := strings.TrimSuffix(e.Name(), journalFileSuffix)
+		// The filename stem is itself a root name, and it is the key the
+		// journal is looked up by. A stem that is not a plain slug was
+		// not filed by this operation, so it is refused here rather than
+		// carried into a lookup that would trust what it says.
+		if err := validateRootName(stem); err != nil {
+			return nil, fmt.Errorf("%s sits in the retirement journal location but is not named for a root: %w", filepath.Join(dir, e.Name()), err)
+		}
+		// LoadRetirementJournal authenticates: strict decode, the
+		// recorded root equal to this stem, a contained path, a valid
+		// step tail, and a verified archive standing behind it.
+		j, err := LoadRetirementJournal(parentPath, stem)
 		if err != nil {
 			return nil, err
 		}
 		if j == nil {
 			continue
-		}
-		if j.Root == "" {
-			return nil, fmt.Errorf("retirement journal %s names no root — a part-finished retirement that cannot say what it was retiring is refused rather than passed over", filepath.Join(dir, e.Name()))
 		}
 		if j.Root == name || filepath.ToSlash(filepath.Clean(j.RelativePath)) == cleanName {
 			return j, nil
@@ -252,7 +383,14 @@ func executeJournal(parentPath string, idx *config.RootsIndex, j *RetirementJour
 				if err := retirementEvent("remove-contents"); err != nil {
 					return err
 				}
-				if err := os.RemoveAll(childDir); err != nil {
+				// Through a handle rooted at the project, not through
+				// the resolved path: the resolution above is a check
+				// made a moment earlier, and an intermediate directory
+				// swapped for a symlink in between would carry an
+				// ordinary RemoveAll out of the project. The rooted
+				// handle resolves and deletes in one sequence, so there
+				// is no interval to exploit.
+				if err := removeUnderParent(parentPath, filepath.FromSlash(j.RelativePath)); err != nil {
 					return fmt.Errorf("remove retired root directory %s: %w", childDir, err)
 				}
 			}

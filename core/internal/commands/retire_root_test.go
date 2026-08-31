@@ -691,3 +691,175 @@ func TestRetireRoot_JournalNamingAnEscapingPathRefusesTheResume(t *testing.T) {
 	}
 	assertTreeUnchanged(t, before, treeSnapshot(t, outside))
 }
+
+// --- Suite 1 (continued): the NAME is a path component too -------------
+//
+// The registered name is concatenated into the staging directory, the
+// archive destination and the journal filename, and all three are then
+// created, renamed and removed. So a name is as much a deletion target
+// as a path is, and roots.yaml is as editable for one as for the other.
+
+func TestRetireRoot_RootNameMustBeAPlainSlug(t *testing.T) {
+	for _, name := range []string{
+		"../../evil",  // traversal, the case that reaches RemoveAll
+		"..",          // the parent of the retired-roots directory
+		"nested/old",  // a separator makes the destination a subtree
+		"old/../..",   // traversal behind an innocent prefix
+		"old.journal", // a dot collides with the journal's own naming
+		".hidden",     // leading dot
+		"Old",         // case, so a name maps to exactly one path
+		"old root",    // whitespace
+		"old\\evil",   // the other separator
+		"-old",        // leading dash
+		"old-",        // trailing dash
+		"",            // names no location at all
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateRootName(name); err == nil {
+				t.Errorf("%q must be refused as a registered root name — it is a path component of the archive destination, the staging directory and the journal file", name)
+			}
+		})
+	}
+	for _, name := range []string{"old", "core", "studio", "parlay-tool", "root2", "a"} {
+		if err := validateRootName(name); err != nil {
+			t.Errorf("%q is an ordinary root name and must be accepted: %v", name, err)
+		}
+	}
+}
+
+func TestRetireRoot_MaliciousRootNameRefusesBeforeAnyMutation(t *testing.T) {
+	// The registered PATH here is perfectly ordinary and contained. Only
+	// the name is hostile, so nothing but the name check can refuse.
+	resetRetirementState(t)
+	parent := makeRetirementParent(t)
+	childPath := filepath.Join(parent, "old")
+	if err := os.MkdirAll(filepath.Join(childPath, config.ParlayDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(childPath, config.ParlayDir, config.ConfigFile),
+		[]byte("ai-agent: Generic\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeChildFeature(t, childPath, "alpha")
+
+	// A directory outside the retired-roots location that a traversing
+	// name would reach through the destination rollback.
+	outside := filepath.Join(parent, "..", "name-escape")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "precious.txt"), []byte("not the project's\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	registerRawRoot(t, parent, "../../name-escape", "old")
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+
+	before := treeSnapshot(t, parent)
+	outsideBefore := treeSnapshot(t, outside)
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"../../name-escape"})
+	if err == nil {
+		t.Fatal("a registered root name that is not a plain slug must refuse the retirement")
+	}
+	if !strings.Contains(err.Error(), "plain slug") {
+		t.Errorf("the refusal must say the name is not a usable path component; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
+	assertTreeUnchanged(t, outsideBefore, treeSnapshot(t, outside))
+}
+
+// TestRetireRoot_SymlinkSwappedAfterValidationCannotCarryTheDeleteOut
+// pins the guarantee that replaced the lexical check. Containment is
+// resolved, and then — in the interval before the deletion — an
+// intermediate directory is replaced with a symlink pointing out of the
+// project. An ordinary os.RemoveAll on the resolved path would follow
+// it. The deletion goes through a handle rooted at the project instead,
+// which resolves and removes in one sequence, so the swap is refused
+// rather than raced.
+func TestRetireRoot_SymlinkSwappedAfterValidationCannotCarryTheDeleteOut(t *testing.T) {
+	resetRetirementState(t)
+	parent := makeRetirementParent(t)
+
+	// The child lives one directory down, so there is an intermediate
+	// component to swap.
+	child := addRetirementChild(t, parent, "old", "nested/old", "alpha")
+	if err := os.WriteFile(filepath.Join(child.Path, "keep.txt"), []byte("child content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// What the swapped-in symlink points at: a directory outside the
+	// project holding the same leaf name the deletion will ask for.
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, "old")
+	if err := os.MkdirAll(victim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(victim, "precious.txt"),
+		[]byte("content outside the project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+
+	// The seam fires after containment has been resolved and the child
+	// directory stat'd, and before the removal — exactly the window a
+	// check-then-act sequence leaves open.
+	nested := filepath.Join(parent, "nested")
+	retirementHook = func(event string) error {
+		if event != "remove-contents" {
+			return nil
+		}
+		if err := os.RemoveAll(nested); err != nil {
+			return err
+		}
+		return os.Symlink(outside, nested)
+	}
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("a deletion whose path was swapped for a route out of the project must fail, not follow it")
+	}
+
+	// The guarantee: content outside the project is untouched.
+	if _, err := os.Stat(filepath.Join(victim, "precious.txt")); err != nil {
+		t.Errorf("content outside the project must survive the swap: %v", err)
+	}
+	entries, err := os.ReadDir(victim)
+	if err != nil || len(entries) != 1 {
+		t.Errorf("the directory outside the project must be intact: %v %v", entries, err)
+	}
+}
+
+func TestRetireRoot_RootedDeletionRefusesAPathLeavingTheProject(t *testing.T) {
+	// The same guarantee at its own level, so the property is pinned
+	// independently of the command that relies on it.
+	resetRetirementState(t)
+	parent := makeRetirementParent(t)
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "inner", "precious.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(parent, "hop")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := removeUnderParent(parent, filepath.Join("hop", "inner")); err == nil {
+		t.Error("a deletion routed through a symlink out of the project must be refused")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "inner", "precious.txt")); err != nil {
+		t.Errorf("the content outside the project must survive: %v", err)
+	}
+}

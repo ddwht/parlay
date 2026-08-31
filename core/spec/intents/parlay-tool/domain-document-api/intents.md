@@ -19,7 +19,7 @@
 
 **Constraints**:
 - The unit of the contract is the whole document. Per-element operations are refused as a contract shape: they encode the editing gestures of whichever surface asked for them first, and every later client inherits that surface's model of what an edit is.
-- Editing conveniences are explicitly NOT contract. Cascading a rename, prefilling a field, generating a name from a label — these may differ between clients and are allowed to, because every write is checked against the same rules and lands through the same guarded writer.
+- Editing conveniences are explicitly NOT contract. Cascading a rename, prefilling a field, generating a name from a label — these may differ between clients and are allowed to, because every write lands through the same guarded writer against the same shared document, and the same validator is available to every caller before and after. What makes that safety complete is a gate the writer consults on every write, and there is no such gate today: validation is available, not obligatory. Until the amendment that adds it, a convenience that produces an invalid document produces an invalid document, and the validator says so when someone asks.
 - The document's own on-disk format is the format, not a translation of it. A caller that can produce the file can write; one that could only produce some other shape would be asking for a second definition of the format.
 - Exactly one writer persists the document, and every producer inside this tool reaches it. Two writers means two definitions of what a valid write is, which this project has produced before and paid for. Whether a client OUTSIDE this codebase reaches the same writer is not settled here: no such entry point exists yet, and the amendment that adds one is where that promise is made.
 - A rule an editing surface enforces only on its own side is not a rule; what a client may do is meant to be bounded by the shared validation rules rather than by the client's own screens. That is the standard the rule set is being moved toward, not a claim that it already covers every restriction the departing surface applied — closing it is a later amendment, and the gate that makes the bound binding on every write is another.
@@ -29,13 +29,14 @@
 - A document produced by hand and the same document produced through the tool are byte-identical on disk.
 - No operation in the contract names a single entity, field, enum or relationship as its subject; the subject is always the document.
 - Every persisted change made anywhere in this codebase is observable as having passed the single writer.
-- A caller that enforces its own extra restriction still cannot write anything the shared rules reject.
-- A caller that enforces none of its own restrictions still cannot write anything the shared rules reject.
+- A caller enforcing its own extra restriction and one enforcing none reach the same writer, the same rewrite and the same concurrency comparison; neither has a path that skips any of them.
+- The same document submitted by either caller is reported identically by the validator, so what the shared rules say about a write does not depend on who made it.
+- No write path performs a validation verdict of its own, and none is obliged to clear one — the property that a rejected document cannot be persisted is the planned gate's, and is not claimed here.
 
 **Questions**:
 - The guarded write path exists and has no entry point outside this codebase, so the promise above is real for callers inside the tool and, for anyone else, a direction rather than a delivery. A public entry point is a planned amendment to this feature, not a current promise of it, and it is deliberately not part of establishing where the code lives.
 - The validator's rule set is not closed over everything the departing editing surface enforced on its own side. Until the amendment that closes it lands, "the shared rules" means the rules the engine holds today, and a restriction that only ever lived in that surface leaves with it.
-- Nothing yet obliges a write to clear a validation gate before persisting; the writer performs the concurrency comparison, not a verdict on validity. The gate, its finding classes and its non-worsening rule are a planned amendment.
+- Nothing yet obliges a write to clear a validation gate before persisting: the writer performs the concurrency comparison and the replacement, not a verdict on validity. So a caller CAN persist a document the shared rules reject, by submitting it with a current token — validation is available to every caller and binding on none. This is the single largest gap between the direction this feature commits to and what it delivers, and it is stated here rather than written as a promise above. The gate, its three finding classes and its monotonic non-worsening rule are a planned amendment.
 
 ---
 

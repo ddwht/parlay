@@ -106,10 +106,48 @@ cross-cutting:
       reads out of its journal, immediately before the removal, because the
       journal is a file on disk like any other and is where the deletion
       target of a resumed run comes from.
+
+
+      The NAME is validated on the same grounds and for the same reason.
+      It is concatenated into the staging directory, the archive
+      destination and the journal filename, all three of which are
+      created, renamed and removed, and the destination rollback is a
+      recursive delete — so a name carrying a separator or a traversal
+      segment addresses a location exactly as a path does. Require a
+      plain slug, `^[a-z0-9]+(?:-[a-z0-9]+)*$`: lowercase alphanumerics
+      in dash-separated words, no separators, no dots, no whitespace, no
+      upper case, no leading or trailing dash, non-empty. Restrict the
+      shape rather than escape it — escaping asks every future caller to
+      remember to escape, while a closed shape is checked once at the
+      boundary and lets everything downstream treat the name as one safe
+      path component. Enforce it at resolution (so no preflight, staging
+      or destination path is ever built from an unvalidated name) and
+      again on the root name a journal records and the name a journal
+      file is filed under.
+
+
+      And perform the destructive steps through a handle rooted at the
+      project root — os.OpenRoot on the parent, then Root.RemoveAll /
+      Remove / Rename / MkdirAll / WriteFile — rather than through the
+      resolved absolute path. resolveContainedChildDir establishes a
+      fact about a moment; between that moment and the deletion an
+      intermediate directory can be replaced with a symlink leading out
+      of the project, and an ordinary os.RemoveAll on the resolved path
+      would follow it. Re-checking narrows that interval rather than
+      closing it. A rooted handle resolves each component and acts in
+      one sequence and refuses any component leading outside the root,
+      so there is no interval to exploit. This covers the staging
+      cleanup, the retired-roots directory removal, the promote rename,
+      the destination rollback and the removal of the retired root's
+      directory. The archive copy itself writes into a staging directory
+      the same run created, under an already-validated single-component
+      name.
     introduces:
       - "retireRootCmd cobra command + runRetireRoot handler (internal/commands/retire_root.go)"
       - "resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, error) — exactly-one resolution with enumerated refusals, gated on path containment"
       - "resolveContainedChildDir(parentPath, relPath string) (string, error) — EvalSymlinks + strict-descendant containment of a registered path, fail-closed; called at resolution and again on every journal-driven removal"
+      - "validateRootName(name string) error — closed slug shape for a registered root NAME, which is a path component of the staging directory, the archive destination and the journal file"
+      - "mutateUnderParent / removeUnderParent — every destructive step performed through an os.Root handle rooted at the project, closing the interval between a containment judgment and the act it authorizes"
       - "checkRetirementDestination(parentPath, rootName string) error — destination-absence precondition"
     caching: none
     backward-compatible: true
@@ -468,10 +506,45 @@ cross-cutting:
       rather than a miss: "cannot tell" is not "nothing in flight", and
       starting a fresh destructive run over a part-finished one is the
       failure this ordering exists to prevent.
+
+
+      AUTHENTICATE THE JOURNAL BEFORE ACTING ON IT. Because it is found
+      by scanning a location rather than by being handed over, and
+      because what a resumed run does on its authority is delete a
+      directory and remove a registration with no preflight, no sweep
+      and no disposition record, the file is a delegation of destructive
+      authority — and a file in a known location with a known extension
+      is the easiest artifact in the project to produce. Establish that
+      it is this operation's own record, refusing loudly otherwise:
+      (a) decode through yaml.Decoder with KnownFields(true) and require
+      a single document, so an unknown key is refused rather than
+      dropped and a file that is mostly something else cannot present as
+      a sparse valid journal; (b) require the recorded root to pass
+      validateRootName AND to equal the filename stem it is filed under
+      — a journal claiming one root while filed under another is
+      claiming authority over a retirement it is not the record of;
+      (c) require the recorded relative-path to pass containment;
+      (d) require the outstanding steps to be a NON-EMPTY SUFFIX of the
+      canonical order [write-record, deregister-root] — steps are
+      completed from the front, so that single rule rules out unknown,
+      duplicated, reordered, post-terminal and empty lists together;
+      (e) require the archive the journal is the tail of to stand at the
+      canonical destination for that name, with a manifest.yaml that
+      reads back and verifies its self-covering hash. (e) is the
+      load-bearing check: writing a file is trivial and producing a
+      verified archive is not, so it is what stops a hand-written
+      journal from deregistering and deleting a live root. Also validate
+      the filename stem itself before reading the file, and let any
+      authentication failure refuse the whole run — including one aimed
+      at a different root — rather than skipping the file on the way to
+      a legitimate target.
     introduces:
       - "RemoveRootFromIndex(idx *config.RootsIndex, name string) (*config.RootsIndex, error) in internal/config/roots_index.go"
       - "RetirementJournal type + LoadRetirementJournal/WriteRetirementJournal — ordered outstanding-step record"
-      - "FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) — locates an in-flight retirement by scanning the journal location, without consulting the root registration"
+      - "FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) — locates an in-flight retirement by scanning the journal location, without consulting the root registration, refusing any file there that is not named for a root"
+      - "authenticateJournal(parentPath, fileStem string, j *RetirementJournal) error — filename/root binding, slug and containment checks, and the verified-archive requirement that stops a hand-written journal from retiring a live root"
+      - "validateJournalSteps(where string, outstanding []string) error — the outstanding list must be a non-empty suffix of the canonical step order"
+      - "journalStepOrder — the canonical step order the outstanding list is checked against"
       - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
     caching: none
     backward-compatible: true
