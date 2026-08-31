@@ -142,8 +142,8 @@ func computeAuthorityProjectionTx(cfg *config.Context, slug string, allowInFligh
 	if ierr != nil {
 		return out, fmt.Errorf("read %s's founding promises: %w", slug, ierr)
 	}
-	res := resolveIntentsFrom(snap, intents, agent.AppliedAuthority)
-	version, mode := intentProvenanceFrom(snap)
+	res := resolveIntentsFrom(snap.view(), intents, agent.AppliedAuthority)
+	version, mode := intentProvenanceFrom(snap.view())
 	for _, in := range res.Active {
 		out.ActiveIntents = append(out.ActiveIntents, in.Slug)
 		fp, ferr := intentVersionFingerprint(in)

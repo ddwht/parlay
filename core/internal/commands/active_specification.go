@@ -78,7 +78,7 @@ func resolveIntents(cfg *config.Context, slug string, mode agent.IntentAuthority
 	if err != nil {
 		return agent.IntentResolution{}, err
 	}
-	return resolveIntentsFrom(snap, intents, mode), nil
+	return resolveIntentsFrom(snap.view(), intents, mode), nil
 }
 
 // resolveActiveIntents is what every ordinary consumer calls: the promises in
@@ -271,15 +271,50 @@ func sortedRecordNames(m map[string]string) []string {
 	return out
 }
 
-// resolveIntentsFrom answers from ONE snapshot.
+// appliedLedgerView is a PROJECTION over an authenticated snapshot: the same
+// records, read as far as they had been applied at a chosen point.
 //
-// The marker comes from the snapshot, never from a second read. Re-reading it
+// A separate type rather than a snapshot with an edited marker. The earlier
+// version copied the snapshot and moved Through, which left Capsule.Through and
+// every piece of capsule evidence at the current point — an object that looked
+// like authenticated authority while carrying a marker for a state that never
+// existed. Nothing read Capsule from it yet, which is exactly the kind of "not
+// a bug today" that becomes one silently: a future consumer asking an as-of
+// snapshot for its authority would get current authority.
+//
+// The snapshot stays immutable and says what was authenticated. The view says
+// which point is being asked about. Those are different facts and the types now
+// say so.
+type appliedLedgerView struct {
+	Snapshot appliedLedgerSnapshot
+	// Through is the point being asked about. Equal to Snapshot.Through for the
+	// ordinary current view.
+	Through int
+}
+
+// view reads the snapshot at the point it was authenticated for.
+func (s appliedLedgerSnapshot) view() appliedLedgerView {
+	return appliedLedgerView{Snapshot: s, Through: s.Through}
+}
+
+// viewAt reads the same authenticated records as far as they had been applied
+// at an earlier point.
+//
+// The records are not filtered: every one of them is still authenticated, and
+// dropping the later ones would lose the ability to say what has happened since.
+func (s appliedLedgerSnapshot) viewAt(through int) appliedLedgerView {
+	return appliedLedgerView{Snapshot: s, Through: through}
+}
+
+// resolveIntentsFrom answers from ONE view of ONE snapshot.
+//
+// The marker comes from the view, never from a second read. Re-reading it
 // through the fail-soft reader meant an already-authenticated ledger could be
 // interpreted against a different marker — or against 0 on a transient failure,
 // which reads every applied decision as pending and rolls the promise text back
 // to its founding version.
-func resolveIntentsFrom(snap appliedLedgerSnapshot, intents []parser.Intent, mode agent.IntentAuthority) agent.IntentResolution {
-	return agent.ResolveIntentAuthority(intents, snap.Records, snap.Through, mode)
+func resolveIntentsFrom(v appliedLedgerView, intents []parser.Intent, mode agent.IntentAuthority) agent.IntentResolution {
+	return agent.ResolveIntentAuthority(intents, v.Snapshot.Records, v.Through, mode)
 }
 
 // intentProvenance maps each lineage to the decision that last changed it and
@@ -290,10 +325,10 @@ func resolveIntentsFrom(snap appliedLedgerSnapshot, intents []parser.Intent, mod
 // it across compaction. A projection that guarded the promise TEXT but not the
 // record behind it would let compaction change what `parlay spec` says decided
 // a promise while passing its own equivalence check.
-func intentProvenanceFrom(snap appliedLedgerSnapshot) (map[string]string, map[string]string) {
+func intentProvenanceFrom(v appliedLedgerView) (map[string]string, map[string]string) {
 	version, mode := map[string]string{}, map[string]string{}
-	for _, a := range snap.Records {
-		if a.Seq > snap.Through {
+	for _, a := range v.Snapshot.Records {
+		if a.Seq > v.Through {
 			continue
 		}
 		for _, tr := range a.IntentTransitions() {

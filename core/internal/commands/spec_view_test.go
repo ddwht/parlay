@@ -242,7 +242,8 @@ func TestStage3_JSONCarriesTheSameComposite(t *testing.T) {
 		if p.Version != "001-reworded" || p.Mode != "revise" {
 			t.Errorf("the JSON form must carry provenance; got %q/%q", p.Version, p.Mode)
 		}
-		if len(p.Entries) != 1 || p.Entries[0].Ref != "@my-feature/operation:x" {
+		if p.Entries == nil || len(*p.Entries) != 1 ||
+			(*p.Entries)[0].Ref != "@my-feature/operation:x" {
 			t.Errorf("the JSON form must carry attribution; got %+v", p.Entries)
 		}
 	}
@@ -315,8 +316,14 @@ func TestStage3_JSONCollectionsAreNeverNil(t *testing.T) {
 			t.Errorf("%s must be an empty array, never null; got:\n%s", field, raw)
 		}
 	}
+	// In a CURRENT view. Null is reserved for "no contract to consult", which is
+	// a historical view's answer and a different fact from an empty one.
 	if strings.Contains(raw, "null") {
-		t.Errorf("no collection may serialise as null; got:\n%s", raw)
+		t.Errorf("a current view must not serialise a collection as null — null means the "+
+			"contract is unavailable, not that it is empty; got:\n%s", raw)
+	}
+	if !strings.Contains(raw, `"contract_status": "available"`) {
+		t.Errorf("a current view must say its contract is available; got:\n%s", raw)
 	}
 }
 
@@ -966,5 +973,520 @@ Applied mid-render.
 	}
 	if strings.Contains(buf.String(), "Applied through") {
 		t.Error("the view printed a marker for a state it could not confirm")
+	}
+}
+
+// --- Stage 4: --at <amendment> ---
+
+// setupTwoRevisions applies two revisions so there is an earlier state worth
+// asking about.
+func setupTwoRevisions(t *testing.T) (*config.Context, string) {
+	t.Helper()
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRevisedFeature(t, dir)
+	writeAmendment(t, featureDir, "002-again.md", `---
+amendment: again
+date: 2026-09-03
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: Check Readiness
+      goal: A promise that reads differently AGAIN.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+---
+
+## Change
+Again.
+
+## Why
+Because.
+
+## Acceptance
+- Done.
+`)
+	writeRefineJournal(t, cfg, "my-feature", 2)
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("apply the second revision: %v", err)
+	}
+	return cfg, featureDir
+}
+
+func armSpecViewAt(t *testing.T, at string) {
+	t.Helper()
+	specViewAt = at
+	t.Cleanup(func() { specViewAt = "" })
+}
+
+// Versions are snapshots rather than patches, which is the only reason an
+// earlier state is answerable at all.
+func TestStage4_AtShowsThePromiseAsItStoodThen(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+
+	now := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(now, "A promise that reads differently AGAIN.") {
+		t.Fatalf("the current view must show the latest text; got:\n%s", now)
+	}
+
+	armSpecViewAt(t, "1")
+	then := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(then, "A promise that now reads differently.") {
+		t.Errorf("--at 1 must show the text in force at that point; got:\n%s", then)
+	}
+	if strings.Contains(then, "A promise that reads differently AGAIN.") {
+		t.Error("--at 1 showed a decision made after the point being asked about")
+	}
+	// Provenance has to move with the text. Naming a later record beside earlier
+	// text is worse than either error alone: each half looks right, and the
+	// reader has no way to see they disagree.
+	if !strings.Contains(then, "current text from 001-reworded") {
+		t.Errorf("--at 1 must attribute the text to the decision in force then; got:\n%s", then)
+	}
+	if strings.Contains(then, "002-again (revise)") {
+		t.Error("--at 1 attributed its text to a decision made afterwards")
+	}
+	// It must announce itself as history in the first line, because a reader who
+	// skims the body will act on it either way.
+	if !strings.Contains(then, "AS IT STOOD") || !strings.Contains(then, "This is history") {
+		t.Errorf("a historical view must say so up front; got:\n%s", then)
+	}
+	// And say what has happened since, or a reader cannot tell whether it holds.
+	if !strings.Contains(then, "Decided since") || !strings.Contains(then, "002-again") {
+		t.Errorf("the view must name what was decided after the point shown; got:\n%s", then)
+	}
+}
+
+// --at 0 is the founding state, which is a real and useful question: what did
+// we promise before any of this.
+func TestStage4_AtZeroIsTheFoundingState(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+	armSpecViewAt(t, "0")
+	out := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(out, "See if the cluster is ready.") {
+		t.Errorf("--at 0 must show the founding text; got:\n%s", out)
+	}
+	if !strings.Contains(out, "current text from the founding document") {
+		t.Errorf("--at 0 must attribute the text to the founding document; got:\n%s", out)
+	}
+}
+
+// The contract half has no earlier version, and saying so is the whole point.
+// Rendering today's entries under yesterday's promises would attribute present
+// facts to a past state — the more tempting mistake, because the output would
+// look complete.
+func TestStage4_HistoricalViewOmitsTheContractAndSaysWhy(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+	armSpecViewAt(t, "1")
+	out := runSpecView_(t, cfg, "@my-feature")
+	if strings.Contains(out, "@my-feature/operation:x") {
+		t.Error("a historical view rendered today's contract entries, dating something that " +
+			"has no date")
+	}
+	if !strings.Contains(out, "not omitted for brevity") {
+		t.Errorf("the omission must be explained, or it reads as an empty contract; got:\n%s", out)
+	}
+}
+
+// A sequence beyond the marker is not an earlier state, it is a proposal — the
+// apply ceremony's question, and it comes with an approval attached. A
+// read-only view answering it in the same breath as "what was true" makes the
+// two indistinguishable in the reader's head.
+func TestStage4_AtBeyondTheMarkerIsRefused(t *testing.T) {
+	cfg, featureDir := setupTwoRevisions(t)
+	writeAmendment(t, featureDir, "003-later.md", `---
+amendment: later
+date: 2026-09-04
+affects:
+  - "@my-feature/operation:x"
+---
+
+## Change
+Not applied.
+
+## Acceptance
+- Later.
+`)
+	armSpecViewAt(t, "3")
+	cmd := testCommandWithContext(t, cfg)
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	err := runSpecView(cmd, []string{"@my-feature"})
+	if err == nil {
+		t.Fatal("--at beyond the applied marker must refuse")
+	}
+	if !strings.Contains(err.Error(), "it is a proposal") {
+		t.Errorf("the refusal must say why it is not history; got: %v", err)
+	}
+}
+
+func TestStage4_AtAcceptsAnIdentityAndRejectsNonsense(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+
+	armSpecViewAt(t, "001-reworded")
+	if out := runSpecView_(t, cfg, "@my-feature"); !strings.Contains(out,
+		"A promise that now reads differently.") {
+		t.Errorf("--at must accept an amendment identity; got:\n%s", out)
+	}
+
+	specViewAt = "no-such-record"
+	cmd := testCommandWithContext(t, cfg)
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	if err := runSpecView(cmd, []string{"@my-feature"}); err == nil {
+		t.Fatal("--at naming no amendment must refuse")
+	} else if !strings.Contains(err.Error(), "names no amendment") {
+		t.Errorf("the refusal must say what is wrong; got: %v", err)
+	}
+}
+
+// The historical view is still one coherent state, and the machine form says
+// which point it is and what came after.
+func TestStage4_JSONCarriesThePointAndWhatCameAfter(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+	armSpecViewAt(t, "1")
+	armSpecView(t, true)
+	var out specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.At != 1 || out.AppliedThrough != 2 {
+		t.Errorf("at=%d applied_through=%d, want 1 and 2", out.At, out.AppliedThrough)
+	}
+	if len(out.Since) == 0 {
+		t.Error("the machine form must say what was decided after the point shown")
+	}
+	if out.Unattributed != nil {
+		t.Error("a historical view must leave the contract UNAVAILABLE, not assert it is empty " +
+			"— a machine consumer reads the structure, not the prose beside it")
+	}
+	if out.ContractStatus != contractUnavailableHistorical {
+		t.Errorf("a historical view must not claim its contract is available; got %q",
+			out.ContractStatus)
+	}
+	for _, p := range out.Promises {
+		if p.Entries != nil {
+			t.Errorf("%s asserted a contract population in a view that has none", p.Slug)
+		}
+	}
+	if !strings.Contains(out.Derivation.Contract, "omitted") {
+		t.Errorf("the JSON must say the contract half is omitted and why; got %q",
+			out.Derivation.Contract)
+	}
+}
+
+// "Known to provide nothing" and "there is no contract to consult" are
+// different facts, and they must be distinguishable in the structure rather
+// than only in prose beside it. A machine consumer reads the structure.
+func TestStage4_KnownEmptyAndUnavailableAreDistinguishable(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRevisedFeature(t, dir)
+	// A feature with a genuinely empty contract: the artifact is gone, so
+	// nothing is attributed and that is KNOWN.
+	if err := os.Remove(filepath.Join(featureDir, "capabilities.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	armSpecView(t, true)
+	var current specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.ContractStatus != contractAvailable {
+		t.Fatalf("a current view over an empty contract still HAS a contract to report; got %q",
+			current.ContractStatus)
+	}
+	if current.Unattributed == nil {
+		t.Error("a known-empty contract must encode as an empty array, not as unavailable")
+	}
+	for _, p := range current.Promises {
+		if p.Entries == nil {
+			t.Errorf("%s must report a known-empty population, not an absent one", p.Slug)
+		} else if len(*p.Entries) != 0 {
+			t.Errorf("%s should justify nothing here; got %+v", p.Slug, *p.Entries)
+		}
+	}
+
+	// The same feature asked about historically: unavailable, not empty.
+	armSpecViewAt(t, "0")
+	var past specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &past); err != nil {
+		t.Fatal(err)
+	}
+	if past.ContractStatus != contractUnavailableHistorical || past.Unattributed != nil {
+		t.Errorf("a historical view must encode the contract as unavailable for a stated "+
+			"reason; got %q", past.ContractStatus)
+	}
+}
+
+// And in prose: a historical view must not print the sentence that says a
+// promise is known to justify nothing, since it goes on to say it cannot know.
+// The reader meets the false claim first.
+func TestStage4_HistoricalProseMakesNoEmptyContractClaim(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+	armSpecViewAt(t, "1")
+	out := runSpecView_(t, cfg, "@my-feature")
+	if strings.Contains(out, "nothing in the contract names this promise") {
+		t.Errorf("a historical view claimed a promise justifies nothing, then said it could not "+
+			"know; got:\n%s", out)
+	}
+	if strings.Contains(out, "provides:") {
+		t.Errorf("a historical view rendered a provides block for a contract it has not read; "+
+			"got:\n%s", out)
+	}
+	if !strings.Contains(out, "not omitted for brevity") {
+		t.Errorf("the single omission section must still be there; got:\n%s", out)
+	}
+}
+
+// A sequence must IDENTIFY a record. With records 1 and 3, `--at 2` marks no
+// boundary any amendment created, and the command's own wording — "when this
+// amendment was the last applied one" — names an amendment that does not exist.
+func TestStage4_AtMustNameARealRecord(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRevisedFeature(t, dir)
+	// Applied through 1; give the ledger a gap by never creating 002.
+	writeAmendment(t, featureDir, "003-later.md", `---
+amendment: later
+date: 2026-09-04
+affects:
+  - "@my-feature/operation:x"
+---
+
+## Change
+Unapplied.
+
+## Acceptance
+- Later.
+`)
+	for _, arg := range []string{"2", "9"} {
+		specViewAt = arg
+		cmd := testCommandWithContext(t, cfg)
+		var buf strings.Builder
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		err := runSpecView(cmd, []string{"@my-feature"})
+		if err == nil {
+			t.Fatalf("--at %s identifies no amendment and must refuse", arg)
+		}
+		if !strings.Contains(err.Error(), "names no amendment") {
+			t.Errorf("--at %s: the refusal must say the record does not exist; got: %v", arg, err)
+		}
+	}
+	specViewAt = ""
+}
+
+// Ambiguity is refused rather than resolved by sort order: "the first one" is
+// not an answer anybody asked for.
+func TestStage4_AmbiguousAtIsRefused(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRevisedFeature(t, dir)
+	// The same slug at a different sequence, so the bare form matches twice.
+	writeAmendment(t, featureDir, "002-reworded.md", `---
+amendment: reworded
+date: 2026-09-03
+affects:
+  - "@my-feature/operation:x"
+---
+
+## Change
+Same slug, later.
+
+## Acceptance
+- Done.
+`)
+	specViewAt = "reworded"
+	t.Cleanup(func() { specViewAt = "" })
+	cmd := testCommandWithContext(t, cfg)
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	err := runSpecView(cmd, []string{"@my-feature"})
+	if err == nil {
+		t.Fatal("a bare slug matching two records must refuse")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("the refusal must say it is ambiguous; got: %v", err)
+	}
+	// The exact identity still works. This fixture is applied through 001, so
+	// asking for that point asks for the present — and the present is rendered
+	// as the present. Labelling it history because a flag was passed would put
+	// a date on the current state.
+	specViewAt = "001-reworded"
+	out := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(out, "current specification") {
+		t.Errorf("--at naming the applied point IS the current view; got:\n%s", out)
+	}
+	if !strings.Contains(out, "A promise that now reads differently.") {
+		t.Errorf("the exact identity must still resolve; got:\n%s", out)
+	}
+}
+
+// The authenticated snapshot is immutable. A view over it says which point is
+// being asked about; it does not rewrite what was authenticated.
+func TestStage4_ViewDoesNotRewriteTheAuthenticatedSnapshot(t *testing.T) {
+	cfg, _ := setupTwoRevisions(t)
+	snap, err := acquireAppliedLedger(cfg, "my-feature", cfg.FeaturePath("my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Through != snap.Capsule.Through {
+		t.Fatalf("the snapshot's own markers already disagree: %d and %d",
+			snap.Through, snap.Capsule.Through)
+	}
+	v := snap.viewAt(1)
+	if v.Through != 1 {
+		t.Errorf("the view must ask about the requested point; got %d", v.Through)
+	}
+	if v.Snapshot.Through != snap.Through || v.Snapshot.Capsule.Through != snap.Capsule.Through {
+		t.Error("the view rewrote the authenticated snapshot — an object that looks like " +
+			"authority while carrying a marker for a state that never existed")
+	}
+	if snap.Through != snap.Capsule.Through {
+		t.Error("taking a view mutated the snapshot it was taken from")
+	}
+}
+
+// An artifact that EXISTS and cannot be parsed is neither empty nor historical.
+// The earlier code recorded the failure in the banner and then encoded
+// known-empty arrays anyway — the same prose-cannot-undo-structure defect one
+// branch over from the historical one, and this time the two claims were in the
+// same view.
+func TestStage4_UnreadableContractIsNotEncodedAsEmpty(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupRevisedFeature(t, dir)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: [unclosed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armSpecView(t, true)
+	var out specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.ContractStatus != contractUnreadable {
+		t.Errorf("an unparseable artifact must read as unreadable, not %q", out.ContractStatus)
+	}
+	if out.Unattributed != nil {
+		t.Error("an unreadable contract must not encode as a known-empty one")
+	}
+	for _, p := range out.Promises {
+		if p.Entries != nil {
+			t.Errorf("%s asserted a population from a contract nobody could read", p.Slug)
+		}
+	}
+	if len(out.Blocking) == 0 {
+		t.Error("the reason must still be reported")
+	}
+
+	// And the prose must not claim it either.
+	specViewJSON = false
+	prose := runSpecView_(t, cfg, "@my-feature")
+	if strings.Contains(prose, "nothing in the contract names this promise") {
+		t.Errorf("the view claimed a promise justifies nothing from a contract it could not "+
+			"read; got:\n%s", prose)
+	}
+	if !strings.Contains(prose, "cannot be read") {
+		t.Errorf("the reason must be the only claim made about the missing population; got:\n%s",
+			prose)
+	}
+	// The historical omission section belongs to history, not to this.
+	if strings.Contains(prose, "not omitted for brevity") {
+		t.Error("an unreadable current contract was explained as a historical omission")
+	}
+}
+
+// nil is the sentinel for "no contract to consult". A retired promise must not
+// carry it while the same view says globally that the contract IS available.
+func TestStage4_RetiredPromisesUseTheSameSentinelAsEverythingElse(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-legacy.md", `---
+amendment: legacy
+date: 2026-09-02
+supersedes_intents:
+  - check-readiness
+---
+
+## Change
+It is over.
+
+## Why
+Because.
+
+## Acceptance
+- Over.
+`)
+	writeBaselineApplied(t, "my-feature", 1)
+
+	armSpecView(t, true)
+	var out specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.ContractStatus != contractAvailable {
+		t.Fatalf("the fixture must have a readable contract; got %q", out.ContractStatus)
+	}
+	if len(out.Retired) == 0 {
+		t.Fatal("the fixture must carry a retired promise")
+	}
+	for _, p := range out.Retired {
+		if p.Entries == nil {
+			t.Errorf("%s used the unavailable sentinel while the view says the contract IS "+
+				"available — a retired promise justifies nothing, which is an empty array, not "+
+				"an absent one", p.Slug)
+		} else if len(*p.Entries) != 0 {
+			t.Errorf("%s is retired and must justify nothing; got %+v", p.Slug, *p.Entries)
+		}
+	}
+
+	// And under a historical view the sentinel IS correct for them. A second
+	// applied record is needed for the point to be genuinely in the past while
+	// the retirement has already happened — at 0 nothing is retired yet, so the
+	// retired list would be empty and the assertion would check nothing.
+	writeAmendment(t, featureDir, "002-later.md", `---
+amendment: later
+date: 2026-09-03
+affects:
+  - "@my-feature/operation:x"
+---
+
+## Change
+After the retirement.
+
+## Acceptance
+- Later.
+`)
+	writeBaselineApplied(t, "my-feature", 2)
+
+	armSpecViewAt(t, "1")
+	var past specViewOutput
+	if err := json.Unmarshal([]byte(runSpecView_(t, cfg, "@my-feature")), &past); err != nil {
+		t.Fatal(err)
+	}
+	if len(past.Retired) == 0 {
+		t.Fatal("the historical point must still show the promise as retired, or this asserts " +
+			"nothing")
+	}
+	for _, p := range past.Retired {
+		if p.Entries != nil {
+			t.Errorf("%s asserted a population in a view with no contract", p.Slug)
+		}
 	}
 }

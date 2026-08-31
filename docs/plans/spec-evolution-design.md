@@ -298,6 +298,36 @@ metadata is not evidence. So one of three, chosen deliberately:
 3. add an append-only application chronology, which is the only option that
    supports the stronger reading.
 
+**Decided: option 1, deferred, and the flag does not exist.** Not "not yet
+implemented" — absent, with the reason in the command's own help text.
+
+Option 2 was the tempting one and is the reason for writing this down. A
+`--at <date>` that answers "what had been decided by then" would be a flag whose
+name says one thing and whose behaviour is another, which is the exact defect
+class this whole line of work has been removing: the founding document that
+*reads* like current truth, the receipt that *looks* like evidence, the label
+that disagrees with its body. Shipping it would have added one more, in the
+command built to fix the original.
+
+Option 3 remains open and is cheaper than it looks: the capsule already records
+per-amendment evidence under the authority lock, so an `applied-at` beside each
+hash would be an append-only chronology acquired at the moment that is actually
+being recorded. It is a deliberate schema decision with its own review, not a
+side effect of adding a query flag.
+
+**What `--at <amendment>` renders, and what it refuses to.** The promise half
+only. The contract artifacts are a stored snapshot the splice edits in place, so
+there is no earlier version of them to read — and showing today's entries under
+an earlier promise set would attribute present facts to a past state. That is
+the more tempting mistake, because the output would look complete. The omission
+is stated in the view rather than left to look like an empty contract.
+
+It also refuses forwards. A sequence above the applied marker is not an earlier
+state but a proposal — what the feature *would* promise once that record is
+applied, which is the apply ceremony's question and carries an approval with it.
+A read-only view answering both in the same shape makes them indistinguishable
+to the reader.
+
 **Stage 5 — artifact-specific projection, only if it proves worth it.**
 The objection to projecting contract artifacts is that amendments carry prose
 and refs, not replayable patches. OpenSpec suggests a way around it: store

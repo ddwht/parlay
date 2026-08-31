@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -46,6 +47,7 @@ import (
 
 var (
 	specViewJSON bool
+	specViewAt   string
 )
 
 var specCmd = &cobra.Command{
@@ -67,13 +69,28 @@ different guarantees.
 
 Nothing is written. If the ledger has unapplied records or unresolved errors,
 that is reported first — the projection is only as current as the ledger it
-could read.`,
+could read.
+
+With --at, the promises are projected to an earlier point: what this feature
+promised when that amendment was the last applied one. The contract half is
+omitted there, and deliberately — the artifacts are a stored snapshot that the
+splice edits in place, so there is no earlier version of them to show. Rendering
+today's entries under yesterday's promises would put a date on something that
+does not have one.
+
+There is no --at <date>. What is recorded is which decisions are applied, never
+when they became applied, so a date query could only answer "what had been
+decided by then", which is a different question from the one the flag would
+appear to answer.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSpecView,
 }
 
 func init() {
 	specCmd.Flags().BoolVar(&specViewJSON, "json", false, "Emit the composite as JSON")
+	specCmd.Flags().StringVar(&specViewAt, "at", "",
+		"Show the promises as they stood when this amendment was the last applied one "+
+			"(0 for the founding state, a sequence like 3, or an identity like 003-widen-timeout)")
 }
 
 // specPromise is one projected promise with its provenance.
@@ -92,10 +109,18 @@ type specPromise struct {
 	// fields would answer a different question from the text form standing
 	// beside it, and a consumer reading it would believe a promise had no
 	// constraints when it has five.
-	Intent      specIntent  `json:"promise"`
-	Entries     []specEntry `json:"entries"`
-	Superseded  bool        `json:"superseded,omitempty"`
-	SupersededB string      `json:"superseded_by,omitempty"`
+	Intent specIntent `json:"promise"`
+	// Entries is NULL when no contract is available, and an array — possibly
+	// empty — when one is.
+	//
+	// A pointer precisely so those two are distinguishable. An empty array said
+	// "this promise is known to justify nothing", which is a different fact from
+	// "there is no contract to consult", and a historical view was asserting the
+	// first while a prose note elsewhere said the second. A machine consumer
+	// reads the structure, not the note.
+	Entries     *[]specEntry `json:"entries"`
+	Superseded  bool         `json:"superseded,omitempty"`
+	SupersededB string       `json:"superseded_by,omitempty"`
 
 	// intent is the parsed form the text renderer uses.
 	intent parser.Intent
@@ -150,14 +175,31 @@ type specEntry struct {
 type specViewOutput struct {
 	Feature string `json:"feature"`
 	// AppliedThrough is how far the ledger has been folded into what runs.
-	AppliedThrough int           `json:"applied_through"`
-	Promises       []specPromise `json:"promises"`
-	Retired        []specPromise `json:"retired"`
+	AppliedThrough int `json:"applied_through"`
+	// At is the point this view is projected to. Equal to AppliedThrough for
+	// the ordinary current view.
+	At int `json:"at"`
+	// Since names the applied decisions between At and AppliedThrough — what has
+	// happened to this feature since the point being shown. Empty for the
+	// current view.
+	Since    []string      `json:"since,omitempty"`
+	Promises []specPromise `json:"promises"`
+	Retired  []specPromise `json:"retired"`
+	// ContractStatus says whether there is a contract to report, and when there
+	// is not, WHY.
+	//
+	// Three states, not two, because the two negative ones are different facts
+	// and a consumer that conflates them draws opposite conclusions. A boolean
+	// made "we read it and it is empty" indistinguishable from "we could not
+	// read it", which is how the unreadable path came to encode known-empty
+	// arrays under a banner saying the opposite.
+	ContractStatus string `json:"contract_status"`
 	// Unattributed are contract entries no live promise justifies. Reported
 	// rather than hidden: an entry with no promise behind it is either an
 	// orphan or a missing source:, and both are things a reader of "what is
 	// true now" needs to see.
-	Unattributed []specEntry `json:"unattributed"`
+	// Null when no contract is available, for the same reason Entries is.
+	Unattributed *[]specEntry `json:"unattributed"`
 	// Derivation says how each half of this composite was produced. In the
 	// JSON as well as the prose: a machine consumer must not assume uniform
 	// derivation any more than a person should, and the prose paragraph that
@@ -168,6 +210,107 @@ type specViewOutput struct {
 	Pending  []string `json:"pending,omitempty"`
 	Blocking []string `json:"blocking,omitempty"`
 }
+
+// resolveSpecViewAt turns a --at argument into a sequence, checked against the
+// ledger it will be resolved from.
+//
+// Only backwards. A sequence above the applied marker is not history, it is a
+// proposal — what the feature WOULD promise if a pending record were applied,
+// which is the apply ceremony's question and carries an approval with it. A
+// read-only view must not answer it in the same breath as "what was true", or
+// the two become indistinguishable in the reader's head.
+func resolveSpecViewAt(snap appliedLedgerSnapshot, arg string) (int, error) {
+	arg = strings.TrimSpace(arg)
+
+	// 0 is the founding point, named explicitly: what this feature promised
+	// before any amendment. It is the one value that does not identify a record
+	// and still means something.
+	if arg == "0" {
+		return 0, nil
+	}
+
+	if n, err := strconv.Atoi(arg); err == nil {
+		// A sequence must IDENTIFY a record. Accepting any integer up to the
+		// marker meant that with records 1 and 3, `--at 2` silently invented a
+		// boundary no amendment marks — the command says "when this amendment
+		// was the last applied one", and there was no such amendment.
+		var matches []parser.Amendment
+		for _, a := range snap.Records {
+			if a.Seq == n {
+				matches = append(matches, a)
+			}
+		}
+		return uniqueSpecViewAt(snap, arg, matches)
+	}
+
+	// Textual: the exact NNN-slug identity, or a bare slug where it is
+	// unambiguous. Ambiguity is refused rather than resolved by sort order,
+	// because "the first one" is not an answer anybody asked for.
+	var matches []parser.Amendment
+	for _, a := range snap.Records {
+		if fmt.Sprintf("%03d-%s", a.Seq, a.FileSlug) == arg || a.FileSlug == arg {
+			matches = append(matches, a)
+		}
+	}
+	return uniqueSpecViewAt(snap, arg, matches)
+}
+
+// uniqueSpecViewAt turns exactly one matching record into a point.
+func uniqueSpecViewAt(snap appliedLedgerSnapshot, arg string, matches []parser.Amendment) (int, error) {
+	switch len(matches) {
+	case 0:
+		return 0, fmt.Errorf("--at %q names no amendment in this feature's ledger. Give 0 for "+
+			"the founding state, a sequence like 3, or an identity like 003-widen-timeout", arg)
+	case 1:
+	default:
+		var names []string
+		for _, a := range matches {
+			names = append(names, fmt.Sprintf("%03d-%s", a.Seq, a.FileSlug))
+		}
+		sort.Strings(names)
+		return 0, fmt.Errorf("--at %q matches %d records (%s), so which point is meant is "+
+			"ambiguous. Name one exactly", arg, len(matches), strings.Join(names, ", "))
+	}
+	seq := matches[0].Seq
+	if seq > snap.Through {
+		return 0, fmt.Errorf("--at %s is beyond what has been applied (%03d). That is not an "+
+			"earlier state, it is a proposal — what the feature WOULD promise once that record "+
+			"is applied, which is the apply ceremony's question and comes with an approval",
+			arg, snap.Through)
+	}
+	return seq, nil
+}
+
+// retiredEntries gives a retired promise the same representation the rest of
+// the view uses.
+//
+// nil is the sentinel for "no contract to consult", so a retired promise must
+// not carry it while the view says globally that the contract IS available.
+// A retired promise justifies nothing by definition — entries still naming it
+// as their source appear under the unattributed heading — so the honest value
+// is an empty array, which says exactly that.
+func retiredEntries(readable bool) *[]specEntry {
+	if !readable {
+		return nil
+	}
+	e := []specEntry{}
+	return &e
+}
+
+// The three states a contract half can be in.
+const (
+	// contractAvailable: enumerated successfully. Arrays are populated, and an
+	// empty one is real knowledge — this promise justifies nothing.
+	contractAvailable = "available"
+	// contractHistorical: a past point was asked about. The artifacts are a
+	// stored snapshot the splice edits in place, so there is no earlier version
+	// of them to read.
+	contractUnavailableHistorical = "unavailable_historical"
+	// contractUnreadable: a current view whose artifacts exist and could not be
+	// established. Distinct from historical because it is a defect somebody can
+	// fix, and distinct from empty because nothing was learned.
+	contractUnreadable = "unreadable"
+)
 
 // specDerivation records the guarantee behind each half of the composite.
 type specDerivation struct {
@@ -202,9 +345,22 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 			"could not be established, and a specification that cannot say that is not a "+
 			"specification of anything in particular", slug, serr)
 	}
+
+	// The historical point, if one was asked for. Resolved against the snapshot
+	// so it is checked against the same authenticated ledger everything else
+	// below is derived from.
+	at := snap.Through
+	if specViewAt != "" {
+		var aerr error
+		at, aerr = resolveSpecViewAt(snap, specViewAt)
+		if aerr != nil {
+			return aerr
+		}
+	}
+
 	out := specViewOutput{
-		Feature: slug, AppliedThrough: snap.Through,
-		Promises: []specPromise{}, Retired: []specPromise{}, Unattributed: []specEntry{},
+		Feature: slug, AppliedThrough: snap.Through, At: at,
+		Promises: []specPromise{}, Retired: []specPromise{},
 		Derivation: specDerivation{
 			Promises: "projected: the latest version each lineage reached under the applied " +
 				"ledger, computed on read and stored nowhere",
@@ -227,11 +383,11 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 	if ierr != nil {
 		return fmt.Errorf("read %s's founding promises: %w", slug, ierr)
 	}
-	res := resolveIntentsFrom(snap, intents, agent.AppliedAuthority)
+	res := resolveIntentsFrom(snap.viewAt(at), intents, agent.AppliedAuthority)
 
 	// Where each promise's current text came from, and what has been decided
 	// but not folded in yet.
-	version, mode := intentProvenanceFrom(snap)
+	version, mode := intentProvenanceFrom(snap.viewAt(at))
 	for _, a := range snap.Records {
 		// The UNAPPLIED TAIL, taken from the ledger rather than from the
 		// resolver's pending list. The resolver reports a pending transition
@@ -242,6 +398,13 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 		// is behind the decisions that have been made.
 		if a.Seq > out.AppliedThrough {
 			out.Pending = append(out.Pending, describeUnapplied(a))
+			continue
+		}
+		// Between the historical point and now: applied, and deliberately not
+		// reflected above. A reader looking at an earlier state needs to know
+		// what has happened since, or they cannot tell whether it still holds.
+		if a.Seq > at {
+			out.Since = append(out.Since, describeApplied(a))
 		}
 	}
 	sort.Strings(out.Pending)
@@ -249,9 +412,37 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 	// The contract half. A derivation failure is reported, never silently
 	// rendered as an empty contract: "this feature provides nothing" and "the
 	// artifacts could not be read" are answers a reader must not confuse.
-	entries, eerr := enumerateContractEntries(featDir, slug)
-	if eerr != nil {
-		out.Blocking = append(out.Blocking, eerr.Error())
+	// THE CONTRACT HALF HAS NO HISTORY. The artifacts are a stored snapshot the
+	// splice edits in place, so there is no earlier version of them to show.
+	// Rendering today's entries under an earlier promise set would attribute
+	// present facts to a past state — the one thing a historical query must not
+	// do, and the more tempting mistake because the output would look complete.
+	historical := at != snap.Through
+	if historical {
+		out.Derivation.Contract = "omitted: the contract artifacts are a stored snapshot the " +
+			"splice edits in place, so there is no earlier version of them to show"
+	}
+
+	var entries []contractEntry
+	readable := false
+	switch {
+	case historical:
+		out.ContractStatus = contractUnavailableHistorical
+	default:
+		var eerr error
+		entries, eerr = enumerateContractEntries(featDir, slug)
+		if eerr != nil {
+			// UNREADABLE, not empty. Continuing with a nil entry list and then
+			// normalising it to [] said the contract had been read and found to
+			// hold nothing, while the banner above said it could not be read at
+			// all — the same prose-cannot-undo-structure defect, one branch
+			// over from the historical one.
+			out.Blocking = append(out.Blocking, eerr.Error())
+			out.ContractStatus = contractUnreadable
+			break
+		}
+		readable = true
+		out.ContractStatus = contractAvailable
 	}
 	summaries := entrySummaries(featDir, slug)
 	byPromise := map[string][]specEntry{}
@@ -286,29 +477,36 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 		}
 	}
 	sort.Slice(unattributed, func(i, j int) bool { return unattributed[i].Ref < unattributed[j].Ref })
-	if unattributed != nil {
-		out.Unattributed = unattributed
+	if readable {
+		if unattributed == nil {
+			unattributed = []specEntry{}
+		}
+		out.Unattributed = &unattributed
 	}
 
 	for _, in := range res.Active {
 		p := specPromise{
 			Slug: in.Slug, Intent: asSpecIntent(in), intent: in,
-			Version: "founding document", Entries: byPromise[in.Slug],
+			Version: "founding document",
+		}
+		if readable {
+			e := byPromise[in.Slug]
+			if e == nil {
+				e = []specEntry{}
+			}
+			sort.Slice(e, func(i, j int) bool { return e[i].Ref < e[j].Ref })
+			p.Entries = &e
 		}
 		if v, ok := version[in.Slug]; ok {
 			p.Version, p.Mode = v, mode[in.Slug]
 		}
-		if p.Entries == nil {
-			p.Entries = []specEntry{}
-		}
-		sort.Slice(p.Entries, func(i, j int) bool { return p.Entries[i].Ref < p.Entries[j].Ref })
 		out.Promises = append(out.Promises, p)
 	}
 	for _, s := range res.Superseded {
 		out.Retired = append(out.Retired, specPromise{
 			Slug: s.Intent.Slug, Intent: asSpecIntent(s.Intent), intent: s.Intent,
 			Superseded: true, SupersededB: fmt.Sprintf("%03d-%s", s.Seq, s.ByAmendment),
-			Mode: string(s.Mode), Entries: []specEntry{},
+			Mode: string(s.Mode), Entries: retiredEntries(readable),
 		})
 	}
 
@@ -350,15 +548,32 @@ func refKind(ref string) string {
 	return ""
 }
 
+// describeApplied says what a decision made SINCE the point being shown did.
+func describeApplied(a parser.Amendment) string {
+	return strings.TrimSuffix(describeUnapplied(a), ", and has not been applied")
+}
+
 // describeUnapplied says what a recorded-but-unapplied decision would do.
 //
 // By what it CHANGES, not by its slug: a reader deciding whether the view below
 // is good enough for their purpose needs to know whether the thing waiting is a
 // reworded promise or a retired one.
 func describeUnapplied(a parser.Amendment) string {
-	var parts []string
+	// Grouped by verb. A record ending three promises said "ends X and ends Y
+	// and ends Z", which buries the one fact a reader wants — that three
+	// promises ended — under a repetition of the verb.
+	var verbs []string
+	byVerb := map[string][]string{}
 	for _, tr := range a.IntentTransitions() {
-		parts = append(parts, fmt.Sprintf("%s %q", pendingVerbFor(tr.Mode), tr.Intent))
+		v := pendingVerbFor(tr.Mode)
+		if _, seen := byVerb[v]; !seen {
+			verbs = append(verbs, v)
+		}
+		byVerb[v] = append(byVerb[v], fmt.Sprintf("%q", tr.Intent))
+	}
+	var parts []string
+	for _, v := range verbs {
+		parts = append(parts, fmt.Sprintf("%s %s", v, strings.Join(byVerb[v], ", ")))
 	}
 	if len(a.Affects) > 0 {
 		parts = append(parts, fmt.Sprintf("changes %d contract entr%s",
@@ -389,8 +604,17 @@ func pendingVerbFor(m parser.IntentMode) string {
 }
 
 func writeSpecView(w io.Writer, out specViewOutput) {
-	fmt.Fprintf(w, "%s — current specification\n", out.Feature)
-	fmt.Fprintf(w, "Applied through amendment %03d.\n", out.AppliedThrough)
+	if out.At != out.AppliedThrough {
+		// Named as history in the first line, because everything below it is
+		// answering a different question from the one this command usually
+		// answers, and a reader who skims the body will act on it either way.
+		fmt.Fprintf(w, "%s — specification AS IT STOOD at amendment %03d\n", out.Feature, out.At)
+		fmt.Fprintf(w, "This is history. The feature is applied through %03d today.\n",
+			out.AppliedThrough)
+	} else {
+		fmt.Fprintf(w, "%s — current specification\n", out.Feature)
+		fmt.Fprintf(w, "Applied through amendment %03d.\n", out.AppliedThrough)
+	}
 
 	// First, and not in a footnote. A reader here wants an answer, and both of
 	// these mean the answer on screen is not the whole one.
@@ -410,6 +634,13 @@ func writeSpecView(w io.Writer, out specViewOutput) {
 		}
 	}
 
+	if len(out.Since) > 0 {
+		fmt.Fprintln(w, "\nDecided since, and NOT reflected below:")
+		for _, sn := range out.Since {
+			fmt.Fprintf(w, "  - %s\n", sn)
+		}
+	}
+
 	fmt.Fprintf(w, "\n═══ Promises (projected from the ledger) ═══\n")
 	if len(out.Promises) == 0 {
 		fmt.Fprintln(w, "\n  (this feature makes no promise that is still in force)")
@@ -422,11 +653,18 @@ func writeSpecView(w io.Writer, out specViewOutput) {
 			fmt.Fprintf(w, "  current text from the %s\n\n", p.Version)
 		}
 		writeWholeIntent(w, "    ", p.intent)
+		// No provides: block at all when there is no contract to consult.
+		// Printing "(nothing in the contract names this promise)" there stated
+		// a fact — known to provide nothing — that the view goes on to say it
+		// cannot know, and the reader meets the false one first.
+		if p.Entries == nil {
+			continue
+		}
 		fmt.Fprintf(w, "\n    provides:\n")
-		if len(p.Entries) == 0 {
+		if len(*p.Entries) == 0 {
 			fmt.Fprintln(w, "      (nothing in the contract names this promise)")
 		}
-		for _, e := range p.Entries {
+		for _, e := range *p.Entries {
 			shared := ""
 			if e.Shared {
 				shared = "   [also justified by another promise]"
@@ -438,9 +676,17 @@ func writeSpecView(w io.Writer, out specViewOutput) {
 		}
 	}
 
-	if len(out.Unattributed) > 0 {
+	if out.ContractStatus == contractUnavailableHistorical {
+		fmt.Fprintf(w, "\n═══ What this feature provided then ═══\n\n")
+		fmt.Fprintln(w, "  Not shown, and not omitted for brevity. The contract artifacts are a")
+		fmt.Fprintln(w, "  stored snapshot that the splice edits in place, so there is no earlier")
+		fmt.Fprintln(w, "  version of them to read. Showing today's entries under these promises")
+		fmt.Fprintln(w, "  would put a date on something that does not have one.")
+	}
+
+	if out.Unattributed != nil && len(*out.Unattributed) > 0 {
 		fmt.Fprintf(w, "\n═══ Contract entries no live promise justifies ═══\n\n")
-		for _, e := range out.Unattributed {
+		for _, e := range *out.Unattributed {
 			fmt.Fprintf(w, "  %s\n", e.Ref)
 			if e.Summary != "" {
 				fmt.Fprintf(w, "    %s\n", e.Summary)
@@ -475,6 +721,12 @@ func writeSpecView(w io.Writer, out specViewOutput) {
 	// current in the same way, and a reader who assumes they are will trust a
 	// hand-edited file as though the tool had derived it.
 	fmt.Fprintln(w, "\n───")
+	if out.At != out.AppliedThrough {
+		fmt.Fprintln(w, "The promises above are PROJECTED to an earlier point: each is the latest")
+		fmt.Fprintln(w, "version its lineage had reached by then. Versions are snapshots rather")
+		fmt.Fprintln(w, "than patches, which is the only reason this is answerable at all.")
+		return
+	}
 	fmt.Fprintln(w, "The promises above are PROJECTED: each is the latest version its lineage")
 	fmt.Fprintln(w, "reached under the applied ledger, computed on read and stored nowhere.")
 	fmt.Fprintln(w, "The contract entries are a STORED SNAPSHOT: the artifacts as they are on")
