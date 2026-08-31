@@ -32,7 +32,9 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -92,18 +94,36 @@ func (r *DispositionRecord) byFeature() map[string]Disposition {
 }
 
 // LoadDispositionRecord reads and validates the operator-authored YAML
-// record. Term and rationale validation happen here — a term outside
-// the closed set is refused naming the three accepted terms, a valid
-// term with no rationale is refused — but completeness against the
-// enumeration is checkDispositionCompleteness's job, because it needs
-// the enumeration.
+// record, structurally closed. The document must decode with no unknown
+// keys — a misspelled field is refused, never dropped — and carry
+// exactly one YAML document. Term and rationale validation happen here
+// too: a term outside the closed set is refused naming the three
+// accepted terms, a valid term with no rationale is refused, and a term
+// that names no target carrying one anyway is refused as the
+// contradiction it is. Completeness against the enumeration is
+// checkDispositionCompleteness's job, because it needs the enumeration.
 func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read disposition record %s: %w", path, err)
 	}
+	// The record is a destructive authorization, so it is read
+	// structurally CLOSED: a key the shape does not define is an error,
+	// not something to ignore. A silently dropped `raitonale:` or
+	// `feautre:` would otherwise read as a well-formed record that
+	// authorizes a deletion nobody actually wrote down.
 	var rec DispositionRecord
-	if err := yaml.Unmarshal(data, &rec); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&rec); err != nil && err != io.EOF {
+		return nil, fmt.Errorf("parse disposition record %s: %w", path, err)
+	}
+	// One document, and nothing after it: a second document would carry
+	// dispositions this record never presents for checking.
+	var extra DispositionRecord
+	if err := dec.Decode(&extra); err == nil {
+		return nil, fmt.Errorf("disposition record %s carries more than one YAML document — the record is one document naming every feature exactly once", path)
+	} else if err != io.EOF {
 		return nil, fmt.Errorf("parse disposition record %s: %w", path, err)
 	}
 	for i, d := range rec.Dispositions {
@@ -112,7 +132,15 @@ func LoadDispositionRecord(path string) (*DispositionRecord, error) {
 		}
 		switch d.Term {
 		case dispositionDeliveredAndDeleted, dispositionBuiltButUndelivered:
-			// valid, no target expected
+			// No target is expected, and one carried anyway is refused
+			// rather than ignored: a record saying authority moved to a
+			// named feature under a term that moves nothing is two
+			// contradictory statements, and quietly honouring the term
+			// picks one of them for the operator.
+			if strings.TrimSpace(d.Target) != "" {
+				return nil, fmt.Errorf("disposition record %s: %s carries term %s with target %q — only %s names a target, and a contradictory record is refused rather than resolved in the operator's stead",
+					path, d.Feature, d.Term, d.Target, dispositionAuthorityReHomedTo)
+			}
 		case dispositionAuthorityReHomedTo:
 			if strings.TrimSpace(d.Target) == "" {
 				return nil, fmt.Errorf("disposition record %s: %s is %s but names no target feature",

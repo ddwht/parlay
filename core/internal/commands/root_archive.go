@@ -23,8 +23,12 @@
 //
 // The archive is assembled complete before any other part of the project
 // changes: stage into a temporary directory sibling of the destination,
-// verify the manifest by reading it back, and promote by rename only
-// when complete. A failure at any point leaves the project exactly as it
+// re-hash every STAGED member and require it to equal what the manifest
+// records, verify the manifest by reading it back, and promote by rename
+// only when all of that holds. Verification reads the archived bytes —
+// the source hashes were taken during the pre-copy walk, so a manifest
+// nobody checked against the copy would describe the source rather than
+// the archive. A failure at any point leaves the project exactly as it
 // was — complete-or-absent is the invariant.
 
 package commands
@@ -292,6 +296,50 @@ func copyFileByte(src, dst string, mode fs.FileMode) error {
 	return out.Close()
 }
 
+// verifyStagedArchive re-reads the STAGED copy and requires every
+// member's bytes to hash to the value the manifest records.
+//
+// The manifest's hashes are computed on the source during the
+// pre-copy walk, which is the only moment escape and readability can
+// be judged before anything is written. That leaves a window: the
+// source can change between the walk and the copy, and a copy can
+// itself go wrong. A manifest describing bytes nobody re-read is a
+// claim about the source, not about the archive — and the whole point
+// of this operation is that the preserved copy is verifiable. So the
+// archived bytes are hashed here, from the staging directory, and any
+// disagreement with the manifest aborts the run while the live tree is
+// still untouched.
+//
+// Counting members is not verification and is not what this does: a
+// member list of the right length can still hold the wrong bytes.
+func verifyStagedArchive(contentsDir string, members []memberEntry) error {
+	if err := retirementEvent("verify-archive"); err != nil {
+		return err
+	}
+	for _, m := range members {
+		staged := filepath.Join(contentsDir, filepath.FromSlash(m.RelPath))
+		var got string
+		if m.IsSymlink {
+			target, err := os.Readlink(staged)
+			if err != nil {
+				return fmt.Errorf("verify archived symlink %s: %w", m.RelPath, err)
+			}
+			got = hashBytes([]byte(target))
+		} else {
+			sum, err := archiveHashFile(staged)
+			if err != nil {
+				return fmt.Errorf("verify archived member %s: %w", m.RelPath, err)
+			}
+			got = sum
+		}
+		if got != m.SHA256 {
+			return fmt.Errorf("verify archived member %s: the preserved bytes hash to %s but the manifest records %s — the archive does not match what it claims to preserve, so nothing is retired",
+				m.RelPath, got, m.SHA256)
+		}
+	}
+	return nil
+}
+
 // archiveRoot assembles the complete archive of childPath into
 // stagingDir: contents/ holds the byte-for-byte copy, manifest.yaml the
 // member list with hashes and the self-covering hash. The walk is fully
@@ -344,12 +392,21 @@ func archiveRoot(childPath, stagingDir string) (*ArchiveManifest, error) {
 		manifest.Members = append(manifest.Members, ManifestMember{Path: m.RelPath, SHA256: m.SHA256})
 	}
 
+	// Verification hashes the ARCHIVED bytes, not the source and not the
+	// member count: every staged member is re-read and must hash to what
+	// the manifest records, before the manifest is written or the
+	// archive promoted.
+	if err := verifyStagedArchive(contentsDir, members); err != nil {
+		return nil, err
+	}
+
 	manifestPath := filepath.Join(stagingDir, "manifest.yaml")
 	if err := WriteManifest(manifest, manifestPath); err != nil {
 		return nil, err
 	}
-	// Verify by reading back: the manifest a later integrity check will
-	// trust must round-trip before the archive is promoted.
+	// And the manifest a later integrity check will trust must itself
+	// round-trip — its self-covering hash re-derived from the member
+	// list it carries — before the archive is promoted.
 	verified, err := ReadManifest(manifestPath)
 	if err != nil {
 		return nil, err

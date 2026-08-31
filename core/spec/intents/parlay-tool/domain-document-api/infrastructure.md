@@ -23,7 +23,7 @@
 ## Validation reaches the document core as a supplied capability
 
 **Affects**: dependency direction between the document core and the validation rules
-**Behavior**: The document core does not import the rules engine. It declares what it needs — something that turns a draft document into findings — and receives an implementation from the layer that legitimately knows both halves. That layer supplies the real engine, named with the mode the rules should be applied in; a test supplies a chosen set of findings. The seam is a design choice about direction, not a workaround: the rules engine depends on the document core's own shapes, so the core importing the engine would close a cycle.
+**Behavior**: The document core does not import the rules engine. It declares what it needs — something that turns a draft document into findings — and receives an implementation from the layer that legitimately knows both halves. The seam is about direction and substitutability; it says nothing about how complete the supplied rule set is, and completing that rule set is a planned amendment to this feature rather than something this fragment asserts. That layer supplies the real engine, named with the mode the rules should be applied in; a test supplies a chosen set of findings. The seam is a design choice about direction, not a workaround: the rules engine depends on the document core's own shapes, so the core importing the engine would close a cycle.
 **Invariants**:
 - The document core does not reference the rules engine by name anywhere.
 - The core's behavior can be exercised end to end against a substituted finding set, with no rules engine present.
@@ -43,10 +43,11 @@
 ## One writer for the stored document
 
 **Affects**: write path for the shared domain-model document
-**Behavior**: Every persisted change to the document goes through a single writer that performs the concurrency comparison and the replacement together. Producers differ in where their content comes from — a submitted document, or a merge computed from a feature's proposal — and are identical from the comparison onwards. Nothing else writes the document. A second write path is a second definition of what a valid write is, and the two diverge on exactly the cases nobody tests.
+**Behavior**: Every persisted change made by this tool goes through a single writer that performs the concurrency comparison and the replacement together. The producers that exist today differ in where their content comes from — a submitted document, or a merge computed from a feature's proposal — and are identical from the comparison onwards. No other path in this codebase writes the document. A second write path is a second definition of what a valid write is, and the two diverge on exactly the cases nobody tests. The writer's responsibility here is the comparison and the replacement; it does not yet stand as a validation gate, and there is no entry point through which a caller outside this codebase reaches it. Both are planned amendments to this feature rather than behavior it currently has, so the invariants below are stated over the producers that exist.
 **Invariants**:
-- No path other than the single writer replaces the stored document.
-- Every producer reaches the same comparison, the same rewrite, and the same replacement, so a fault injected in that shared core is observed identically by all of them.
+- No path in this codebase other than the single writer replaces the stored document.
+- Every producer that exists reaches the same comparison, the same rewrite, and the same replacement, so a fault injected in that shared core is observed identically by all of them.
+- The writer's current contract is the comparison and the replacement; it neither performs nor claims a validation verdict on the content it persists.
 - A derived change computes its content from the document as read inside the same write, never from content read earlier and held.
 - A refused write leaves the stored document byte-identical to what it was.
 **Source**: @domain-document-api/change-the-shared-domain-model-without-the-tool-that-wrote-it, @domain-document-api/never-overwrite-a-change-you-did-not-see
@@ -55,6 +56,7 @@
 
 **Notes**:
 - The comparison and the replacement are two steps today, with a window between them in which a second cooperating writer can also compare successfully. The replacement is indivisible, so no reader sees a blend, but the earlier change is lost silently. Holding the pair under one exclusion that spans processes is what closes it; the writer's shape already anticipates that, since both producers pass through the same core.
+- Two further amendments are anticipated and deliberately absent: a save gate the writer consults before persisting, and a public entry point that makes callers outside this codebase into producers of the same writer. Both are additive to this fragment — they add a step before the comparison and a producer in front of it — which is why establishing the writer's home first is worth doing on its own.
 
 ---
 

@@ -7,8 +7,13 @@
 // <parent>/.parlay/retired/<name>/, record what became of every feature
 // in it, and deregister it from the parent's roots index, in that order.
 //
-// Preconditions come first, and both are settled before any enumeration,
-// sweep, or read of the root's contents:
+// An in-flight retirement is looked for first of all, by scanning the
+// journal location rather than by resolving a registration that a
+// part-finished run may already have removed (see FindRetirementJournal).
+// Only when nothing is in flight does a fresh run begin.
+//
+// For a fresh run the preconditions come first, and both are settled
+// before any enumeration, sweep, or read of the root's contents:
 //
 //   - Target resolution against the parent's roots index: exactly one
 //     registered child proceeds; zero matches refuses enumerating the
@@ -16,7 +21,10 @@
 //     selecting by ordering or proximity; a directory that carries
 //     .parlay root configuration but is not in the index refuses with
 //     that stated as the reason; and the parent root itself is never a
-//     valid target.
+//     valid target. Resolution is not authorization: the registered path
+//     must also resolve strictly inside the project, since the archive
+//     reads that directory and the final step deletes it, and being named
+//     in an editable list is not a licence to act on a location.
 //   - Destination absence: an existing <parent>/.parlay/retired/<name>/
 //     refuses the run naming both possible explanations (an earlier
 //     retirement of the same root, or unrelated content under the same
@@ -118,6 +126,12 @@ func resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, 
 
 	switch len(candidates) {
 	case 1:
+		// Registration is not path authorization. Before the registered
+		// path can become an archive source or a deletion target, it
+		// must resolve strictly inside the project root.
+		if _, err := resolveContainedChildDir(parentPath, candidates[0].RelativePath); err != nil {
+			return config.Root{}, fmt.Errorf("refusing to retire %q: %w", candidates[0].Name, err)
+		}
 		return candidates[0], nil
 	case 0:
 		// A directory that carries root configuration but is not in the
@@ -140,6 +154,70 @@ func resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, 
 		}
 		return config.Root{}, fmt.Errorf("%q matches more than one registered child root — %s — refusing to select one by ordering or proximity; name the one you mean", name, strings.Join(lines, ", "))
 	}
+}
+
+// resolveContainedChildDir turns a registered child root's relative path
+// into the absolute directory the retirement may act on, and refuses
+// unless that directory resolves STRICTLY INSIDE the project root.
+//
+// Registration is not path authorization. The roots index is an ordinary
+// YAML file a person or a bad merge can edit, and every destructive step
+// of a retirement — the archive walk, the removal of the root's
+// directory — is derived from the registered path. So the path is
+// validated here, fail-closed, before it can become any of them:
+//
+//   - an absolute registered path is refused outright (a child root is
+//     located relative to its parent, by construction);
+//   - a path that leaves the parent lexically (".." segments, "." alone,
+//     the empty string) is refused before it touches the filesystem;
+//   - the resolved path — filepath.EvalSymlinks on both parent and child
+//     — must be a strict descendant of the resolved parent, so a symlink
+//     pointing out of the project is refused however ordinary its name
+//     looks. The parent root itself is not "inside" itself: retiring it
+//     would delete the project.
+//
+// A directory that does not exist resolves to the lexically contained
+// join: nothing can be archived or removed there, and the caller's own
+// existence checks report it in their own terms.
+func resolveContainedChildDir(parentPath, relPath string) (string, error) {
+	if strings.TrimSpace(relPath) == "" {
+		return "", fmt.Errorf("registered path is empty — a registered child root must name a directory inside the project")
+	}
+	if filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("registered path %q is absolute — a child root is located relative to its parent, and an absolute registration is not path authorization for archiving or deleting it", relPath)
+	}
+	clean := filepath.Clean(filepath.FromSlash(relPath))
+	if clean == "." || clean == string(filepath.Separator) {
+		return "", fmt.Errorf("registered path %q resolves to the project root itself — ending the parent is the project ending, not a subproject ending", relPath)
+	}
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("registered path %q escapes the project root — a retirement archives and deletes the registered directory, and a path leading outside the project is refused rather than followed", relPath)
+	}
+
+	childDir := filepath.Join(parentPath, clean)
+
+	resolvedParent, err := filepath.EvalSymlinks(parentPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve project root %s: %w", parentPath, err)
+	}
+	resolvedChild, err := filepath.EvalSymlinks(childDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Nothing is there to archive or delete; the lexical checks
+			// above already established the path stays inside.
+			return childDir, nil
+		}
+		// Cannot tell is not inside.
+		return "", fmt.Errorf("resolve registered path %q: %w", relPath, err)
+	}
+	if resolvedChild == resolvedParent {
+		return "", fmt.Errorf("registered path %q resolves to the project root itself — ending the parent is the project ending, not a subproject ending", relPath)
+	}
+	if !pathWithin(resolvedParent, resolvedChild) {
+		return "", fmt.Errorf("registered path %q resolves to %s, which is outside the project root %s — a retirement archives and deletes the registered directory, so a registration escaping the project is refused rather than followed",
+			relPath, resolvedChild, resolvedParent)
+	}
+	return childDir, nil
 }
 
 // checkRetirementDestination enforces the destination-absence
@@ -311,21 +389,29 @@ func runRetireRoot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load roots index: %w", err)
 	}
 
-	// Preconditions: resolution and destination checking happen once,
-	// before any enumeration, sweep, or read of the root's contents.
-	target, err := resolveRetirementTarget(idx, name)
-	if err != nil {
-		return err
-	}
-
-	// A part-finished run owns the root until it completes: resume it or
-	// refuse, never start over.
-	journal, err := LoadRetirementJournal(parentPath, target.Name)
+	// An in-flight retirement is looked for FIRST, by scanning the
+	// journal location — before the registration is consulted at all.
+	// The last steps of a retirement remove the root's directory,
+	// deregister the root and then remove the journal, so the state a
+	// resume most needs to reach is one where the registration no longer
+	// names the root. Resolving the target through the registration
+	// first would make that state unreachable, which is the difference
+	// between a journal that documents an interruption and one that can
+	// actually finish it. A part-finished run owns the root until it
+	// completes: resume it or refuse, never start over.
+	journal, err := FindRetirementJournal(parentPath, name)
 	if err != nil {
 		return err
 	}
 	if journal != nil {
 		return resumeRetirement(cmd, parentPath, idx, journal)
+	}
+
+	// Preconditions: resolution and destination checking happen once,
+	// before any enumeration, sweep, or read of the root's contents.
+	target, err := resolveRetirementTarget(idx, name)
+	if err != nil {
+		return err
 	}
 
 	if err := checkRetirementDestination(parentPath, target.Name); err != nil {

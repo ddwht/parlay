@@ -22,11 +22,26 @@
 // if the root goes away: narrative prose that merely mentions the root's
 // name does not block.
 //
-// Fail-closed: a file that is present but unreadable is recorded as a
-// scan failure that refuses the retirement — "cannot tell" is never
-// reported as "none". Every finding carries the owning artifact path,
-// the position within it, and the reference as written — the same triple
-// the feature-retirement Inventory reports, reused as a shape precedent.
+// What this sweep IS, precisely: a line-based LEXICAL scan. It reads
+// every eligible file as text and applies a fixed set of line patterns —
+// ownership markers, path references into the root's namespace,
+// `@feature` refs, plain group-qualified and component-qualified feature
+// references, and `--root <name>` instructions. It does not parse Go,
+// YAML, markdown or schema documents into syntax trees, and it makes no
+// claim to understand structure: a reference is found because it is
+// written down, wherever it is written down. A file whose first 8 KiB
+// contains a NUL byte is treated as binary and carries no textual
+// reference to scan.
+//
+// Fail-closed, exactly as far as that scope reaches: a file that is
+// present but cannot be READ is recorded as a scan failure that refuses
+// the retirement — "cannot tell" is never reported as "none" — and so is
+// a directory that cannot be listed. There is no separate "unparseable"
+// condition, because nothing here parses; claiming one would promise a
+// detection this engine does not perform. Every finding carries the
+// owning artifact path, the position within it, and the reference as
+// written — the same triple the feature-retirement Inventory reports,
+// reused as a shape precedent.
 
 package commands
 
@@ -60,6 +75,15 @@ const (
 	// itself (--root <name>) — something only the retiring root can
 	// satisfy.
 	sweepKindCommandReference = "command-reference"
+	// sweepKindGroupQualifiedReference is a plain group-qualified
+	// feature reference — `design-loop/design-loop`, or a deeper
+	// component-qualified form such as
+	// `studio-foundation/studio-deployer/cross-cutting/deploy-step` —
+	// written without any marker, @ref or root prefix around it. This
+	// is how features are actually named across the corpus: in Go
+	// comments, in YAML values, in markdown prose and in generated
+	// copies of all three.
+	sweepKindGroupQualifiedReference = "group-qualified-reference"
 )
 
 // RootSweepFinding is one thing still standing on the retiring root:
@@ -137,6 +161,56 @@ func markerNamesRetiringFeature(value string, retiring map[string]bool) (string,
 	return "", false
 }
 
+// groupQualifiedFeatureRes builds one regex per retiring feature for the
+// way features are ORDINARILY written down: bare and group-qualified.
+//
+// Markers, `@feature` refs and `--root <name>` are the decorated forms,
+// and matching only those misses the majority of real references —
+// `design-loop/design-loop` in a Go comment, a YAML value naming
+// `studio-foundation/studio-deployer`, prose in a shipped skill naming
+// `<group>/<feature>/cross-cutting/<component>`. Each of those keeps
+// pointing at the retiring root after it is gone.
+//
+// Two rules keep the match from firing on ordinary words:
+//
+//   - Word boundaries on both ends. The leading position must not be a
+//     word character, a dot or a hyphen, so `redesign-loop/x` does not
+//     match `design-loop/x`; the trailing position must not continue
+//     the path or the word. A slash IS allowed to lead, so a reference
+//     embedded in a longer path (`spec/intents/<group>/<feature>`)
+//     still matches — a longer path containing the slug is a reference
+//     to it, not a coincidence.
+//   - A path-ish context check. A feature slug that is itself
+//     group-qualified (it contains a slash) is path-ish as written and
+//     matches on its own. A single-segment slug is a bare word that
+//     could be anything, so it counts only when followed by at least
+//     one more path segment. This is the difference between reporting
+//     `alpha/tools` and reporting the English word "alpha".
+//
+// Anything that survives both rules is reported. The sweep does not
+// silently drop a plausible reference on suspicion of coincidence: a
+// person reading the preview dismisses a false positive in a moment,
+// while a missed reference is discovered only after the root is gone.
+func groupQualifiedFeatureRes(features []string) []*regexp.Regexp {
+	var out []*regexp.Regexp
+	for _, f := range features {
+		q := regexp.QuoteMeta(f)
+		// A path segment is a word run, optionally dot-separated
+		// (`deploy-step`, `notes.md`). Written that way rather than as
+		// `[\w.-]+`, a sentence-ending period after a reference stays
+		// outside the match — the finding carries the reference as
+		// written, and "deploy-step." is not what was written.
+		segment := `(?:/[\w-]+(?:\.[\w-]+)*)`
+		tail := segment + `*` // component-qualified and deeper forms
+		if !strings.Contains(f, "/") {
+			// A bare word only counts in a path-ish context.
+			tail = segment + `+`
+		}
+		out = append(out, regexp.MustCompile(`(?:^|[^\w.-])(`+q+tail+`)(?:$|[^\w/-])`))
+	}
+	return out
+}
+
 // sweepRootRetirement runs the project-wide, source-aware inbound sweep
 // for the retiring root. It walks the parent root's whole tree —
 // covering the parent and every registered child, since children live
@@ -194,6 +268,7 @@ func sweepRootRetirement(parentPath string, target config.Root, dispositions *Di
 	for _, f := range features {
 		featureRes = append(featureRes, regexp.MustCompile(`(@`+regexp.QuoteMeta(f)+`)(?:$|[^\w/-])`))
 	}
+	groupRes := groupQualifiedFeatureRes(features)
 
 	retiredDir := retiredRootsDir(parentPath)
 	targetAbs := filepath.Clean(target.Path)
@@ -267,6 +342,19 @@ func sweepRootRetirement(parentPath string, target config.Root, dispositions *Di
 					result.Findings = append(result.Findings, RootSweepFinding{
 						Path: path, Position: pos, Ref: m[1],
 						Kind: sweepKindFeatureReference, Feature: features[j], Blocking: true,
+					})
+					matched = true
+					break
+				}
+			}
+			if matched {
+				continue
+			}
+			for j, re := range groupRes {
+				if m := re.FindStringSubmatch(line); m != nil {
+					result.Findings = append(result.Findings, RootSweepFinding{
+						Path: path, Position: pos, Ref: m[1],
+						Kind: sweepKindGroupQualifiedReference, Feature: features[j], Blocking: true,
 					})
 					matched = true
 					break

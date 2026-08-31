@@ -93,11 +93,7 @@ func TestJournal_InterruptionAfterArchiveLeavesJournalAndRegistration(t *testing
 //   - whenever the contents have moved and the root is still registered,
 //     the journal exists.
 func TestJournal_NoInterruptionLeavesAContradictoryState(t *testing.T) {
-	boundaries := []string{
-		"stage-archive", "archive-copy", "promote", "write-journal",
-		"write-record", "remove-contents", "deregister-index", "remove-journal",
-	}
-	for _, boundary := range boundaries {
+	for _, boundary := range retirementBoundaries {
 		t.Run(boundary, func(t *testing.T) {
 			parent, _ := archiveFixture(t)
 			retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
@@ -223,5 +219,171 @@ func TestJournal_CompletedRunLeavesRegistrationWithoutTheRoot(t *testing.T) {
 	}
 	if journalPresent(parent) {
 		t.Error("no journal may outlive a completed run")
+	}
+}
+
+// retirementBoundaries lists every mutation boundary of a retirement, in
+// the order a full run fires them. Interruption tests iterate it rather
+// than sampling it: a boundary nobody injects at is a boundary nobody
+// knows the behavior of.
+var retirementBoundaries = []string{
+	"stage-archive", "archive-copy", "verify-archive", "promote", "write-journal",
+	"write-record", "remove-contents", "deregister-index", "remove-journal",
+}
+
+// assertRetirementComplete pins what "the retirement finished" means, so
+// a resumability test cannot pass on a weaker predicate: the
+// registration no longer names the root, the root's directory is gone,
+// no journal outlives the run, and the archive holds the complete
+// evidence set.
+func assertRetirementComplete(t *testing.T, parent, name string) {
+	t.Helper()
+	if rootRegistered(t, parent, name) {
+		t.Error("a completed retirement leaves a registration that does not name the root")
+	}
+	if childDirPresent(parent) {
+		t.Error("a completed retirement leaves no directory behind for the retired root")
+	}
+	if journalPresent(parent) {
+		t.Error("a completed retirement leaves no journal")
+	}
+	dest := retirementDestination(parent, name)
+	for _, rel := range []string{"contents", "manifest.yaml", "dispositions.yaml", "retirement-record.yaml"} {
+		if _, err := os.Stat(filepath.Join(dest, rel)); err != nil {
+			t.Errorf("a completed retirement preserves %s: %v", rel, err)
+		}
+	}
+	manifest, err := ReadManifest(filepath.Join(dest, "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("the preserved manifest must read back and verify: %v", err)
+	}
+	if len(manifest.Members) == 0 {
+		t.Error("the preserved manifest must name the members it preserved")
+	}
+}
+
+// TestJournal_EveryBoundaryFailureIsResumableToCompletion is the real
+// resumability obligation: not that an interrupted run leaves a
+// consistent-looking state, but that a SUBSEQUENT run finishes the
+// retirement. A state that satisfies every structural predicate and
+// still cannot be completed is exactly the failure this catches — the
+// last steps deregister the root and then remove the journal, so a run
+// interrupted between them must be resumable without the registration
+// that a resume once needed in order to find it.
+func TestJournal_EveryBoundaryFailureIsResumableToCompletion(t *testing.T) {
+	for _, boundary := range retirementBoundaries {
+		t.Run(boundary, func(t *testing.T) {
+			parent, _ := archiveFixture(t)
+			retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+			interactiveTTY(t)
+			failAt(boundary, 1)
+
+			cmd, _ := retireCmd(t, parent, "y\n")
+			if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+				t.Fatalf("the run must fail when interrupted at %s", boundary)
+			}
+
+			// The next invocation — a resume where a journal stands, a
+			// fresh run where the interruption restored the prior state
+			// — completes the retirement. Which of the two it is, is the
+			// operation's business, not the operator's.
+			retirementHook = nil
+			cmd, _ = retireCmd(t, parent, "y\n")
+			if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+				t.Fatalf("after an interruption at %s the next run must complete the retirement: %v", boundary, err)
+			}
+			assertRetirementComplete(t, parent, "old")
+		})
+	}
+}
+
+// TestJournal_ResumesARunWhoseRootIsAlreadyDeregistered pins the exact
+// state the ordering creates and nothing else reaches: the registration
+// has already been removed and only the journal is left. A resume that
+// resolved its target through the registration could never see this
+// run, so the journal location is scanned first, by filename.
+func TestJournal_ResumesARunWhoseRootIsAlreadyDeregistered(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	failAt("remove-journal", 1)
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("the interrupted run must fail")
+	}
+	// The state under test: deregistered, contents moved, journal left.
+	if rootRegistered(t, parent, "old") {
+		t.Fatal("this test needs the state where the registration has already gone")
+	}
+	if !journalPresent(parent) {
+		t.Fatal("this test needs the state where the journal is still outstanding")
+	}
+
+	// The journal must be findable without the registration.
+	found, err := FindRetirementJournal(parent, "old")
+	if err != nil {
+		t.Fatalf("scanning for an in-flight retirement must not fail: %v", err)
+	}
+	if found == nil {
+		t.Fatal("an in-flight retirement must be found by scanning the journal location, not by resolving a registration that has already been removed")
+	}
+
+	retirementHook = nil
+	cmd, out := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatalf("a run whose root is already deregistered must still complete its retirement: %v", err)
+	}
+	if !strings.Contains(out.String(), "part-finished") {
+		t.Errorf("the run should say it is finishing a part-finished retirement; got:\n%s", out.String())
+	}
+	assertRetirementComplete(t, parent, "old")
+}
+
+// The journal is looked for before the registration is consulted, so a
+// retirement named by its registered PATH resumes exactly as one named
+// by its registered name does.
+func TestJournal_InFlightRunResumesWhenNamedByItsRegisteredPath(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	failAt("remove-journal", 1)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("the interrupted run must fail")
+	}
+
+	retirementHook = nil
+	cmd, _ = retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old/"}); err != nil {
+		t.Fatalf("naming the in-flight retirement by its registered path must resume it: %v", err)
+	}
+	assertRetirementComplete(t, parent, "old")
+}
+
+// A journal that cannot be read is not "nothing in flight": starting a
+// fresh destructive run over a part-finished one is the failure the
+// scan refuses.
+func TestJournal_UnreadableJournalRefusesRatherThanStartingOver(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	failAt("write-record", 1)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("the interrupted run must fail")
+	}
+
+	if err := os.WriteFile(retirementJournalPath(parent, "old"), []byte("outstanding: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	retirementHook = nil
+	cmd, _ = retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("a journal that cannot be parsed must refuse the run rather than be read as nothing in flight")
+	}
+	if !strings.Contains(err.Error(), "journal") {
+		t.Errorf("the refusal must name the journal it could not read; got: %v", err)
 	}
 }
