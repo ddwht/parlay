@@ -24,6 +24,11 @@ repository root.
 grep -rn -E "parlay-(feature|component|extends):" . \
   --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist
 # 1017 marker lines across Go, TS/TSX, embedded skills, embedded schemas,
+# CAVEAT (2026-08-31): this count is not reproducible as written — the sweep
+# does not exclude THIS report, which quotes many markers, so re-running it
+# after this file exists inflates the number. Reproduce with
+# --glob '!docs/plans/studio-teardown-inventory.md' (and treat the figure as
+# indicative, not contractual).
 # deployed skills (.claude/skills/), deployed modules (.parlay/modules/),
 # deployed schemas (.parlay/schemas/), build artifacts, and testdata fixtures.
 
@@ -223,9 +228,13 @@ Build-artifact column legend: **B** = `.baseline.yaml`, **F** = `buildfile.yaml`
 | 17 | `studio-multi-adapter/cross-design-system-adapter` | intents, dialogs | B | `intents: {}` / `sources: {}` | none | `built-but-undelivered` |
 | 18 | `studio-multi-adapter/second-adapter-same-design-system` | intents, dialogs | B | `intents: {}` / `sources: {}` | none | `built-but-undelivered` |
 
-Totals: 3 `authority-re-homed-to` (features 6, 15 — plus the orphan
-`feature-contributions` of §5.1, which is not one of the 18), 5
-`delivered-and-deleted`, 11 `built-but-undelivered`.
+Totals: 2 `authority-re-homed-to` (features 6 and 15), 6
+`delivered-and-deleted` (features 1, 4, 5, 13, 14, 16), 10
+`built-but-undelivered` — 2 + 6 + 10 = 18. The orphan
+`feature-contributions` of §5.1 is re-homed alongside feature 6 but is NOT a
+nineteenth feature and is deliberately excluded from these totals.
+(Corrected 2026-08-31 — the original totals line read 3/5/11, contradicting
+this document's own table; see the corrections appendix.)
 
 **Rest of the root, for D10(d) archive scope.** Beyond the 18 feature
 directories the child root holds `studio/.parlay/config.yaml` (2 lines:
@@ -450,7 +459,24 @@ mentions:
   both generated
 
 **Neither `design-spec.schema.md` nor `reference-design-spec.skill.md` carries
-any `parlay-feature` marker at all** — they are unowned core-root surfaces.
+any `parlay-feature` marker at all** — they carry no ownership markers.
+**CORRECTION (2026-08-31, teardown execution + Codex pane review): the
+"unowned" conclusion above is FALSE.** Marker absence is not ownership
+absence: the surface is a delivered intent of the FROZEN core founding doc
+`parlay-tool/artifact-generation` ("Reference Design Spec from Figma",
+intents.md:31–54, hashed in its baseline), `parlay-tool/multi-root`'s
+buildfile names the skill as a produced path, and design-spec.yaml is a LIVE
+consumed artifact in Go — `commands/baseline.go` (hashDesignSpecFragments,
+design-spec fragment baseline fields) and `commands/diff.go` (DesignSpec
+source-level diff, "design-spec:<frag>" changed_sources) plus ~17 test
+assertions; `schemas_test.go` asserts the schema deploys. The full removal
+set is also larger than this section stated: embedded/deployed loop and
+build-feature guidance, adapter.schema.md (`source: figma`) and its digest,
+feature-structure artifact rows and DIGEST registration, embedded
+audit_test.go/schemas_test.go, and the baseline/diff hashing + dirty-
+propagation behavior itself. Removal is therefore a governed retirement of a
+delivered intent with a real blast radius — deferred to an explicit user
+decision (overnight log D-014), not performed in the teardown.
 That means the studio retirement does not touch them by ownership, and yet
 removing layout.schema.md's "Relationship to design-spec.schema.md" section
 leaves a dangling half of a cross-reference: `design-spec.schema.md` still has
@@ -527,15 +553,19 @@ fail-closed checks it never actually performed.
 
 The architecture states "ALL 18 studio features carry build artifacts
 (.baseline.yaml everywhere; nine with buildfiles/testcases/authored artifacts)".
-Literally true, and the count of nine is confirmed. Worth sharpening: seven of
-the eleven baseline-only features
+The "everywhere" is confirmed; the NINE IS NOT — ten features carry
+buildfile.yaml + testcases.yaml (the table above shows F on rows 1, 3, 4, 5,
+6, 12, 13, 14, 15, 16), so eight are baseline-only, and the architecture doc
+inherited the undercount. Worth sharpening: seven of
+the eight baseline-only features
 (`studio-ai-authoring/*` ×2, `studio-deferred/*` ×3, `studio-multi-adapter/*` ×2)
 have baselines dated `2026-06-16T10:44:41Z` whose entire content is
 `intents: {}` / `sources: {}` — placeholders that hash nothing. The remaining
 baseline-only feature, `design-loop/design-loop-fallback`, dated
 `2026-07-27T13:19:12Z`, genuinely hashes 2 intents and their dialogs.
 
-This does not change any disposition — all eleven are `built-but-undelivered` —
+This does not change any disposition — all eight are `built-but-undelivered`
+(alongside vocabulary-validation and figma-mcp-client, which have buildfiles) —
 but it matters for D10(d)/(e): the archive manifest and the archive-integrity
 check should not treat an empty baseline as corruption, and any "was this ever
 built?" heuristic that reads baseline emptiness will disagree with the
@@ -560,3 +590,28 @@ For completeness, the plan was precisely right about these:
   `core/internal/{commands,deployer,embedded}` — **not** `core/internal/feedback`,
   which imports `internal/testsupport` (see §2.3) rather than `atomicfile`. Three
   importers, not four.
+
+---
+
+## Corrections appendix (2026-08-31)
+
+Applied after the teardown executed, reconciling the Codex pane review (which
+examined the original text) with the overnight findings:
+
+1. **Arithmetic**: ten features carry buildfile/testcases, not nine; eight are
+   baseline-only (seven placeholders + design-loop-fallback); the disposition
+   totals are 2 re-homed + 6 delivered-and-deleted + 10 built-but-undelivered
+   = 18, with the feature-contributions orphan excluded from the totals. The
+   original 3/5/11 line contradicted this document's own table. The executed
+   disposition record (docs/plans/studio-retirement-dispositions.yaml) was
+   authored from the table, not the totals line, and matches the corrected
+   numbers.
+2. **Methodology**: the 1,017-marker figure is not reproducible without
+   excluding this report itself; the method block now says so.
+3. **§5.4**: the "unowned design-spec surface" conclusion was false (marker
+   absence ≠ ownership absence) and its blast radius was understated; the
+   section now records the ownership evidence and the full removal set. The
+   deletion was deferred to an explicit user decision rather than performed.
+4. **Not reproduced**: the pane review reported a duplicated
+   create_domain_model.go bullet in §5.5; the committed text contains a single
+   well-formed bullet with a wrapped parenthetical. No change made.
