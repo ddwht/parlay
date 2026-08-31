@@ -53,6 +53,7 @@ replacement_feature: <@feature that carries this work now — required by replac
 | `outcome` | With `retires_feature` | Closed at `replaced \| obsolete`. A reader months later cannot recover from silence whether the work moved or stopped mattering, and that difference is the whole content of the decision. |
 | `replacement_feature` | With `outcome: replaced` | The feature that carries this work now. Forbidden by `obsolete`. Must exist, must not be the retiring feature, and must not itself be retired. It is metadata about the outcome and **never permission**: a reference aimed at the retiring feature does not begin aiming at the replacement by being told about it, so `replaced` faces the same zero-inbound rule as `obsolete`. |
 | `supersedes_intents` | No | Founding intent slugs **in this amendment's own feature** that this decision replaces. Bare slugs — a qualified `@feature/slug` is refused, because one feature may never retire another's founding promise (record cross-feature pressure in `trigger:`). Naming one makes this a **governance amendment**: `affects:` may then be empty, and `## Why` and `## Acceptance` become required. The superseded `intents.md` is never modified. |
+| `amends_intents` | No | The **evolution vocabulary**, and the field new records use. One entry per founding promise: `intent:` (the lineage slug, bare and same-feature), `mode:` (closed at `extend \| revise \| narrow \| retire`), and — for every mode but `retire` — a `version:` block holding the promise's **complete** new text. A promise is a durable decision **lineage**; an amendment creates its next version. See *Intent evolution* below. |
 | `## Change` | Yes | The delta in prose. Delta-shaped by rule: an amendment describes a change, never restates a feature. |
 | `## Why` | No (strongly encouraged) | The reasoning. |
 | `## Acceptance` | Behavior changes: yes | Criteria the apply step lands as `verify:` on the affected entries. Legitimately absent for renames and pure-prose changes. |
@@ -115,6 +116,9 @@ Ledger-level (`parlay internal check-amendments <@feature>` — JSON, also emits
 | `intent-supersession-unaccounted-affect` | A contract entry whose `source:` names a superseded intent has no disposition in `affects:`. |
 | `amendment-affects-unresolved` | An `affects:` ref names an operation/fragment/entity that does not exist in the referenced feature's contract artifacts, and the record declaring it is not trusted applied history (see *Applied history and resolution*). |
 | `amendment-compaction-incomplete` | A compaction of this feature was interrupted and its journal is still in place, so the ledger may be half-moved. Every authority writer refuses while it stands — `save-build-state` and `apply-governance` both stop — because recording authority over a half-moved ledger blesses a state nobody intended and that recovery is about to undo. Re-running `parlay internal compact @<feature>` recovers and clears it. |
+| `amendment-intent-lineage-unknown` | A transition names a founding promise this feature does not declare. |
+| `amendment-intent-lineage-ended` | A transition changes a lineage a previous record already ended. |
+| `amendment-intent-transition-malformed` | An `amends_intents:` entry has an unknown mode, authors the read-only `legacy_supersession`, supplies no new goal for a mode that requires one, supplies text for `retire`, names one lineage twice, or states a lineage in both vocabularies. |
 | `amendment-authority-unreadable` | The feature's `.baseline.yaml` exists but its applied-authority record could not be read, so no amendment can be shown applied. Reported rather than degraded to "nothing applied", which would turn every historical ref back into a fatal one and read as drift rather than as a broken baseline. |
 | `amendment-scope-overlap` (warning) | A later amendment's `affects:` intersects an earlier amendment's, and the earlier one is not named in the later's `supersedes:`. Two amendments editing the same contract entry with no ordering between them. Naming the earlier in `supersedes:` — the declaration that this change replaces it — silences the warning. |
 
@@ -142,6 +146,109 @@ when *both*:
 A marker moved by hand with no recorded evidence buys nothing. A stored hash
 that no longer matches the record buys nothing. A record above the marker is
 pending however good its hash looks.
+
+### Intent evolution
+
+A founding promise used to have exactly one possible transition: death.
+`supersedes_intents:` said a promise was GONE, and nothing could say it now
+READS DIFFERENTLY. Every evolution was therefore modelled as a retirement,
+every retirement orphaned the contract entries the promise justified, and
+`intent-supersession-unaccounted-affect` existed to make an author clean up
+after an orphaning the tool induced.
+
+`amends_intents:` replaces that vocabulary. The slug is a durable decision
+**lineage**, never reused; an amendment creates version N+1 of it. Attribution
+binds to the lineage, so an entry sourced to a promise stays **attributed**
+across a revision.
+
+| mode | meaning |
+|---|---|
+| `extend` | Same lineage, additive. Prior entries stay attributed and the author attests their support survives. |
+| `revise` | Same lineage, replacement text. Scope may move either way, so the promise delta needs approving. |
+| `narrow` | Same lineage, weaker scope. Some entries may lose justification. |
+| `retire` | The lineage ends and nothing takes the promise over. |
+
+**A version is held to the same minimum as the founding intent it replaces.**
+`title`, `goal` and `persona` are required; `priority` must be `P0`, `P1`, `P2`
+or omitted. The list fields — `verify`, `constraints`, `objects`, `questions` —
+stay clearable, because removing an answered question or a dropped constraint is
+what a snapshot is for. Without this, "omission means cleared" would silently
+turn required identity fields into clearable ones and let a titleless promise
+become a feature's current one.
+
+`questions` is versioned rather than founding-only on purpose: the current work
+queue reads it, so a revision that answers or introduces a question must change
+it. The founding questions stay preserved in frozen history either way.
+
+**A version is a SNAPSHOT, not a patch.** Every mode but `retire` must supply a
+`version:` block carrying the promise's complete new text — `title`, `goal`,
+`persona`, `priority`, `context`, `action`, `objects`, `constraints`, `verify`,
+`questions`. A field omitted from a version is **absent**, not inherited: that
+is what makes a field clearable, and it is why the design chose snapshots over
+patch algebra. `retire` must supply no version at all — a promise that is over
+does not also read differently.
+
+The lineage **slug is the one field a transition may never change**, because
+attribution binds to it. `title` is versioned precisely so a human-facing name
+can change without breaking identity.
+
+One record states one transition per lineage, in one vocabulary.
+
+**A retirement written in the new vocabulary carries every obligation the legacy
+spelling does — but the SAFETY ones, not the old spelling's semantic fiction.**
+Every lineage-ending transition owes a `## Why` and `## Acceptance` describing
+what is observably true afterwards, feeds the same scope accounting and the same
+terminal-completeness tally, and satisfies `retires_feature:` — a terminal record
+naming its promises in `amends_intents:` is not "naming none".
+
+What does NOT carry over is the claim that something must replace the promise.
+Legacy supersession assumed one always did, because withdrawal was the only verb
+the vocabulary had; `mode: retire` means the opposite by definition. A known
+retire is never told that "retiring a promise without stating what replaces it
+is deletion" — that would contradict the mode its author explicitly chose and
+rebuild inside the validator the conflation this vocabulary exists to remove.
+The legacy wording is preserved for legacy records, whose author's intent was
+never recorded.
+
+**What is checked, and what is attested.** The tool verifies mode-shape
+consistency and structural consequences. It cannot verify the *semantic*
+classification: `extend` cannot structurally end its own lineage, so prose
+labelled `extend` that actually narrows the promise is precisely the lie no
+structural check can refute. That judgement is the author's, and this schema
+does not imply otherwise.
+
+**Reading older records.** A record carrying `supersedes_intents:` and no mode
+reads as **`legacy_supersession`**, not as `retire`. Executing it as a
+retirement is operationally safe and faithful to what the old resolver did; it
+is not necessarily faithful to what the author MEANT, because retirement was
+the only available spelling and an author intending a revision had no way to
+say so. Nothing may report a legacy record's semantics as known.
+`legacy_supersession` is derived on read and may never be authored.
+
+**Ledger validation.** A transition must name a founding promise this feature
+declares (`amendment-intent-lineage-unknown`), and a lineage that has ended
+cannot be changed afterwards (`amendment-intent-lineage-ended`) — a later record
+cannot resurrect a promise that is over, and that is an error rather than
+something the resolver quietly ignores.
+
+**Projection.** `parlay internal active-spec` answers with the CURRENT version
+of each promise: the founding text as amended by every APPLIED transition. The
+founding document is never rewritten — it is history, and that is what makes it
+readable rather than contradictory. An unapplied transition leaves the founding
+text standing and is reported pending, exactly as an unapplied retirement is:
+the artifacts and the generated code still make the old promise. A pending
+retirement does **not** roll back an already-applied revision — it says the
+promise is about to end, not that a change which already happened did not.
+
+Pending transitions are reported **by mode**. An unapplied revision is not a
+pending retirement, and saying so would tell an operator a promise is about to
+be withdrawn when it is about to be reworded.
+
+**No applier yet.** The vocabulary is readable and **inert**. No command
+applies an `amends_intents:` record; every path refuses it by name rather than
+routing it somewhere that would apply it on the strength of its other fields. A
+vocabulary that ships without its ceremony must be inert, not opportunistically
+applicable.
 
 ### Applying a combined record
 

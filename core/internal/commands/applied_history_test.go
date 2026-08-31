@@ -427,3 +427,162 @@ func TestWP3_AllThreeFeatureLocalKindsAreTolerated(t *testing.T) {
 		})
 	}
 }
+
+// Stage 1 ledger validation. Without these the vocabulary is accepted by the
+// validator and then silently has no effect: the resolver skips a qualified
+// shape and does nothing at all for an unknown bare slug, so nobody is told.
+
+func writeEvolutionFixture(t *testing.T, dir, amendmentBody string) string {
+	t.Helper()
+	featDir := writeVerifyFixture(t, dir)
+	writeAmendment(t, featDir, "001-evolution.md", amendmentBody)
+	return featDir
+}
+
+func TestStage1_UnknownLineageFailsTheLedgerCheck(t *testing.T) {
+	dir := setupTestDir(t)
+	writeEvolutionFixture(t, dir, `---
+amendment: evolution
+date: 2026-09-01
+amends_intents:
+  - intent: no-such-promise
+    mode: revise
+    version:
+      goal: A promise this feature never made.
+---
+
+## Change
+Revise something that does not exist.
+
+## Acceptance
+- Refused.
+`)
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var found bool
+	for _, iss := range out.Issues {
+		if iss.Code == "amendment-intent-lineage-unknown" {
+			found = true
+			if !strings.Contains(iss.Message, "no-such-promise") {
+				t.Errorf("the finding must name the lineage; got %q", iss.Message)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("a transition naming a promise this feature never made must be reported, not "+
+			"silently have no effect; issues = %+v", out.Issues)
+	}
+}
+
+func TestStage1_TransitionAfterTerminalRetirementFailsTheLedgerCheck(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	intents, err := os.ReadFile(filepath.Join(featDir, "intents.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if err != nil || len(declared) == 0 {
+		t.Fatalf("fixture: %v", err)
+	}
+	lineage := declared[0].Slug
+	_ = intents
+
+	writeAmendment(t, featDir, "001-ended.md", "---\namendment: ended\ndate: 2026-09-01\namends_intents:\n  - intent: "+lineage+"\n    mode: retire\n---\n\n## Change\nThe promise ends.\n\n## Why\nDone.\n\n## Acceptance\n- Gone.\n")
+	writeAmendment(t, featDir, "002-after.md", "---\namendment: after\ndate: 2026-09-02\namends_intents:\n  - intent: "+lineage+"\n    mode: revise\n    version:\n      goal: Reviving a promise that ended.\n---\n\n## Change\nRevise it anyway.\n\n## Acceptance\n- Refused.\n")
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var found bool
+	for _, iss := range out.Issues {
+		if iss.Code == "amendment-intent-lineage-ended" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a transition after the lineage ended must be an explicit error rather than "+
+			"something the resolver quietly ignores; issues = %+v", out.Issues)
+	}
+}
+
+// A retirement written in the NEW vocabulary carries every obligation the
+// legacy spelling does. They differ in what they record about the author's
+// intent, never in whether the promise stops being in force.
+func TestStage1_NewVocabularyRetirementFeedsTheLedgerTally(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	declared, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if err != nil || len(declared) == 0 {
+		t.Fatalf("fixture: %v", err)
+	}
+
+	// Retire every founding promise using amends_intents, without declaring
+	// retires_feature. The legacy spelling is an error here; the new one must
+	// be too.
+	body := "---\namendment: all-gone\ndate: 2026-09-01\namends_intents:\n"
+	for _, in := range declared {
+		body += "  - intent: " + in.Slug + "\n    mode: retire\n"
+	}
+	body += "---\n\n## Change\nEverything ends.\n\n## Why\nDone.\n\n## Acceptance\n- Gone.\n"
+	writeAmendment(t, featDir, "001-all-gone.md", body)
+
+	out, _ := runCheckAmendments_(t, "@verify-fixture")
+	var found bool
+	for _, iss := range out.Issues {
+		if iss.Code == "amendment-supersedes-last-intent" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("retiring every promise in the new vocabulary must trip the same rule as the "+
+			"old one — a lifecycle transition nobody declared is not one to infer; issues = %+v",
+			out.Issues)
+	}
+}
+
+// The operator-facing gate must not tell anyone a revision withdraws a
+// promise. The mode-aware summary is only half of it: the wrapper around it
+// used to assert withdrawal for every pending transition, which is the same
+// label-versus-body failure one layer up.
+func TestStage1_GateDoesNotCallAPendingRevisionAWithdrawal(t *testing.T) {
+	dir := setupTestDir(t)
+	featDir := writeVerifyFixture(t, dir)
+	declared, perr := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if perr != nil || len(declared) == 0 {
+		t.Fatalf("fixture: %v", perr)
+	}
+	lineage := declared[0].Slug
+
+	writeAmendment(t, featDir, "001-reworded.md", "---\namendment: reworded\ndate: 2026-09-01\namends_intents:\n  - intent: "+lineage+"\n    mode: revise\n    version:\n      title: A Reworded Promise\n      goal: The promise now reads differently.\n      persona: User\n---\n\n## Change\nReword it.\n\n## Why\nIt was unclear.\n\n## Acceptance\n- It reads better.\n")
+
+	cfg := testContext(t)
+	res, rerr := resolveActiveIntents(cfg, "verify-fixture")
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if !res.HasPending() {
+		t.Fatal("fixture: the revision must be pending, or this tests nothing")
+	}
+
+	summary := res.PendingSummary()
+	if !strings.Contains(summary, "revises") {
+		t.Errorf("the summary must name the real mode; got %q", summary)
+	}
+	for _, wrong := range []string{"retires", "withdraw", "supersession"} {
+		if strings.Contains(strings.ToLower(summary), wrong) {
+			t.Errorf("a pending revision must not be described with %q; got %q", wrong, summary)
+		}
+	}
+
+	// And the gate's own wrapper, which is where the false claim lived. The
+	// rendered note, not the source text — a comment explaining why the word
+	// is wrong is not the same as the word being used.
+	note := pendingTransitionNote(summary)
+	for _, wrong := range []string{"withdraw", "retire", "supersession"} {
+		if strings.Contains(strings.ToLower(note), wrong) {
+			t.Errorf("the gate note asserts %q of every pending transition, which is false of a "+
+				"revision: %q", wrong, note)
+		}
+	}
+	if !strings.Contains(note, summary) {
+		t.Error("the note must carry the mode-aware summary rather than replacing it")
+	}
+}

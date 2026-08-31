@@ -232,13 +232,15 @@ func gateLedgerState(cfg *config.Context, slug, featurePath string) (blockers, w
 					len(drift.UnappliedAmendments), drift.UnappliedAmendments),
 				Fix: "run /parlay-refine to apply the ledger tail",
 			}
-			// Name a pending supersession specifically. An unapplied amendment
-			// that merely edits a contract entry leaves the spec incomplete; one
-			// that retires a promise leaves the feature still making a promise
-			// its author has withdrawn, and the reader should not have to open
-			// the ledger to tell those apart.
+			// Name a pending intent transition specifically. An unapplied
+			// amendment that merely edits a contract entry leaves the spec
+			// incomplete; one that changes a founding promise leaves the
+			// feature exposing the version that was applied rather than the one
+			// its author has decided on, and the reader should not have to open
+			// the ledger to tell those apart. The summary states the MODE, so a
+			// pending revision is not reported as a pending withdrawal.
 			if res, resErr := resolveActiveIntents(cfg, slug); resErr == nil && res.HasPending() {
-				finding.Message += fmt.Sprintf(" — including a pending intent supersession (%s), so this feature still promises what that decision withdraws", res.PendingSummary())
+				finding.Message += pendingTransitionNote(res.PendingSummary())
 			}
 			if refineSanctionsUnappliedTail(cfg, slug, featurePath) {
 				finding.Message += " — sanctioned by an in-flight refinement (splice applied, re-baseline pending)"
@@ -603,4 +605,17 @@ func commitPendingWaiver(cfg *config.Context, slug, stage string, out gateOutput
 		return fmt.Errorf("this run advanced without human approval of its criteria but the waiver could not be recorded: %w", err)
 	}
 	return nil
+}
+
+// pendingTransitionNote renders the operator-facing note for an unapplied
+// intent transition.
+//
+// Neutral by construction. An earlier version asserted that the feature "still
+// promises what that decision withdraws" — true of a retirement and false of a
+// revision, which withdraws nothing. That was the same label-versus-body
+// failure one layer above the mode-aware summary it wraps. The summary states
+// the mode; this states only the consequence common to every mode.
+func pendingTransitionNote(summary string) string {
+	return fmt.Sprintf(" — including a pending intent transition (%s), so this feature still "+
+		"exposes the previously applied promise until that transition is applied", summary)
 }

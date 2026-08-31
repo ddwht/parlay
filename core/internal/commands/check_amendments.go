@@ -195,6 +195,51 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 	// exists, whether two amendments claim the same one, and whether retiring
 	// them all would leave the feature promising nothing.
 	var supersessions []intentClaim
+	// Lineage validation for the evolution vocabulary. Without it a
+	// transition may name a promise this feature never made and pass the
+	// ledger check entirely: the resolver silently has no effect for an
+	// unknown bare slug, so nothing would report the mistake at all.
+	if declared, derr := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md")); derr == nil {
+		known := map[string]bool{}
+		for _, in := range declared {
+			known[in.Slug] = true
+		}
+		ended := map[string]string{}
+		for _, a := range amendments {
+			for _, tr := range a.IntentTransitions() {
+				slug := strings.TrimSpace(tr.Intent)
+				if slug == "" || strings.ContainsAny(slug, "@/") {
+					continue // shape, already reported
+				}
+				if !known[slug] {
+					out.Issues = append(out.Issues, amendmentIssue{
+						Severity: "error", Code: "amendment-intent-lineage-unknown",
+						Message: fmt.Sprintf("%03d-%s changes founding promise %q, which this "+
+							"feature does not declare — a transition names a lineage in its own "+
+							"intents.md", a.Seq, a.FileSlug, slug),
+					})
+					continue
+				}
+				// A promise that ended does not read differently afterwards.
+				// Reported rather than silently ignored by the resolver: an
+				// author who wrote a revision after a retirement made a
+				// mistake, and silence would hide it.
+				if by, over := ended[slug]; over {
+					out.Issues = append(out.Issues, amendmentIssue{
+						Severity: "error", Code: "amendment-intent-lineage-ended",
+						Message: fmt.Sprintf("%03d-%s changes founding promise %q, but %s already "+
+							"ended that lineage — a promise that is over cannot be revised, and a "+
+							"later record cannot resurrect it", a.Seq, a.FileSlug, slug, by),
+					})
+					continue
+				}
+				if tr.Mode.EndsLineage() {
+					ended[slug] = fmt.Sprintf("%03d-%s", a.Seq, a.FileSlug)
+				}
+			}
+		}
+	}
+
 	// Which records are TRUSTED applied, computed once. A record is trusted
 	// only when the marker covers it and its stored hash still matches the
 	// bytes history retains — in amendments/ or, after compaction, in
@@ -253,10 +298,17 @@ func computeCheckAmendments(cfg *config.Context, slug string) checkAmendmentsOut
 		}
 		slugs[a.FileSlug] = true
 
-		for _, raw := range a.SupersedesIntents {
-			slug := strings.TrimSpace(raw)
+		// Both vocabularies. An amends_intents: record that ends a lineage
+		// carries every obligation the legacy spelling does — they differ in
+		// what they RECORD about the author's intent, never in whether the
+		// promise stops being in force.
+		for _, tr := range a.IntentTransitions() {
+			slug := strings.TrimSpace(tr.Intent)
 			if slug == "" || strings.ContainsAny(slug, "@/") {
 				// Shape is ValidateAmendment's to report; it already ran above.
+				continue
+			}
+			if !tr.Mode.EndsLineage() {
 				continue
 			}
 			supersessions = append(supersessions, intentClaim{
@@ -951,13 +1003,17 @@ func reportFeatureRetirement(cfg *config.Context, slug, featDir string, amendmen
 		if a.FileSlug == terminal.FileSlug {
 			continue
 		}
-		for _, raw := range a.SupersedesIntents {
-			alreadyRetired[strings.TrimSpace(raw)] = true
+		for _, tr := range a.IntentTransitions() {
+			if tr.Mode.EndsLineage() {
+				alreadyRetired[strings.TrimSpace(tr.Intent)] = true
+			}
 		}
 	}
 	named := map[string]bool{}
-	for _, raw := range terminal.SupersedesIntents {
-		named[strings.TrimSpace(raw)] = true
+	for _, tr := range terminal.IntentTransitions() {
+		if tr.Mode.EndsLineage() {
+			named[strings.TrimSpace(tr.Intent)] = true
+		}
 	}
 
 	var unnamed, stale []string

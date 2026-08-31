@@ -364,9 +364,18 @@ const (
 	// no decision — there is nothing to prove applied, and "nothing to prove"
 	// must never read as "proven".
 	classInvalid
+	// classIntentEvolution carries an amends_intents: transition — the
+	// evolution vocabulary. No applier exists for it yet, so every path
+	// refuses it BY NAME rather than routing it somewhere that would apply it
+	// on the strength of some other field. A vocabulary that lands with no
+	// applier must be inert, not opportunistically applicable.
+	classIntentEvolution
 )
 
 func classifyAmendment(a parser.Amendment) authorityClass {
+	if len(a.AmendsIntents) > 0 {
+		return classIntentEvolution
+	}
 	governance := len(a.SupersedesIntents) > 0 || a.RetiresFeature
 	splice := len(a.Affects) > 0
 	switch {
@@ -563,9 +572,11 @@ func refusedGovernanceRecords(slug string, pending []parser.Amendment) []string 
 	// Governance, combined and invalid records are refused on BOTH paths, and
 	// refused even when they are the only pending record. No journal, no green
 	// build and no emission is evidence that a promise-withdrawal was approved.
-	var governance, combined, invalid []string
+	var governance, combined, invalid, evolution []string
 	for _, a := range pending {
 		switch classifyAmendment(a) {
+		case classIntentEvolution:
+			evolution = append(evolution, amendmentIdentity(a))
 		case classGovernance:
 			governance = append(governance, amendmentIdentity(a))
 		case classCombined:
@@ -594,6 +605,13 @@ func refusedGovernanceRecords(slug string, pending []parser.Amendment) []string 
 			"`parlay internal apply-amendment @%s`, which shows the promises that would end and "+
 			"applies both halves together once you approve them",
 			slug, joinNames(combined), slug))
+	}
+	if len(evolution) > 0 {
+		reasons = append(reasons, fmt.Sprintf("%s: %s carries an amends_intents: transition. The "+
+			"evolution vocabulary is readable but has no applier yet, so nothing will apply it — "+
+			"a vocabulary without a ceremony must be inert rather than opportunistically applied "+
+			"by whichever path happens to accept its other fields",
+			slug, joinNames(evolution)))
 	}
 	if len(invalid) > 0 {
 		reasons = append(reasons, fmt.Sprintf("%s: %s declares neither affects: nor a governance "+

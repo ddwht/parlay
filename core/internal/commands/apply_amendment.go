@@ -157,6 +157,10 @@ func runApplyAmendment(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is a governance record with no splice to apply — it goes through "+
 			"`parlay internal apply-governance @%s --confirm`, which is the ceremony that owns it",
 			amendmentIdentity(record), slug)
+	case classIntentEvolution:
+		return fmt.Errorf("%s carries an amends_intents: transition, and no applier exists for "+
+			"the evolution vocabulary yet. It is readable and inert; nothing will apply it until "+
+			"its ceremony is built", amendmentIdentity(record))
 	case classSplice:
 		return fmt.Errorf("%s changes contract entries and withdraws no promise, so it is an "+
 			"ordinary refinement — it is applied by /parlay-refine's re-baseline, not here",

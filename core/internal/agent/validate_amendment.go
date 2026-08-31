@@ -27,6 +27,10 @@ func ValidateAmendment(mode ValidationMode, path string, content []byte) []Valid
 		return []ValidationOutcome{NewOutcome(mode, "amendment-not-parseable", err.Error())}
 	}
 
+	for _, problem := range a.ValidateIntentTransitions() {
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-intent-transition-malformed", problem))
+	}
+
 	if a.Slug == "" {
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-frontmatter-incomplete",
 			"missing amendment: — the slug is the amendment's identity and what supersedes: refs point at"))
@@ -42,9 +46,9 @@ func ValidateAmendment(mode ValidationMode, path string, content []byte) []Valid
 	// supersedes_intents: existed. An amendment declaring neither is still
 	// nothing: it names no contract entry to splice and no promise to
 	// replace, so there is nothing for apply or scoping to act on.
-	if len(a.Affects) == 0 && len(a.SupersedesIntents) == 0 {
+	if len(a.Affects) == 0 && len(a.SupersedesIntents) == 0 && len(a.AmendsIntents) == 0 {
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-affects-missing",
-			"affects: is empty — an amendment that names no contract entry cannot be applied or scoped; name the operations/fragments it changes, or supersedes_intents: the founding intent this decision replaces"))
+			"affects: is empty — an amendment that names no contract entry cannot be applied or scoped; name the operations/fragments it changes, or amends_intents: the founding promise this decision changes"))
 	}
 	for _, raw := range a.Affects {
 		if _, err := parser.ParseAmendmentRef(raw); err != nil {
@@ -94,7 +98,20 @@ func ValidateAmendment(mode ValidationMode, path string, content []byte) []Valid
 // whole feature (and its contract artifacts) in view and live in
 // check-amendments, alongside the sequence and supersedes walks.
 func validateIntentSupersession(mode ValidationMode, a *parser.Amendment) []ValidationOutcome {
-	if len(a.SupersedesIntents) == 0 {
+	// Obligations attach to lineage-ENDING BEHAVIOUR, not to which spelling
+	// expressed it. What carries over is the SAFETY obligation — say why, and
+	// say what is observably true afterwards — not the old spelling's semantic
+	// fiction.
+	//
+	// The distinction matters. Legacy supersession assumed something always
+	// replaces a withdrawn promise, because withdrawal was the only verb the
+	// vocabulary had. `mode: retire` means the opposite by definition: the
+	// lineage ends and nothing takes the promise over. Telling a retire author
+	// that "retiring a promise without stating what replaces it is deletion,
+	// not supersession" would contradict the mode they explicitly chose, and
+	// would rebuild inside the validator exactly the conflation this stage
+	// exists to remove.
+	if !endsAnyLineage(a) {
 		return nil
 	}
 
@@ -116,16 +133,44 @@ func validateIntentSupersession(mode ValidationMode, a *parser.Amendment) []Vali
 		}
 	}
 
+	// Acceptance: required by every lineage-ending transition, but for
+	// different reasons, so the diagnostic is mode-aware.
 	if len(a.Acceptance) == 0 {
-		outcomes = append(outcomes, NewOutcome(mode, "amendment-supersession-no-successor",
-			"this amendment supersedes a founding intent but has no ## Acceptance bullets — retiring a promise without stating what replaces it is deletion, not supersession. The rename/pure-prose exemption does not apply: name the criteria that now hold instead"))
+		if endsAnyLineageKnowingly(a) {
+			outcomes = append(outcomes, NewOutcome(mode, "amendment-supersession-no-successor",
+				"this amendment retires a founding promise but has no ## Acceptance bullets — a promise may end with nothing taking it over, and that is what mode: retire means, but what is observably true afterwards still has to be stated. The rename/pure-prose exemption does not apply"))
+		} else {
+			outcomes = append(outcomes, NewOutcome(mode, "amendment-supersession-no-successor",
+				"this amendment supersedes a founding intent but has no ## Acceptance bullets — retiring a promise without stating what replaces it is deletion, not supersession. The rename/pure-prose exemption does not apply: name the criteria that now hold instead"))
+		}
 	}
 	if strings.TrimSpace(a.Why) == "" {
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-supersession-no-rationale",
-			"this amendment supersedes a founding intent but has no ## Why — the frozen intent cannot record why it stopped being true, so this is the only place that reasoning will ever exist"))
+			"this amendment ends a founding promise but has no ## Why — the frozen intent cannot record why it stopped being true, so this is the only place that reasoning will ever exist"))
 	}
 
 	return outcomes
+}
+
+// endsAnyLineageKnowingly reports whether every lineage this record ends was
+// ended by an explicitly declared mode rather than by the legacy spelling.
+//
+// The split exists so a KNOWN retire is never told something must replace the
+// promise: it declared that nothing does. A legacy record keeps the older
+// wording, because its author's intent was never recorded and the compatibility
+// message is the honest one for an unknown.
+func endsAnyLineageKnowingly(a *parser.Amendment) bool {
+	knowing := false
+	for _, tr := range a.IntentTransitions() {
+		if !tr.Mode.EndsLineage() {
+			continue
+		}
+		if tr.Mode == parser.IntentLegacySupersession {
+			return false
+		}
+		knowing = true
+	}
+	return knowing
 }
 
 // RetirementOutcomes is the closed vocabulary for how a feature ended.
@@ -161,9 +206,9 @@ func validateFeatureRetirement(mode ValidationMode, a *parser.Amendment) []Valid
 		return outcomes
 	}
 
-	if len(a.SupersedesIntents) == 0 {
+	if !endsAnyLineage(a) {
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-retirement-no-intents",
-			"retires_feature: is set but supersedes_intents: is empty — retiring a feature retires every promise it makes, so name them; check-amendments verifies the set is exactly the live ones"))
+			"retires_feature: is set but the record ends no promise — retiring a feature retires every promise it makes, so name them in amends_intents: with mode: retire (or the legacy supersedes_intents:); check-amendments verifies the set is exactly the live ones"))
 	}
 
 	switch {
@@ -187,4 +232,15 @@ func validateFeatureRetirement(mode ValidationMode, a *parser.Amendment) []Valid
 	// the other cross-feature resolution.
 
 	return outcomes
+}
+
+// endsAnyLineage reports whether a record ends at least one founding promise,
+// in either vocabulary.
+func endsAnyLineage(a *parser.Amendment) bool {
+	for _, tr := range a.IntentTransitions() {
+		if tr.Mode.EndsLineage() {
+			return true
+		}
+	}
+	return false
 }

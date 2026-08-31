@@ -1069,3 +1069,73 @@ func TestS0_GovernanceDoesNotClobberNonAuthorityContent(t *testing.T) {
 			"over a concurrent writer; buildfile-sections = %v", after.BuildfileSections)
 	}
 }
+
+// A vocabulary that lands with no applier must be INERT, not opportunistically
+// applied by whichever path happens to accept its other fields. This is the
+// WP4 mistake in reverse: there, a path existed that no guidance named; here, a
+// record shape exists that no ceremony owns.
+func TestStage1_EvolutionRecordsAreInertUntilTheirApplierExists(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir, sourceRoot, sourceFile := ledgerFeatureWithSource(t, dir)
+	ledgerAt1(t, cfg, featureDir)
+
+	writeAmendment(t, featureDir, "002-channel-choice.md", `---
+amendment: channel-choice
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    goal: See if the cluster or any of its nodes is ready.
+    verify:
+      - Readiness is reported for the cluster and each node.
+affects: ["@my-feature/operation:x"]
+---
+
+## Change
+The readiness promise now covers nodes as well as the cluster.
+
+## Why
+It was too narrow.
+
+## Acceptance
+- Node readiness is reported.
+`)
+	writeRefineJournal(t, cfg, "my-feature", 2)
+
+	// The save refuses, naming the reason.
+	writeEmittedManifest(t, cfg, sourceFile)
+	_, stderr, err := runProjectSave(t, cfg, sourceRoot)
+	if err == nil {
+		t.Fatal("a save must not apply an evolution record")
+	}
+	if !strings.Contains(err.Error()+stderr, "amends_intents") {
+		t.Errorf("the refusal must name the vocabulary rather than misclassifying the record by "+
+			"its other fields; got %v", err)
+	}
+	saveBuildStatePartial = false
+	saveBuildStateEmitted = ""
+
+	// apply-amendment refuses too, and says the ceremony does not exist yet
+	// rather than routing it somewhere.
+	armApplyAmendment(t, "", false)
+	_, err = runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("apply-amendment must not apply an evolution record")
+	}
+	if !strings.Contains(err.Error(), "no applier exists") {
+		t.Errorf("the refusal must say the ceremony does not exist yet; got %v", err)
+	}
+
+	// apply-governance refuses as well.
+	applyGovernanceConfirmed = true
+	t.Cleanup(func() { applyGovernanceConfirmed = false })
+	if _, err := runApplyGovernance_(t, cfg, "@my-feature"); err == nil {
+		t.Error("apply-governance must not apply an evolution record")
+	}
+
+	// Nothing moved.
+	if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 1 {
+		t.Errorf("an inert record was applied; marker = %d", bl.LastAppliedAmendment)
+	}
+}

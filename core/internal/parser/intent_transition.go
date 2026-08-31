@@ -1,0 +1,239 @@
+package parser
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Intent transitions — the evolution algebra.
+//
+// A founding promise used to have exactly one possible transition: death.
+// `supersedes_intents:` said a promise was GONE, and nothing could say it now
+// READS DIFFERENTLY. So every evolution was modelled as a retirement, every
+// retirement orphaned the contract entries the promise justified, and the
+// accounting rule existed to make a human clean up after an orphaning the tool
+// itself induced.
+//
+// `amends_intents:` is the replacement vocabulary. The slug is a durable
+// decision LINEAGE, never reused; an amendment creates the next version of it.
+// Attribution binds to the lineage, so an entry sourced to a promise stays
+// ATTRIBUTED across a revision — whether it stays JUSTIFIED is a human
+// judgement the tool cannot make, and says so.
+
+// IntentMode is the closed set of transitions a promise can undergo.
+type IntentMode string
+
+const (
+	// IntentExtend adds to a promise without withdrawing any of it. Prior
+	// entries stay attributed and the author attests their support survives.
+	IntentExtend IntentMode = "extend"
+	// IntentRevise replaces the promise text. Scope may move in either
+	// direction, so it needs the promise delta approved.
+	IntentRevise IntentMode = "revise"
+	// IntentNarrow weakens the promise. Some entries may lose justification,
+	// so at least one narrowing consequence must be declared.
+	IntentNarrow IntentMode = "narrow"
+	// IntentRetire ends the lineage. Nothing takes the promise over.
+	IntentRetire IntentMode = "retire"
+	// IntentLegacySupersession is what a pre-vocabulary `supersedes_intents:`
+	// entry reads as.
+	//
+	// NOT "retire". Executing it as retirement is operationally safe and
+	// faithful to what the old resolver did; it is not necessarily faithful to
+	// what the AUTHOR meant, because retirement was the only available
+	// spelling and an author intending a revision had no way to say so.
+	// Relabelling it would rewrite history to match a vocabulary that did not
+	// exist when it was written.
+	IntentLegacySupersession IntentMode = "legacy_supersession"
+)
+
+// KnownIntentMode reports whether a mode may be WRITTEN by a new record.
+// legacy_supersession is derived on read and is never authored.
+func KnownIntentMode(m IntentMode) bool {
+	switch m {
+	case IntentExtend, IntentRevise, IntentNarrow, IntentRetire:
+		return true
+	}
+	return false
+}
+
+// EndsLineage reports whether a mode takes the promise out of force.
+func (m IntentMode) EndsLineage() bool {
+	return m == IntentRetire || m == IntentLegacySupersession
+}
+
+// CarriesNewText reports whether a mode supplies a replacement proposition.
+func (m IntentMode) CarriesNewText() bool {
+	return m == IntentExtend || m == IntentRevise || m == IntentNarrow
+}
+
+// IntentVersion is a COMPLETE new version of a promise.
+//
+// A snapshot, not a patch. The design chose snapshots precisely to avoid patch
+// algebra, so omission means ABSENT — a field left out of a version is cleared,
+// not inherited. An earlier draft replaced only goal and verify and silently
+// inherited everything else, which was neither a full snapshot nor a defined
+// patch, and could not clear a field at all.
+//
+// The lineage slug is deliberately OUTSIDE this struct: it is the one field a
+// transition may never change, because attribution binds to it. Everything a
+// consumer treats as the promise's current state lives here — including Title,
+// so a human-facing name can change without breaking identity, which is the
+// whole point of having a stable slug.
+type IntentVersion struct {
+	Title       string   `yaml:"title"`
+	Goal        string   `yaml:"goal"`
+	Persona     string   `yaml:"persona"`
+	Priority    string   `yaml:"priority"`
+	Context     string   `yaml:"context"`
+	Action      string   `yaml:"action"`
+	Objects     []string `yaml:"objects"`
+	Constraints []string `yaml:"constraints"`
+	Verify      []string `yaml:"verify"`
+	Questions   []string `yaml:"questions"`
+}
+
+// IntentAmendment is one authored transition of one lineage.
+type IntentAmendment struct {
+	Intent string     `yaml:"intent"`
+	Mode   IntentMode `yaml:"mode"`
+	// Version is the promise's complete new text. A pointer so that "no
+	// version block" is distinguishable from "an empty one": the first is
+	// required by the modes that end a lineage, the second would be a promise
+	// that says nothing.
+	Version *IntentVersion `yaml:"version"`
+}
+
+// IntentTransition is the normalised view a consumer reads, merging the
+// authored `amends_intents:` with the legacy `supersedes_intents:` spelling so
+// no consumer has to know there were ever two fields.
+//
+// ONE discriminant. An earlier draft carried both a legacy_supersession mode
+// and a separate Legacy bool — redundant state that can disagree. The mode
+// already states both the operational behaviour and the epistemic status.
+type IntentTransition struct {
+	Intent  string
+	Mode    IntentMode
+	Version *IntentVersion
+}
+
+// IsLegacy reports whether this transition came from the pre-vocabulary
+// spelling, and therefore has UNKNOWN semantics.
+func (t IntentTransition) IsLegacy() bool { return t.Mode == IntentLegacySupersession }
+
+// IntentTransitions normalises both spellings, in a stable order: authored
+// transitions first in file order, then legacy ones.
+func (a *Amendment) IntentTransitions() []IntentTransition {
+	var out []IntentTransition
+	for _, ia := range a.AmendsIntents {
+		out = append(out, IntentTransition{Intent: ia.Intent, Mode: ia.Mode, Version: ia.Version})
+	}
+	for _, slug := range a.SupersedesIntents {
+		out = append(out, IntentTransition{Intent: slug, Mode: IntentLegacySupersession})
+	}
+	return out
+}
+
+// ValidateIntentTransitions checks the shape of a record's transitions.
+//
+// Shape only. Whether a declared mode is SEMANTICALLY honest — whether prose
+// labelled `extend` actually narrows the promise — is not decidable here or
+// anywhere, and no check in this file should be read as claiming otherwise.
+func (a *Amendment) ValidateIntentTransitions() []string {
+	var problems []string
+	seen := map[string]IntentMode{}
+
+	for _, ia := range a.AmendsIntents {
+		if ia.Intent == "" {
+			problems = append(problems, "an amends_intents entry names no intent")
+			continue
+		}
+		if !KnownIntentMode(ia.Mode) {
+			if ia.Mode == IntentLegacySupersession {
+				problems = append(problems, fmt.Sprintf(
+					"amends_intents %q declares mode %q, which is derived when reading an older "+
+						"record and may not be authored", ia.Intent, ia.Mode))
+			} else {
+				problems = append(problems, fmt.Sprintf(
+					"amends_intents %q declares mode %q; the vocabulary is closed: extend, "+
+						"revise, narrow, retire", ia.Intent, ia.Mode))
+			}
+			continue
+		}
+		if ia.Mode.CarriesNewText() {
+			if ia.Version == nil {
+				problems = append(problems, fmt.Sprintf(
+					"amends_intents %q is a %s but supplies no version: — a promise that now "+
+						"reads differently has to say how", ia.Intent, ia.Mode))
+			} else {
+				problems = append(problems, ia.Version.problems(ia.Intent)...)
+			}
+		}
+		if ia.Mode.EndsLineage() && ia.Version != nil {
+			problems = append(problems, fmt.Sprintf(
+				"amends_intents %q ends the lineage but also supplies a version: — a promise "+
+					"that is over does not also read differently", ia.Intent))
+		}
+		if strings.ContainsAny(ia.Intent, "@/") {
+			problems = append(problems, fmt.Sprintf(
+				"amends_intents %q is qualified; a transition names a founding promise in its "+
+					"OWN feature by bare slug, because one feature may never change another's "+
+					"promise", ia.Intent))
+		}
+		if prev, dup := seen[ia.Intent]; dup {
+			problems = append(problems, fmt.Sprintf(
+				"amends_intents names %q twice (%s then %s); one record states one transition "+
+					"per lineage", ia.Intent, prev, ia.Mode))
+		}
+		seen[ia.Intent] = ia.Mode
+	}
+
+	for _, slug := range a.SupersedesIntents {
+		if _, dup := seen[slug]; dup {
+			problems = append(problems, fmt.Sprintf(
+				"%q appears in both amends_intents and supersedes_intents; a record must state "+
+					"one transition for a lineage, in one vocabulary", slug))
+		}
+	}
+	return problems
+}
+
+// validPriorities mirrors the founding-intent rule. Omitted defaults to P1.
+var validPriorities = map[string]bool{"P0": true, "P1": true, "P2": true}
+
+// problems holds a version snapshot to the SAME minimum validity as the
+// founding intent it replaces.
+//
+// Without this, "omission means cleared" silently turns required identity and
+// presentation fields into clearable ones: a version could carry a goal and
+// nothing else, and materialise would make a titleless, personaless promise the
+// feature's current one. A projected current version must never be structurally
+// weaker than the founding version it replaces.
+//
+// The list fields stay clearable on purpose — being able to remove a
+// constraint, an object or an answered question is the point of a snapshot.
+func (v *IntentVersion) problems(lineage string) []string {
+	var out []string
+	if strings.TrimSpace(v.Title) == "" {
+		out = append(out, fmt.Sprintf(
+			"amends_intents %q supplies a version with no title — a founding intent gets its "+
+				"title from its heading, so a version must state one rather than clear it", lineage))
+	}
+	if strings.TrimSpace(v.Goal) == "" {
+		out = append(out, fmt.Sprintf(
+			"amends_intents %q supplies a version with no goal — the version is a complete "+
+				"snapshot, so an omitted goal clears the promise rather than keeping the old one",
+			lineage))
+	}
+	if strings.TrimSpace(v.Persona) == "" {
+		out = append(out, fmt.Sprintf(
+			"amends_intents %q supplies a version with no persona — a promise is made to "+
+				"somebody, and a founding intent may not omit it either", lineage))
+	}
+	if p := strings.TrimSpace(v.Priority); p != "" && !validPriorities[p] {
+		out = append(out, fmt.Sprintf(
+			"amends_intents %q supplies a version with priority %q — must be P0, P1 or P2, or "+
+				"omitted to default to P1", lineage, p))
+	}
+	return out
+}

@@ -53,6 +53,15 @@ type Amendment struct {
 	// exemption from the byte-integrity check.
 	SupersedesIntents []string `yaml:"supersedes_intents"`
 
+	// AmendsIntents is the evolution vocabulary that replaces the
+	// supersedes_intents spelling: one entry per lineage, each carrying the
+	// transition's MODE and, where the mode supplies one, the promise's new
+	// text. See intent_transition.go.
+	//
+	// Both fields are read; only this one may be authored by a new record.
+	// Consumers read IntentTransitions(), which normalises the two.
+	AmendsIntents []IntentAmendment `yaml:"amends_intents"`
+
 	// RetiresFeature marks this as the feature's terminal record: it closes
 	// the feature rather than changing it. Declared rather than inferred from
 	// an amendment that happens to name every live intent — that shape is
