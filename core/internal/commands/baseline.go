@@ -125,12 +125,57 @@ type IntentHash struct {
 // HashedSources stores per-element content hashes used by parlay diff
 // to compute component-level dirty/stable/removed sets.
 //
-// Maps are slug → hex-encoded sha256 prefix (16 chars). Surface fragments
+// Maps are slug → hex-encoded sha256 prefix (16 chars), with ONE exception
+// stated on the field itself: CapabilityEntries carries full fingerprints,
+// because they come from the machinery the approval tokens use and a truncated
+// copy of an authority value invites the two to be compared. Surface fragments
 // are keyed by Slugify(fragment.Name).
 type HashedSources struct {
 	Intents          map[string]string `yaml:"intents,omitempty"`
 	Dialogs          map[string]string `yaml:"dialogs,omitempty"`
 	SurfaceFragments map[string]string `yaml:"surface-fragments,omitempty"`
+
+	// CapabilityEntries is the per-operation half that Capabilities alone
+	// could not give: canonical ref to semantic fingerprint.
+	//
+	// The whole-file hash answers "capabilities.yaml changed", which is both
+	// too coarse to localise a change and too coarse to scope a rebuild —
+	// editing one operation's summary marks the entire artifact dirty, so
+	// everything sourced from it rebuilds. It is also the reason the refine
+	// walkthrough asks an agent to compare `dirty_set` (which names ENTRIES,
+	// from affects:) against the diff (which names FILES) and says the two
+	// "must agree": at different granularities they cannot agree precisely, so
+	// the check catches a gross mismatch and cannot catch an operation that
+	// changed with no amendment naming it.
+	//
+	// Fingerprints come from the same resolved-generic-form machinery the
+	// approval tokens use, so an edit confined to a field the parser does not
+	// model — `summary` is the standing example — is visible here too.
+	//
+	// Absent on a baseline written before this existed. Reported as
+	// "unrecorded" rather than as an empty set, because a consumer must not
+	// have to tell "no entries" from "not measured".
+	//
+	// FINGERPRINTS HERE ARE FULL, not the 16-character prefixes the other maps
+	// on this type carry. They come from the same resolved-generic-form
+	// machinery the approval tokens use, and truncating a value that also
+	// appears at an authority boundary would invite the two to be compared.
+	CapabilityEntries map[string]string `yaml:"capability-entries,omitempty"`
+	// CapabilityEntriesRecorded says a measurement was TAKEN, which an empty
+	// map cannot say for itself.
+	//
+	// An omitempty map serialises an empty measurement as nothing and reloads
+	// it as nil, so a feature whose capabilities.yaml declares `operations: []`
+	// would be reported "unrecorded" forever — indistinguishable from a
+	// baseline written before any of this existed. That is the same
+	// known-empty-versus-unavailable defect the spec view had, and a boolean
+	// beside the map is the cheapest thing that cannot have it.
+	//
+	// An additive flag rather than a schema-version bump: old baselines do not
+	// carry it and default to false, which is exactly right for them, whereas
+	// inferring from the version would misread any old file that happened to
+	// have been rewritten by a newer binary.
+	CapabilityEntriesRecorded bool `yaml:"capability-entries-recorded,omitempty"`
 
 	// Capabilities, Infrastructure, and SurfaceYAML are whole-file
 	// content hashes for capabilities.yaml, infrastructure.md, and
@@ -329,8 +374,29 @@ func buildBaselineWithAuthority(cfg *config.Context, slug string, op authorityOp
 	// cover. All three are optional — a feature may have any subset of
 	// surface.md/surface.yaml, capabilities.yaml, infrastructure.md per
 	// the four-co-equal-artifact model.
-	if hash, ok := hashWholeFile(filepath.Join(featurePath, "capabilities.yaml")); ok {
-		baseline.Sources.Capabilities = hash
+	capsPath := filepath.Join(featurePath, "capabilities.yaml")
+	// ONE READ for both halves. See resolvedEntryFingerprintsFrom.
+	if capsBytes, rerr := os.ReadFile(capsPath); rerr == nil {
+		baseline.Sources.Capabilities = sha256Hex(string(capsBytes))
+		// Per-entry, keyed by CANONICAL REF so it lines up with what an
+		// amendment's affects: names. A map keyed by bare id would need
+		// translating at every comparison, and the translation is where a
+		// mismatch would hide.
+		//
+		// Best effort, like every other hash here: an unreadable artifact costs
+		// localisation, never the save. The strict readers that refuse an
+		// unparseable file are the approval paths, where an unknown is
+		// unapprovable; a baseline recording what it could read is the long
+		// established behaviour of this function and not something to change
+		// as a side effect.
+		if raw, err := resolvedEntryFingerprintsFrom(capsPath, capsBytes, "operations", "id"); err == nil {
+			entries := make(map[string]string, len(raw))
+			for id, fp := range raw {
+				entries[fmt.Sprintf("@%s/operation:%s", slug, id)] = fp
+			}
+			baseline.Sources.CapabilityEntries = entries
+			baseline.Sources.CapabilityEntriesRecorded = true
+		}
 	}
 	if hash, ok := hashWholeFile(filepath.Join(featurePath, "infrastructure.md")); ok {
 		baseline.Sources.Infrastructure = hash
@@ -376,6 +442,13 @@ func hashWholeFile(path string) (hash string, ok bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", false
+	}
+	// Observed here too, so a test counting reads of one artifact sees EVERY
+	// read of it rather than only the ones going through the reader that claims
+	// to be the single one. A counter blind to the other path would have proved
+	// nothing about the claim it was written for.
+	if diffArtifactReadHook != nil {
+		diffArtifactReadHook(path)
 	}
 	return sha256Hex(string(data)), true
 }

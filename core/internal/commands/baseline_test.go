@@ -228,7 +228,7 @@ func TestBaseline_TracksDomainModel(t *testing.T) {
 		t.Fatalf("rewrite domain model: %v", err)
 	}
 
-	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), baseline.Sources, baseline.SchemaVersion, domainPath, "", nil)
+	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), slug, baseline.Sources, baseline.SchemaVersion, domainPath, "", nil)
 	if got["domain"] != "changed" {
 		t.Errorf("advisory domain = %q, want \"changed\" (recorded %s)", got["domain"], recorded)
 	}
@@ -255,7 +255,7 @@ func TestBaseline_PreV1BaselineDoesNotReportFalseDrift(t *testing.T) {
 	// A pre-v1 baseline: no SchemaVersion, no Domain hash.
 	legacy := &HashedSources{Intents: map[string]string{}}
 
-	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), legacy, 0, domainPath, "", nil)
+	got := computeAdvisorySourceDiff(cfg.FeaturePath(slug), slug, legacy, 0, domainPath, "", nil)
 	if got["domain"] == "changed" || got["domain"] == "new" {
 		t.Errorf("advisory domain = %q on a pre-v1 baseline; want \"unknown\" so upgrading the binary does not mass-report false drift", got["domain"])
 	}

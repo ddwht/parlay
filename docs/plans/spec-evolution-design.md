@@ -477,6 +477,27 @@ absence, diff output changes and tests. Far cheaper than replayable projection,
 and likely worthwhile — on its own argument, not under a gate that was about
 something else.
 
+**Since built, as granular drift localisation.** `Sources.CapabilityEntries`
+records canonical ref to semantic fingerprint, from the same resolved-generic-
+form machinery the approval tokens use — so an edit confined to a field the
+parser does not model is visible here too, `summary` being the standing example
+and once a live approval bypass. `parlay diff` reports `capability-entry:<ref>`
+per operation beside the file-level verdict.
+
+The strongest justification turned out not to be drift reporting. The refine
+walkthrough already instructed an agent to compare `dirty_set`, which names
+ENTRIES, against the diff, which named FILES, and told them the two "must
+agree" — a comparison that could not be made precisely at those granularities,
+so it caught gross mismatch and could not catch an operation changed with no
+amendment naming it. The check was already required and was not decidable. It is
+now, and the walkthrough says how.
+
+Three answers, kept distinct for the reason this document keeps returning to:
+a per-entry verdict is a measurement, `unrecorded` says the baseline predates
+measurement, and `unreadable` says the artifact exists and would not parse.
+Collapsing any of those into an empty set would make "declares no operations"
+indistinguishable from "nobody looked".
+
 The amendment-accounting correlation remains OUT of scope and unbuilt. Reporting
 that an operation changed is not the same as reporting that no amendment
 accounts for it, which needs a definition of accounted — a pending declaration,

@@ -104,6 +104,7 @@ func runDiffForTest(t *testing.T, slug string) diffOutput {
 
 	output.AdvisorySources = computeAdvisorySourceDiff(
 		featurePath,
+		slug,
 		stored,
 		storedBaseline.SchemaVersion,
 		testContext(t).DomainModelPath(),

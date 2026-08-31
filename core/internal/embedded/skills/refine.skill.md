@@ -249,6 +249,37 @@ and the command validates the ledger and emits `dirty_set`: the resolvable
 `last-applied-amendment`), which after this write is exactly the amendment you
 just added. That tail is what step 5's diff should report dirty — the two
 answer the same "changed since the last build" question and must agree.
+
+**Compare them at the same granularity, for the half where that is possible.**
+`dirty_set` names ENTRIES; the diff's `capabilities` verdict names a FILE, so
+those two can only ever agree loosely — loosely enough to miss an operation that
+changed with no amendment naming it. The diff now also reports
+`capability-entry:<ref>` per operation, keyed by the same canonical ref
+`affects:` uses.
+
+For `changed` and `new`, compare directly: every such ref should appear in
+`dirty_set`, and every capability ref in `dirty_set` should appear among them. A
+ref on one side only is the thing to stop for.
+
+**`removed` refs are different, and must NOT be checked against `dirty_set`.**
+`dirty_set` is the RESOLVABLE `affects:` of the unapplied tail, and a removed
+operation no longer resolves — which is why the schema deliberately does not
+require `removed` or `replaced-by` entries in `affects:` at all. Their fate is
+declared in `scope_impact.exceptions` instead. Requiring a removed ref to appear
+in `dirty_set` would reject a correct narrowing or retirement, and would reject
+every one of them when a splice deletes the whole artifact.
+
+So reconciling `removed` refs against declared consequences is MANUAL today:
+read the diff's `removed` refs and check each against this amendment's
+`scope_impact.exceptions` yourself. `check-amendments` emits no machine-readable
+consequence set to compare them with, so nothing checks this for you and no
+command will tell you if you skip it.
+
+Two answers there are not verdicts and must not be read as ones.
+`capability-entries: unrecorded` means the baseline predates per-entry
+measurement — the next `save-build-state` backfills it, and until then only the
+file-level verdict is available. `capability-entries: unreadable` means the
+artifact exists and will not parse, so nothing was compared at all.
 (`all_affects`, the whole-ledger union, is emitted alongside it for audit; it
 is NOT the rebuild-scoping set and will name long-applied refs.) A
 disagreement between `dirty_set` and the diff, or any

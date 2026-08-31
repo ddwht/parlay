@@ -172,6 +172,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	currentUnits := authoredUnitHashes(cfg)
 	output.AdvisorySources = computeAdvisorySourceDiff(
 		featurePath,
+		slug,
 		stored,
 		baselineSchemaVersion,
 		cfg.DomainModelPath(),
@@ -240,7 +241,46 @@ func runDiff(cmd *cobra.Command, args []string) error {
 // currentUnits carries the same treatment one version later: hand-authored
 // units arrived in baseline v2, are keyed "authored:<unit>" in the result,
 // and a pre-v2 baseline reports "unknown" for them rather than "new".
-func computeAdvisorySourceDiff(featurePath string, stored *HashedSources, schemaVersion int, domainPath, adapterPath string, currentUnits map[string]string) map[string]string {
+// readArtifactOnce reads a file and separates ABSENCE from unreadability.
+//
+// os.ReadFile's error does not distinguish them, and treating every failure as
+// absence makes a directory, a dangling symlink or a permission problem read as
+// a deletion — which for the per-entry verdicts would announce that every
+// operation was removed while the file is still there.
+//
+// Lstat, so a dangling symlink is something that cannot be read rather than
+// something that is not there.
+func readArtifactOnce(path string) (data []byte, exists, readable bool) {
+	if _, err := os.Lstat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, false
+		}
+		// Defence in depth, not a pinned guard: with Lstat the remaining
+		// errors need an unsearchable parent, which is the feature's own
+		// directory here — so the feature would be unreadable long before this
+		// line decided anything. It stays because folding an unknown into
+		// "absent" is the wrong answer whenever it does become reachable.
+		return nil, true, false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, true, false
+	}
+	if diffArtifactReadHook != nil {
+		diffArtifactReadHook(path)
+	}
+	return b, true, true
+}
+
+// diffArtifactReadHook observes each artifact read, so a test can assert that
+// one diff reads capabilities.yaml exactly once. A green ordinary test proves
+// the results agree today, not that they came from one moment.
+var diffArtifactReadHook func(path string)
+
+// slug is needed because per-entry results are keyed by CANONICAL REF, and a
+// ref carries the feature — including its initiative, which the path alone
+// cannot be trusted to yield.
+func computeAdvisorySourceDiff(featurePath, slug string, stored *HashedSources, schemaVersion int, domainPath, adapterPath string, currentUnits map[string]string) map[string]string {
 	type entry struct {
 		name       string
 		path       string
@@ -249,8 +289,19 @@ func computeAdvisorySourceDiff(featurePath string, stored *HashedSources, schema
 		// rule for pre-v1 baselines.
 		projectScoped bool
 	}
+	// Capabilities is read ONCE, before the coarse loop, and both its file
+	// verdict and its per-entry verdicts come from that byte slice.
+	//
+	// The previous shape hashed the path in the loop and read it again for
+	// entries, which is two moments — and the walkthrough now tells an agent to
+	// compare the two results ref by ref, so they must describe the same bytes.
+	// The comment said ONE READ while the body did not, which is the label/body
+	// defect this codebase keeps finding in itself.
+	capsPath := filepath.Join(featurePath, "capabilities.yaml")
+	capsBytes, capsExists, capsReadable := readArtifactOnce(capsPath)
+
 	entries := []entry{
-		{"capabilities", filepath.Join(featurePath, "capabilities.yaml"), "", false},
+		{"capabilities", capsPath, "", false},
 		{"infrastructure", filepath.Join(featurePath, "infrastructure.md"), "", false},
 		{"surface-yaml", filepath.Join(featurePath, "surface.yaml"), "", false},
 	}
@@ -276,7 +327,29 @@ func computeAdvisorySourceDiff(featurePath string, stored *HashedSources, schema
 
 	result := make(map[string]string)
 	for _, e := range entries {
-		currentHash, currentExists := hashWholeFile(e.path)
+		var currentHash string
+		var currentExists bool
+		if e.name == "capabilities" {
+			// An artifact that EXISTS and cannot be read is not a deletion, at
+			// this granularity either. Falling through to the generic switch
+			// with currentExists=false reported "removed" beside an entry-level
+			// "unreadable" — one output making two contradictory claims about
+			// the same file, and the coarse one is the half a reader sees
+			// first.
+			if capsExists && !capsReadable {
+				result[e.name] = "unreadable"
+				continue
+			}
+			// From the bytes already in hand. Deliberately NOT hashWholeFile
+			// followed by an override: that reads the file and throws the read
+			// away, which is still two moments however the result is used.
+			currentExists = capsExists
+			if currentExists {
+				currentHash = sha256Hex(string(capsBytes))
+			}
+		} else {
+			currentHash, currentExists = hashWholeFile(e.path)
+		}
 		storedExists := e.storedHash != ""
 
 		// Missing means unknown, not drifted — see the doc comment.
@@ -298,6 +371,74 @@ func computeAdvisorySourceDiff(featurePath string, stored *HashedSources, schema
 			result[e.name] = "new"
 		case !currentExists && storedExists:
 			result[e.name] = "removed"
+		}
+	}
+
+	// Per-operation verdicts for capabilities.yaml, keyed by canonical ref.
+	//
+	// This is the localisation the whole-file verdict above cannot give.
+	// "capabilities changed" tells a reader to re-read the artifact and a build
+	// to rescope everything sourced from it; "@f/operation:x changed" tells
+	// them which operation, which is the granularity an amendment's affects:
+	// already speaks in.
+	//
+	// A baseline written before this was recorded says so, rather than
+	// reporting an empty set. "This feature declares no operations" and "nobody
+	// measured them" are different facts, and a consumer that cannot tell them
+	// apart draws the wrong conclusion from silence.
+	var storedEntries map[string]string
+	measured := false
+	if stored != nil {
+		storedEntries, measured = stored.CapabilityEntries, stored.CapabilityEntriesRecorded
+	}
+	switch {
+	case capsExists && !capsReadable:
+		// The artifact IS there and could not be read. Treating a read failure
+		// as absence would report every prior operation removed — announcing a
+		// deletion nobody performed, from a file still sitting on disk.
+		result["capability-entries"] = "unreadable"
+	case !measured && !capsExists:
+		// Nothing to localise and nothing to say. Inventing a verdict here
+		// would report on an artifact that has never existed.
+	case !measured:
+		result["capability-entries"] = "unrecorded"
+	case !capsExists:
+		// THE ARTIFACT IS GONE, and every entry it held went with it. The
+		// coarse verdict says the file was removed; without this the refs
+		// themselves would go unreported in exactly the case the walkthrough's
+		// ref-by-ref comparison needs them most, since a splice that deletes
+		// the artifact deletes every operation in it.
+		for ref := range storedEntries {
+			result["capability-entry:"+ref] = "removed"
+		}
+	default:
+		currentEntries, err := resolvedEntryFingerprintsFrom(capsPath, capsBytes, "operations", "id")
+		if err != nil {
+			// Exists, readable, and will not PARSE. Same answer as unreadable
+			// from a consumer's point of view — nothing was compared — and
+			// distinct from "unrecorded", which is about the baseline, and from
+			// "changed", which is a measurement.
+			result["capability-entries"] = "unreadable"
+			break
+		}
+		current := make(map[string]string, len(currentEntries))
+		for id, fp := range currentEntries {
+			current[fmt.Sprintf("@%s/operation:%s", slug, id)] = fp
+		}
+		for ref, fp := range current {
+			switch storedFP, had := storedEntries[ref]; {
+			case !had:
+				result["capability-entry:"+ref] = "new"
+			case storedFP != fp:
+				result["capability-entry:"+ref] = "changed"
+			default:
+				result["capability-entry:"+ref] = "stable"
+			}
+		}
+		for ref := range storedEntries {
+			if _, still := current[ref]; !still {
+				result["capability-entry:"+ref] = "removed"
+			}
 		}
 	}
 

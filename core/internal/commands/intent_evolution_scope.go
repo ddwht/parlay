@@ -106,6 +106,19 @@ func resolvedEntryFingerprints(path, sequenceKey, idKey string) (map[string]stri
 	if err != nil {
 		return nil, err
 	}
+	return resolvedEntryFingerprintsFrom(path, data, sequenceKey, idKey)
+}
+
+// resolvedEntryFingerprintsFrom is the same derivation over bytes ALREADY IN
+// HAND, so a caller that also hashes the file can do both from one read.
+//
+// Two reads of a path produce two byte states, and a caller comparing a
+// whole-file verdict against per-entry verdicts derived separately can report
+// a file as changed while its entries all read stable, or the reverse. These
+// are advisory rather than authority — but the refine walkthrough now tells an
+// agent to treat the ref-by-ref comparison as decisive, and a decisive
+// comparison should not be assembled from two moments.
+func resolvedEntryFingerprintsFrom(path string, data []byte, sequenceKey, idKey string) (map[string]string, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
