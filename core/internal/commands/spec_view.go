@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -78,10 +79,23 @@ splice edits in place, so there is no earlier version of them to show. Rendering
 today's entries under yesterday's promises would put a date on something that
 does not have one.
 
-There is no --at <date>. What is recorded is which decisions are applied, never
-when they became applied, so a date query could only answer "what had been
-decided by then", which is a different question from the one the flag would
-appear to answer.`,
+--at also accepts a date, interpreted in UTC. A spelling with no zone means UTC,
+not local time, because the recorded application times are UTC — write an
+explicit offset (2026-03-14T09:00:00+02:00) to ask about a local moment.
+
+It answers "what was in force at the end of that day"
+using the project's own record of when each decision became applied — written at
+the moment authority advanced, not inferred from an amendment's authoring date
+or from a file timestamp, neither of which is evidence of when anything took
+effect.
+
+That record is the recording machine's WALL CLOCK. It is not verifiable and not
+monotonic across machines or branches. Two date queries therefore refuse rather
+than answer: one over a ledger that predates the record, where a missing stamp
+cannot be placed either side of the moment; and one where a later record carries
+an earlier time, where no prefix of the ledger matches the chronology and any
+state returned would contain a decision applied after the moment asked about.
+Both name what is wrong. A sequence or an identity still answers either way.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSpecView,
 }
@@ -89,8 +103,8 @@ appear to answer.`,
 func init() {
 	specCmd.Flags().BoolVar(&specViewJSON, "json", false, "Emit the composite as JSON")
 	specCmd.Flags().StringVar(&specViewAt, "at", "",
-		"Show the promises as they stood when this amendment was the last applied one "+
-			"(0 for the founding state, a sequence like 3, or an identity like 003-widen-timeout)")
+		"Show the promises as they stood at a point: 0 for the founding state, a sequence "+
+			"like 3, an identity like 003-widen-timeout, or a date like 2026-03-14")
 }
 
 // specPromise is one projected promise with its provenance.
@@ -211,6 +225,122 @@ type specViewOutput struct {
 	Blocking []string `json:"blocking,omitempty"`
 }
 
+// specViewDateFormats are the date spellings accepted, most specific first.
+//
+// Deliberately short. A date query is answered from wall-clock stamps of
+// unstated precision, so admitting sub-second spellings would imply a precision
+// the underlying record does not have.
+//
+// A spelling with no zone is UTC, because the stamps are UTC and comparing a
+// local civil time against them would answer a different question than the one
+// asked. Said in the help text rather than left to be discovered: a reader in
+// Sofia writing 2026-03-14 means their day, and the tool means UTC's.
+var specViewDateFormats = []string{"2006-01-02T15:04:05Z07:00", "2006-01-02T15:04:05", "2006-01-02"}
+
+// resolveSpecViewDate finds the last decision applied at or before a moment.
+//
+// END OF DAY for a bare date. "--at 2026-03-14" asked with a midnight boundary
+// would exclude everything applied ON the 14th, which is the opposite of what
+// somebody naming a day means.
+//
+// FAILS CLOSED on missing chronology. Every applied record must carry a stamp:
+// if one does not — because it was applied before this was recorded — then a
+// date query cannot tell whether it belongs before or after the moment asked
+// about, and the answer it would give is indistinguishable from a correct one.
+// Refusing is the only honest option, and it names the records that are missing
+// so the gap is legible rather than mysterious.
+func resolveSpecViewDate(snap appliedLedgerSnapshot, arg string) (int, bool, error) {
+	var when time.Time
+	var ok bool
+	for _, layout := range specViewDateFormats {
+		if t, err := time.Parse(layout, arg); err == nil {
+			when = t
+			if layout == "2006-01-02" {
+				when = t.Add(24*time.Hour - time.Nanosecond)
+			}
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return 0, false, nil
+	}
+
+	type stamped struct {
+		seq  int
+		name string
+		at   time.Time
+	}
+	var applied []stamped
+	var missing []string
+	for _, a := range snap.Records {
+		if a.Seq > snap.Through {
+			continue // pending: not applied, so no stamp is owed
+		}
+		name := filepath.Base(a.Path)
+		stamp, has := snap.Capsule.AppliedAt[name]
+		if !has {
+			missing = append(missing, name)
+			continue
+		}
+		t, perr := time.Parse(time.RFC3339, stamp)
+		if perr != nil {
+			return 0, true, fmt.Errorf("%s records an unreadable application time (%q), so no "+
+				"date can be answered against it", name, stamp)
+		}
+		applied = append(applied, stamped{seq: a.Seq, name: name, at: t.UTC()})
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return 0, true, fmt.Errorf("a date cannot be answered for this feature: %d applied "+
+			"record(s) carry no application time (%s), because they were applied before this "+
+			"project recorded one. Which side of %s they fall on is unknown, and an answer that "+
+			"guessed would look exactly like a correct one. Use a sequence or an identity",
+			len(missing), strings.Join(missing, ", "), arg)
+	}
+	sort.Slice(applied, func(i, j int) bool { return applied[i].seq < applied[j].seq })
+
+	// THE CHRONOLOGY MUST AGREE WITH THE SEQUENCE, or no date has an answer.
+	//
+	// A date resolves to a point, and a point projects a sequence PREFIX — so
+	// if a later record carries an earlier time, there is no prefix that
+	// matches the recorded chronology. Take seq 1 stamped June and seq 2
+	// stamped March, applied on two machines whose clocks disagree. A March
+	// query would find seq 2 within the moment, project the prefix through 2,
+	// and hand back a state containing seq 1 — a June decision presented as
+	// March truth.
+	//
+	// Saying elsewhere that the clock is not monotonic does not make that
+	// answer honest. It explains why the question sometimes has no answer, and
+	// this is that case. Branch and merge skew makes it ordinary rather than
+	// adversarial, which is exactly why it must refuse by name rather than
+	// return the nearest thing.
+	//
+	// The writer is deliberately NOT clamped. Clamping would silently change
+	// the field from a record of when something happened into a logical clock
+	// that merely looks like a wall clock, and every reader would go on trusting
+	// it as the former.
+	for i := 1; i < len(applied); i++ {
+		if applied[i].at.Before(applied[i-1].at) {
+			return 0, true, fmt.Errorf("a date cannot be answered for this feature: %s records "+
+				"%s but the later %s records %s, so no prefix of the ledger matches the recorded "+
+				"chronology and any state returned for %s would contain a decision applied after "+
+				"it. Application times come from whichever machine applied each record, and two "+
+				"clocks disagreed here. Use a sequence or an identity",
+				applied[i-1].name, applied[i-1].at.Format(time.RFC3339),
+				applied[i].name, applied[i].at.Format(time.RFC3339), arg)
+		}
+	}
+
+	at := 0
+	for _, a := range applied {
+		if !a.at.After(when.UTC()) {
+			at = a.seq
+		}
+	}
+	return at, true, nil
+}
+
 // resolveSpecViewAt turns a --at argument into a sequence, checked against the
 // ledger it will be resolved from.
 //
@@ -227,6 +357,12 @@ func resolveSpecViewAt(snap appliedLedgerSnapshot, arg string) (int, error) {
 	// and still means something.
 	if arg == "0" {
 		return 0, nil
+	}
+
+	// A date is tried before a sequence, and cannot collide with one: no
+	// accepted date spelling parses as an integer.
+	if seq, wasDate, derr := resolveSpecViewDate(snap, arg); wasDate {
+		return seq, derr
 	}
 
 	if n, err := strconv.Atoi(arg); err == nil {

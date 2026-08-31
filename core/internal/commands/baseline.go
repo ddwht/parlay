@@ -56,6 +56,11 @@ type Baseline struct {
 	// statement).
 	LastAppliedAmendment int `yaml:"last-applied-amendment,omitempty"`
 
+	// AppliedAt records, per exact amendment FILENAME, when that record became
+	// applied — RFC3339 UTC, from the recording machine's wall clock at the
+	// moment authority advanced. See appliedAuthority.AppliedAt.
+	AppliedAt map[string]string `yaml:"applied-at,omitempty"`
+
 	// OutputlessAmendments records, per exact amendment FILENAME, that the
 	// record was blessed on a confirmed output-less claim rather than on
 	// emitted files.
@@ -129,9 +134,8 @@ type HashedSources struct {
 
 	// Capabilities, Infrastructure, and SurfaceYAML are whole-file
 	// content hashes for capabilities.yaml, infrastructure.md, and
-	// surface.yaml — advisory only. There is no per-operation or
-	// per-fragment granularity here the way SurfaceFragments has for
-	// surface.md. Empty string means the file didn't exist when the
+	// surface.yaml — advisory only. There is no per-fragment granularity
+	// here the way SurfaceFragments has for surface.md. Empty string means the file didn't exist when the
 	// baseline was captured.
 	//
 	// This comment used to say the buildfile schema's source-signatures:
@@ -808,6 +812,12 @@ func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) erro
 			baseline.Sources.Amendments[name] = hash
 		}
 	}
+	if len(op.Prior.AppliedAt) > 0 {
+		baseline.AppliedAt = make(map[string]string, len(op.Prior.AppliedAt))
+		for name, at := range op.Prior.AppliedAt {
+			baseline.AppliedAt[name] = at
+		}
+	}
 	if len(op.Prior.Outputless) > 0 {
 		baseline.OutputlessAmendments = make(map[string]bool, len(op.Prior.Outputless))
 		for name, v := range op.Prior.Outputless {
@@ -846,6 +856,14 @@ func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) erro
 					slug, op.To, filepath.Base(a.Path), a.Path)
 			}
 			baseline.Sources.Amendments[filepath.Base(a.Path)] = hash
+			// WHEN travels with the evidence too, in the same write and under
+			// the same lock. Recorded here because this is the only moment that
+			// knows it: an amendment's date: is when it was written, and a file
+			// timestamp is not evidence of anything.
+			if baseline.AppliedAt == nil {
+				baseline.AppliedAt = make(map[string]string)
+			}
+			baseline.AppliedAt[filepath.Base(a.Path)] = authorityNow()
 			// The method travels with the evidence, in the same write. A
 			// reader months later must be able to see not just that this
 			// record was applied but on what basis — and an output-less
@@ -863,6 +881,12 @@ func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) erro
 
 	return nil
 }
+
+// authorityClock is the clock the capsule stamps from. A seam, so a test can
+// pin the chronology it is asserting about rather than racing the wall.
+var authorityClock = func() time.Time { return time.Now().UTC() }
+
+func authorityNow() string { return authorityClock().UTC().Format(time.RFC3339) }
 
 // TransitionReceipt is durable evidence of how one amendment was authorised.
 //

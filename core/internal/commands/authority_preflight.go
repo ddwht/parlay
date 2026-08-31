@@ -58,6 +58,31 @@ type appliedAuthority struct {
 	// Receipts record how each was authorised, keyed by exact amendment
 	// filename. See TransitionReceipt.
 	Receipts map[string]TransitionReceipt
+	// AppliedAt records WHEN each record became applied, keyed by exact
+	// amendment filename, RFC3339 in UTC.
+	//
+	// The ledger has always recorded WHICH decisions are applied and never
+	// when, so "what was in force last March" was unanswerable: an amendment's
+	// date: is authoring time, and filesystem metadata is not evidence. This is
+	// the only field that can answer it, and it is written at the one moment
+	// that knows — the capsule advance, under the authority lock.
+	//
+	// It is the RECORDING MACHINE'S WALL CLOCK, and its accuracy is unverified:
+	// nothing checks that the machine which applied a record had the right
+	// time. Ordering is what the sequence is for; this buys dates.
+	//
+	// Skew therefore splits in two, and only one half is absorbed. FORWARD OR
+	// EQUAL skew moves a date boundary by however far the clocks differ, which
+	// is the cost of using wall time at all. SEQUENCE-INVERTING skew is
+	// REFUSED: a date resolves to a point and a point projects a sequence
+	// prefix, so a later record carrying an earlier time leaves no prefix
+	// matching the chronology, and any state returned would contain a decision
+	// applied after the moment asked about. Readers check these nondecreasing
+	// in sequence order before resolving a date.
+	//
+	// Absent for every record applied before this field existed, which is why
+	// date queries fail closed rather than guessing at a boundary.
+	AppliedAt map[string]string
 }
 
 // authorityMode says what a save may do to that capsule.
@@ -172,6 +197,39 @@ func observeAppliedAuthorityAt(path, slug string) (appliedAuthority, error) {
 			out.Hashes[k] = v
 		}
 	}
+	if len(baseline.AppliedAt) > 0 {
+		out.AppliedAt = make(map[string]string, len(baseline.AppliedAt))
+		for k, v := range baseline.AppliedAt {
+			// A stamp for a record the evidence map does not cover is not
+			// legacy absence — absence is a MISSING stamp, which stays legal
+			// and is refused only by a date query. This is the opposite: a time
+			// recorded for something this capsule does not claim to have
+			// applied. Inconsistent authority data, and it fails observation
+			// rather than waiting to mislead one particular query.
+			if _, covered := out.Hashes[k]; !covered {
+				return appliedAuthority{}, fmt.Errorf("%s records an application time for %s, "+
+					"which it holds no applied-record evidence for — a time for a record this "+
+					"baseline does not claim to have applied describes a history it cannot "+
+					"support", path, k)
+			}
+			// The field promises RFC3339 in UTC. A reader that accepted any
+			// string would push the failure into whichever query first tried
+			// to parse it, and would let a plausible-looking local time compare
+			// as though it were UTC.
+			t, perr := time.Parse(time.RFC3339, v)
+			if perr != nil {
+				return appliedAuthority{}, fmt.Errorf("%s records %q as the application time of "+
+					"%s, which is not an RFC3339 timestamp", path, v, k)
+			}
+			if _, offset := t.Zone(); offset != 0 {
+				return appliedAuthority{}, fmt.Errorf("%s records the application time of %s as "+
+					"%q, which is not UTC — the field is UTC by contract, and a comparison "+
+					"against local times answers a different question than it appears to",
+					path, k, v)
+			}
+			out.AppliedAt[k] = v
+		}
+	}
 	if len(baseline.OutputlessAmendments) > 0 {
 		out.Outputless = make(map[string]bool, len(baseline.OutputlessAmendments))
 		for k, v := range baseline.OutputlessAmendments {
@@ -199,8 +257,14 @@ func observeAppliedAuthorityAt(path, slug string) (appliedAuthority, error) {
 // sameAuthority reports whether two observations describe the same authority.
 func sameAuthority(a, b appliedAuthority) bool {
 	if a.Through != b.Through || len(a.Hashes) != len(b.Hashes) ||
-		len(a.Outputless) != len(b.Outputless) || len(a.Receipts) != len(b.Receipts) {
+		len(a.Outputless) != len(b.Outputless) || len(a.Receipts) != len(b.Receipts) ||
+		len(a.AppliedAt) != len(b.AppliedAt) {
 		return false
+	}
+	for k, v := range a.AppliedAt {
+		if b.AppliedAt[k] != v {
+			return false
+		}
 	}
 	for k, v := range a.Hashes {
 		if b.Hashes[k] != v {

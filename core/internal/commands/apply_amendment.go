@@ -326,6 +326,17 @@ type priorCapsuleSnapshot struct {
 	// produced the same next token — the field name said digest while the
 	// implementation said "true".
 	Receipts map[string]string `yaml:"receipts,omitempty" json:"receipts,omitempty"`
+	// AppliedAt is covered for the reason the struct comment gives: this claims
+	// to be the COMPLETE prior state, and a field left out of a digest that
+	// says "complete" is how the method maps came to be missing from an earlier
+	// version of it.
+	//
+	// omitempty, and that is load-bearing rather than cosmetic. A receipt
+	// written before this field existed stores no applied-at, unmarshals to
+	// nil, and re-marshals to nothing — so its digest is unchanged and it still
+	// validates against itself. Without omitempty every stored receipt in every
+	// project would fail its own check on upgrade.
+	AppliedAt map[string]string `yaml:"applied-at,omitempty" json:"applied_at,omitempty"`
 }
 
 // transitionPayload is exactly what an approval approves.
@@ -382,6 +393,7 @@ func buildTransitionPayload(slug string, record parser.Amendment, withdraws []wi
 			Amendments: prior.Hashes,
 			Outputless: prior.Outputless,
 			Receipts:   receiptDigests(prior.Receipts),
+			AppliedAt:  prior.AppliedAt,
 		},
 		SpliceProof: spliceProof,
 	}, nil

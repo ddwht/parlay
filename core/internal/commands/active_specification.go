@@ -202,6 +202,21 @@ func acquireAppliedLedger(cfg *config.Context, slug, featDir string) (appliedLed
 		}
 		out = append(out, *rec)
 	}
+	// A stamp for a record above the marker. observeAppliedAuthority already
+	// refuses a stamp with no evidence behind it; this is the case only the
+	// records can see — a time recorded for something that has not been applied
+	// at all, which a date query would place in a history it never entered.
+	for _, a := range out {
+		if a.Seq <= capsule.Through {
+			continue
+		}
+		if _, stamped := capsule.AppliedAt[filepath.Base(a.Path)]; stamped {
+			return appliedLedgerSnapshot{}, fmt.Errorf("%s's baseline records an application "+
+				"time for %s, which sits above the applied marker (%03d) and has therefore not "+
+				"been applied. A pending record with a time in it describes a history that did "+
+				"not happen", slug, filepath.Base(a.Path), capsule.Through)
+		}
+	}
 	for name := range capsule.Hashes {
 		if present[name] {
 			continue

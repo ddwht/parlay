@@ -298,8 +298,9 @@ metadata is not evidence. So one of three, chosen deliberately:
 3. add an append-only application chronology, which is the only option that
    supports the stronger reading.
 
-**Decided: option 1, deferred, and the flag does not exist.** Not "not yet
-implemented" — absent, with the reason in the command's own help text.
+**Decided at the time: option 1, deferred. Since BUILT as option 3.** The
+reasoning below is kept because it is why the flag was not shipped in the shape
+it was first reached for, and that reasoning still holds against option 2.
 
 Option 2 was the tempting one and is the reason for writing this down. A
 `--at <date>` that answers "what had been decided by then" would be a flag whose
@@ -309,11 +310,47 @@ class this whole line of work has been removing: the founding document that
 that disagrees with its body. Shipping it would have added one more, in the
 command built to fix the original.
 
-Option 3 remains open and is cheaper than it looks: the capsule already records
-per-amendment evidence under the authority lock, so an `applied-at` beside each
-hash would be an append-only chronology acquired at the moment that is actually
-being recorded. It is a deliberate schema decision with its own review, not a
-side effect of adding a query flag.
+Option 3 was then built, on its own review rather than as a side effect of the
+query flag. `appliedAuthority.AppliedAt` records, per exact amendment filename,
+when that record became applied — written in the capsule advance, under the
+authority lock, which is the one moment that knows. `--at <date>` resolves
+against it and means the END of a named day, because a midnight boundary would
+exclude everything applied on the day somebody named.
+
+What it is, stated where it is used rather than implied away. It is the
+recording machine's WALL CLOCK, and its accuracy is unverified: nothing checks
+that the machine which applied a record had the right time. It buys DATES only —
+ordering is what the sequence is for. Input with no zone is UTC, said in the help
+text, because a reader in Sofia writing `2026-03-14` means their day and the tool
+means UTC's.
+
+Skew therefore splits into two cases, and only one of them is absorbed:
+
+- **Forward or equal skew** moves the date boundary by however far the clocks
+  differ. A query near that boundary can land one record either side of where a
+  perfect clock would put it. That is the unverified accuracy, and it is the
+  cost of using wall time at all.
+- **Sequence-inverting skew is REFUSED, not absorbed.** A date resolves to a
+  point and a point projects a sequence PREFIX, so a later record carrying an
+  earlier time leaves no prefix matching the chronology — a query would return a
+  state containing a decision applied after the moment asked about. The
+  timestamps are checked nondecreasing in sequence order before any date
+  resolves, and an inversion refuses by name, quoting both records and times.
+
+It also FAILS CLOSED over history applied before it existed: a record with no
+stamp cannot be placed either side of the moment asked about, and an answer that
+guessed would be indistinguishable from a correct one, so the query refuses and
+names the records that are missing. A sequence or an identity answers in every
+one of these cases; it is dates specifically that can run out of meaning.
+
+The storage objection was reconsidered and did not survive contact with the
+code. The baseline is not purely derived state: its capsule already holds the
+applied marker and the per-record hashes, which are irreplaceable — delete it
+and every applied decision reads as pending. The chronology joins a store that
+already carries non-reconstructible authority, rather than introducing that
+problem to one that did not have it. `priorCapsuleSnapshot` covers the new field
+for the reason it covers the others, with `omitempty` so a receipt written
+before it existed still digests to what it digested then.
 
 **What `--at <amendment>` renders, and what it refuses to.** The promise half
 only. The contract artifacts are a stored snapshot the splice edits in place, so
@@ -439,6 +476,12 @@ resolved fingerprints, handling for additions and removals, a reading for legacy
 absence, diff output changes and tests. Far cheaper than replayable projection,
 and likely worthwhile — on its own argument, not under a gate that was about
 something else.
+
+The amendment-accounting correlation remains OUT of scope and unbuilt. Reporting
+that an operation changed is not the same as reporting that no amendment
+accounts for it, which needs a definition of accounted — a pending declaration,
+an applied receipt, or both — and that is a separate capability with its own
+argument to make.
 
 ## Migration
 

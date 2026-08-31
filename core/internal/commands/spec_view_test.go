@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ddwht/parlay/core/internal/config"
 )
@@ -1488,5 +1489,457 @@ After the retirement.
 		if p.Entries != nil {
 			t.Errorf("%s asserted a population in a view with no contract", p.Slug)
 		}
+	}
+}
+
+// --- Application chronology, and --at <date> ---
+
+// pinAuthorityClock makes the chronology deterministic, so a test asserts about
+// the times it chose rather than racing the wall.
+func pinAuthorityClock(t *testing.T, times ...time.Time) {
+	t.Helper()
+	i := 0
+	authorityClock = func() time.Time {
+		if i < len(times) {
+			v := times[i]
+			i++
+			return v
+		}
+		return times[len(times)-1]
+	}
+	t.Cleanup(func() { authorityClock = func() time.Time { return time.Now().UTC() } })
+}
+
+// The whole point: what was in force at a moment, from the project's own record
+// of when each decision took effect — not from an amendment's authoring date,
+// which says when somebody wrote it, and not from a file timestamp, which says
+// nothing at all.
+func TestChronology_DateResolvesToWhatWasInForce(t *testing.T) {
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	june := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, june)
+	cfg, _ := setupTwoRevisions(t)
+
+	// Applied in March: the first revision only.
+	armSpecViewAt(t, "2026-03-14")
+	out := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(out, "A promise that now reads differently.") {
+		t.Errorf("--at a March date must show what March had; got:\n%s", out)
+	}
+	if strings.Contains(out, "reads differently AGAIN") {
+		t.Error("a date query returned a decision applied months later")
+	}
+
+	// A day earlier: nothing had been applied yet.
+	specViewAt = "2026-03-13"
+	if out := runSpecView_(t, cfg, "@my-feature"); !strings.Contains(out, "See if the cluster is ready.") {
+		t.Errorf("--at before the first application must show the founding text; got:\n%s", out)
+	}
+
+	// After the second: the current state, so it renders as current.
+	specViewAt = "2026-07-01"
+	if out := runSpecView_(t, cfg, "@my-feature"); !strings.Contains(out, "current specification") {
+		t.Errorf("--at after everything is the present; got:\n%s", out)
+	}
+}
+
+// A bare date means the END of that day. Asked with a midnight boundary it
+// would exclude everything applied ON the day named, which is the opposite of
+// what naming a day means.
+func TestChronology_BareDateMeansEndOfDay(t *testing.T) {
+	noon := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, noon, noon)
+	cfg, _ := setupTwoRevisions(t)
+
+	armSpecViewAt(t, "2026-03-14")
+	out := runSpecView_(t, cfg, "@my-feature")
+	if !strings.Contains(out, "reads differently AGAIN") {
+		t.Errorf("a decision applied at noon must be included by its own date; got:\n%s", out)
+	}
+	// And an explicit earlier moment on the same day excludes it.
+	specViewAt = "2026-03-14T09:00:00Z"
+	if out := runSpecView_(t, cfg, "@my-feature"); strings.Contains(out, "reads differently AGAIN") {
+		t.Error("an explicit moment before the application still included it")
+	}
+}
+
+// History applied before the chronology existed carries no stamp. A date query
+// cannot tell which side of the moment such a record falls on, and the answer it
+// would give is indistinguishable from a correct one.
+func TestChronology_MissingStampsRefuseTheDateQuery(t *testing.T) {
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, march)
+	cfg, _ := setupTwoRevisions(t)
+
+	// Precondition: with the chronology intact, the date resolves.
+	armSpecViewAt(t, "2026-03-14")
+	if _, err := runSpecViewErr(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("the fixture must answer a date before the stamp is removed: %v", err)
+	}
+
+	// Now the pre-chronology shape: applied, hashed, and no time recorded.
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	delete(bl.AppliedAt, "001-reworded.md")
+	data, err := marshalBaseline(&bl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = runSpecViewErr(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a date query over records with no application time must refuse, not guess")
+	}
+	if !strings.Contains(err.Error(), "001-reworded.md") {
+		t.Errorf("the refusal must name the records that lack a time; got: %v", err)
+	}
+	// A sequence still answers — the gap is in the chronology, not the ledger.
+	specViewAt = "1"
+	if _, err := runSpecViewErr(t, cfg, "@my-feature"); err != nil {
+		t.Errorf("a sequence query must still work without a chronology: %v", err)
+	}
+}
+
+// runSpecViewErr runs the view and returns its error rather than failing.
+func runSpecViewErr(t *testing.T, cfg *config.Context, ref string) (string, error) {
+	t.Helper()
+	cmd := testCommandWithContext(t, cfg)
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	err := runSpecView(cmd, []string{ref})
+	return buf.String(), err
+}
+
+// The chronology is written where the rest of the applied-authority record
+// lives, at the moment authority advances, and it is history: an already-stamped
+// record must never be restamped by a later advance.
+func TestChronology_IsWrittenOnceAndTravelsWithTheEvidence(t *testing.T) {
+	first := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	second := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, first, second)
+	cfg, _ := setupTwoRevisions(t)
+
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	if got := bl.AppliedAt["001-reworded.md"]; got != first.Format(time.RFC3339) {
+		t.Errorf("001 must keep the time it was applied; got %q", got)
+	}
+	if got := bl.AppliedAt["002-again.md"]; got != second.Format(time.RFC3339) {
+		t.Errorf("002 must record its own time; got %q", got)
+	}
+	// Every applied record has one, and nothing else does.
+	if len(bl.AppliedAt) != 2 {
+		t.Errorf("expected exactly the two applied records to be stamped; got %v", bl.AppliedAt)
+	}
+}
+
+// A receipt written before the chronology existed must still validate against
+// itself. Without omitempty on the new field every stored receipt in every
+// project would fail its own check on upgrade.
+func TestChronology_PreExistingReceiptsStillValidate(t *testing.T) {
+	cfg, _ := setupRevisedFeature(t, setupTestDir(t))
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	r, ok := bl.TransitionReceipts["001-reworded.md"]
+	if !ok {
+		t.Fatal("the fixture must carry a receipt")
+	}
+	// The pre-upgrade shape: a payload whose prior capsule recorded no times.
+	r.Payload.Prior.AppliedAt = nil
+	d, err := transitionDigest(r.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d != r.Digest {
+		t.Error("a receipt carrying no application times must digest exactly as it did before " +
+			"the field existed, or upgrading invalidates every stored receipt")
+	}
+}
+
+// The capsule is COPIED onto a baseline, never re-derived — the rule that keeps
+// history's evidence from being quietly regenerated. Stamps travel by that same
+// rule, so a save that builds a fresh baseline must carry the prior chronology
+// across rather than starting empty.
+func TestChronology_SurvivesASaveThatRebuildsTheBaseline(t *testing.T) {
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, march)
+	cfg, _ := setupRevisedFeature(t, setupTestDir(t))
+
+	prior, err := observeAppliedAuthority(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prior.AppliedAt) == 0 {
+		t.Fatal("the fixture must have stamped its applied record")
+	}
+
+	// A fresh baseline, preserving authority: exactly the shape where the
+	// copy-through is the only thing keeping the chronology alive.
+	fresh := Baseline{SchemaVersion: BaselineSchemaVersion}
+	if err := applyAuthorityCapsule(&fresh, "my-feature",
+		authorityOp{Mode: authorityPreserve, Prior: prior}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fresh.AppliedAt["001-reworded.md"]; got != prior.AppliedAt["001-reworded.md"] {
+		t.Errorf("a rebuilt baseline lost when its history was applied; got %q want %q",
+			got, prior.AppliedAt["001-reworded.md"])
+	}
+}
+
+// priorCapsuleSnapshot claims to be the COMPLETE prior authority state, and an
+// earlier version of it silently omitted the method maps while saying so. A
+// field left out of a digest that says "complete" is that same defect.
+func TestChronology_IsBoundIntoTheApprovalDigest(t *testing.T) {
+	base := transitionPayload{
+		Feature: "my-feature", AmendmentFile: "001-x.md", Mode: transitionModeEvolve,
+		Prior: priorCapsuleSnapshot{Through: 1, Amendments: map[string]string{"001-x.md": "abc"}},
+	}
+	without, err := transitionDigest(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withStamps := base
+	withStamps.Prior.AppliedAt = map[string]string{"001-x.md": "2026-03-14T10:00:00Z"}
+	with, err := transitionDigest(withStamps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without == with {
+		t.Error("two different prior authority states produced the same approval token — the " +
+			"snapshot says it is complete and the chronology is part of it")
+	}
+	// And the ceremony must actually PUT it there. The check above proves the
+	// digest covers the field; this proves the payload carries it, which is a
+	// separate claim and was separately missing.
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	june := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, june)
+	cfg, _ := setupTwoRevisions(t)
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	second, ok := bl.TransitionReceipts["002-again.md"]
+	if !ok {
+		t.Fatal("the fixture must carry the second receipt")
+	}
+	if got := second.Payload.Prior.AppliedAt["001-reworded.md"]; got != march.Format(time.RFC3339) {
+		t.Errorf("the second approval must bind the chronology it advanced FROM; got %q", got)
+	}
+
+	// And a differing stamp is a differing state, not just presence.
+	moved := withStamps
+	moved.Prior.AppliedAt = map[string]string{"001-x.md": "2026-06-20T10:00:00Z"}
+	movedDigest, err := transitionDigest(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if movedDigest == with {
+		t.Error("changing WHEN a record was applied left the approval token unchanged")
+	}
+}
+
+// Authority moving mid-acquisition refuses. The chronology is part of authority,
+// so a change confined to it must refuse too — otherwise a view could be
+// assembled from two states that differ in exactly the field date queries read.
+func TestChronology_StampChangeMidAcquisitionRefuses(t *testing.T) {
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, march)
+	cfg, _ := setupRevisedFeature(t, setupTestDir(t))
+
+	if _, err := resolveActiveIntents(cfg, "my-feature"); err != nil {
+		t.Fatalf("the fixture must resolve while authority is still: %v", err)
+	}
+
+	var once sync.Once
+	appliedLedgerCapsuleHook = func(string) {
+		once.Do(func() {
+			bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+			// ONLY the time changes. Same marker, same hashes, same receipts.
+			bl.AppliedAt["001-reworded.md"] = "2026-06-20T10:00:00Z"
+			data, merr := marshalBaseline(&bl)
+			if merr != nil {
+				t.Error(merr)
+				return
+			}
+			_ = os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644)
+		})
+	}
+	t.Cleanup(func() { appliedLedgerCapsuleHook = nil })
+
+	if _, err := resolveActiveIntents(cfg, "my-feature"); err == nil {
+		t.Fatal("authority changing mid-acquisition must refuse even when the change is " +
+			"confined to the chronology — that is the field a date query reads")
+	} else if !strings.Contains(err.Error(), "changed while its ledger was being read") {
+		t.Errorf("the refusal must say why; got: %v", err)
+	}
+
+	// The other shape: a stamp APPEARING rather than changing. Comparing values
+	// key by key over one side cannot see a key the other side gained, which is
+	// why the comparison checks the size too.
+	appliedLedgerCapsuleHook = nil
+	if _, err := resolveActiveIntents(cfg, "my-feature"); err != nil {
+		t.Fatalf("the settled state must resolve again: %v", err)
+	}
+	var addOnce sync.Once
+	appliedLedgerCapsuleHook = func(string) {
+		addOnce.Do(func() {
+			bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+			bl.AppliedAt["999-never-happened.md"] = "2026-06-20T10:00:00Z"
+			data, merr := marshalBaseline(&bl)
+			if merr != nil {
+				t.Error(merr)
+				return
+			}
+			_ = os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644)
+		})
+	}
+	if _, err := resolveActiveIntents(cfg, "my-feature"); err == nil {
+		t.Error("a stamp appearing mid-acquisition must refuse — a comparison that only walks " +
+			"one side's keys cannot see what the other side gained")
+	}
+}
+
+// A date resolves to a point, and a point projects a sequence PREFIX. So a
+// later record carrying an earlier time leaves no prefix that matches the
+// chronology: a March query would find seq 2 within the moment, project through
+// 2, and hand back a state containing seq 1 — a June decision presented as
+// March truth. Two machines with disagreeing clocks make this ordinary.
+func TestChronology_InvertedStampsRefuseRatherThanAnswerImpossibly(t *testing.T) {
+	june := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	// Seq 1 applied by a machine reading June; seq 2 by one reading March.
+	pinAuthorityClock(t, june, march)
+	cfg, _ := setupTwoRevisions(t)
+
+	armSpecViewAt(t, "2026-03-14")
+	out, err := runSpecViewErr(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatalf("an inverted chronology has no honest answer and must refuse; got:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "001-reworded.md") ||
+		!strings.Contains(err.Error(), "002-again.md") {
+		t.Errorf("the refusal must name both records and their times; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no prefix of the ledger matches") {
+		t.Errorf("the refusal must say why no answer exists; got: %v", err)
+	}
+	// Neither revision may come back by another route.
+	if strings.Contains(out, "reads differently") {
+		t.Error("a state was rendered for a moment that has none")
+	}
+
+	// A sequence still answers: the ledger is fine, the chronology is not.
+	specViewAt = "1"
+	if _, err := runSpecViewErr(t, cfg, "@my-feature"); err != nil {
+		t.Errorf("a sequence query must be unaffected by clock skew: %v", err)
+	}
+}
+
+// Equal stamps are not an inversion — two records applied in the same second
+// are ordinary, and the sequence still orders them.
+func TestChronology_EqualStampsAreNotAnInversion(t *testing.T) {
+	same := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, same, same)
+	cfg, _ := setupTwoRevisions(t)
+	armSpecViewAt(t, "2026-03-14")
+	if _, err := runSpecViewErr(t, cfg, "@my-feature"); err != nil {
+		t.Errorf("two records applied at the same moment are not skew: %v", err)
+	}
+}
+
+// A missing stamp is legacy absence and stays legal until a date query needs it.
+// An EXTRA or MALFORMED stamp is not absence — it is inconsistent authority
+// data, and it fails observation rather than waiting to mislead one query.
+func TestChronology_InconsistentStampsFailObservation(t *testing.T) {
+	cases := []struct {
+		name    string
+		corrupt func(bl *Baseline)
+		wantErr string
+	}{
+		{"time for a record with no evidence", func(bl *Baseline) {
+			bl.AppliedAt["999-never-applied.md"] = "2026-03-14T10:00:00Z"
+		}, "no applied-record evidence"},
+		{"unparseable time", func(bl *Baseline) {
+			bl.AppliedAt["001-reworded.md"] = "last Tuesday"
+		}, "not an RFC3339 timestamp"},
+		{"time that is not UTC", func(bl *Baseline) {
+			bl.AppliedAt["001-reworded.md"] = "2026-03-14T10:00:00+02:00"
+		}, "is not UTC"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+			pinAuthorityClock(t, march, march)
+			cfg, _ := setupRevisedFeature(t, setupTestDir(t))
+			// Precondition: it observes cleanly before the corruption.
+			if _, err := observeAppliedAuthority(cfg, "my-feature"); err != nil {
+				t.Fatalf("the fixture must observe cleanly: %v", err)
+			}
+
+			bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+			tc.corrupt(&bl)
+			data, err := marshalBaseline(&bl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = observeAppliedAuthority(cfg, "my-feature")
+			if err == nil {
+				t.Fatal("inconsistent chronology must fail observation, not survive until some " +
+					"later query happens to read it")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("want %q; got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// A stamp for a record ABOVE the marker describes a history that did not
+// happen. Only the records can see this, so it belongs to acquisition rather
+// than to observation.
+func TestChronology_StampForAPendingRecordIsRefused(t *testing.T) {
+	march := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	pinAuthorityClock(t, march, march)
+	cfg, featureDir := setupRevisedFeature(t, setupTestDir(t))
+	writeAmendment(t, featureDir, "002-pending.md", `---
+amendment: pending
+date: 2026-09-03
+affects:
+  - "@my-feature/operation:x"
+---
+
+## Change
+Not applied.
+
+## Acceptance
+- Later.
+`)
+	if _, err := resolveActiveIntents(cfg, "my-feature"); err != nil {
+		t.Fatalf("an ordinary pending record must resolve: %v", err)
+	}
+
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	// Evidence AND a time for a record nobody applied. The hash makes it past
+	// the observation check, so only the sequence can catch it.
+	h, _ := hashWholeFile(filepath.Join(featureDir, "amendments", "002-pending.md"))
+	bl.Sources.Amendments["002-pending.md"] = h
+	bl.AppliedAt["002-pending.md"] = "2026-03-14T10:00:00Z"
+	data, err := marshalBaseline(&bl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(baselinePath(cfg, "my-feature"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = resolveActiveIntents(cfg, "my-feature")
+	if err == nil {
+		t.Fatal("a time recorded for a record above the marker must refuse")
+	}
+	if !strings.Contains(err.Error(), "above the applied marker") {
+		t.Errorf("the refusal must say why; got: %v", err)
 	}
 }
