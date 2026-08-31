@@ -272,8 +272,8 @@ func TestSweep_CompletesBeforeAnyMutation(t *testing.T) {
 //
 // Markers, `@feature` refs and `--root <name>` are the DECORATED ways of
 // naming a feature. The ordinary way is to write the group-qualified
-// slug down: `design-loop/design-loop` in a Go comment, a YAML value
-// naming `studio-foundation/studio-deployer`, prose in a shipped skill
+// slug down: `demo-group/demo-feature` in a Go comment, a YAML value
+// naming `demo-group/other-feature`, prose in a shipped skill
 // naming a component under it. Every one of those keeps pointing at the
 // retiring root after it is gone, so every one of them is a finding.
 
@@ -284,7 +284,7 @@ func groupSweepFixture(t *testing.T) (parent string, retiring config.Root) {
 	resetRetirementState(t)
 	parent = makeRetirementParent(t)
 	retiring = addRetirementChild(t, parent, "old", "old",
-		"design-loop/design-loop", "studio-foundation/studio-deployer")
+		"demo-group/demo-feature", "demo-group/other-feature")
 	addRetirementChild(t, parent, "lib", "lib", "helper")
 	return parent, retiring
 }
@@ -320,37 +320,37 @@ func TestSweep_PlainGroupQualifiedReferencesAreFoundInEveryCorpus(t *testing.T) 
 
 	// A Go comment in surviving source.
 	writeParentFile(t, parent, "internal/shared/loop.go",
-		"// The phase order here mirrors design-loop/design-loop.\npackage shared\n")
+		"// The phase order here mirrors demo-group/demo-feature.\npackage shared\n")
 	// A YAML value in surviving build state.
 	writeParentFile(t, parent, "lib/.parlay/build/helper/buildfile.yaml",
-		"feature: helper\nderived-from: design-loop/design-loop\n")
+		"feature: helper\nderived-from: demo-group/demo-feature\n")
 	// Markdown prose in a document nobody generated.
 	writeParentFile(t, parent, "docs/architecture.md",
-		"Phase ordering is owned by design-loop/design-loop and nothing else.\n")
+		"Phase ordering is owned by demo-group/demo-feature and nothing else.\n")
 
 	result := runSweep(t, parent, retiring, nil)
-	assertGroupQualifiedHit(t, result, "loop.go", "design-loop/design-loop")
-	assertGroupQualifiedHit(t, result, "buildfile.yaml", "design-loop/design-loop")
-	assertGroupQualifiedHit(t, result, "architecture.md", "design-loop/design-loop")
+	assertGroupQualifiedHit(t, result, "loop.go", "demo-group/demo-feature")
+	assertGroupQualifiedHit(t, result, "buildfile.yaml", "demo-group/demo-feature")
+	assertGroupQualifiedHit(t, result, "architecture.md", "demo-group/demo-feature")
 }
 
 func TestSweep_ComponentQualifiedReferencesAreFound(t *testing.T) {
 	parent, retiring := groupSweepFixture(t)
 	writeParentFile(t, parent, "internal/deploy/runner.go",
-		"// Delegates to studio-foundation/studio-deployer/cross-cutting/deploy-step.\npackage deploy\n")
+		"// Delegates to demo-group/other-feature/cross-cutting/deploy-step.\npackage deploy\n")
 	writeParentFile(t, parent, "docs/deploy.md",
-		"See studio-foundation/studio-deployer/cross-cutting/deploy-step/notes for the sequence.\n")
+		"See demo-group/other-feature/cross-cutting/deploy-step/notes for the sequence.\n")
 
 	result := runSweep(t, parent, retiring, nil)
 	assertGroupQualifiedHit(t, result, "runner.go",
-		"studio-foundation/studio-deployer/cross-cutting/deploy-step")
+		"demo-group/other-feature/cross-cutting/deploy-step")
 	assertGroupQualifiedHit(t, result, "deploy.md",
-		"studio-foundation/studio-deployer/cross-cutting/deploy-step/notes")
+		"demo-group/other-feature/cross-cutting/deploy-step/notes")
 }
 
 func TestSweep_GroupQualifiedReferenceInGeneratedAndDeployedCopies(t *testing.T) {
 	parent, retiring := groupSweepFixture(t)
-	instruction := "Rebuild design-loop/design-loop before shipping.\n"
+	instruction := "Rebuild demo-group/demo-feature before shipping.\n"
 	// The deployed copy, the module it was deployed from, and the
 	// embedded authoring source are three artifacts and three findings.
 	writeParentFile(t, parent, ".claude/skills/parlay-loop/SKILL.md", instruction)
@@ -360,7 +360,7 @@ func TestSweep_GroupQualifiedReferenceInGeneratedAndDeployedCopies(t *testing.T)
 	result := runSweep(t, parent, retiring, nil)
 	var hits int
 	for _, f := range result.Findings {
-		if f.Kind == sweepKindGroupQualifiedReference && strings.Contains(f.Ref, "design-loop/design-loop") {
+		if f.Kind == sweepKindGroupQualifiedReference && strings.Contains(f.Ref, "demo-group/demo-feature") {
 			hits++
 		}
 	}
@@ -375,15 +375,15 @@ func TestSweep_GroupQualifiedReferenceHeldInASiblingRootSpec(t *testing.T) {
 	// feature: neither root is the active one, and a single-root sweep
 	// would never look here.
 	writeParentFile(t, parent, "lib/spec/intents/helper/infrastructure.md",
-		"**Behavior**: The helper defers phase ordering to design-loop/design-loop.\n")
+		"**Behavior**: The helper defers phase ordering to demo-group/demo-feature.\n")
 
 	result := runSweep(t, parent, retiring, nil)
 	assertGroupQualifiedHit(t, result, "lib/spec/intents/helper/infrastructure.md",
-		"design-loop/design-loop")
+		"demo-group/demo-feature")
 
 	// And the retirement refuses while it stands.
 	retireRootDispositions = writeDispositionsFile(t,
-		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+		deliveredDispositions("demo-group/demo-feature", "demo-group/other-feature"))
 	retireRootNonInteractive = true
 	cmd, _ := retireCmd(t, parent, "")
 	err := runRetireRoot(cmd, []string{"old"})
@@ -397,9 +397,9 @@ func TestSweep_GroupQualifiedMatchingIsWordBounded(t *testing.T) {
 	// None of these name the retiring root's features. A match here
 	// would be a false positive produced by substring matching.
 	writeParentFile(t, parent, "docs/nearby.md",
-		"The codesign-loop/design-loop-notes file is unrelated.\n"+
-			"So is redesign-loops and the design-loop idea in general.\n"+
-			"predesign-loop/design-loopy names nothing here.\n")
+		"The codemo-group/demo-feature-notes file is unrelated.\n"+
+			"So is redesign-loops and the demo-group idea in general.\n"+
+			"predemo-group/demo-featurey names nothing here.\n")
 
 	result := runSweep(t, parent, retiring, nil)
 	for _, f := range result.Findings {
@@ -443,10 +443,10 @@ func TestSweep_IsALineBasedLexicalScanThatRefusesWhatItCannotRead(t *testing.T) 
 	// A file whose contents are structurally broken YAML is still
 	// scanned line by line, and the reference in it is still found.
 	writeParentFile(t, parent, "lib/broken.yaml",
-		"feature: [unclosed\n  derived-from: design-loop/design-loop\n")
+		"feature: [unclosed\n  derived-from: demo-group/demo-feature\n")
 	// A binary file carries no textual reference and is passed over
 	// without becoming a failure.
-	writeParentFile(t, parent, "lib/blob.bin", "\x00\x01\x02binary design-loop/design-loop\x00")
+	writeParentFile(t, parent, "lib/blob.bin", "\x00\x01\x02binary demo-group/demo-feature\x00")
 	// A file that cannot be read is a scan failure.
 	sealed := writeParentFile(t, parent, "lib/sealed.go", "package lib\n")
 	if err := os.Chmod(sealed, 0o000); err != nil {
@@ -455,7 +455,7 @@ func TestSweep_IsALineBasedLexicalScanThatRefusesWhatItCannotRead(t *testing.T) 
 	t.Cleanup(func() { os.Chmod(sealed, 0o644) })
 
 	result := runSweep(t, parent, retiring, nil)
-	assertGroupQualifiedHit(t, result, "broken.yaml", "design-loop/design-loop")
+	assertGroupQualifiedHit(t, result, "broken.yaml", "demo-group/demo-feature")
 	for _, f := range result.Failures {
 		if strings.Contains(f.Path, "broken.yaml") {
 			t.Errorf("a lexical scan has no parse step and so no parse failure: %+v", f)
@@ -475,7 +475,7 @@ func TestSweep_IsALineBasedLexicalScanThatRefusesWhatItCannotRead(t *testing.T) 
 	}
 
 	retireRootDispositions = writeDispositionsFile(t,
-		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+		deliveredDispositions("demo-group/demo-feature", "demo-group/other-feature"))
 	retireRootNonInteractive = true
 	cmd, _ := retireCmd(t, parent, "")
 	err := runRetireRoot(cmd, []string{"old"})
@@ -533,8 +533,8 @@ func TestSweep_ANestedCheckoutIsNotProjectContent(t *testing.T) {
 		t.Run(gitEntry, func(t *testing.T) {
 			parent, retiring := groupSweepFixture(t)
 			plantNestedCheckout(t, parent, ".claude/worktrees/agent-stale", gitEntry, map[string]string{
-				"internal/old.go": "// parlay-feature: design-loop/design-loop\n" +
-					"// The stale checkout still calls it design-loop/design-loop.\n" +
+				"internal/old.go": "// parlay-feature: demo-group/demo-feature\n" +
+					"// The stale checkout still calls it demo-group/demo-feature.\n" +
 					"package old\n",
 				"docs/guide.md": "Run parlay build-feature --root old to rebuild.\n",
 			})
@@ -561,17 +561,17 @@ func TestSweep_ANestedCheckoutDoesNotBlockOrFailReHomeReadiness(t *testing.T) {
 	// feature would fail readiness against a file nobody can fix.
 	parent, retiring := groupSweepFixture(t)
 	writeParentFile(t, parent, "internal/shared/kept.go",
-		"// parlay-feature: keeper\n// parlay-extends: design-loop/design-loop/helper\npackage shared\n")
+		"// parlay-feature: keeper\n// parlay-extends: demo-group/demo-feature/helper\npackage shared\n")
 	plantNestedCheckout(t, parent, ".claude/worktrees/agent-stale", "file", map[string]string{
-		"internal/shared/kept.go": "// parlay-feature: design-loop/design-loop\npackage shared\n",
+		"internal/shared/kept.go": "// parlay-feature: demo-group/demo-feature\npackage shared\n",
 	})
 
 	rec, err := loadRecord(t, `dispositions:
-  - feature: design-loop/design-loop
+  - feature: demo-group/demo-feature
     term: authority-re-homed-to
     target: "@keeper"
     rationale: keeper carries the helper now
-  - feature: studio-foundation/studio-deployer
+  - feature: demo-group/other-feature
     term: delivered-and-deleted
     rationale: gone
 `)
@@ -602,7 +602,7 @@ func TestSweep_TheDispositionRecordItselfIsExempt(t *testing.T) {
 	parent, retiring := groupSweepFixture(t)
 	// Inside the project tree, so the walk reaches it.
 	recPath := writeParentFile(t, parent, "docs/plans/retirement-dispositions.yaml",
-		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+		deliveredDispositions("demo-group/demo-feature", "demo-group/other-feature"))
 	rec, err := LoadDispositionRecord(recPath)
 	if err != nil {
 		t.Fatal(err)
@@ -618,7 +618,7 @@ func TestSweep_TheDispositionRecordItselfIsExempt(t *testing.T) {
 	// Exactly that file, and nothing broader: another file that merely
 	// looks like a disposition record is scanned like anything else.
 	writeParentFile(t, parent, "docs/plans/other-dispositions.yaml",
-		deliveredDispositions("design-loop/design-loop"))
+		deliveredDispositions("demo-group/demo-feature"))
 	again := runSweep(t, parent, retiring, rec)
 	found := false
 	for _, f := range again.Findings {
@@ -636,18 +636,18 @@ func TestSweep_TheDispositionRecordItselfIsExempt(t *testing.T) {
 func TestRetireRoot_AnAcknowledgedReferenceNoLongerBlocksAndIsListed(t *testing.T) {
 	parent, _ := groupSweepFixture(t)
 	writeParentFile(t, parent, "docs/history.md",
-		"Phase ordering used to live in design-loop/design-loop before the split.\n")
+		"Phase ordering used to live in demo-group/demo-feature before the split.\n")
 
 	dispositions := `dispositions:
-  - feature: design-loop/design-loop
+  - feature: demo-group/demo-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
-  - feature: studio-foundation/studio-deployer
+  - feature: demo-group/other-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/history.md
-    reference: design-loop/design-loop
+    reference: demo-group/demo-feature
     rationale: a sentence about what used to be, not an instruction that reads the root
 `
 	retireRootDispositions = writeDispositionsFile(t, dispositions)
@@ -679,20 +679,20 @@ acknowledged-references:
 func TestRetireRoot_AnUnacknowledgedReferenceStillRefuses(t *testing.T) {
 	parent, _ := groupSweepFixture(t)
 	writeParentFile(t, parent, "docs/history.md",
-		"Phase ordering used to live in design-loop/design-loop before the split.\n")
+		"Phase ordering used to live in demo-group/demo-feature before the split.\n")
 	writeParentFile(t, parent, "docs/runbook.md",
-		"Rebuild design-loop/design-loop before shipping.\n")
+		"Rebuild demo-group/demo-feature before shipping.\n")
 
 	retireRootDispositions = writeDispositionsFile(t, `dispositions:
-  - feature: design-loop/design-loop
+  - feature: demo-group/demo-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
-  - feature: studio-foundation/studio-deployer
+  - feature: demo-group/other-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/history.md
-    reference: design-loop/design-loop
+    reference: demo-group/demo-feature
     rationale: prose about what used to be
 `)
 	retireRootNonInteractive = true
@@ -716,19 +716,19 @@ func TestRetireRoot_AnAcknowledgmentMustMatchExactly(t *testing.T) {
 		{
 			name: "wrong-path",
 			ack: `  - path: docs/other.md
-    reference: design-loop/design-loop
+    reference: demo-group/demo-feature
     rationale: assessed`,
 		},
 		{
 			name: "wrong-reference",
 			ack: `  - path: docs/history.md
-    reference: design-loop/design-loop/phases
+    reference: demo-group/demo-feature/phases
     rationale: assessed`,
 		},
 		{
 			name: "path-prefix-is-not-a-match",
 			ack: `  - path: docs
-    reference: design-loop/design-loop
+    reference: demo-group/demo-feature
     rationale: assessed`,
 		},
 	}
@@ -736,12 +736,12 @@ func TestRetireRoot_AnAcknowledgmentMustMatchExactly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parent, _ := groupSweepFixture(t)
 			writeParentFile(t, parent, "docs/history.md",
-				"Phase ordering used to live in design-loop/design-loop before the split.\n")
+				"Phase ordering used to live in demo-group/demo-feature before the split.\n")
 			retireRootDispositions = writeDispositionsFile(t, `dispositions:
-  - feature: design-loop/design-loop
+  - feature: demo-group/demo-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
-  - feature: studio-foundation/studio-deployer
+  - feature: demo-group/other-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
 acknowledged-references:
@@ -759,15 +759,15 @@ acknowledged-references:
 func TestRetireRoot_AnAcknowledgmentMatchingNothingIsReported(t *testing.T) {
 	parent, _ := groupSweepFixture(t)
 	retireRootDispositions = writeDispositionsFile(t, `dispositions:
-  - feature: design-loop/design-loop
+  - feature: demo-group/demo-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
-  - feature: studio-foundation/studio-deployer
+  - feature: demo-group/other-feature
     term: delivered-and-deleted
     rationale: shipped and later removed
 acknowledged-references:
   - path: docs/typo.md
-    reference: design-loop/design-loop
+    reference: demo-group/demo-feature
     rationale: assessed
 `)
 	retireRootPreview = true

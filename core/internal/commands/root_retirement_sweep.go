@@ -76,9 +76,9 @@ const (
 	// satisfy.
 	sweepKindCommandReference = "command-reference"
 	// sweepKindGroupQualifiedReference is a plain group-qualified
-	// feature reference — `design-loop/design-loop`, or a deeper
+	// feature reference — `demo-group/demo-feature`, or a deeper
 	// component-qualified form such as
-	// `studio-foundation/studio-deployer/cross-cutting/deploy-step` —
+	// `demo-group/other-feature/cross-cutting/deploy-step` —
 	// written without any marker, @ref or root prefix around it. This
 	// is how features are actually named across the corpus: in Go
 	// comments, in YAML values, in markdown prose and in generated
@@ -166,16 +166,16 @@ func markerNamesRetiringFeature(value string, retiring map[string]bool) (string,
 //
 // Markers, `@feature` refs and `--root <name>` are the decorated forms,
 // and matching only those misses the majority of real references —
-// `design-loop/design-loop` in a Go comment, a YAML value naming
-// `studio-foundation/studio-deployer`, prose in a shipped skill naming
+// `demo-group/demo-feature` in a Go comment, a YAML value naming
+// `demo-group/other-feature`, prose in a shipped skill naming
 // `<group>/<feature>/cross-cutting/<component>`. Each of those keeps
 // pointing at the retiring root after it is gone.
 //
 // Two rules keep the match from firing on ordinary words:
 //
 //   - Word boundaries on both ends. The leading position must not be a
-//     word character, a dot or a hyphen, so `redesign-loop/x` does not
-//     match `design-loop/x`; the trailing position must not continue
+//     word character, a dot or a hyphen, so `redemo-group/x` does not
+//     match `demo-group/x`; the trailing position must not continue
 //     the path or the word. A slash IS allowed to lead, so a reference
 //     embedded in a longer path (`spec/intents/<group>/<feature>`)
 //     still matches — a longer path containing the slug is a reference

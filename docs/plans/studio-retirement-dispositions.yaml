@@ -1,0 +1,191 @@
+# Operator disposition record for `parlay retire-root studio`.
+# Authored from the Phase 0.1 inventory (docs/plans/studio-teardown-inventory.md §3),
+# decisions D-011/D-014 in the overnight log, and the backend-only ruling of
+# 2026-08-30. One entry per feature in the retiring root; closed vocabulary.
+dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: "Its one surviving delivery was the Design-Loop block in layout.schema.md, removed under the user-authorized 2026-08-31 disposition with a paired amendment on studio-support/page-layout-field."
+  - feature: design-loop/design-loop-fallback
+    term: built-but-undelivered
+    rationale: "Baseline hashes two intents; no buildfile, no code ever produced."
+  - feature: design-loop/vocabulary-validation
+    term: built-but-undelivered
+    rationale: "Fully built artifacts, but nothing was delivered: its only code trace was a stray marker on an unrelated command registration (root.go), corrected in the teardown; layout.schema.md itself records the validator is gone."
+  - feature: domain-model-editor/domain-model-editor-mvp
+    term: delivered-and-deleted
+    rationale: "Delivered the editor persistence core inside internal/editor; the editor is deleted and the surviving domain core was re-homed by the Phase 1 marker rewrite before this retirement."
+  - feature: domain-model-editor/domain-model-editor-relationships
+    term: delivered-and-deleted
+    rationale: "Delivered the relationships UI inside internal/editor/ui, deleted with the editor."
+  - feature: domain-model-editor/domain-model-editor-validation
+    term: authority-re-homed-to
+    target: parlay-tool/domain-document-api
+    rationale: "Its surviving deliveries (the validator seam in domain_validator.go and the one-engine parity test) carry the founding feature's markers as of the Phase 1 rewrite."
+  - feature: studio-ai-authoring/initial-layout-proposal
+    term: built-but-undelivered
+    rationale: "Placeholder baseline (intents:{}/sources:{}); nothing delivered."
+  - feature: studio-ai-authoring/sync-back-ai-classification
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/collaboration-patterns
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/mid-edit-resumability
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/multi-screen-management
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-foundation/figma-mcp-client
+    term: built-but-undelivered
+    rationale: "Fully built artifacts; no code was ever produced or kept."
+  - feature: studio-foundation/figma-mcp-via-host-agent
+    term: delivered-and-deleted
+    rationale: "Its delivery was a retraction: the absence of direct MCP code, witnessed by eight parlay-extends markers on editor config/server files. Those witnesses are deleted with the editor, so what it delivered leaves with it. Classified per D-011/D; built-but-undelivered would falsify what the witnesses recorded."
+  - feature: studio-foundation/studio-config
+    term: delivered-and-deleted
+    rationale: "Delivered internal/editor/config, deleted with the editor server."
+  - feature: studio-foundation/studio-deployer
+    term: authority-re-homed-to
+    target: parlay-tool/atomic-file-writes
+    rationale: "Its surviving delivery, core/internal/atomicfile, is used core-wide and carries the founding feature's markers as of the Phase 1 rewrite."
+  - feature: studio-foundation/web-server-harness
+    term: delivered-and-deleted
+    rationale: "Delivered internal/editor/server, deleted with the editor."
+  - feature: studio-multi-adapter/cross-design-system-adapter
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-multi-adapter/second-adapter-same-design-system
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+
+# References the operator accepts as historical prose, not live dependencies.
+# Each was reviewed against the Phase 0.1 inventory and the teardown decisions log.
+acknowledged-references:
+  - path: core/.parlay/build/parlay-tool/status-feature-phases/buildfile.yaml
+    reference: "studio/spec/intents/widget/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/.parlay/build/parlay-tool/status-feature-phases/testcases.yaml
+    reference: "studio/spec/intents/widget"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio/.parlay/adapters/shared.adapter.yaml"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio/.parlay/build/_project/../../../core/domain-model.yaml"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio/.parlay/adapters/local.adapter.yaml"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio/.parlay/build/design-loop/design-loop/testcases.yaml"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "design-loop/design-loop"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "design-loop/design-loop-fallback"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "design-loop/vocabulary-validation"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio/.parlay/config.yaml"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio-foundation/studio-deployer"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "domain-model-editor/domain-model-editor-validation"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio-deferred/mid-edit-resumability"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio-foundation/figma-mcp-client"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    reference: "studio-foundation/figma-mcp-via-host-agent"
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    reference: "studio/spec/intents/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    reference: "studio/spec/intents/shared/widget/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    reference: "--root studio"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/infrastructure.md
+    reference: "studio/spec/intents/widget/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/intents.md
+    reference: "--root studio"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/intents.md
+    reference: "studio/spec/intents/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    reference: "--root studio"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    reference: "studio/spec/intents/"
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/studio-support/page-layout-field/amendments/001-layout-schema-drops-design-loop-preservation.md
+    reference: "design-loop/design-loop"
+    rationale: "The amendment records the removal of the Design-Loop block; naming the retired feature is the record's purpose."
+  - path: core/spec/intents/studio-support/structured-domain-model-validation/amendments/001-cli-only-role-after-studio-teardown.md
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    rationale: "The amendment records this feature's release from the Studio parity contract; the path names what was retired."
+  - path: core/spec/intents/studio-support/structured-domain-model-validation/intents.md
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    rationale: "Frozen founding doc's historical reference to the Studio half of the original parity contract, retired by amendment 001; prose, not dependency."
+  - path: .claude/settings.local.json
+    reference: "studio-foundation/web-server-harness"
+    rationale: "A stale entry in the user's local tool-permission allowlist quoting an old debugging one-liner; user-owned convenience config, not project dependency."
+  - path: core/.parlay/build/parlay-tool/architectural-prose-artifact/testcases.yaml
+    reference: "studio/spec/intents/"
+    rationale: "Frozen build-state example prose from when the studio root existed; historical record."
+  - path: core/.parlay/build/parlay-tool/architectural-prose-artifact/testcases.yaml
+    reference: "studio/spec/intents/studio-foundation/figma-mcp-client/intents.md"
+    rationale: "Frozen build-state example prose from when the studio root existed; historical record."
+  - path: core/.parlay/build/parlay-tool/root-retirement/buildfile.yaml
+    reference: "design-loop/design-loop"
+    rationale: "The retirement feature's own build instructions quote a studio feature as the worked example of what the sweep must find."
+  - path: core/.parlay/build/studio-support/page-layout-field/buildfile.yaml
+    reference: "@design-loop/design-loop"
+    rationale: "The byte-equivalence constraint retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/.parlay/build/studio-support/page-layout-field/buildfile.yaml
+    reference: "design-loop/design-loop"
+    rationale: "The byte-equivalence constraint retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/.parlay/build/studio-support/page-layout-field/testcases.yaml
+    reference: "description: \"The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged.\""
+    rationale: "The preservation testcase retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/internal/agent/validate_adapter_set_root_test.go
+    reference: "studio/.parlay/adapter-set.yaml"
+    rationale: "Test fixture string describing a historical scenario; synthetic path, not a live reference."
+  - path: core/internal/agent/validate_adapter_set_root_test.go
+    reference: "studio/internal/ui/src/"
+    rationale: "Test fixture string describing a historical scenario; synthetic path, not a live reference."
+  - path: core/internal/commands/feature_phase_test.go
+    reference: "studio/widget"
+    rationale: "Test fixture using the historical root name; synthetic, not live."
+  - path: core/spec/intents/parlay-tool/build-integration-discovery-completeness/intents.md
+    reference: "studio/internal/"
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/build-integration-discovery-completeness/intents.md
+    reference: "studio/pkg/..."
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    reference: "studio/internal/x.go"
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/dialogs.md
+    reference: "studio/.parlay/config.yaml"
+    rationale: "Frozen founding-doc worked example: multi-root's canonical example child was studio; historical example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/intents.md
+    reference: "studio/.parlay/config.yaml"
+    rationale: "Frozen founding-doc worked example naming the historical studio child; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/surface.yaml
+    reference: "studio/.parlay/config.yaml"
+    rationale: "Frozen surface examples naming the historical studio child; example prose."
