@@ -1,7 +1,7 @@
 // parlay-feature: parlay-tool
 // parlay-component: validate
 // parlay-extends: infrastructure-layer/InfrastructureValidationResult
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-validate-cli-type
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-validate-cli-type
 // parlay-extends: parlay-tool/cross-cutting-target-paths/project-pass-validation-and-cli-flag
 
 package commands
@@ -123,7 +123,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// the command has a verdict. Accepts `-` to read the model from stdin.
 	// The non-JSON domain-model path below is unchanged.
 	//
-	// parlay-feature: studio-support/structured-domain-model-validation
+	// parlay-feature: parlay-tool/structured-domain-model-validation
 	// parlay-component: cross-cutting/json-validation-mode
 	if validateJSON && validateType == "domain-model" {
 		return runValidateDomainModelJSON(cmd, path)
@@ -150,7 +150,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Codes and fix messages follow layout.schema.md's "Validation pass"
 	// table.
 	//
-	// parlay-feature: studio-support/page-layout-field
+	// parlay-feature: parlay-tool/page-layout-field
 	// parlay-cross-cutting-id: layout-precheck-contract
 	if validateType == "page" {
 		return runValidatePageType(cmd, path)
@@ -199,7 +199,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			validator = agent.ValidateInfrastructure
 		}
 	case "domain-model":
-		// parlay-feature: studio-support/domain-model-yaml-migration
+		// parlay-feature: parlay-tool/domain-model-yaml-migration
 		// parlay-component: validate (extends domain-model-validate-cli-type)
 		validator = validateDomainModelAdapter
 	// parlay-feature: parlay-tool/multi-adapter
@@ -338,7 +338,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // valid JSON on stdout (a single-element array), never a crash or non-JSON
 // error.
 //
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/json-validation-mode
 func runValidateDomainModelJSON(cmd *cobra.Command, path string) error {
 	var (

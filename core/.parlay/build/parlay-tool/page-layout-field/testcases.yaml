@@ -1,0 +1,529 @@
+feature: parlay-tool/page-layout-field
+framework: "Go testing (stdlib testing package, table-driven where natural)"
+
+# This feature is infrastructure-only (no surface, no UI components). The
+# testcases below validate the cross-cutting contracts. Each suite maps to
+# one cross-cutting entry in buildfile.yaml; cases hew to the Invariants
+# bullets in infrastructure.md and the Verify bullets in intents.md.
+
+suites:
+  - name: page-artifact-loader-without-layout-block
+    component: page-artifact-loader-with-optional-layout
+    intent: "@parlay-tool/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: page-without-layout-section-parses-cleanly
+        description: "A page artifact lacking a ## Layout section parses successfully and exposes Layout == nil. Existing pages remain bit-for-bit equivalent to today's pages in all parser-visible respects."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: file-exists
+            target: core/internal/parser/page.go
+          - verify: state
+            target: Page.Layout
+            expected: nil
+
+  - name: page-artifact-loader-with-layout-block
+    component: page-artifact-loader-with-optional-layout
+    intent: "@parlay-tool/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: page-with-well-formed-layout-section-parses-cleanly
+        description: "A page artifact whose body contains a ## Layout YAML block carrying componentVocabulary, schemaVersion, and a nodes tree parses successfully and exposes a Layout field carrying those three pieces."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout.ComponentVocabulary
+            expected: clarity@17
+          - verify: state
+            target: Page.Layout.SchemaVersion
+            expected: 1
+          - verify: state
+            target: Page.Layout.Nodes
+            expected: non-empty
+
+      - name: layout-section-position-among-siblings-is-irrelevant
+        description: "A page that places ## Layout immediately after the frontmatter and a page that places it after other top-level sections produce identical parse trees. The loader matches by heading, not by position."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout
+            expected: identical-across-orderings
+
+      - name: layout-block-missing-component-vocabulary-fails-parse
+        description: "A layout block that omits the componentVocabulary key fails parse with an error naming the missing field."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "missing required field 'componentVocabulary'"
+
+      - name: layout-block-missing-schema-version-fails-parse
+        description: "A layout block that omits schemaVersion fails parse with an actionable error naming the missing field and the page path."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "missing required field 'schemaVersion'"
+
+      - name: layout-block-with-wiring-field-fails-parse
+        description: "A layout block whose node carries a wiring field (dataSource, binding, expression-string) fails parse with an error naming the offending field, the offending node id, and the page path."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "wiring field 'dataSource' on node 'main-table'"
+
+      - name: layout-block-with-raw-spacing-value-fails-parse
+        description: "A layout block whose container sets gap: 24px or padding: 16 (raw value where a token reference is required) fails parse with an error naming the offending node id and field."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: error
+            target: ParsePageFile
+            expected: "raw value '24px' for field 'gap' on node 'header-row'"
+
+      - name: round-trip-preserves-node-ids
+        description: "A page round-tripped through Studio's design loop preserves every layout-node id across the read-edit-write cycle. Newly added nodes get fresh ids; surviving nodes keep theirs."
+        steps:
+          - action: render
+            target: page-artifact-loader-with-optional-layout
+          - verify: state
+            target: Page.Layout.Nodes[*].ID
+            expected: stable-across-round-trip
+
+  - name: layout-tree-schema-validator-universal-fields-only
+    component: layout-tree-schema-validator
+    intent: "@parlay-tool/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: tree-with-only-universal-fields-validates-regardless-of-vocabulary
+        description: "A layout tree whose nodes use only universal fields (id, type, children, direction, gap, padding, alignment) validates as ok regardless of which componentVocabulary is declared, because no vocabulary-specific validation is exercised."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: count
+            target: ValidateLayout.errors
+            expected: 0
+
+      - name: deeply-nested-tree-validates-each-level
+        description: "A layout tree with containers nested several levels deep validates each level recursively against the same rules. Depth has no special cap."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: count
+            target: ValidateLayout.errors
+            expected: 0
+          - verify: state
+            target: ValidateLayout.depth-walked
+            expected: arbitrary
+
+  - name: layout-tree-schema-validator-rejections
+    component: layout-tree-schema-validator
+    intent: "@parlay-tool/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: tree-with-unknown-component-type-fails-validation
+        description: "A layout tree declaring componentVocabulary clarity@17 and a node type clarity.kanban (not defined in clarity@17) fails validation; the error names the offending node id and the offending type."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: unknown-component
+          - verify: state
+            target: ValidateLayout.errors[0].Context
+            expected: contains-node-id-and-type
+
+      - name: tree-with-raw-value-on-token-field-fails-validation
+        description: "A layout tree where a node sets padding: 16 (raw integer) on a field that expects a spacing-token reference fails validation with an error naming the node id and the field."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: raw-value-where-token-required
+          - verify: state
+            target: ValidateLayout.errors[0].Context
+            expected: contains-node-id-and-field-padding
+
+      - name: schema-version-mismatch-rejected
+        description: "A layout block whose schemaVersion does not match the version this Core build targets fails validation with an error naming the version found and expected."
+        steps:
+          - action: render
+            target: layout-tree-schema-validator
+          - verify: state
+            target: ValidateLayout.errors[0].Code
+            expected: layout-schema-version-unsupported
+
+  - name: layout-precheck-contract-passing
+    component: layout-precheck-contract
+    intent: "@parlay-tool/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: page-without-layout-returns-ok-verdict
+        description: "Calling LayoutPrecheck on a page whose Layout is nil (no ## Layout section) returns Verdict{Code: ok}. A page without a layout is trivially valid for this contract."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: ok
+          - verify: state
+            target: Verdict.File
+            expected: ""
+
+      - name: passing-page-returns-only-ok-code
+        description: "Calling LayoutPrecheck on a well-formed, schema-compliant, vocabulary-correct, token-correct, wiring-free page returns Verdict whose only populated field is Code: ok. The other five fields are empty."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: ok
+          - verify: state
+            target: Verdict.NodePath
+            expected: ""
+          - verify: state
+            target: Verdict.Found
+            expected: ""
+          - verify: state
+            target: Verdict.Expected
+            expected: ""
+          - verify: state
+            target: Verdict.Fix
+            expected: ""
+
+      - name: precheck-is-deterministic-byte-for-byte
+        description: "Calling LayoutPrecheck twice on the same (page, adapter) pair returns identical verdicts byte-for-byte. The verdict struct is the deterministic part of the system even though codegen output downstream is not."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.first-call
+            expected: byte-equal-to-second-call
+
+  - name: layout-precheck-contract-failures
+    component: layout-precheck-contract
+    intent: "@parlay-tool/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: malformed-yaml-block-yields-malformed-layout-block-verdict
+        description: "A page whose YAML in the ## Layout block fails to parse (bad indent, unterminated string, etc.) yields Verdict{Code: malformed-layout-block, File: <page path>, Found: <verbatim parser error>, Expected: well-formed YAML conforming to the layout schema, Fix: <parser-emitted next step>}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: malformed-layout-block
+          - verify: state
+            target: Verdict.File
+            expected: pages/dashboard.md
+          - verify: state
+            target: Verdict.Found
+            expected: contains-parser-error
+          - verify: state
+            target: Verdict.Expected
+            expected: well-formed-yaml-conforming-to-layout-schema
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-next-step
+
+      - name: vocabulary-version-mismatch-verdict
+        description: "A page declaring clarity@17 evaluated against an adapter loaded as clarity@16 yields Verdict{Code: vocabulary-version-mismatch, File: <page path>, Found: clarity@17, Expected: clarity@16, Fix: names both remediation paths}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: vocabulary-version-mismatch
+          - verify: state
+            target: Verdict.Found
+            expected: clarity@17
+          - verify: state
+            target: Verdict.Expected
+            expected: clarity@16
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-both-remediation-paths
+
+      - name: raw-value-where-token-required-verdict
+        description: "A page whose layout uses gap: 24px on a container yields Verdict{Code: raw-value-where-token-required, File: <page path>, NodePath: <node-path within layout>, Found: 24px, Expected: list of valid spacing tokens, Fix: replace 24px with one of [...]}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: raw-value-where-token-required
+          - verify: state
+            target: Verdict.NodePath
+            expected: non-empty
+          - verify: state
+            target: Verdict.Found
+            expected: 24px
+          - verify: state
+            target: Verdict.Expected
+            expected: contains-valid-spacing-tokens
+          - verify: state
+            target: Verdict.Fix
+            expected: contains-substitution-instruction
+
+      - name: unknown-component-type-verdict
+        description: "A page with type: clarity.kanban against clarity@17 (which does not define that type) yields Verdict{Code: unknown-component-type, File: <page path>, NodePath: <path>, Found: clarity.kanban, Expected: vocabulary's known type list, Fix: pick a known type from clarity@17 or upgrade the adapter}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: unknown-component-type
+          - verify: state
+            target: Verdict.Found
+            expected: clarity.kanban
+          - verify: state
+            target: Verdict.Expected
+            expected: contains-clarity-17-type-list
+          - verify: state
+            target: Verdict.Fix
+            expected: names-both-remediation-paths
+
+      - name: missing-schema-version-verdict
+        description: "A page whose layout block omits schemaVersion yields Verdict{Code: missing-schema-version, File: <page path>, Found: <empty or absent>, Expected: schemaVersion: <integer>, Fix: add schemaVersion at the top of the ## Layout block}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: missing-schema-version
+
+      - name: wiring-in-layout-verdict
+        description: "A page whose layout node carries a wiring field (dataSource, binding, expression-string) yields Verdict{Code: wiring-in-layout, File: <page path>, NodePath: <node-path>, Found: dataSource, Expected: layout node fields without wiring, Fix: move wiring to the layout-aware codegen pass}."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: Verdict.Code
+            expected: wiring-in-layout
+          - verify: state
+            target: Verdict.Found
+            expected: dataSource
+          - verify: state
+            target: Verdict.Fix
+            expected: mentions-codegen-pass
+
+  - name: layout-precheck-aggregation-across-pages
+    component: layout-precheck-contract
+    intent: "@parlay-tool/page-layout-field/surface-layout-validation-as-a-precheck-contract-for-codegen"
+    cases:
+      - name: walk-of-multiple-pages-yields-one-verdict-per-page
+        description: "A walk of multiple layout-bearing pages produces a list of per-page verdicts; the list is the union of every check across every page, not a single global verdict, and not just the first failure."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: count
+            target: per-page-verdicts
+            expected: number-of-pages-walked
+          - verify: state
+            target: per-page-verdicts.contains-mix-of-ok-and-failure
+            expected: true
+
+      - name: precheck-performs-no-ai-calls-and-no-external-state
+        description: "The precheck is a pure function over its inputs. No file I/O, no network, no AI calls, no external state. Sub-millisecond on common-case pages."
+        steps:
+          - action: render
+            target: layout-precheck-contract
+          - verify: state
+            target: LayoutPrecheck.purity
+            expected: pure-function
+
+  - name: page-schema-doc-mentions-layout-section
+    component: page-schema-doc-mentions-layout-section
+    intent: "@parlay-tool/page-layout-field/add-optional-layout-block-to-the-page-schema"
+    cases:
+      - name: schema-doc-mentions-layout-as-top-level-section
+        description: "After the edit, core/internal/embedded/schemas/page.schema.md mentions ## Layout as a top-level section in the page Markdown body, so a new author reading the schema can discover that the optional layout block exists."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/page.schema.md
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: contains-heading-## Layout
+
+      - name: schema-doc-frames-layout-block-as-optional-not-required
+        description: "The schema doc explicitly frames the ## Layout section as optional. The word 'optional' (or equivalent framing) appears next to the Layout description, and the Fields table row for Layout reads 'No' in the Required column. Pages without ## Layout remain valid."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: layout-section-described-as-optional
+
+      - name: schema-doc-names-required-yaml-keys-inside-layout-block
+        description: "Inside the ## Layout section description, the schema doc names the three top-level YAML keys that the layout block carries: componentVocabulary, schemaVersion, and nodes. Each is named by its exact string spelling."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-componentVocabulary
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-schemaVersion
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: mentions-nodes
+
+      - name: schema-doc-forwards-node-tree-shape-to-layout-schema
+        description: "The page-schema doc references layout.schema.md by name as the document where the node-tree shape is defined. The page-schema doc does NOT restate the node-tree shape inline — it is a forward reference, not a duplicate."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: references-layout.schema.md-by-name
+
+      - name: schema-doc-does-not-mark-layout-block-required
+        description: "Negative assertion. The schema doc must not claim the ## Layout section is required at the page level. The Required column for the Layout row reads 'No', and no other prose contradicts that."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/page.schema.md
+            expected: layout-row-required-column-is-no
+
+  - name: layout-schema-doc-tree-shape
+    component: layout-schema-doc-tree-shape
+    intent: "@parlay-tool/page-layout-field/define-the-layout-tree-schema"
+    cases:
+      - name: layout-schema-doc-no-longer-contains-out-of-scope-stub
+        description: "After the edit, core/internal/embedded/schemas/layout.schema.md no longer contains the literal phrase 'Out of scope (for this stub)'. The stub framing that deferred this feature's concerns has been replaced with concrete documentation. Negative assertion: the substring must not appear anywhere in the file."
+        steps:
+          - verify: file-exists
+            target: core/internal/embedded/schemas/layout.schema.md
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: does-not-contain-out-of-scope-for-this-stub
+
+      - name: layout-schema-doc-attributes-new-sections-to-page-layout-field
+        description: "The replacement region carries an HTML comment marker attributing the new sections to parlay-feature: parlay-tool/page-layout-field. This is the ownership marker — sibling features (adapter-vocabulary-extension, design-loop) carry their own markers above their own sections and must remain unchanged."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-studio-support-page-layout-field
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-cross-cutting-id-layout-schema-doc-tree-shape
+
+      - name: layout-schema-doc-preserves-adapter-vocabulary-extension-marker
+        description: "The HTML comment marker attributing the universal-container-fields section to parlay-feature: parlay-tool/adapter-vocabulary-extension is preserved byte-equivalent. This edit does NOT take ownership of that section; it only adds new sections owned by this feature."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-studio-support-adapter-vocabulary-extension
+
+      - name: layout-schema-doc-preserves-design-loop-figma-block-marker
+        description: "The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-parlay-feature-design-loop-design-loop
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Optional-figma-block-Design-Loop
+
+      - name: layout-schema-doc-describes-top-level-structure
+        description: "The schema doc describes the top-level layout file structure naming the three required top-level keys: componentVocabulary, schemaVersion, and nodes. Each is named by its exact string spelling. The doc forwards to page.schema.md for the embedding rule rather than restating it inline."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Top-level-structure
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-componentVocabulary
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-schemaVersion
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-nodes
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-page.schema.md-by-name
+
+      - name: layout-schema-doc-describes-vocabulary-pinning-syntax
+        description: "The schema doc documents the vocabulary pinning syntax (e.g., componentVocabulary: clarity@17) and the version-mismatch error path. The vocabulary-version-mismatch error code is named, and the fix names both remediation paths."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Vocabulary-pinning
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-vocabulary-version-mismatch
+
+      - name: layout-schema-doc-describes-container-node-shape
+        description: "The schema doc describes container node shape, naming the universal node fields type and children explicitly. The doc cross-references the existing universal-container-fields table for the four container-level layout fields rather than restating them."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Container-node-shape
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-type-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-children-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-Universal-container-fields-section
+
+      - name: layout-schema-doc-describes-leaf-and-data-shape-nodes
+        description: "The schema doc describes leaf and data-shape node shape. A leaf node is a layout node with no children; a data-shape node is a leaf node whose type is a vocabulary component that consumes a typed data binding."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Leaf-and-data-shape-nodes
+
+      - name: layout-schema-doc-states-vocabulary-binding-rule
+        description: "The schema doc states the vocabulary-binding rule: vocabulary-specific fields are validated against the active adapter's componentVocabulary entry for the node's declared type. Both 'adapter' and 'componentVocabulary' are referenced by exact string spelling so the rule is greppable from either side."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Vocabulary-binding-rule
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-adapter
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-componentVocabulary-in-binding-rule
+
+      - name: layout-schema-doc-describes-per-mode-value-selection
+        description: "The schema doc documents per-mode value selection. A layout MAY declare a mode: selector at the layout level, and a node MAY declare per-mode field values. The mode key is explicitly optional. The missing-mode-emit-form error code is named and attributed to its owning feature."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Per-mode-value-selection
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-mode-key
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: mentions-missing-mode-emit-form
+
+      - name: layout-schema-doc-forward-references-validation-pass
+        description: "The schema doc forward-references the validation pass to internal/agent/validate.go and the precheck contract to internal/agent/precheck.go. The doc does NOT restate the validation rules inline — it names the entry points and forwards detail. The stable error code set owned by this feature is listed."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Validation-pass
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-internal-agent-validate.go
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: references-internal-agent-precheck.go
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: lists-stable-error-codes-malformed-layout-block-and-vocabulary-version-mismatch
+
+      - name: layout-schema-doc-preserves-universal-container-fields-section
+        description: "Negative assertion. The existing Universal container fields section (with its 4-field table: direction, gap, padding, alignment) is preserved byte-equivalent. This feature's edit does NOT modify the table, the uniformity contract, the universal-fields rule, or the migration posture sections — those remain owned by adapter-vocabulary-extension."
+        steps:
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Universal-container-fields
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Uniformity-contract
+          - verify: file-content
+            target: core/internal/embedded/schemas/layout.schema.md
+            expected: contains-heading-Universal-fields-rule

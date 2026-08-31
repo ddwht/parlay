@@ -1,0 +1,465 @@
+feature: parlay-tool/adapter-vocabulary-extension
+adapter: go-cli
+
+# This is a pure-infrastructure feature — there is no surface.md and no
+# user-facing components. Codegen produces only cross-cutting changes against
+# existing adapter parsing/validation code and the adapter schema doc, plus a
+# new layout schema doc that introduces the universal container fields. The
+# components: section is intentionally absent.
+
+fixtures:
+  adapter-with-clarity-vocabulary:
+    description: An adapter declaring a representative clarity@17 component vocabulary (region, heading, button, datagrid, datagrid-column).
+    data:
+      ComponentVocabulary:
+        - name: clarity@17
+          version: "17"
+          components:
+            - type: clarity.region
+              category: container
+              allowed-children: [clarity.heading, clarity.button, clarity.datagrid]
+              variants: []
+              properties: []
+            - type: clarity.heading
+              category: leaf
+              variants: [page, section, subsection]
+              properties:
+                - name: text
+                  type: string
+                  required: true
+            - type: clarity.button
+              category: leaf
+              variants: [primary, secondary, tertiary, danger]
+              properties:
+                - name: label
+                  type: string
+                  required: true
+            - type: clarity.datagrid
+              category: container
+              allowed-children: [clarity.datagrid-column]
+              variants: [compact, comfortable]
+              properties:
+                - name: density
+                  type: enum
+                  enum-values: [compact, comfortable]
+                  required: false
+            - type: clarity.datagrid-column
+              category: data-shape
+              variants: []
+              properties:
+                - name: headerLabel
+                  type: string
+                  required: true
+
+  adapter-with-clarity-tokens-light-dark:
+    description: An adapter declaring clarity@17 tokens with light and dark modes — 5 spacing, 5 color, 4 typography.
+    data:
+      AdapterTokens:
+        - modes: [light, dark]
+      SpacingToken:
+        - name: spacing-xs
+          order: 1
+          emit-form: var(--spacing-xs)
+        - name: spacing-sm
+          order: 2
+          emit-form: var(--spacing-sm)
+        - name: spacing-md
+          order: 3
+          emit-form: var(--spacing-md)
+        - name: spacing-lg
+          order: 4
+          emit-form: var(--spacing-lg)
+        - name: spacing-xl
+          order: 5
+          emit-form: var(--spacing-xl)
+      ColorToken:
+        - name: color-surface
+          tone: neutral
+          emit-forms: ["light:var(--color-surface-light)", "dark:var(--color-surface-dark)"]
+        - name: color-status-info
+          tone: info
+          emit-forms: ["light:var(--color-info-light)", "dark:var(--color-info-dark)"]
+        - name: color-status-warning
+          tone: warning
+          emit-forms: ["light:var(--color-warning-light)", "dark:var(--color-warning-dark)"]
+        - name: color-status-danger
+          tone: danger
+          emit-forms: ["light:var(--color-danger-light)", "dark:var(--color-danger-dark)"]
+        - name: color-status-success
+          tone: success
+          emit-forms: ["light:var(--color-success-light)", "dark:var(--color-success-dark)"]
+      TypographyToken:
+        - name: heading-page
+          use-site: heading-page
+          emit-form: var(--type-heading-page)
+        - name: heading-section
+          use-site: heading-section
+          emit-form: var(--type-heading-section)
+        - name: body
+          use-site: body
+          emit-form: var(--type-body)
+        - name: caption
+          use-site: caption
+          emit-form: var(--type-caption)
+
+  adapter-missing-vocabulary-version:
+    description: An adapter that declares a bare vocabulary name without an @<version> suffix — must fail parse.
+    data:
+      ComponentVocabulary:
+        - name: clarity
+          version: ""
+          components: []
+
+  adapter-with-universal-field-redeclared:
+    description: An adapter that illegally re-declares a universal container field (direction) inside a componentVocabulary entry — must fail parse.
+    data:
+      ComponentVocabulary:
+        - name: clarity@17
+          version: "17"
+          components:
+            - type: clarity.region
+              category: container
+              properties:
+                - name: direction
+                  type: enum
+                  enum-values: [horizontal, vertical]
+                  required: false
+
+  adapter-with-property-type-outside-closed-set:
+    description: An adapter that declares a property with type "object" — must fail validation.
+    data:
+      ComponentVocabulary:
+        - name: clarity@17
+          version: "17"
+          components:
+            - type: clarity.foo
+              category: leaf
+              properties:
+                - name: config
+                  type: object
+                  required: true
+
+  adapter-with-color-token-missing-mode:
+    description: Adapter declares modes [light, dark] but color-surface only declares an emit-form for light — must fail parse.
+    data:
+      AdapterTokens:
+        - modes: [light, dark]
+      ColorToken:
+        - name: color-surface
+          tone: neutral
+          emit-forms: ["light:var(--color-surface-light)"]
+
+  adapter-with-empty-mode-list:
+    description: Adapter declares an empty or missing modes list — must fail parse.
+    data:
+      AdapterTokens:
+        - modes: []
+
+  adapter-with-renamed-mode:
+    description: Adapter renames mode "dark" to "night" within clarity@17 without bumping the vocabulary version — must fail parse.
+    data:
+      AdapterTokens:
+        - modes: [light, night]
+
+  layout-validates-against-clarity-17:
+    description: A layout file pinned to clarity@17 referencing only declared components, variants, properties, child relationships, and tokens — validates clean.
+    data:
+      LayoutValidationError: []
+
+  layout-references-unknown-component:
+    description: Layout references type clarity.foobar which is not declared in clarity@17.
+    data:
+      LayoutValidationError:
+        - offending-value: clarity.foobar
+          vocabulary-version: clarity@17
+          allowed-alternatives: [clarity.region, clarity.heading, clarity.button, clarity.datagrid, clarity.datagrid-column]
+          kind: unknown-component
+
+  layout-references-unknown-variant:
+    description: Layout references clarity.button with variant mega-button (not in the closed enum).
+    data:
+      LayoutValidationError:
+        - offending-value: mega-button
+          vocabulary-version: clarity@17
+          allowed-alternatives: [primary, secondary, tertiary, danger]
+          kind: unknown-variant
+
+  layout-version-mismatch:
+    description: Layout pins clarity@17 but the active adapter declares clarity@18 — fails fast before any component lookup.
+    data:
+      LayoutValidationError:
+        - offending-value: clarity@17
+          vocabulary-version: clarity@18
+          allowed-alternatives: [clarity@18]
+          kind: version-mismatch
+
+  layout-disallowed-child:
+    description: Layout places clarity.button as a direct child of clarity.datagrid (which only accepts clarity.datagrid-column).
+    data:
+      LayoutValidationError:
+        - offending-value: clarity.button
+          vocabulary-version: clarity@17
+          allowed-alternatives: [clarity.datagrid-column]
+          kind: disallowed-child
+
+  layout-uses-raw-value-where-token-required:
+    description: Layout uses gap 24px instead of a token reference.
+    data:
+      LayoutValidationError:
+        - offending-value: 24px
+          vocabulary-version: clarity@17
+          allowed-alternatives: [spacing-xs, spacing-sm, spacing-md, spacing-lg, spacing-xl]
+          kind: raw-value-where-token-required
+
+  layout-references-unknown-token:
+    description: Layout uses gap spacing-mega which is not declared.
+    data:
+      LayoutValidationError:
+        - offending-value: spacing-mega
+          vocabulary-version: clarity@17
+          allowed-alternatives: [spacing-xs, spacing-sm, spacing-md, spacing-lg, spacing-xl]
+          kind: unknown-token
+
+  layout-removed-component-still-referenced:
+    description: Adapter removed clarity.callout from the vocabulary; an existing layout still references it — codegen aborts.
+    data:
+      LayoutValidationError:
+        - offending-value: clarity.callout
+          vocabulary-version: clarity@17
+          allowed-alternatives: []
+          kind: unknown-component
+
+  cross-adapter-parity-identical:
+    description: Two adapters (angular-clarity, react-clarity) both declare clarity@17 with structurally identical componentVocabulary blocks.
+    data:
+      ComponentVocabulary:
+        - name: clarity@17
+          version: "17"
+          components: []
+
+  cross-adapter-parity-drift:
+    description: Two adapters declaring clarity@17 with differing component lists — drift reported as a parity violation.
+    data:
+      LayoutValidationError:
+        - offending-value: clarity.tooltip
+          vocabulary-version: clarity@17
+          allowed-alternatives: []
+          kind: unknown-component
+
+  codegen-translates-token-to-emit-form:
+    description: "Codegen translates `gap: spacing-lg` to the adapter's emit-form (e.g., `gap: var(--spacing-lg)` in this adapter)."
+    data:
+      SpacingToken:
+        - name: spacing-lg
+          order: 4
+          emit-form: var(--spacing-lg)
+
+  codegen-per-mode-emission:
+    description: Page selects mode dark; codegen emits per-mode-aware code so runtime mode-switching does not require regeneration.
+    data:
+      AdapterTokens:
+        - modes: [light, dark]
+      ColorToken:
+        - name: color-surface
+          tone: neutral
+          emit-forms: ["light:var(--color-surface-light)", "dark:var(--color-surface-dark)"]
+
+# No routes: this feature contributes no new commands or pages. All work is
+# cross-cutting modifications to existing parser/validator/registry code and
+# the adapter schema document.
+
+# No components: pure-infrastructure feature.
+
+cross-cutting:
+  - id: adapter-schema-component-vocabulary-section
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+    target-files:
+      - internal/embedded/schemas/adapter.schema.md
+    transform: >
+      Add a top-level `componentVocabulary:` section to the adapter schema document.
+      Document: a versioned vocabulary name (e.g., clarity@17) — bare names without
+      @<version> are rejected at parse; a list of components, each declaring its `type`
+      string (the value layout files reference), its `category` (one of container, leaf,
+      data-shape), a closed enum of allowed `variants`, a list of required and optional
+      `properties` whose types are drawn from the closed set
+      {string, token-reference, enum, boolean, int, child-list}, and — for container
+      components — the explicit list of `allowed-children` component types. Document
+      the universal-fields rule: direction, gap, padding, alignment live in the layout
+      schema and are NEVER declared inside componentVocabulary entries (an offending
+      adapter fails parse). Document that vocabulary content is structurally identical
+      across adapters declaring the same vocabulary version (cross-adapter parity is held
+      by hand until a shared-include mechanism lands). Document that the section is
+      optional — adapters omitting it continue to parse, with vocabulary-reference
+      validation in layouts skipped with a warning.
+    introduces:
+      - "Schema doc section: top-level `componentVocabulary:` block"
+      - "Closed property type set: {string, token-reference, enum, boolean, int, child-list}"
+      - "Closed component category set: {container, leaf, data-shape}"
+    backward-compatible: true
+
+  - id: adapter-schema-tokens-section
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+    target-files:
+      - internal/embedded/schemas/adapter.schema.md
+    transform: >
+      Add a top-level `tokens:` section to the adapter schema document. Document the
+      three subsections: `spacing` (ordered named scale — each token declares a position
+      and a single mode-invariant emit-form), `color` (named palette — each token may
+      carry a `tone` from the closed enum {neutral, info, warning, danger, success},
+      shared with the domain model's enum-tone metadata, and declares an emit-form per
+      adapter mode), and `typography` (named text styles keyed by `use-site` — one of
+      heading-page, heading-section, body, caption — with a single mode-invariant
+      emit-form). Document that token names are stable across same-design-system
+      adapters declaring the same vocabulary version (only emit-forms differ by
+      framework). Document that the token list is closed within a vocabulary version —
+      adding a token requires a vocabulary version bump. Document that adapters cannot
+      invent tokens absent from the upstream design system; the adapter file is the
+      runtime source of truth at codegen time and Studio reads tokens from the adapter,
+      never from a live MCP fetch (MCP fetches are an authoring aid only). Document
+      that the section is optional — adapters omitting it continue to parse, with
+      token-reference validation in layouts skipped with a warning until a `tokens:`
+      block is added.
+    introduces:
+      - "Schema doc section: top-level `tokens:` block"
+      - "Subsections: spacing, color, typography"
+      - "Closed color-tone set: {neutral, info, warning, danger, success} (shared with domain enum-tone)"
+      - "Closed typography use-site set: {heading-page, heading-section, body, caption}"
+    backward-compatible: true
+
+  - id: adapter-schema-theme-modes
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+    target-files:
+      - internal/embedded/schemas/adapter.schema.md
+    transform: >
+      In the adapter schema document, document theme-mode declaration at the top of the
+      `tokens:` section. Every adapter declares at least one mode (typically `light`)
+      and may declare additional modes (`dark`, named themes). Mode names are stable
+      across same-design-system adapters declaring the same vocabulary version; renaming
+      or adding a mode within a vocabulary version is rejected and requires a version
+      bump (e.g., clarity@17 → clarity@18). Tokens that vary by mode declare an
+      emit-form per mode the adapter supports — a missing emit-form fails parse naming
+      the token and the missing mode. Mode-invariant tokens (most spacing, all
+      typography) declare a single emit-form regardless of the adapter's mode count.
+      Document that codegen output is per-mode-aware: a page's selected mode defaults
+      to the adapter's first declared mode and the emission carries every supported
+      mode's value, so runtime mode-switching never requires re-running codegen.
+      Document the breaking-change posture: every adapter declaration must include a
+      mode list from this change forward (existing adapters without one need a one-line
+      migration adding `modes: [light]`).
+    introduces:
+      - "Schema doc rule: every adapter declares at least one mode (typically `light`)"
+      - "Schema doc rule: mode names stable across same-design-system adapters"
+      - "Schema doc rule: per-mode emit-forms required for mode-varying tokens"
+    backward-compatible: false
+
+  - id: adapter-parser-vocabulary-and-tokens
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter,@parlay-tool/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+    target-files:
+      - internal/commands/register_adapter.go
+    transform: >
+      Extend the inline `adapterFile` struct (the YAML-mapped adapter representation
+      used by `parlay register-adapter`) to parse the new `componentVocabulary:` and
+      `tokens:` sections. Add a ComponentVocabulary field carrying the versioned name
+      and component list (each component with type, category, variants, properties,
+      and allowed-children). Add a Tokens field carrying the modes list and the
+      spacing/color/typography subsections. Both fields are optional with `omitempty`
+      — adapters that don't declare them continue to register cleanly. After parsing,
+      validate at registration time: vocabulary name must include @<version> if
+      present; property types must be drawn from the closed set; universal container
+      fields (direction, gap, padding, alignment) must NOT appear inside
+      componentVocabulary component entries; adapter must declare at least one mode if
+      `tokens:` is present; every mode-varying color token must declare an emit-form
+      for every declared mode. On registration success, surface counts in the
+      registration message — number of vocabulary components, number of tokens by
+      subsection, number of declared modes. Cache the parsed vocabulary and token set
+      per-process so subsequent commands within a single CLI invocation reuse the
+      parse result.
+    introduces:
+      - "adapterFile.ComponentVocabulary field (struct: name, components[])"
+      - "adapterFile.Tokens field (struct: modes[], spacing[], color[], typography[])"
+      - "Registration-time validation for vocabulary name versioning, property type closed-set, universal-field redeclaration, mode coverage"
+      - "Per-process cache of parsed vocabulary + tokens keyed by adapter file path"
+    caching: per-process
+    backward-compatible: true
+
+  - id: adapter-validator-deep-vocabulary-and-tokens
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter,@parlay-tool/adapter-vocabulary-extension/declare-design-tokens-in-the-adapter"
+    target-files:
+      - internal/agent/validate.go
+    transform: >
+      Extend the `deepAdapter` struct used by deep buildfile / layout validation to
+      include the parsed ComponentVocabulary and Tokens sections. Add validation
+      passes invoked during deep validation when a layout (or, looking forward, a
+      page-layout buildfile region) is in scope: (1) resolve the layout's pinned
+      vocabulary version against the active adapter — version mismatch fails fast
+      before any component lookup, naming both versions; (2) for each component
+      reference, look up the type in the adapter's vocabulary — unknown types fail
+      validation with the offending value, the vocabulary version, and the list of
+      declared types; (3) for each variant reference, check it against the
+      component's closed variant enum — unknown variants fail naming the offending
+      value and the allowed alternatives; (4) for each property reference, validate
+      against the per-component property shape including the closed type set; (5) for
+      each container, enforce the explicit allowed-children list — disallowed children
+      fail naming the parent type, the allowed set, and the offending child;
+      (6) for each token reference (e.g., `gap: spacing-lg`), look up against the
+      adapter's tokens — unknown tokens fail naming the value and the available
+      tokens, raw values where a token is required (e.g., `gap: 24px`) fail with a
+      list of available tokens rather than a generic type error. Each error returned
+      via the existing `ValidationError` channel with a stable `Code` (e.g.,
+      `unknown-component`, `unknown-variant`, `disallowed-child`, `unknown-token`,
+      `raw-value-where-token-required`, `version-mismatch`,
+      `universal-field-redeclared`) and a `Fix` field listing alternatives. Reuse the
+      per-process adapter cache from the parser change; do not re-parse the adapter
+      on every lookup.
+    introduces:
+      - "deepAdapter.ComponentVocabulary and deepAdapter.Tokens fields"
+      - "Vocabulary lookup validation passes (component, variant, property, allowed-children)"
+      - "Token lookup validation passes (token reference, raw-value detection, mode coverage)"
+      - "ValidationError codes: unknown-component, unknown-variant, unknown-property, disallowed-child, unknown-token, raw-value-where-token-required, version-mismatch, universal-field-redeclared"
+    caching: per-process
+    backward-compatible: true
+
+  - id: layout-schema-universal-container-fields
+    source: "@parlay-tool/adapter-vocabulary-extension/declare-a-named-component-vocabulary-in-the-adapter"
+    target-pattern: "internal/embedded/schemas/layout.schema.md"
+    transform: >
+      Introduce the universal container fields section in the layout schema document.
+      The set is fixed: direction, gap, padding, alignment. These fields are available
+      on every container node in any vocabulary regardless of which adapter is active
+      — they live in the layout schema, not in adapter componentVocabulary entries.
+      Document the value-type contract: the value type for each universal field is
+      uniform across vocabularies (e.g., `gap` always takes a token-reference;
+      `direction` always takes one of a fixed enum). Document the migration posture:
+      existing adapter files that re-declared a universal field need a one-time
+      migration step to strip the re-declaration; new adapter files reject the
+      re-declaration at parse time. Adding a new universal field is a schema change
+      requiring migration of every adapter, not a vocabulary change. The full layout
+      schema (node shape, child arrays, leaf properties) is out of scope for this
+      feature and is owned by `@parlay-tool/page-layout-field`; this fragment
+      contributes only the universal-container-fields section so the
+      vocabulary-extension and layout-pipeline features can refer to a single source
+      of truth for container chrome. The file is created here as a stub schema doc;
+      `page-layout-field` will extend it with the rest of the layout schema.
+    introduces:
+      - "New schema doc: internal/embedded/schemas/layout.schema.md (stub introducing the universal container fields section)"
+      - "Fixed universal-container-fields set: {direction, gap, padding, alignment}"
+      - "Migration note: strip universal-field re-declarations from existing adapter files"
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/embedded/schemas/adapter.schema.md
+      sources:
+        - cross-cutting/adapter-schema-component-vocabulary-section
+        - cross-cutting/adapter-schema-tokens-section
+        - cross-cutting/adapter-schema-theme-modes
+    - path: internal/commands/register_adapter.go
+      sources:
+        - cross-cutting/adapter-parser-vocabulary-and-tokens
+    - path: internal/agent/validate.go
+      sources:
+        - cross-cutting/adapter-validator-deep-vocabulary-and-tokens
+  creates:
+    - path: internal/embedded/schemas/layout.schema.md
+      sources:
+        - cross-cutting/layout-schema-universal-container-fields

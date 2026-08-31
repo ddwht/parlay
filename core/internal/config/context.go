@@ -1,5 +1,5 @@
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-path-resolution
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-path-resolution
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-read-path-precedence
 
 package config
 
@@ -29,7 +29,7 @@ type Context struct {
 	// domainModelCache is the per-Context cache for the parsed
 	// domain-model.yaml, populated by the first LoadDomainModel call.
 	// Nil means "not yet loaded"; pass a fresh Context to re-read from
-	// disk. See parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence.
+	// disk. See parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-read-path-precedence.
 	domainModelCache *DomainModelArtifact
 }
 
@@ -232,7 +232,7 @@ func FromCtx(ctx context.Context) *Context {
 
 // --- Domain-model path resolution ---
 //
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-path-resolution
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-path-resolution
 
 // DomainModelFile is the canonical filename of the project's domain model.
 // Exactly one canonical model per parlay project, located at the active
@@ -258,7 +258,7 @@ func (c *Context) DomainModelPath() string {
 
 // --- Domain-model read-path precedence ---
 //
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-read-path-precedence
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-read-path-precedence
 
 // ErrNoDomainModel is the sentinel returned by LoadDomainModel when
 // neither domain-model.yaml nor (post-migration) any other source is

@@ -2,7 +2,7 @@
 
 <!-- parlay-scope: project -->
 <!-- parlay-section: cross-cutting -->
-<!-- Source: studio-support/domain-model-yaml-migration / cross-cutting/domain-model-schema-artifact -->
+<!-- Source: parlay-tool/domain-model-yaml-migration / cross-cutting/domain-model-schema-artifact -->
 
 The canonical, versioned YAML form of a parlay project's domain model.
 Lives at `<activeRoot>/domain-model.yaml` — exactly one canonical model
@@ -58,7 +58,7 @@ rather than `capabilities-entity-undeclared`.
 ## Open-question resolution (this release)
 
 This document captures the safe defaults selected at the code-generation
-phase of `studio-support/domain-model-yaml-migration`:
+phase of `parlay-tool/domain-model-yaml-migration`:
 
 - **`enum-tone-vocabulary` → `closed-set`** — the `tone` field on a
   `DomainEnumValue` is one of `{neutral, info, warning, danger, success}`,
@@ -317,7 +317,7 @@ effects:
 
 
 
-<!-- parlay-feature: studio-support/structured-domain-model-validation -->
+<!-- parlay-feature: parlay-tool/structured-domain-model-validation -->
 <!-- parlay-component: cross-cutting/element-path-on-every-finding -->
 
 Every finding emitted by deep validation carries a **machine-usable
@@ -358,7 +358,7 @@ whose block spans the whole model.
 
 ## Error codes
 
-<!-- parlay-feature: studio-support/structured-domain-model-validation -->
+<!-- parlay-feature: parlay-tool/structured-domain-model-validation -->
 <!-- parlay-component: cross-cutting/element-path-on-every-finding -->
 
 This schema had no code table. That is why none of its diagnostics reached

@@ -1,7 +1,7 @@
 package agent
 
-// parlay-feature: studio-support/page-layout-field
-// parlay-feature: studio-support/adapter-vocabulary-extension
+// parlay-feature: parlay-tool/page-layout-field
+// parlay-feature: parlay-tool/adapter-vocabulary-extension
 // parlay-section: cross-cutting
 // parlay-cross-cutting-id: layout-precheck-contract
 //
@@ -30,7 +30,7 @@ import (
 // shape) / "malformed-layout-block" (precheck's closed-shape Verdict — see
 // toVerdictCode).
 //
-// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
+// parlay-extends: parlay-tool/page-layout-field/layout-tree-schema-validator
 const SupportedLayoutSchemaVersion = 1
 
 // Verdict is the closed-shape result of a single LayoutPrecheck call.
@@ -99,8 +99,8 @@ func toVerdictCode(code string) string {
 // same underlying walk into the closed-shape Verdict precheck contract —
 // see walkLayoutViolations.
 //
-// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
-// parlay-extends: studio-support/page-layout-field/layout-tree-schema-validator
+// parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+// parlay-extends: parlay-tool/page-layout-field/layout-tree-schema-validator
 func ValidateLayoutDeep(layout *parser.Layout, adapter *Adapter) []ValidationError {
 	violations := walkLayoutViolations(layout, adapter)
 	if len(violations) == 0 {
@@ -133,7 +133,7 @@ func ValidateLayoutDeep(layout *parser.Layout, adapter *Adapter) []ValidationErr
 //   - When page.Layout == nil: returns Verdict{Code: "ok"}. A page without
 //     a layout is trivially valid for this contract.
 //
-// parlay-feature: studio-support/page-layout-field
+// parlay-feature: parlay-tool/page-layout-field
 // parlay-cross-cutting-id: layout-precheck-contract
 func LayoutPrecheck(page *parser.Page, adapter *Adapter) Verdict {
 	if page == nil || page.Layout == nil {
@@ -631,7 +631,7 @@ func contains(s []string, v string) bool {
 // same vocabulary version MUST produce structurally identical vocabulary
 // blocks; until a shared-include mechanism lands, parity is held by hand.
 //
-// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+// parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
 func CheckCrossAdapterParity(a, b *deepAdapter) []ValidationError {
 	var errors []ValidationError
 	if a == nil || b == nil || a.ComponentVocabulary == nil || b.ComponentVocabulary == nil {
@@ -678,7 +678,7 @@ func CheckCrossAdapterParity(a, b *deepAdapter) []ValidationError {
 // list (e.g., "light:var(--color-surface-light) | dark:var(--color-surface-dark)").
 // Returns ok=false when the token is not declared.
 //
-// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
+// parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-validator-deep-vocabulary-and-tokens
 func EmitTokenValue(adapter *deepAdapter, kind, name string) (string, bool) {
 	if adapter == nil || adapter.Tokens == nil {
 		return "", false

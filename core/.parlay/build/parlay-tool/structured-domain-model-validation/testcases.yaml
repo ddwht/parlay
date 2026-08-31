@@ -1,0 +1,294 @@
+feature: parlay-tool/structured-domain-model-validation
+framework: go-test
+
+# Pure-infrastructure feature — suites map one-to-one to the buildfile's
+# cross-cutting entries (there are no components). Each suite's `component:`
+# names the cross-cutting entry id it validates; `intent:` carries the
+# traceability reference. Cases are derived from the intents' Verify bullets
+# and the infrastructure Invariants. Because this is a CLI/backend feature,
+# `input` steps carry the piped/parsed domain-model bytes for the scenario and
+# `verify` steps assert the JSON finding list, element paths, severities, and
+# process exit codes. `exit-code` is asserted via `verify: state` on the
+# synthetic target `process.exit-code`.
+
+suites:
+  # ==========================================================================
+  # Intent 1 — JSON validation mode for `parlay validate --type domain-model`
+  # ==========================================================================
+  - name: JSON validation mode emits per-violation findings from stdin and a path
+    component: json-validation-mode
+    fixture: clean-model
+    intent: "@parlay-tool/structured-domain-model-validation/json-validation-mode-for-parlay-validate-type-domain-model"
+
+    cases:
+      - name: clean model piped on stdin prints [] and exits 0
+        description: >
+          `echo '<clean model>' | parlay validate --type domain-model --json -`
+          prints an empty JSON array and exits 0.
+        steps:
+          - action: input
+            target: stdin-model
+            value: clean-model
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: findings-json
+            expected: "[]"
+          - verify: state
+            target: process.exit-code
+            expected: 0
+
+      - name: model with two violations prints a two-element array and exits 0
+        description: >
+          Two distinct violations produce a two-element JSON array (one entry per
+          violation, never collapsed) and exit 0 — the list is the result, not a
+          failure.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-two-violations
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: count
+            target: findings
+            expected: 2
+          - verify: state
+            target: process.exit-code
+            expected: 0
+
+      - name: path input and piped bytes produce the same finding set
+        description: >
+          `parlay validate --type domain-model --json <file>` yields the same
+          findings as piping the same file's bytes on stdin (stdin and a real
+          path are mutually exclusive and identical for identical bytes).
+        steps:
+          - action: input
+            target: file-path
+            value: model-two-violations
+          - action: navigate
+            target: "validate --type domain-model --json <path>"
+          - verify: text
+            target: findings-json
+            expected: identical-to-stdin-run-for-same-bytes
+
+      - name: without --json the human path is preserved with a non-zero exit
+        description: >
+          `parlay validate --type domain-model <invalid-file>` (no --json) keeps
+          today's collapsed human-readable output and its non-zero-on-invalid
+          exit behavior.
+        steps:
+          - action: input
+            target: file-path
+            value: model-two-violations
+          - action: navigate
+            target: "validate --type domain-model <path>"
+          - verify: text
+            target: human-output
+            expected: collapsed-single-error-not-json
+          - verify: state
+            target: process.exit-code
+            expected: nonzero
+
+      - name: unparseable model under --json emits a stable parse-failure code as valid JSON
+        description: >
+          A malformed (unparseable) model under --json emits a finding carrying
+          the stable parse-failure code invalid-yaml, and stdout remains valid
+          JSON — never a crash or a non-JSON error.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-unparseable
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: findings[0].code
+            expected: invalid-yaml
+          - verify: state
+            target: process.exit-code
+            expected: 0
+
+      - name: findings under --json carry authoring-mode severity
+        description: >
+          Findings emitted under --json carry severity resolved for authoring
+          mode. domain-operations-deprecated appears at warning severity in this
+          path (the build path resolves build-mode severity separately).
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-with-operations
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: "findings[code=domain-operations-deprecated].severity"
+            expected: warning
+
+  # ==========================================================================
+  # Intent 2 — Machine-usable element path on every finding
+  # ==========================================================================
+  - name: Every finding carries a deterministic machine-usable element path
+    component: element-path-on-every-finding
+    fixture: model-bad-field-type
+    intent: "@parlay-tool/structured-domain-model-validation/machine-usable-element-path-on-every-finding"
+
+    cases:
+      - name: bad field type reports a path resolving to that field
+        description: >
+          A finding for a field type outside the closed set reports a path of the
+          form entities.<E>.fields.<F> (carried in the finding's context field).
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-bad-field-type
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: "findings[code=field-type-outside-closed-set].path"
+            expected: "entities.<E>.fields.<F>.type"
+
+      - name: unknown relationship cardinality reports a path resolving to the relationship end
+        description: >
+          A finding for an unrecognized cardinality reports a path resolving to
+          the relationship end — relationships.<R>.cardinality (cardinality
+          occupies the <end> segment of the relationships.<R>.<end> grammar).
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-unknown-cardinality
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: "findings[code=relationship-cardinality-unknown].path"
+            expected: "relationships.<R>.cardinality"
+
+      - name: missing-schema-version reports the distinguished whole-model token
+        description: >
+          A whole-model finding (missing schema_version) reports the single
+          distinguished top-level token "<domain-model>", not a blank or
+          fabricated element path.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-missing-schema-version
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: text
+            target: "findings[code=missing-schema-version].path"
+            expected: "<domain-model>"
+
+      - name: paths are deterministic across runs
+        description: >
+          Two runs over the same model bytes produce identical paths for the same
+          violations.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-two-violations
+          - action: navigate
+            target: "validate --type domain-model --json - (run twice)"
+          - verify: text
+            target: findings[*].path
+            expected: identical-across-both-runs
+
+      - name: no finding carries a blank element path
+        description: >
+          Every finding emitted by the structured path has a non-empty element
+          path; none is blank.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-two-violations
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: count
+            target: "findings[path == '']"
+            expected: 0
+
+  # ==========================================================================
+  # Intent 3 — Emit domain-operations-deprecated in authoring mode
+  # ==========================================================================
+  - name: Populated deprecated operations block raises domain-operations-deprecated
+    component: emit-domain-operations-deprecated
+    fixture: model-with-operations
+    intent: "@parlay-tool/structured-domain-model-validation/emit-domain-operations-deprecated-in-authoring-mode"
+
+    cases:
+      - name: populated operations block in authoring mode emits one warning finding
+        description: >
+          A model with a populated operations: block validated in authoring mode
+          (the --json / editor path) emits exactly one domain-operations-deprecated
+          finding at warning severity, whose fix names parlay migrate-domain-operations.
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-with-operations
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: count
+            target: "findings[code=domain-operations-deprecated]"
+            expected: 1
+          - verify: text
+            target: "findings[code=domain-operations-deprecated].severity"
+            expected: warning
+          - verify: text
+            target: "findings[code=domain-operations-deprecated].fix"
+            expected: "names parlay migrate-domain-operations"
+
+      - name: same model in build mode emits the code at error severity and fails the build
+        description: >
+          The same model validated in build mode emits domain-operations-deprecated
+          at error severity, failing the build (severity from the existing per-mode
+          table — build = error).
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-with-operations
+          - action: navigate
+            target: "domain-model validation in build mode"
+          - verify: text
+            target: "findings[code=domain-operations-deprecated].severity"
+            expected: error
+          - verify: state
+            target: build.result
+            expected: failed
+
+      - name: model with no operations block emits no finding
+        description: >
+          A model without an operations: block emits no
+          domain-operations-deprecated finding.
+        steps:
+          - action: input
+            target: stdin-model
+            value: clean-model
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: count
+            target: "findings[code=domain-operations-deprecated]"
+            expected: 0
+
+      - name: model with an empty operations block emits no finding
+        description: >
+          A model whose operations: block is present but empty emits no
+          domain-operations-deprecated finding (only a populated block triggers it).
+        steps:
+          - action: input
+            target: stdin-model
+            value: model-empty-operations
+          - action: navigate
+            target: "validate --type domain-model --json -"
+          - verify: count
+            target: "findings[code=domain-operations-deprecated]"
+            expected: 0
+
+      - name: the operations block is byte-for-byte unchanged after validation
+        description: >
+          Detection is read-only — the model input is byte-for-byte identical
+          after validation runs (validation never writes the block).
+        steps:
+          - action: input
+            target: file-path
+            value: model-with-operations
+          - action: navigate
+            target: "validate --type domain-model --json <path>"
+          - verify: file-content
+            target: model-with-operations
+            expected: byte-for-byte-identical-to-pre-validation-content

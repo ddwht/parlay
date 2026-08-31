@@ -68,11 +68,14 @@ intents, dialogs, and build artifacts; schemas, adapters, and the
 agent surface live at the repo-level root and are shared.
 
 - **core** (`core`) — Parlay Core — the spec-driven design and codegen engine
+<!-- parlay:end -->
 
 (The former **studio** child root was retired on 2026-08-31; its archived
 history lives at .parlay/retired/studio/ — verify it any time with the
-standard-tool sha256 recipe in docs/plans/root-retirement-decommission.md.)
-<!-- parlay:end -->
+standard-tool sha256 recipe in docs/plans/root-retirement-decommission.md.
+The **studio-support** initiative was retired the same day: its six healthy
+features moved to parlay-tool/, and studio-cli-hooks moved with them under
+its historical name.)
 
 ## Skill and Schema Updates (dogfooding rule)
 

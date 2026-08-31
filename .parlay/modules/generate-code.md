@@ -4,11 +4,11 @@ _Generate prototype code from buildfile_
 
 <!--
 parlay-section: cross-cutting
-parlay-extends: studio-support/layout-aware-codegen/layout-block-reader
-parlay-extends: studio-support/layout-aware-codegen/resolved-binding-consumer
-parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
-parlay-extends: studio-support/layout-aware-codegen/layout-validation-precheck-surfacer
-parlay-extends: studio-support/layout-aware-codegen/non-interactive-codegen-pipeline
+parlay-extends: parlay-tool/layout-aware-codegen/layout-block-reader
+parlay-extends: parlay-tool/layout-aware-codegen/resolved-binding-consumer
+parlay-extends: parlay-tool/layout-aware-codegen/buildfile-freshness-gate
+parlay-extends: parlay-tool/layout-aware-codegen/layout-validation-precheck-surfacer
+parlay-extends: parlay-tool/layout-aware-codegen/non-interactive-codegen-pipeline
 parlay-extends: parlay-tool/cross-cutting-target-paths/generate-code-skill-topological-emission-order
 -->
 

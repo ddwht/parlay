@@ -208,7 +208,7 @@ running app never enters, so its records cannot coexist with the seed's.
 
 ---
 
-<!-- parlay-feature: studio-support/structured-domain-model-validation -->
+<!-- parlay-feature: parlay-tool/structured-domain-model-validation -->
 <!-- parlay-component: cross-cutting/element-path-on-every-finding -->
 
 Every finding emitted by deep validation carries a **machine-usable

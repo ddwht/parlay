@@ -356,9 +356,9 @@ func TestParseMarker_BlockCommentDoesNotOverreach(t *testing.T) {
 // count them, so such a file read as user-owned: never hashed, never
 // verifiable, silently clobberable on the next generation.
 func TestExtendsAloneIdentifiesAGeneratedFile(t *testing.T) {
-	const src = `// parlay-feature: studio-support
+	const src = `// parlay-feature: demo-group
 // parlay-extends: demo-group/demo-feature/hook-dispatch-example
-// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
+// parlay-extends: demo-group/other-feature/flag-registration-example
 
 package commands
 `

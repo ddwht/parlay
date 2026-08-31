@@ -5,7 +5,7 @@ package commands
 //
 // parlay-feature: parlay-tool/project-setup
 // parlay-component: adapter-registration
-// parlay-extends: studio-support/adapter-vocabulary-extension/adapter-parser-vocabulary-and-tokens
+// parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-parser-vocabulary-and-tokens
 
 import (
 	"fmt"

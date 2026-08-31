@@ -4,12 +4,12 @@ _Generate buildfile and testcases_
 
 <!--
 parlay-section: cross-cutting
-parlay-extends: studio-support/layout-aware-build/disambiguation-prompt
-parlay-extends: studio-support/layout-aware-build/two-pass-binding-resolution
-parlay-extends: studio-support/layout-aware-build/starter-rule-set-and-project-extension
-parlay-extends: studio-support/layout-aware-build/interactive-disambiguation-choice-recording
-parlay-extends: studio-support/layout-aware-build/buildfile-bindings-section
-parlay-extends: studio-support/layout-aware-build/headless-build-mode
+parlay-extends: parlay-tool/layout-aware-build/disambiguation-prompt
+parlay-extends: parlay-tool/layout-aware-build/two-pass-binding-resolution
+parlay-extends: parlay-tool/layout-aware-build/starter-rule-set-and-project-extension
+parlay-extends: parlay-tool/layout-aware-build/interactive-disambiguation-choice-recording
+parlay-extends: parlay-tool/layout-aware-build/buildfile-bindings-section
+parlay-extends: parlay-tool/layout-aware-build/headless-build-mode
 -->
 
 # Build Feature

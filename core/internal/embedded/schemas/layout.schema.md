@@ -1,6 +1,6 @@
 <!--
 parlay-section: cross-cutting
-parlay-feature: studio-support/adapter-vocabulary-extension
+parlay-feature: parlay-tool/adapter-vocabulary-extension
 parlay-cross-cutting-id: layout-schema-universal-container-fields
 -->
 
@@ -10,7 +10,7 @@ File: `spec/intents/<feature>/<page>.layout.yaml` (and the in-buildfile layout r
 
 A **layout** describes the visual / structural composition of a page using components drawn from the active adapter's `componentVocabulary:` (see `adapter.schema.md` Section 8). Layouts pin themselves to a vocabulary version (e.g., `clarity@17`) so that a layout authored against one revision of a design system fails fast when the adapter advertises a different revision rather than silently rendering against an unintended vocabulary.
 
-This file defines the **universal container fields** that every layout-author may use on every container node, regardless of which adapter is active. The full layout schema (node shape, child arrays, leaf-component properties, vocabulary pinning syntax) is owned by `@studio-support/page-layout-field` and will be added here as that feature lands. This stub establishes the universal-container-fields contract so the vocabulary-extension and layout-pipeline features can refer to a single source of truth for container chrome.
+This file defines the **universal container fields** that every layout-author may use on every container node, regardless of which adapter is active. The full layout schema (node shape, child arrays, leaf-component properties, vocabulary pinning syntax) is owned by `@parlay-tool/page-layout-field` and will be added here as that feature lands. This stub establishes the universal-container-fields contract so the vocabulary-extension and layout-pipeline features can refer to a single source of truth for container chrome.
 
 ## Universal container fields
 
@@ -52,7 +52,7 @@ This is enforced at **adapter parse time**, not at layout-validate time — the 
 
 <!--
 parlay-section: cross-cutting
-parlay-feature: studio-support/page-layout-field
+parlay-feature: parlay-tool/page-layout-field
 parlay-cross-cutting-id: layout-schema-doc-tree-shape
 -->
 
@@ -129,7 +129,7 @@ A layout MAY declare an optional `mode:` selector at the top level alongside `co
 
 The `mode:` key is **optional**. A layout that does not declare it parses and validates exactly as before — there is no behavioral change for layouts that have no mode-aware fields, and the absence of `mode:` is bit-for-bit equivalent to today's layouts. Pages without per-mode fields stay simple.
 
-When a node carries per-mode values for a field, the active `adapter`'s `componentVocabulary` entry for that `type` MUST declare the field as mode-aware. Otherwise validation fails with `missing-mode-emit-form` — the error code is owned by `@studio-support/adapter-vocabulary-extension` and surfaced through the same precheck verdict shape as the codes listed in [Validation pass](#validation-pass) below. The remediation is either to remove the per-mode declaration from the node or to update the adapter's `componentVocabulary` entry to mark the field as mode-aware.
+When a node carries per-mode values for a field, the active `adapter`'s `componentVocabulary` entry for that `type` MUST declare the field as mode-aware. Otherwise validation fails with `missing-mode-emit-form` — the error code is owned by `@parlay-tool/adapter-vocabulary-extension` and surfaced through the same precheck verdict shape as the codes listed in [Validation pass](#validation-pass) below. The remediation is either to remove the per-mode declaration from the node or to update the adapter's `componentVocabulary` entry to mark the field as mode-aware.
 
 ## Validation pass
 

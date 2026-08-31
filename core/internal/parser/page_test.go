@@ -1,4 +1,4 @@
-// parlay-feature: studio-support/page-layout-field
+// parlay-feature: parlay-tool/page-layout-field
 // parlay-section: cross-cutting
 // parlay-cross-cutting-id: page-artifact-loader-with-optional-layout
 // parlay-artifact: test

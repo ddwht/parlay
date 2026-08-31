@@ -1,4 +1,4 @@
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/element-path-on-every-finding
 // parlay-artifact: test
 //

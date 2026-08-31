@@ -20,10 +20,10 @@ import (
 // Domain-model deep validation
 // ============================================================================
 //
-// parlay-feature: studio-support/domain-model-yaml-migration
+// parlay-feature: parlay-tool/domain-model-yaml-migration
 // parlay-component: validation-error-reporter
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-deep-validator
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-schema-version-dispatch
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-deep-validator
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-schema-version-dispatch
 //
 // Open-question resolutions applied (per the code-phase decision):
 //
@@ -99,7 +99,7 @@ const closedEnumToneList = "neutral, info, warning, danger, success"
 // emitted by the structured validator carries a non-blank element path in
 // its Context field: either a dotted element path or this token.
 //
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/element-path-on-every-finding
 const wholeModelPathToken = "<domain-model>"
 
@@ -110,7 +110,7 @@ const wholeModelPathToken = "<domain-model>"
 // field-type-outside-closed-set, ...) read as error regardless of mode;
 // only mode-varying rules such as domain-operations-deprecated differ.
 //
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/json-validation-mode
 func applyDomainModelSeverity(errs []ValidationError, mode ValidationMode) []ValidationError {
 	for i := range errs {
@@ -196,7 +196,7 @@ type deepDomainOperation struct {
 // validateDomainModelAdapter): warnings print, errors fail. With that in place
 // there is nothing left for the boolean to protect.
 //
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/emit-domain-operations-deprecated
 func ValidateDomainModelStructuredMode(path string, content []byte, mode ValidationMode) []ValidationError {
 	var errors []ValidationError
@@ -537,7 +537,7 @@ func ValidateDomainModelStructuredMode(path string, content []byte, mode Validat
 	// This check never mutates, reorders, or drops the block — validation
 	// operates on []byte and never writes.
 	//
-	// parlay-feature: studio-support/structured-domain-model-validation
+	// parlay-feature: parlay-tool/structured-domain-model-validation
 	// parlay-component: cross-cutting/emit-domain-operations-deprecated
 	if len(dm.Operations) > 0 {
 		errors = append(errors, ValidationError{
@@ -555,7 +555,7 @@ func ValidateDomainModelStructuredMode(path string, content []byte, mode Validat
 // Domain-model schema-version dispatch
 // ============================================================================
 //
-// parlay-extends: studio-support/domain-model-yaml-migration/domain-model-schema-version-dispatch
+// parlay-extends: parlay-tool/domain-model-yaml-migration/domain-model-schema-version-dispatch
 //
 // Every read of domain-model.yaml first inspects schema_version and
 // dispatches:

@@ -608,7 +608,7 @@ type deepInput struct {
 // Fields are designed for agent consumption: code identifies the error class,
 // context provides specifics about where it occurred, and fix suggests recovery.
 //
-// parlay-feature: studio-support/structured-domain-model-validation
+// parlay-feature: parlay-tool/structured-domain-model-validation
 // parlay-component: cross-cutting/json-validation-mode
 // (Severity field added — findings reuse the single JSON finding convention.)
 type ValidationError struct {

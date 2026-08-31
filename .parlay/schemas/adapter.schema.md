@@ -1,8 +1,8 @@
 <!--
 parlay-section: cross-cutting
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-component-vocabulary-section
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-tokens-section
-parlay-extends: studio-support/adapter-vocabulary-extension/adapter-schema-theme-modes
+parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-schema-component-vocabulary-section
+parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-schema-tokens-section
+parlay-extends: parlay-tool/adapter-vocabulary-extension/adapter-schema-theme-modes
 parlay-extends: parlay-tool/multi-adapter/adapter-kind-discriminator
 parlay-extends: parlay-tool/multi-adapter/adapter-supports-contract
 -->

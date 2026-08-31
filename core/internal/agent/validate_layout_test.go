@@ -1,7 +1,7 @@
 package agent
 
-// parlay-feature: studio-support/adapter-vocabulary-extension
-// parlay-feature: studio-support/page-layout-field
+// parlay-feature: parlay-tool/adapter-vocabulary-extension
+// parlay-feature: parlay-tool/page-layout-field
 // parlay-component: adapter-validator-deep-vocabulary-and-tokens
 // parlay-cross-cutting-id: layout-precheck-contract
 // parlay-artifact: test

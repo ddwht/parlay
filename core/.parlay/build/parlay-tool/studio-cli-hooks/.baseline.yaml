@@ -1,0 +1,49 @@
+schema-version: 3
+generated-at: "2026-08-31T09:41:47Z"
+intents:
+    deferred-artifacts-review-and-reconcile:
+        content-hash: ffa1d2aab40ff6bd
+        goal-hash: e3b0c44298fc1c14
+        constraints-hash: 4f53cda18c2baa0c
+        verify-hash: 4f53cda18c2baa0c
+        objects-hash: 4f53cda18c2baa0c
+    detect-parlay-studio-at-runtime:
+        content-hash: ef8ad4a190c8be7e
+        goal-hash: 7d6e0be2a4b272e4
+        constraints-hash: de17542897181809
+        verify-hash: 4a47e8b1600606cc
+        objects-hash: 944c57eb16aca1ea
+    prompt-to-open-studio-at-workflow-hand-off-points:
+        content-hash: f7991332dca88644
+        goal-hash: 8380efe133056655
+        constraints-hash: bfbf363fe321e0c9
+        verify-hash: 894783799c52138e
+        objects-hash: f5f49f74b2c768f6
+sources:
+    intents:
+        deferred-artifacts-review-and-reconcile: e0273b52a4849e11
+        detect-parlay-studio-at-runtime: cb0317c0ad568023
+        prompt-to-open-studio-at-workflow-hand-off-points: 579a0bfec39bcf0c
+    dialogs:
+        detect-parlay-studio-at-runtime: 079009ec4cae987d
+        prompt-to-open-studio-at-workflow-hand-off-points: 899cc1990da44f52
+    surface-fragments:
+        no-studio-flag-opt-out: b40e86f51542991b
+        parlay-status-reports-studio-detection: aecc1df51911caa4
+        studio-launch-failure-error: ebd553f4d085ea37
+        studio-prompt-after-parlay-create-artifacts: ae75d71a53af5daa
+        studio-prompt-after-parlay-create-domain-model: 5f09de98414fb4fb
+        studio-prompt-after-parlay-sync: 043d73b8aeac1198
+        version-mismatch-warning-at-first-detection: d0e5cd927e902e39
+    infrastructure: 68db2dc87b51e189
+    surface-yaml: b0e6b84f7037abbb
+    domain: 56866a325365609d
+    adapter-version: 3630411edf968363
+    amendments:
+        001-no-editor-flag-family-removed.md: 15de6a609e3706a5
+        002-separate-the-command-refusal-from-the-skill-stub.md: 4d1eedae3644bb35
+        003-nothing-remains-to-hook-into.md: 411ea69d0c270747
+buildfile-sections:
+    fixtures: a138c4ab4d486db8
+    routes: 4bc72b274efe796e
+last-applied-amendment: 3

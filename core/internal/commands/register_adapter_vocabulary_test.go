@@ -1,6 +1,6 @@
 package commands
 
-// parlay-feature: studio-support/adapter-vocabulary-extension
+// parlay-feature: parlay-tool/adapter-vocabulary-extension
 // parlay-component: adapter-parser-vocabulary-and-tokens
 // parlay-artifact: test
 //

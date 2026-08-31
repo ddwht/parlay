@@ -1,9 +1,9 @@
-// parlay-feature: studio-support/domain-model-yaml-migration
+// parlay-feature: parlay-tool/domain-model-yaml-migration
 // parlay-component: migrate-domain-model-command
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-force
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-multi-root
-// parlay-extends: studio-support/domain-model-yaml-migration/md-deprecation-header
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-cobra-command
+// parlay-extends: parlay-tool/domain-model-yaml-migration/migrate-domain-model-force
+// parlay-extends: parlay-tool/domain-model-yaml-migration/migrate-domain-model-multi-root
+// parlay-extends: parlay-tool/domain-model-yaml-migration/md-deprecation-header
+// parlay-extends: parlay-tool/domain-model-yaml-migration/migrate-domain-model-cobra-command
 
 package commands
 

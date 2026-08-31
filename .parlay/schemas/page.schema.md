@@ -1,6 +1,6 @@
 <!--
 parlay-section: cross-cutting
-parlay-feature: studio-support/page-layout-field
+parlay-feature: parlay-tool/page-layout-field
 -->
 
 # Page Schema

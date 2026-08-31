@@ -1,4 +1,4 @@
-// parlay-feature: studio-support/domain-model-yaml-migration
+// parlay-feature: parlay-tool/domain-model-yaml-migration
 // parlay-component: md-deprecation-header
 // parlay-artifact: test
 //

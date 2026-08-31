@@ -1,0 +1,463 @@
+feature: parlay-tool/layout-aware-codegen
+framework: go-test
+
+# All assertions are framed BEHAVIORALLY — emitted-component-tree shape,
+# exit codes, error codes, behavioral equivalence (same testcases pass) —
+# rather than byte-equality of generated text. This matches the spec's
+# explicit framing: codegen's emission step is performed by an AI agent
+# that is non-deterministic on text but consistent on behavior. Any test
+# that asserted "generated file matches snapshot byte-for-byte" would
+# contradict that contract and is intentionally absent from this file.
+#
+# Suites are keyed by cross-cutting id (this feature has no components:
+# section). The `intent:` field traces each suite back to a source intent.
+
+suites:
+  # ── Layout-Block Reader ─────────────────────────────────────────
+
+  - name: layout-block-reader — layout-bearing page produces matching component tree
+    component: layout-block-reader
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/codegen-reads-the-layout-block-when-present"
+
+    cases:
+      - name: three-component layout produces three component instances in declaration order
+        description: A page with a layout block of three Clarity components produces three Angular component instances in the generated template, in the same order.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: count
+            target: emitted-component-instances
+            expected: 3
+          - verify: state
+            target: emitted-component-tree.order
+            expected: matches-layout-declaration-order
+
+      - name: nested layout preserves parent/child shape
+        description: A clarity.region with two clarity.region children produces a parent component containing two child components, in declaration order.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: emitted-component-tree.shape
+            expected: parent-with-two-children
+
+      - name: token references emit as adapter-defined tokens, not raw values
+        description: Tokens like spacing-lg flow through to generated code as adapter-defined token references, never as raw pixel values.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: emitted-token-emission
+            expected: adapter-token-reference
+          - verify: state
+            target: emitted-token-emission.contains-raw-pixels
+            expected: false
+
+      - name: layout-free page produces same output as before this feature shipped
+        description: A page without a layout block produces output behaviorally equivalent to its pre-feature output. Regression-tested by re-generating an existing project.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: layout-free-page.behavioral-equivalence-to-pre-feature
+            expected: true
+
+      - name: per-page activation — mixed project generates each page on its own path
+        description: One feature can have layouts and another can not, in the same codegen pass. Decision is page-scoped, not project-scoped.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: page-with-layout.path
+            expected: layout-aware
+          - verify: state
+            target: page-without-layout.path
+            expected: layout-free
+
+  # ── Resolved-Binding Consumer ───────────────────────────────────
+
+  - name: resolved-binding-consumer — buildfile bindings drive emitted wiring
+    component: resolved-binding-consumer
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/codegen-consumes-resolved-bindings-from-the-buildfile"
+
+    cases:
+      - name: complete bindings produce wired components for every layout node
+        description: A buildfile with a complete set of bindings produces generated code where every component has its expected entity-feed and operation-handler wiring — confirmed by the testcases the build phase recorded for the same source state.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: emitted-code.every-layout-node.is-wired
+            expected: true
+          - verify: state
+            target: build-phase-testcases.pass
+            expected: true
+
+      - name: presentation hint on a column emits the corresponding widget
+        description: A buildfile entry for the status column with a presentation:badge binding produces a Clarity badge in the generated template, with the entity field name flowing through unchanged.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: status-column.emitted-widget
+            expected: clarity-badge
+          - verify: state
+            target: status-column.bound-entity-field
+            expected: Task.status
+
+      - name: source triple appears as traceability annotation in generated code
+        description: A buildfile recording a (layout-node, surface-fragment, domain-element) triple for the create button produces generated code where that triple appears as a traceability annotation alongside the wired handler.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: element
+            target: emitted-code.create-button.traceability-annotation
+          - verify: state
+            target: emitted-code.create-button.annotation.contains-source-triple
+            expected: true
+
+      - name: codegen never invokes rules engine, AI matcher, or disambiguation prompt
+        description: The skill prohibits these calls in any codegen path. Verified by inspecting the codegen execution trace.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: codegen-trace.invocations.rules-engine
+            expected: 0
+          - verify: state
+            target: codegen-trace.invocations.ai-matcher
+            expected: 0
+          - verify: state
+            target: codegen-trace.invocations.disambiguation-prompt
+            expected: 0
+
+      - name: re-running codegen on identical inputs produces behaviorally-equivalent output
+        description: Same (layout, buildfile, adapter) input produces output that passes the same testcases and emits the same component tree. Lexical details may differ (the AI emitter is non-deterministic on text); behavior, structure, and bindings are stable.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: run1-vs-run2.testcases-pass
+            expected: same-set
+          - verify: state
+            target: run1-vs-run2.emitted-component-tree
+            expected: same
+
+      - name: missing binding for a layout node is treated as a freshness-gate failure
+        description: When the buildfile lacks a binding for a layout node codegen reaches, codegen does NOT emit a separate "missing-binding" error — it surfaces stale-buildfile and points the author at parlay build-feature.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: parlay generate-code
+            expected: stale-buildfile
+
+  # ── Backward-Compatible Path (covered partially under layout-block-reader,
+  #     plus this dedicated suite for the regression contract) ─────
+
+  - name: layout-block-reader — backward-compatible path for layout-free projects
+    component: layout-block-reader
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/backward-compatible-path-for-layout-free-pages"
+
+    cases:
+      - name: project with zero layouts generates pre-feature output
+        description: A project with no layouts at all generates output behaviorally equivalent to its pre-feature output, given the same adapter version and source state.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: project-no-layouts.behavioral-equivalence-to-pre-feature
+            expected: true
+
+      - name: invalid layout never silently falls back to layout-free path
+        description: A page whose layout fails the precheck does not regress into layout-free output for that page; layout-free pages in the same project still generate normally.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: invalid-layout-page.silent-fallback-to-layout-free
+            expected: false
+          - verify: error
+            target: invalid-layout-page
+            expected: precheck-refusal-verbatim
+          - verify: state
+            target: layout-free-page-in-same-project.generates-normally
+            expected: true
+
+      - name: opt-in nature is documentation-visible
+        description: Designer who has not adopted Studio runs parlay generate-code after upgrading parlay and produces the same output as before. The opt-in nature is surfaced in the documentation/help output.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: cli-help-or-release-notes.surfaces-opt-in-nature
+            expected: true
+
+  # ── Buildfile Freshness Gate ────────────────────────────────────
+
+  - name: buildfile-freshness-gate — codegen refuses on stale buildfile
+    component: buildfile-freshness-gate
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/buildfile-freshness-gate"
+
+    cases:
+      - name: buildfile predating a domain-model edit produces stale-buildfile and exits non-zero
+        description: Running codegen on a feature whose buildfile predates a domain-model edit produces stale-buildfile and exits non-zero.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: parlay generate-code
+            expected: stale-buildfile
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: non-zero
+          - verify: state
+            target: output-directory.new-files-written
+            expected: false
+
+      - name: codegen immediately after parlay build-feature succeeds with no freshness-gate failure
+        description: Running codegen immediately after parlay build-feature succeeds with no freshness-gate failure.
+        steps:
+          - action: invoke
+            target: parlay build-feature @parlay-tool/layout-aware-codegen
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: 0
+          - verify: state
+            target: parlay generate-code.errors
+            expected: none
+
+      - name: source file touched but content unchanged does not trigger stale-buildfile
+        description: Re-saving a source file with no actual edits leaves the content signature identical, so the freshness gate passes.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: 0
+          - verify: state
+            target: stale-buildfile.triggered
+            expected: false
+
+      - name: precheck refusal is surfaced verbatim and stale-buildfile is suppressed for that page
+        description: A precheck refusal from the layout-creation feature is surfaced verbatim without a stale-buildfile wrapper, even when the buildfile is also stale (the precheck wins because the layout itself is invalid).
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: invalid-layout-page
+            expected: precheck-refusal-verbatim
+          - verify: state
+            target: invalid-layout-page.stale-buildfile-suppressed
+            expected: true
+
+      - name: two-feature project — feature A stale, feature B fresh — feature B still generates
+        description: "Per-feature isolation: a stale buildfile in one feature does not block another feature's codegen."
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: feature-A
+            expected: stale-buildfile
+          - verify: state
+            target: feature-B.generated
+            expected: true
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: non-zero
+
+      - name: signature is content-based, not timestamp-based
+        description: The freshness check compares content hashes recorded in the buildfile against currently-computed content hashes. Filesystem mtime never enters the comparison.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: freshness-gate.compares
+            expected: content-hashes
+          - verify: state
+            target: freshness-gate.uses-mtime
+            expected: false
+
+      - name: codegen does not auto-edit layout or buildfile on stale-buildfile
+        description: The error message points at the offending feature; the human (or parlay build-feature) makes the change. Codegen never auto-runs build-feature or auto-rewrites the layout.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: codegen.auto-edits-layout
+            expected: false
+          - verify: state
+            target: codegen.auto-runs-build-feature
+            expected: false
+
+  # ── Layout-Validation Precheck Surfacer ─────────────────────────
+
+  - name: layout-validation-precheck-surfacer — refusals surface verbatim per page
+    component: layout-validation-precheck-surfacer
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/codegen-reads-the-layout-block-when-present"
+
+    cases:
+      - name: precheck refusal causes per-page refusal; other pages continue
+        description: A page whose layout fails the precheck causes codegen to refuse for that page only; other pages in the same project continue to generate.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: invalid-layout-page
+            expected: precheck-refusal-verbatim
+          - verify: state
+            target: other-pages-in-same-project.generated
+            expected: true
+
+      - name: precheck refusal is verbatim — not augmented with codegen-internal vocabulary
+        description: Codegen surfaces the precheck failure verbatim from the validation layer; does not re-classify or augment the message.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: precheck-refusal-message.augmented-with-codegen-vocabulary
+            expected: false
+          - verify: state
+            target: precheck-refusal-message.matches-precheck-output-verbatim
+            expected: true
+
+      - name: precheck refusal points the author back to layout creation
+        description: The surfaced message points the author at the layout-creation flow rather than describing codegen internals.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: precheck-refusal-message.points-to-layout-creation
+            expected: true
+
+      - name: precheck wins over stale-buildfile when both apply
+        description: When both precheck failure and stale buildfile apply to the same page, the precheck refusal is surfaced and stale-buildfile is suppressed for that page.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: invalid-and-stale-page
+            expected: precheck-refusal-verbatim
+          - verify: state
+            target: invalid-and-stale-page.stale-buildfile-emitted
+            expected: false
+
+  # ── Non-Interactive Codegen Pipeline ────────────────────────────
+
+  - name: non-interactive-codegen-pipeline — CI-safe by construction
+    component: non-interactive-codegen-pipeline
+    fixture: null
+    intent: "@parlay-tool/layout-aware-codegen/codegen-is-non-interactive-and-ci-safe"
+
+    cases:
+      - name: no-TTY container produces output behaviorally equivalent to local TTY run
+        description: Running parlay generate-code in a no-TTY container with a valid buildfile produces output identical (in behavior, in testcase pass/fail, in component-tree shape) to running it locally with a TTY on the same source state.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: no-tty-run.testcases-pass
+            expected: same-as-tty-run
+          - verify: state
+            target: no-tty-run.emitted-component-tree
+            expected: same-as-tty-run
+          - verify: state
+            target: no-tty-run.exit-code
+            expected: same-as-tty-run
+
+      - name: stale buildfile in CI exits non-zero with no output written
+        description: Running codegen on a feature with a stale buildfile in CI produces stale-buildfile, exits non-zero, writes no output.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: parlay generate-code
+            expected: stale-buildfile
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: non-zero
+          - verify: state
+            target: output-directory.new-files-written
+            expected: false
+
+      - name: invalid layout in CI surfaces precheck refusal verbatim, exits non-zero, writes no output
+        description: Running codegen on a feature with an invalid layout in CI surfaces the precheck refusal verbatim, exits non-zero, writes no output.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: error
+            target: parlay generate-code
+            expected: precheck-refusal-verbatim
+          - verify: state
+            target: parlay generate-code.exit-code
+            expected: non-zero
+          - verify: state
+            target: output-directory.new-files-written
+            expected: false
+
+      - name: two CI workers produce identical exit codes and behaviorally-equivalent output
+        description: Two CI workers running codegen against the same source state produce identical exit codes and behaviorally-equivalent generated code (passing the same testcases, emitting the same component tree).
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: worker1-vs-worker2.exit-code
+            expected: identical
+          - verify: state
+            target: worker1-vs-worker2.testcases-pass
+            expected: same-set
+          - verify: state
+            target: worker1-vs-worker2.emitted-component-tree
+            expected: same
+
+      - name: --non-interactive flag has no observable effect
+        description: Passing --non-interactive to codegen has no observable effect — codegen behaves the same way it does without the flag.
+        steps:
+          - action: invoke
+            target: parlay generate-code --non-interactive
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: with-flag-vs-without.exit-code
+            expected: identical
+          - verify: state
+            target: with-flag-vs-without.testcases-pass
+            expected: same-set
+          - verify: state
+            target: with-flag-vs-without.emitted-component-tree
+            expected: same
+
+      - name: partial-write avoidance — on per-page failure, no new files written
+        description: When page A succeeds and page B fails the freshness gate, the output directory is left in a state consistent with no run produced these files.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: output-directory.partial-write
+            expected: false
+          - verify: state
+            target: output-directory.new-files-written
+            expected: false
+
+      - name: exit code is the source of truth — CI must not pattern-match stdout
+        description: CI's pass/fail is derived from exit code, not from stdout pattern matching. Exit code is non-zero on any error path.
+        steps:
+          - action: invoke
+            target: parlay generate-code
+          - verify: state
+            target: parlay generate-code.exit-code-on-error
+            expected: non-zero
+          - verify: state
+            target: parlay generate-code.exit-code-on-success
+            expected: 0

@@ -4,9 +4,9 @@ _Create domain model from features_
 
 # Create Domain Model
 
-<!-- parlay-feature: studio-support/domain-model-yaml-migration -->
+<!-- parlay-feature: parlay-tool/domain-model-yaml-migration -->
 <!-- parlay-component: extract-domain-model-output -->
-<!-- parlay-extends: studio-support/domain-model-yaml-migration/extract-domain-model-yaml-emission -->
+<!-- parlay-extends: parlay-tool/domain-model-yaml-migration/extract-domain-model-yaml-emission -->
 <!-- parlay-extends: parlay-tool/create-domain-model/embedded-skill-rename-source-file -->
 <!-- parlay-extends: parlay-tool/create-domain-model/skill-greenfield-branch -->
 <!-- parlay-extends: parlay-tool/create-domain-model/skill-existing-file-preservation -->

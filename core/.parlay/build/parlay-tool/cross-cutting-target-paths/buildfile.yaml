@@ -14,7 +14,7 @@ adapter: go-cli
 # bug (cross-cutting-target-not-in-plan failing for purely-introducing
 # entries) is therefore not exercised by THIS buildfile, even though the
 # whole feature is the fix for that bug. The companion irony: the
-# `@studio-support/page-layout-field` buildfile, whose purely-introducing
+# `@parlay-tool/page-layout-field` buildfile, whose purely-introducing
 # cross-cuttings DID hit the bug and routed around it via target-pattern,
 # was the canary that motivated the work tracked here.
 #

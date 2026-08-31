@@ -1,0 +1,551 @@
+feature: parlay-tool/layout-aware-build
+adapter: go-cli
+
+# Build-time twin of parlay-tool/layout-aware-codegen. This feature is
+# where AI inference, rule-matching, and disambiguation prompts live so that
+# codegen never re-litigates a binding decision. Five infrastructure
+# fragments translate into five cross-cutting entries; the single surface
+# fragment (the interactive Disambiguation Prompt) is a component that
+# contributes to the same build-feature skill — its emission point is a
+# subsection of build-feature.skill.md, not a standalone CLI file.
+#
+# All paths in cross-cutting target-files: and plan: are relative to the
+# active root (core/) — the buildfile-validator resolves them against the
+# root derived from the buildfile's location, NOT against the repo root.
+#
+# Out of scope (for explicit traceability):
+#   - Codegen consumption of the resulting bindings — owned by
+#     parlay-tool/layout-aware-codegen (sibling, codegen-side).
+#   - The layout-validation precheck contract that build (and codegen)
+#     consult before emission — owned by parlay-tool/page-layout-field.
+#   - Rule-engine / AI-matcher Go runtime implementations — those are
+#     downstream of the design captured in this feature and will land in
+#     follow-up features that introduce concrete code rather than skill
+#     contracts.
+
+fixtures: {}
+
+routes:
+  - path: build-feature
+    page: build-feature CLI
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components: [disambiguation-prompt]
+
+components:
+  disambiguation-prompt:
+    source: "@parlay-tool/layout-aware-build/disambiguation-prompt"
+    widget: lettered-prompt
+    description: |
+      Interactive terminal prompt rendered during a `parlay build-feature`
+      run when Pass 2 returns multiple candidates within the configurable
+      confidence threshold. It is the only path that introduces designer
+      judgment into a binding decision; codegen never prompts and rule/AI
+      passes never prompt.
+
+      The prompt renders four kinds of content together:
+        - a message line locating the ambiguity (page path + layout-node
+          path + human label of the node)
+        - a data-list of candidates with stable numeric selectors
+          ([1], [2], ...) — each entry naming a domain element reference
+          (@feature/operation or @feature/entity[.field]) and the AI
+          confidence value
+        - a `[q] quit` escape that aborts the build with non-zero exit
+          (the `dismiss` action; no partial buildfile is written)
+        - a `[s] skip` action that records the binding as `unresolved`
+          and continues the build (the `acknowledge` action — designer
+          signals "I have seen this, defer the decision"; the resulting
+          buildfile fails its own validity check so codegen will refuse
+          to consume it)
+
+      Multiple ambiguities in one run produce a sequence of prompts in
+      deterministic (page-path, node-path) lexicographic order — one at a
+      time, not as a batched multi-select. Headless / non-interactive runs
+      render no prompt; the build emits an `ambiguous-binding` error to
+      stderr instead (see cross-cutting/headless-build-mode).
+
+      File-pattern note: this component does NOT produce a standalone CLI
+      command file. It is one fragment of the build-feature interactive
+      flow — its emission point is a subsection of the build-feature
+      skill (internal/embedded/skills/build-feature.skill.md), contributing
+      alongside the other build-feature steps. The plan therefore routes
+      this component to plan.modifies on that shared skill file rather
+      than to plan.creates on a new file.
+
+    data:
+      inputs:
+        - name: page-path
+          model: ""
+          field: ""
+          from: computed
+        - name: node-path
+          model: ""
+          field: ""
+          from: computed
+        - name: node-label
+          model: ""
+          field: ""
+          from: computed
+        - name: candidates
+          model: ""
+          field: ""
+          from: computed
+      computed:
+        - name: page-path
+          from: "the *.page.md file path of the page being processed (e.g. pages/tasks.md)"
+          type: string
+        - name: node-path
+          from: "the layout-node path inside the page (e.g. region/toolbar/button[2])"
+          type: string
+        - name: node-label
+          from: "the human label of the layout node (e.g. \"Process\")"
+          type: string
+        - name: candidates
+          from: "the candidate list returned by Pass 2 — ordered, each entry a (domain-element-reference, ai-confidence) pair"
+          type: "list of {ref, confidence}"
+
+    elements:
+      - name: location-message
+        widget: fmt.Println
+        bind: "page-path + node-path + node-label"
+        format: "ambiguous binding at:\\n  <page-path> > <node-path> (\"<node-label>\")"
+        visible-when: always
+
+      - name: candidate-list
+        widget: bulleted-list
+        bind: candidates
+        format: "  [<index>] <ref>  (ai-confidence: <confidence>)"
+        visible-when: always
+
+      - name: escape-options
+        widget: fmt.Println
+        bind: ""
+        format: "  [q] quit (abort build, exit non-zero)\\n  [s] skip (record as `unresolved`, continue, buildfile will be invalid)"
+        visible-when: always
+
+      - name: choose-prompt
+        widget: fmt.Printf
+        bind: ""
+        format: "choose > "
+        visible-when: always
+
+    actions:
+      - name: select-candidate
+        widget: lettered-prompt
+        enabled-when: always
+        effect: "call:record-binding"
+        target: "binding-store(confidence: designer)"
+
+      - name: quit
+        widget: os.Exit
+        enabled-when: always
+        effect: "call:abort-build"
+        target: "process(exit-code: non-zero, partial-buildfile: discarded)"
+
+      - name: skip
+        widget: enter-to-continue
+        enabled-when: always
+        effect: "call:record-binding"
+        target: "binding-store(confidence: designer, value: unresolved)"
+
+cross-cutting:
+  - id: two-pass-binding-resolution
+    source: "@parlay-tool/layout-aware-build/run-a-two-pass-binding-resolution-during-build"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+    transform: |
+      Extend the build-feature skill with the two-pass binding-resolution
+      pipeline.
+
+      Add a new step (or extend the existing per-page step) titled
+      "Resolve layout bindings (two-pass)" that runs for every layout-
+      bearing page in the active feature, after layouts are loaded and
+      surface + domain are read. For every layout node that consumes data
+      or emits an action, the skill walks two ordered passes:
+
+        Pass 1 — deterministic rules:
+          - Compute the active rule set: starter rules merged with project
+            rules from `wiring.rules:` in the existing buildfile (if
+            present). The starter rule set is the only other source; no
+            rules are loaded from surface, domain, layout, or any other
+            artifact.
+          - Apply rules in precedence order (highest first).
+          - A single match records the binding with `confidence: rules`
+            and the rule name (`starter/<name>` or `project/<name>`).
+          - Zero matches with a layout shape that suggests a binding is
+            expected (e.g. a clarity.datagrid with no Show fragment) emits
+            an `orphan-layout-node` build-time error instead of escalating
+            to Pass 2 — never invent a binding from nothing.
+          - Zero matches with a non-binding-expecting shape, OR multiple
+            matches at distinct precedences, escalates to Pass 2 with the
+            Pass-1 candidate set (possibly empty for the orphan-eligible
+            shape).
+
+        Pass 2 — AI matcher:
+          - Invoked ONLY on nodes that Pass 1 did not resolve unambiguously.
+            Pass 2 must never run on a Pass-1-resolved node.
+          - Receives exactly the candidate set Pass 1 produced (or the
+            empty set, for orphan-eligible shapes). The matcher never
+            invents candidates outside this set.
+          - Inference is bounded to the active feature: cross-feature
+            surface fragments and domain elements are NEVER candidates.
+          - A single high-confidence pick records the binding with
+            `confidence: ai`, the AI session/run identifier, and the
+            candidate list at the moment of decision.
+          - Multiple candidates within the configurable confidence
+            threshold transfers control to the disambiguation prompt
+            (interactive mode) or emits `ambiguous-binding` (non-
+            interactive mode; see cross-cutting/headless-build-mode).
+
+      Determinism contract: re-running build on identical inputs records
+      bindings whose source triples are stable. Lexical AI reasoning text
+      may differ run-to-run; the recorded triple (layout-node id,
+      surface-fragment slug, domain-element reference) is what defines
+      the decision deterministically.
+
+      State the rule explicitly in the skill: AI participation in a
+      binding decision happens at build time only. Codegen reads the
+      buildfile's `bindings:` section and never invokes the rules engine,
+      the AI matcher, or the disambiguation prompt.
+    introduces:
+      - "Skill step: resolve layout bindings (two-pass; per page; per layout node)"
+      - "Skill convention: Pass 1 — deterministic rule evaluation against the merged starter+project rule set; records `confidence: rules`"
+      - "Skill convention: Pass 2 — AI matcher over the Pass-1 candidate set; records `confidence: ai`"
+      - "Skill convention: feature-scoped inference — cross-feature surface and domain elements are never candidates"
+      - "Skill convention: orphan-layout-node error fires when zero Pass-1 candidates and the layout shape suggests a binding is expected"
+      - "Skill prohibition: AI inference at codegen time — codegen reads bindings, never re-litigates"
+    caching: per-process
+    backward-compatible: true
+
+  - id: starter-rule-set-and-project-extension
+    source: "@parlay-tool/layout-aware-build/define-a-starter-rule-set-extensible-per-project"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+      - internal/embedded/schemas/buildfile.schema.md
+    transform: |
+      Two coordinated edits:
+
+      1. Buildfile schema (internal/embedded/schemas/buildfile.schema.md):
+         add a top-level `wiring:` section (peer to `models`, `fixtures`,
+         `routes`, `components`, `cross-cutting`, `bindings`,
+         `source-signatures`). Under it, define the closed-shape rule
+         schema for `wiring.rules:` — the only place project-specific
+         binding rules live.
+
+         Rule fields (closed set; no other fields accepted):
+           - `match`: predicate over layout-node properties + surface
+             fragment fields + domain element shape.
+           - `bind`: the source triple to record `(layout_node,
+             surface_fragment, domain_element)`.
+           - `precedence`: integer; higher wins on conflict.
+           - `confidence`: always `rules`.
+
+         The schema also documents the merge semantics: at run time the
+         build agent unions the starter rule set with `wiring.rules:`,
+         applies them in precedence order, and records each fired rule
+         name (`starter/<name>` or `project/<name>`) with the resulting
+         binding.
+
+         The starter rule set is not enumerated in the schema (it is part
+         of the build-feature skill's vocabulary, not the buildfile's),
+         but the schema notes that adding/removing a starter rule
+         requires a build-feature schema bump.
+
+      2. Build-feature skill (internal/embedded/skills/build-feature.skill.md):
+         document the starter rule set explicitly — three rule families
+         that cover the common cases:
+           - structural-hint matches: a layout-node property like
+             `contentShape: badge` maps to a matching surface Show field.
+           - action-verb matches: a button label or aria semantics
+             combined with a surface `Action` maps to a domain operation.
+           - single-candidate matches: when surface declares exactly one
+             Action and the domain has exactly one operation of matching
+             shape, the binding is unambiguous.
+
+         Document the rule-load-time checks the skill performs before
+         Pass 1 runs:
+           - rule-conflict at the same precedence with different bindings
+             → build-time error naming both rule definitions.
+           - project rule placed below a starter rule for the same match
+             → `rule-precedence-error: project rule <name> attempts to
+             silently disable starter rule <starter-name>. Projects can
+             override starter rules at higher precedence, but cannot
+             place rules below them.`
+           - rule whose `match` predicate references a non-existent
+             domain field → `rule-load-error: rule <name> references
+             domain field <Task.priority> that does not exist in the
+             active feature's domain.`
+           - rule whose `bind` output would re-trigger another rule (or
+             itself) → `rule-termination-error: rule <name> produces a
+             binding that re-triggers <other-rule-name>` — termination is
+             checked statically, not at match time.
+
+         The skill records the merged rule set and applies it in
+         precedence order; every Pass-1-recorded binding cites the rule
+         name that fired so the choice is auditable from the buildfile
+         alone.
+    introduces:
+      - "Buildfile section: wiring.rules — closed-shape per-project rule list; fields {match, bind, precedence, confidence}"
+      - "Skill vocabulary: starter rule set — structural-hint, action-verb, single-candidate matches"
+      - "Skill check: rule-load-time validation (conflict, precedence, missing-field, termination)"
+      - "Skill convention: rule-name attribution on every Pass-1 binding (`starter/<name>` or `project/<name>`)"
+      - "Build-feature schema-bump trigger: any change to the starter rule set"
+    caching: per-process
+    backward-compatible: true
+
+  - id: interactive-disambiguation-choice-recording
+    source: "@parlay-tool/layout-aware-build/raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+    transform: |
+      Extend the build-feature skill with the interactive disambiguation
+      flow and the persistence rules that govern it.
+
+      When Pass 2 leaves ambiguity in interactive mode (TTY present,
+      `--non-interactive` not set), the skill pauses per-node and surfaces
+      the disambiguation prompt described by the surface fragment
+      `disambiguation-prompt`. The prompt format is fixed:
+
+        ```
+        ambiguous binding at:
+          <page-path> > <layout-node-path> ("<node-label>")
+        candidates:
+          [1] <domain-element-ref>  (ai-confidence: <value>)
+          [2] <domain-element-ref>  (ai-confidence: <value>)
+          ...
+          [q] quit (abort build, exit non-zero)
+          [s] skip (record as `unresolved`, continue, buildfile will be invalid)
+        choose >
+        ```
+
+      Three input shapes are accepted:
+        - A numeric digit selecting a candidate. The skill records the
+          chosen binding with `confidence: designer`, the source triple,
+          the timestamp of the choice, and the candidate list as it
+          existed at the moment of selection. Continues to the next
+          ambiguity (or completes the build if none remain).
+        - `q` aborts the build with a non-zero exit code. No partial
+          buildfile is written; recorded choices made earlier in the same
+          run are also discarded. The buildfile-output directory is left
+          consistent with "no run produced these files."
+        - `s` records the binding as `unresolved` and continues the
+          build. The resulting buildfile fails its own validity check
+          (signaling that codegen should refuse to consume it), but lets
+          the designer collect multiple decisions before re-running. End-
+          of-run summary lists every `unresolved` binding.
+
+      Persistence and lifecycle rules:
+        - A recorded `confidence: designer` binding is read as
+          authoritative on subsequent build runs as long as its candidate
+          list is unchanged (same domain operations, same surface action
+          shape, same layout node).
+        - A change in the candidate list (operation rename, removal,
+          addition; surface action shape change) invalidates the recorded
+          choice and re-triggers the prompt with the updated list. The
+          recorded candidate list is what determines invalidation, not
+          the AI confidence values.
+        - Recorded choices live in the buildfile only — never in surface,
+          domain, or layout artifacts. Designer decisions are build-time
+          state, not authoring artifacts.
+        - Multiple ambiguities in one run produce prompts one at a time
+          in deterministic (page-path, node-path) lexicographic order —
+          not as a batched multi-select.
+        - Adding a new ambiguous node to the layout produces a fresh
+          prompt for that node only; previously recorded choices for
+          unchanged nodes are preserved.
+
+      Cross-reference: the prompt's user-visible content is described by
+      the surface fragment `disambiguation-prompt`; this entry adds the
+      skill's responsibility for rendering the prompt at the right
+      moment, collecting input, and persisting the result with the right
+      lifecycle semantics. Both contributions land in the same skill
+      file.
+    introduces:
+      - "Skill step: disambiguation prompt — pauses per ambiguous node, displays candidate list, accepts numeric / [q] / [s]"
+      - "Skill convention: numeric selection records `confidence: designer` with timestamp + candidate list"
+      - "Skill convention: [q] aborts the build with non-zero exit and discards in-run choices"
+      - "Skill convention: [s] records `unresolved` and continues; resulting buildfile fails its own validity check"
+      - "Skill convention: recorded choices invalidated by candidate-list change (rename/removal/addition); confidence values do not affect invalidation"
+      - "Skill convention: multi-ambiguity prompts in (page-path, node-path) lexicographic order, one at a time"
+    caching: none
+    backward-compatible: true
+
+  - id: buildfile-bindings-section
+    source: "@parlay-tool/layout-aware-build/record-resolved-bindings-in-the-buildfile-with-traceability-triples"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+      - internal/embedded/schemas/buildfile.schema.md
+    transform: |
+      Two coordinated edits — the schema declares the new section, the
+      skill writes it.
+
+      1. Buildfile schema (internal/embedded/schemas/buildfile.schema.md):
+         add a new top-level `bindings:` section as a peer to `models`,
+         `fixtures`, `routes`, `components`, `cross-cutting`,
+         `source-signatures`, and (newly added by
+         cross-cutting/starter-rule-set-and-project-extension) `wiring`.
+         The section is keyed by feature, then page, then layout-node-
+         path. Each entry records:
+
+           - source triple — `layout_node` (referenced by its stable
+             `id`), `surface_fragment` (`@feature/fragment-slug`),
+             `domain_element` (`@feature/entity[.field]` or
+             `@feature/operation`).
+           - presentation hints — typed against the active adapter's
+             componentVocabulary and tokens (e.g. `presentation: badge`,
+             `tone: status-color`). Unknown hints are a build error at
+             finalize time, not a deferred-to-codegen problem; the schema
+             notes this explicitly.
+           - `confidence` annotation — exhaustive enum over `rules`,
+             `ai`, `designer`. Every binding has exactly one.
+           - provenance — by confidence kind:
+               * `rules` → rule name (`starter/<name>` or `project/<name>`).
+               * `ai` → AI session/run identifier.
+               * `designer` → timestamp of the choice + recorded candidate
+                 list at the moment of selection.
+
+         Buildfile validity requires every layout-bearing-page node to
+         have a `bindings:` entry. A buildfile produced for a feature
+         whose pages contain layout nodes is invalid if any such node has
+         no entry.
+
+         Lifecycle notes the schema documents:
+           - Bindings are layout-derived: removing a layout node removes
+             its binding entry on the next build run.
+           - Renaming a layout-node `id` drops the old entry and triggers
+             fresh Pass-1-then-Pass-2-then-prompt-as-needed resolution; it
+             never silently re-binds.
+           - Bindings are feature-scoped; one feature's buildfile carries
+             entries only for that feature's pages.
+
+         Mark Backward-Compatible: NO at the section level. The schema
+         change adds a new top-level section that older buildfiles will
+         not have. Existing buildfiles without `bindings:` need to be
+         regenerated via `parlay build-feature`, not patched in place.
+
+      2. Build-feature skill (internal/embedded/skills/build-feature.skill.md):
+         add the finalize step "Emit bindings section." This step runs
+         after every layout-node decision is final (rules / ai / designer)
+         and before the buildfile is committed. The step writes one entry
+         per node with the schema shape above. It also runs the validity
+         check (every layout-bearing-page node has an entry; presentation
+         hints are known to the active adapter; the confidence annotation
+         is one of the three permitted values) and refuses to commit a
+         buildfile that fails it.
+
+         Cross-reference the freshness gate (owned by
+         parlay-tool/layout-aware-codegen/cross-cutting/buildfile-
+         freshness-gate): bindings are part of the buildfile that codegen
+         reads; the freshness gate's source-signatures cover the layout,
+         surface, and domain inputs that drive binding resolution, so a
+         change in any of them invalidates the buildfile and forces a
+         rebuild.
+    introduces:
+      - "Buildfile section: bindings (peer to models/fixtures/routes/components/cross-cutting/source-signatures/wiring; keyed feature → page → layout-node-path)"
+      - "Binding entry shape: source triple (layout_node, surface_fragment, domain_element) + presentation hints + confidence + provenance"
+      - "Buildfile validity rule: every layout-bearing-page node has a `bindings:` entry"
+      - "Skill step: emit bindings section (per build, after all decisions, before commit)"
+      - "Build error: unknown-presentation-hint at finalize time"
+      - "Schema posture: Backward-Compatible NO for the bindings section addition — older buildfiles must regenerate"
+    caching: none
+    backward-compatible: false
+
+  - id: headless-build-mode
+    source: "@parlay-tool/layout-aware-build/headless-build-for-ci"
+    target-files:
+      - internal/embedded/skills/build-feature.skill.md
+    transform: |
+      Extend the build-feature skill with the non-interactive control
+      flow that CI and other headless contexts require.
+
+      Detection (the skill MUST do both):
+        - TTY check on the controlling stdin.
+        - The explicit `--non-interactive` flag on the `parlay build-
+          feature` invocation. The flag wins over TTY detection in BOTH
+          directions: with `--non-interactive` set, the skill runs as if
+          headless even when a TTY is attached (so a developer can test
+          CI behavior locally); without it, a missing TTY still triggers
+          headless behavior automatically.
+
+      Control-flow switching in headless mode:
+        - Pass 2 ambiguity that would have surfaced the disambiguation
+          prompt instead emits an `ambiguous-binding` build-time error to
+          stderr with the format:
+
+            ```
+            ambiguous-binding at <feature> > <page> > <node-path>:
+              candidates:
+                <domain-element-ref>  (ai-confidence: <value>)
+                <domain-element-ref>  (ai-confidence: <value>)
+              expected: exactly one match
+              to fix: rename the layout-node label to disambiguate, narrow the surface Action that maps to this node,
+                      add a wiring rule under wiring.rules, or run `parlay build-feature` interactively
+                      to record a designer choice.
+            ```
+
+          Exit code: non-zero. The error never blocks waiting for input.
+        - `orphan-layout-node` and `removed-field-referenced` errors
+          behave identically across modes — actionable error message
+          plus non-zero exit. They never gate on the disambiguation
+          prompt; they fire whether or not a TTY is attached.
+        - Pass 2 AI inference itself remains allowed in non-interactive
+          mode; only the escalation-to-prompt path is rejected. A node
+          where Pass 2 returns a single high-confidence candidate
+          records the binding with `confidence: ai` and continues.
+        - Recorded designer choices from prior interactive runs are read
+          as authoritative in non-interactive mode and are not re-
+          prompted, as long as their candidate lists are unchanged.
+
+      Atomicity invariant: the non-interactive path NEVER writes a
+      partial buildfile. Either the buildfile is committed whole or
+      nothing reaches the output directory. If any binding cannot be
+      resolved on any layout-bearing page, the buildfile-output directory
+      is left in a state consistent with "no run produced these files."
+      Implementations have flexibility (atomic temp-file-rename, in-
+      memory accumulation then single write, write-then-fsync-then-
+      rename); the invariant is "either fully committed or not present,"
+      not a specific mechanism.
+
+      CI contract (state explicitly in the skill):
+        - Process exit code is the source of truth: zero on success,
+          non-zero on any error path.
+        - CI scripts MUST NOT pattern-match stdout/stderr text. Wording
+          may change across versions; only the exit code is stable.
+        - Two CI workers running against the same source state produce
+          buildfiles whose recorded source triples are identical for
+          every binding (including any AI-resolved ones). Lexical AI
+          reasoning text may differ; the recorded triples are stable.
+    introduces:
+      - "Skill convention: dual non-interactive detection — TTY check OR `--non-interactive` flag; flag wins over TTY in both directions"
+      - "Skill step: ambiguous-binding error (replaces disambiguation prompt in headless mode)"
+      - "Skill convention: orphan-layout-node and removed-field-referenced errors mode-invariant"
+      - "Skill convention: Pass 2 AI inference allowed in headless mode; only escalation-to-prompt is rejected"
+      - "Skill convention: recorded designer choices honored in headless mode without re-prompting"
+      - "Skill invariant: atomic buildfile commit — never write a partial buildfile in headless mode"
+      - "Skill convention: CI pass/fail derives from exit code; stdout pattern-matching is forbidden"
+    caching: none
+    backward-compatible: true
+
+plan:
+  modifies:
+    - path: internal/embedded/skills/build-feature.skill.md
+      sources:
+        - component/disambiguation-prompt
+        - cross-cutting/two-pass-binding-resolution
+        - cross-cutting/starter-rule-set-and-project-extension
+        - cross-cutting/interactive-disambiguation-choice-recording
+        - cross-cutting/buildfile-bindings-section
+        - cross-cutting/headless-build-mode
+    - path: internal/embedded/schemas/buildfile.schema.md
+      sources:
+        - cross-cutting/starter-rule-set-and-project-extension
+        - cross-cutting/buildfile-bindings-section
+  creates: []
+  deletes: []
+source-signatures:
+  intents: "sha256:84779fb1aea5bbdb1e191bdcc81e336e1d3f14eb95dc4df2e9fe3e71df4e10b4"
+  dialogs: "sha256:9c33ddc21e3140df6ed701fdd8b05e241a39fedfedc77dbd80e6f08a8684d754"
+  surface: "sha256:b884f573cd8794d8a78d673dc14a41394703e0c15b75ff1d1d4db1d9c16826c2"
+  infrastructure: "sha256:8431848e620d1e407ba32a865a1ab3694935fc5ddd16d635b5500fbe7c25de4b"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

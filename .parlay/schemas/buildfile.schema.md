@@ -1,9 +1,9 @@
 <!--
 parlay-section: cross-cutting
-parlay-extends: studio-support/layout-aware-codegen/buildfile-freshness-gate
+parlay-extends: parlay-tool/layout-aware-codegen/buildfile-freshness-gate
 parlay-extends: parlay-tool/cross-cutting-target-paths/buildfile-schema-doc-routing-and-target-creates
-parlay-extends: studio-support/layout-aware-build/starter-rule-set-and-project-extension
-parlay-extends: studio-support/layout-aware-build/buildfile-bindings-section
+parlay-extends: parlay-tool/layout-aware-build/starter-rule-set-and-project-extension
+parlay-extends: parlay-tool/layout-aware-build/buildfile-bindings-section
 parlay-extends: parlay-tool/multi-adapter/multi-target-buildfile-schema
 -->
 

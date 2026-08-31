@@ -6,10 +6,10 @@ surface: module
 
 # Load Domain Model
 
-<!-- parlay-feature: studio-support/domain-model-yaml-migration -->
+<!-- parlay-feature: parlay-tool/domain-model-yaml-migration -->
 <!-- parlay-component: load-domain-model-conflict-prompt -->
-<!-- parlay-extends: studio-support/domain-model-yaml-migration/load-domain-model-version-notice -->
-<!-- parlay-extends: studio-support/domain-model-yaml-migration/load-domain-model-yaml-only-and-url -->
+<!-- parlay-extends: parlay-tool/domain-model-yaml-migration/load-domain-model-version-notice -->
+<!-- parlay-extends: parlay-tool/domain-model-yaml-migration/load-domain-model-yaml-only-and-url -->
 
 Load an external domain model and integrate it with the active root's
 domain model.

@@ -1,4 +1,4 @@
-// parlay-feature: studio-support/page-layout-field
+// parlay-feature: parlay-tool/page-layout-field
 // parlay-cross-cutting-id: layout-precheck-contract
 // parlay-artifact: test
 //

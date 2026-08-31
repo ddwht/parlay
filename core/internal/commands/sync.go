@@ -1,3 +1,6 @@
+// parlay-feature: parlay-tool/authoring
+// parlay-component: CoverageReport
+
 package commands
 
 // Generated from buildfile component: coverage-report
@@ -176,7 +179,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// No editor hand-off here. This hook offered to open Studio "to reconcile
-	// this drift visually" (spec/intents/studio-support/studio-cli-hooks/
+	// this drift visually" (spec/intents/parlay-tool/studio-cli-hooks/
 	// intents.md:54) — a surface that was designed and never built. Because
 	// `reconcile` was never a real subcommand, accepting the prompt made this
 	// command exit non-zero after having successfully done its work.

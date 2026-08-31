@@ -1,0 +1,1221 @@
+feature: parlay-tool/domain-model-yaml-migration
+adapter: go-cli
+
+# This feature is a CLI command (parlay migrate-domain-model) plus a
+# substantial set of cross-cutting infrastructure changes — schema
+# publication, schema-version routing, deep validation, path resolution,
+# read-path precedence, and updates to two existing AI-skill stubs.
+#
+# Three open questions from intents.md / dialogs.md are deliberately not
+# resolved here. Each is recorded as an `open-question` marker on the
+# affected entry so generate-code surfaces the choice instead of silently
+# picking one. The questions:
+#   Q1 — enum tone: closed set {neutral,info,warning,danger,success} vs open string.
+#   Q2 — entity field shape: flat fields only vs allow nested struct types.
+#   Q3 — migrate-domain-model command ownership: Core CLI vs Studio installer.
+# All three are tracked as `open-questions:` blocks on the relevant
+# components, cross-cutting entries, and at the buildfile level below.
+
+open-questions:
+  - id: enum-tone-vocabulary
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    question: >
+      Are enum tones a closed set (neutral, info, warning, danger, success)
+      or open free-form strings?
+    options:
+      - "closed-set: schema rejects unknown tones with the closed list as the error message; aligns with adapter-vocabulary-extension's color-token tone vocabulary"
+      - "open-string: schema accepts any string; consumers (Studio renderer, codegen) must define their own fallback for unrecognized tones"
+    safe-default-until-resolved: closed-set
+    affects:
+      - cross-cutting/domain-model-schema-artifact
+      - cross-cutting/domain-model-deep-validator
+      - component/validation-error-reporter
+    decision-required-by: code-phase
+
+  - id: entity-field-shape
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    question: >
+      Can entities declare struct-shaped (nested) fields, or only flat
+      primitives plus refs?
+    options:
+      - "flat-only: field types are limited to {uuid, string, int, float, bool, datetime, ref-with-target, named-enum}; nested shapes require lifting into a separate entity joined by a ref"
+      - "allow-nested: field types include the above plus inline object literals validated recursively against the same field rules"
+    safe-default-until-resolved: flat-only
+    affects:
+      - cross-cutting/domain-model-schema-artifact
+      - cross-cutting/domain-model-deep-validator
+      - component/validation-error-reporter
+    decision-required-by: code-phase
+
+  - id: migrate-command-ownership
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    question: >
+      Should `parlay migrate-domain-model` ship as part of Core's CLI, or be
+      packaged with Studio's installer?
+    options:
+      - "core-cli: ship the command in Core's CLI (registration in core/internal/commands/root.go and the deployer-shared command list). Every parlay project gets a path off the deprecated format the moment Core upgrades, regardless of Studio adoption. CLI surface grows by one command."
+      - "studio-installer: package the command with Studio's installer. The CLI registration moves to Studio; the AI parser and idempotency guard still live in Core (Studio shells into Core). Aligns the migration with Studio adoption but strands non-Studio users on the deprecated format."
+    safe-default-until-resolved: core-cli
+    affects:
+      - component/migrate-domain-model-command
+      - component/migrate-domain-model-dry-run
+      - component/migrate-domain-model-force
+      - component/migrate-domain-model-multi-root
+      - cross-cutting/migrate-domain-model-cobra-command
+      - cross-cutting/migrate-domain-model-root-registration
+      - cross-cutting/migrate-domain-model-skill-file
+      - cross-cutting/migrate-domain-model-deployer-title
+      - cross-cutting/migrate-domain-model-generic-deployer-list
+    decision-required-by: code-phase
+    notes:
+      - "If resolved as studio-installer: migrate-domain-model-cobra-command moves to Studio's bundled installer (out of Core's source tree); migrate-domain-model-root-registration is omitted from Core; migrate-domain-model-generic-deployer-list does NOT add an entry. The skill file (migrate-domain-model-skill-file) and the Claude/Cursor title (migrate-domain-model-deployer-title) STILL ship in Core so Studio can shell into the skill. Components stay valid in either case — the user-visible command name and flag set are stable."
+
+fixtures:
+  greenfield-no-md:
+    description: Active root has neither domain-model.md nor domain-model.yaml. Migration is a no-op.
+    data:
+      MigrationOutcome:
+        - kind: nothing-to-migrate
+          exit-code: 0
+
+  legacy-md-only:
+    description: Active root has domain-model.md but no domain-model.yaml. The standard migration target.
+    data:
+      DomainModelArtifact: []
+      MigrationOutcome:
+        - kind: migrated
+          yaml-path: /tmp/proj/domain-model.yaml
+          md-path: /tmp/proj/domain-model.md
+          exit-code: 0
+
+  already-migrated-yaml-exists:
+    description: Both domain-model.md and domain-model.yaml exist on disk. Default invocation refuses; --force overwrites.
+    data:
+      MigrationOutcome:
+        - kind: already-migrated
+          yaml-path: /tmp/proj/domain-model.yaml
+          md-path: /tmp/proj/domain-model.md
+          exit-code: 1
+
+  ambiguous-md:
+    description: domain-model.md has fields without declared types or relationships with unclear cardinality. Migration writes YAML with annotation markers and exits non-zero.
+    data:
+      MigrationOutcome:
+        - kind: ambiguous
+          yaml-path: /tmp/proj/domain-model.yaml
+          md-path: /tmp/proj/domain-model.md
+          annotations:
+            - "entities.Order.fields.placed_at.type: <unresolved: original prose said 'the date'>"
+            - "relationships.OrderItems.cardinality: <unresolved: prose was ambiguous>"
+          exit-code: 2
+
+  dry-run-clean-migration:
+    description: --dry-run on a project that would migrate cleanly. Prints planned YAML + diff; touches nothing on disk.
+    data:
+      MigrationOutcome:
+        - kind: dry-run
+          yaml-path: /tmp/proj/domain-model.yaml
+          md-path: /tmp/proj/domain-model.md
+          diff: "+ schema_version: 1\n+ enums: []\n+ entities: ..."
+          exit-code: 0
+
+  force-overwrite:
+    description: --force re-parses .md and overwrites existing .yaml; emits warning on stderr.
+    data:
+      MigrationOutcome:
+        - kind: force-overwrite
+          yaml-path: /tmp/proj/domain-model.yaml
+          md-path: /tmp/proj/domain-model.md
+          exit-code: 0
+
+  multi-root-ambiguous-no-flag:
+    description: Multi-root project, no --root supplied, ambiguous active root. Exits with code 11 and the standard ambiguity envelope on stderr.
+    data:
+      MigrationOutcome:
+        - kind: ambiguous
+          exit-code: 11
+
+  multi-root-with-flag:
+    description: Multi-root project with --root child-a; targets only child-a's domain-model.md.
+    data:
+      MigrationOutcome:
+        - kind: migrated
+          yaml-path: /tmp/proj/child-a/domain-model.yaml
+          md-path: /tmp/proj/child-a/domain-model.md
+          exit-code: 0
+
+  yaml-valid-v1:
+    description: Hand-written domain-model.yaml at schema_version 1 with enums, entities, relationships, and operations all defined and resolved.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+          enums:
+            - name: OrderStatus
+              values:
+                - value: pending
+                  label: "Pending"
+                  tone: warning
+                - value: paid
+                  label: "Paid"
+                  tone: success
+                - value: cancelled
+                  label: "Cancelled"
+                  tone: danger
+          entities:
+            - name: Order
+              fields:
+                - name: id
+                  type: uuid
+                  required: true
+                - name: status
+                  type: OrderStatus
+                  enum: OrderStatus
+                  required: true
+                - name: customer_id
+                  type: ref
+                  target: Customer
+                  required: true
+            - name: Customer
+              fields:
+                - name: id
+                  type: uuid
+                  required: true
+                - name: name
+                  type: string
+                  required: true
+          relationships:
+            - name: customer-orders
+              from: Customer
+              to: Order
+              cardinality: one-to-many
+          operations:
+            - name: cancel-order
+              input: [Order.id]
+              effects:
+                - "set Order.status to cancelled"
+
+  yaml-missing-schema-version:
+    description: YAML omits schema_version. Must fail parse with missing-schema-version.
+    data:
+      DomainModelValidationError:
+        - kind: missing-schema-version
+          yaml-path: ""
+          message: "domain-model.yaml is missing required top-level field 'schema_version'"
+
+  yaml-version-older-than-binary:
+    description: File has schema_version 1; binary supports 2. Read-path routes the in-memory model through the v1→v2 migrator chain. On-disk file is not modified.
+    data:
+      DomainModelValidationError: []
+
+  yaml-version-newer-than-binary:
+    description: File has schema_version 3; binary only knows 1. Refuses to load with an actionable error pointing at parlay upgrade.
+    data:
+      DomainModelValidationError:
+        - kind: schema-version-newer-than-binary
+          offending-value: "3"
+          expected: "1"
+          message: "domain-model.yaml schema_version 3 is newer than this Core release supports (1); run parlay upgrade"
+
+  yaml-undeclared-entity-reference:
+    description: Relationship endpoint names an entity that is not declared. Deep validation fails naming the relationship and the missing entity.
+    data:
+      DomainModelValidationError:
+        - kind: undeclared-entity-reference
+          yaml-path: "relationships.customer-orders.to"
+          offending-value: Order
+          message: "relationships.customer-orders.to references undeclared entity 'Order'"
+
+  yaml-operation-input-not-found:
+    description: Operation input names a field that doesn't exist on the involved entity. Fails with operation-input-field-not-found.
+    data:
+      DomainModelValidationError:
+        - kind: operation-input-field-not-found
+          yaml-path: "operations.cancel-order.input[0]"
+          offending-value: Order.placed_at
+          message: "operations.cancel-order.input names field 'placed_at' which is not declared on entity 'Order'"
+
+  yaml-enum-value-not-declared:
+    description: Field is enum-typed but references a value not declared on its enum.
+    data:
+      DomainModelValidationError:
+        - kind: enum-value-not-declared
+          yaml-path: "fixtures.Order.status"
+          offending-value: refunded
+          message: "value 'refunded' is not declared on enum 'OrderStatus'"
+
+  yaml-field-type-outside-closed-set:
+    description: Field declares type "decimal" — not in the closed set.
+    data:
+      DomainModelValidationError:
+        - kind: field-type-outside-closed-set
+          yaml-path: "entities.Order.fields.amount.type"
+          offending-value: decimal
+          expected: "uuid, string, int, float, bool, datetime, ref, <named-enum>"
+          message: "entities.Order.fields.amount declares type 'decimal' which is not in the closed set"
+
+  yaml-relationship-cardinality-unknown:
+    description: Relationship declares cardinality "many-to-self" — not in the closed set.
+    data:
+      DomainModelValidationError:
+        - kind: relationship-cardinality-unknown
+          yaml-path: "relationships.weird.cardinality"
+          offending-value: many-to-self
+          expected: "one-to-one, one-to-many, many-to-one, many-to-many"
+          message: "relationships.weird.cardinality 'many-to-self' is not a recognized cardinality"
+
+  load-yaml-from-path:
+    description: load-domain-model accepts a local file path; reads, validates schema_version, merges.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+
+  load-yaml-from-url:
+    description: load-domain-model accepts an HTTP(S) URL; fetches, validates, merges.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+
+  load-rejects-markdown:
+    description: load-domain-model with a .md path or URL is refused with markdown-input-refused.
+    data:
+      DomainModelValidationError:
+        - kind: markdown-input-refused
+          offending-value: ./vendor.md
+          message: "load accepts YAML only; run 'parlay migrate-domain-model' in the source project first"
+
+  load-conflict-disambiguation:
+    description: Incoming entity name collides with existing one but fields differ. Triggers a designer disambiguation prompt with four options.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+          entities:
+            - name: Order
+              fields:
+                - name: id
+                  type: uuid
+                  required: true
+
+  load-older-version-routes-through-migrator:
+    description: load-domain-model reads a v1 YAML against a v2 binary. Routes through v1→v2 migrator in-memory before merging. Source file is unchanged.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+
+  load-url-fetch-failure:
+    description: HTTP fetch returns 404 or non-YAML body. Exits non-zero with the offending response surfaced.
+    data:
+      DomainModelValidationError:
+        - kind: url-fetch-failed
+          offending-value: "https://example.com/missing.yaml (404)"
+          message: "URL fetch failed: 404 from https://example.com/missing.yaml"
+
+  extract-writes-project-yaml:
+    description: parlay extract-domain-model on a project with feature intents writes a single domain-model.yaml at the active root, aggregating entities/enums/relationships/operations across all features.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+          enums:
+            - name: OrderStatus
+              values:
+                - value: pending
+                  tone: warning
+                - value: paid
+                  tone: success
+
+  extract-greenfield:
+    description: parlay extract-domain-model on a project with no feature intents produces an empty-but-valid YAML.
+    data:
+      DomainModelArtifact:
+        - schema-version: 1
+          enums: []
+          entities: []
+          relationships: []
+          operations: []
+
+  extract-write-failure:
+    description: YAML write fails (permissions, disk full). Command exits non-zero without writing a fallback .md.
+    data:
+      DomainModelValidationError:
+        - kind: url-fetch-failed
+          message: "failed to write domain-model.yaml: permission denied"
+
+  md-after-migration:
+    description: Original domain-model.md after a successful migration carries a one-line deprecation header at the top pointing at domain-model.yaml. The header is the only Core-authored change.
+    data:
+      MigrationOutcome:
+        - kind: migrated
+          md-path: /tmp/proj/domain-model.md
+          yaml-path: /tmp/proj/domain-model.yaml
+          exit-code: 0
+
+routes:
+  - path: parlay migrate-domain-model
+    page: parlay-migrate-domain-model
+    flow-pattern: file-ops
+    regions:
+      main:
+        components:
+          - migrate-domain-model-command
+          - migrate-domain-model-dry-run
+          - migrate-domain-model-force
+          - migrate-domain-model-multi-root
+
+  - path: parlay extract-domain-model
+    page: parlay-extract-domain-model
+    flow-pattern: cobra-command
+    regions:
+      main:
+        components:
+          - extract-domain-model-output
+
+  - path: parlay load-domain-model
+    page: parlay-load-domain-model
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components:
+          - load-domain-model-conflict-prompt
+          - load-domain-model-version-notice
+
+  # Cross-command surface — every read of domain-model.yaml may emit these
+  # errors. There is no cobra command directly behind it; the route is a
+  # placeholder so the validation-error-reporter component has a home.
+  - path: domain-model-validation
+    page: domain-model-validation
+    flow-pattern: display-then-confirm
+    regions:
+      main:
+        components:
+          - validation-error-reporter
+
+  # In-file surface — the deprecation header lives in domain-model.md
+  # itself. Modeled as a route for traceability; produces no executable
+  # CLI output.
+  - path: domain-model.md
+    page: domain-model.md
+    flow-pattern: file-ops
+    regions:
+      main:
+        components:
+          - md-deprecation-header
+
+components:
+  migrate-domain-model-command:
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-domain-model-command-surface"
+    widget: cobra-command
+    description: >
+      The `parlay migrate-domain-model` cobra command — Flow A's user-visible
+      surface. Default invocation detects domain-model.md at the active
+      root, runs the AI parser, writes domain-model.yaml beside it, prepends
+      a deprecation header to the .md. Greenfield case prints
+      "nothing to migrate" and exits 0. Already-migrated case (yaml exists)
+      exits non-zero with an "already migrated" message naming the YAML's
+      absolute path. Ambiguous .md emits annotation markers in the YAML
+      and exits non-zero. Stdout/stderr discipline: success and diff to
+      stdout; errors and ambiguity envelopes to stderr; never mixed.
+    open-questions:
+      - migrate-command-ownership
+    data:
+      inputs:
+        - name: outcome
+          model: MigrationOutcome
+          field: kind
+          from: command-argument
+        - name: yaml-path
+          model: MigrationOutcome
+          field: yaml-path
+          from: computed
+        - name: md-path
+          model: MigrationOutcome
+          field: md-path
+          from: computed
+    elements:
+      - name: success-message
+        widget: fmt.Println
+        bind: yaml-path
+        format: "wrote domain-model.yaml: {yaml-path}"
+        visible-when: outcome == migrated
+      - name: nothing-to-migrate-message
+        widget: fmt.Println
+        bind: md-path
+        format: "nothing to migrate"
+        visible-when: outcome == nothing-to-migrate
+      - name: already-migrated-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] already migrated: {yaml-path}"
+        visible-when: outcome == already-migrated
+      - name: ambiguous-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] ambiguous markdown — see annotation markers in {yaml-path}"
+        visible-when: outcome == ambiguous
+    actions:
+      - name: invoke-migration
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-migrate-domain-model"
+        target: run-migrate-domain-model
+
+  migrate-domain-model-dry-run:
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-domain-model-dry-run-preview"
+    widget: cobra-command
+    description: >
+      `--dry-run` previews the conversion without writing anything. Prints
+      the full planned domain-model.yaml content on stdout, followed by a
+      unified diff against any existing artifact (existing .yaml if
+      present; an empty file otherwise). Exit code mirrors what a real
+      run would do — viable as a CI check. Filesystem is untouched, no
+      temp files, no deprecation header is prepended in dry-run mode.
+    open-questions:
+      - migrate-command-ownership
+    data:
+      inputs:
+        - name: yaml-path
+          model: MigrationOutcome
+          field: yaml-path
+          from: computed
+        - name: diff
+          model: MigrationOutcome
+          field: diff
+          from: computed
+    elements:
+      - name: planned-yaml-output
+        widget: indented-block
+        bind: diff
+        format: "{planned-yaml}"
+        visible-when: outcome == dry-run
+      - name: diff-output
+        widget: diff-output
+        bind: diff
+        format: "{diff}"
+        visible-when: outcome == dry-run
+    actions:
+      - name: invoke-dry-run
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-migrate-domain-model-dry-run"
+        target: run-migrate-domain-model
+
+  migrate-domain-model-force:
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-domain-model-force-overwrite-warning"
+    widget: cobra-command
+    description: >
+      `--force` overwrites an existing domain-model.yaml after re-parsing
+      the .md. Before overwriting, prints a single warning line on
+      stderr: "--force will overwrite existing domain-model.yaml; any
+      hand edits to the YAML will be discarded". The warning is
+      unconditional under --force (no interactive y/n prompt — parlay
+      commands are non-interactive). Designer is expected to have the
+      YAML under version control. The deprecation header on the .md is
+      left in place; no second header is prepended.
+    open-questions:
+      - migrate-command-ownership
+    data:
+      inputs:
+        - name: yaml-path
+          model: MigrationOutcome
+          field: yaml-path
+          from: computed
+    elements:
+      - name: force-warning
+        widget: prefixed-message
+        bind: yaml-path
+        format: "--force will overwrite existing domain-model.yaml; any hand edits to the YAML will be discarded"
+        visible-when: outcome == force-overwrite
+    actions:
+      - name: invoke-force
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-migrate-domain-model-force"
+        target: run-migrate-domain-model
+
+  migrate-domain-model-multi-root:
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-domain-model-multi-root-targeting"
+    widget: cobra-command
+    description: >
+      `--root <name>` scopes the migration to one registered child root
+      in a multi-root project. Without --root in an ambiguous multi-root
+      context, the CLI exits with code 11 and the standard ambiguity JSON
+      envelope on stderr. Stdout stays empty. No partial migration is
+      performed. Supports `--ambiguity-as-signal` for skill-wrapper
+      consumers.
+    open-questions:
+      - migrate-command-ownership
+    data:
+      inputs:
+        - name: outcome
+          model: MigrationOutcome
+          field: kind
+          from: computed
+    elements:
+      - name: ambiguity-envelope
+        widget: prefixed-message
+        bind: outcome
+        format: "{ambiguity-json-envelope}"
+        visible-when: outcome == ambiguous && exit-code == 11
+    actions:
+      - name: invoke-with-root
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-migrate-domain-model"
+        target: run-migrate-domain-model
+
+  extract-domain-model-output:
+    source: "@parlay-tool/domain-model-yaml-migration/extract-domain-model-output-surface-post-migration"
+    widget: cobra-command
+    description: >
+      Updated `parlay extract-domain-model` output surface. After this
+      migration, extract emits a single domain-model.yaml at the active
+      root (project level, not per-feature). Prints the absolute path on
+      stdout, plus a one-line summary
+      ("extracted N entities, M enums, K relationships, J operations").
+      No human-readable preamble. If the YAML write fails, exits non-zero
+      without writing a fallback .md. Existing per-feature .md files
+      from the pre-migration world are not touched, not re-emitted, not
+      consulted.
+    data:
+      inputs:
+        - name: artifact
+          model: DomainModelArtifact
+          field: schema-version
+          from: computed
+        - name: yaml-path
+          model: MigrationOutcome
+          field: yaml-path
+          from: computed
+      computed:
+        - name: entity-count
+          from: "len(artifact.entities)"
+          type: int
+        - name: enum-count
+          from: "len(artifact.enums)"
+          type: int
+        - name: relationship-count
+          from: "len(artifact.relationships)"
+          type: int
+        - name: operation-count
+          from: "len(artifact.operations)"
+          type: int
+    elements:
+      - name: written-path
+        widget: fmt.Println
+        bind: yaml-path
+        format: "{yaml-path}"
+        visible-when: always
+      - name: summary
+        widget: headed-section
+        bind: artifact
+        format: "extracted {entity-count} entities, {enum-count} enums, {relationship-count} relationships, {operation-count} operations"
+        visible-when: always
+    actions:
+      - name: invoke-extract
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-extract-domain-model"
+        target: run-extract-domain-model
+
+  load-domain-model-conflict-prompt:
+    source: "@parlay-tool/domain-model-yaml-migration/load-domain-model-conflict-disambiguation-prompt"
+    widget: cobra-command
+    description: >
+      `parlay load-domain-model <path-or-url>` conflict disambiguation.
+      When an incoming entity collides by name but differs in fields, the
+      merge pauses and presents a side-by-side: incoming fields on one
+      side, local fields on the other. The designer picks one of four
+      options: keep local, take incoming, merge field-by-field, rename
+      one. Field-by-field walks each differing field individually with
+      the same option set scoped to that field. Non-conflict entities
+      merge silently. Same prompt shape as the markdown-era flow; just
+      sourced from YAML on both sides.
+    data:
+      inputs:
+        - name: incoming
+          model: DomainModelArtifact
+          field: entities
+          from: computed
+        - name: local
+          model: DomainModelArtifact
+          field: entities
+          from: file-read
+    elements:
+      - name: side-by-side-table
+        widget: tabwriter
+        bind: incoming
+        format: "incoming | local"
+        visible-when: conflict-detected
+      - name: incoming-diff
+        widget: diff-output
+        bind: incoming
+        format: "+/- per-field changes"
+        visible-when: conflict-detected
+      - name: prompt-message
+        widget: fmt.Println
+        bind: incoming
+        format: "Conflict on entity {name}: choose how to resolve"
+        visible-when: conflict-detected
+    actions:
+      - name: choose-resolution
+        widget: lettered-prompt
+        enabled-when: conflict-detected
+        effect: "call:apply-merge-resolution"
+        target: apply-merge-resolution
+      - name: provide-rename
+        widget: text-prompt
+        enabled-when: chose-rename
+        effect: "mutate:DomainModelArtifact.entities"
+        target: rename-entity
+
+  load-domain-model-version-notice:
+    source: "@parlay-tool/domain-model-yaml-migration/load-domain-model-schema-version-migration-notice"
+    widget: cobra-command
+    description: >
+      `parlay load-domain-model` schema-version migration notice. When
+      the loaded YAML's schema_version is older than the running Core
+      supports, prints a single line on stderr naming the source version
+      and the chain of migrations being applied (e.g.,
+      "migrating loaded model from v1 to v2"). The on-disk source is NOT
+      modified — only the in-memory model used for the merge is migrated.
+      Newer-than-binary or unreachable-old failures exit non-zero with an
+      actionable error pointing at the migration path. Markdown loads
+      are refused with markdown-input-refused.
+    data:
+      inputs:
+        - name: source-version
+          model: DomainModelArtifact
+          field: schema-version
+          from: file-read
+        - name: target-version
+          model: DomainModelArtifact
+          field: schema-version
+          from: computed
+    elements:
+      - name: migration-notice
+        widget: prefixed-message
+        bind: source-version
+        format: "migrating loaded model from v{source-version} to v{target-version}"
+        visible-when: source-version < target-version
+      - name: too-new-error
+        widget: prefixed-message
+        bind: source-version
+        format: "[ERR] schema_version {source-version} is newer than this Core release supports ({target-version}); run parlay upgrade"
+        visible-when: source-version > target-version
+      - name: markdown-refused-error
+        widget: prefixed-message
+        bind: source-version
+        format: "[ERR] load accepts YAML only; run parlay migrate-domain-model in the source project first"
+        visible-when: input-is-markdown
+    actions:
+      - name: invoke-load
+        widget: cobra-command
+        enabled-when: always
+        effect: "call:run-load-domain-model"
+        target: run-load-domain-model
+
+  validation-error-reporter:
+    source: "@parlay-tool/domain-model-yaml-migration/domain-modelyaml-validation-error-reporting"
+    widget: prefixed-message
+    description: >
+      Shared error-reporting surface emitted whenever any parlay command
+      reads domain-model.yaml and validation fails. The validator is one
+      code path; the surface is shared across every caller (extract,
+      load, build-feature, generate-code, migrate-domain-model, etc.).
+      Schema-version-mismatch (older) names file's version, expected
+      version, and migration path. Schema-version-newer-than-binary tells
+      the designer to run parlay upgrade. Deep-validation failures
+      report one stderr line per unresolved reference, naming the YAML
+      path and offending value. The model is not partially accepted —
+      every reference must resolve or the command exits non-zero.
+    open-questions:
+      - enum-tone-vocabulary
+      - entity-field-shape
+    data:
+      inputs:
+        - name: error
+          model: DomainModelValidationError
+          field: kind
+          from: computed
+        - name: yaml-path
+          model: DomainModelValidationError
+          field: yaml-path
+          from: computed
+        - name: offending-value
+          model: DomainModelValidationError
+          field: offending-value
+          from: computed
+        - name: expected
+          model: DomainModelValidationError
+          field: expected
+          from: computed
+    elements:
+      - name: missing-schema-version-error
+        widget: prefixed-message
+        bind: error
+        format: "[ERR] domain-model.yaml is missing required top-level field 'schema_version'"
+        visible-when: error == missing-schema-version
+      - name: schema-version-older-error
+        widget: prefixed-message
+        bind: offending-value
+        format: "[ERR] domain-model.yaml schema_version {offending-value} is older than this Core release expects ({expected}); see migration path docs"
+        visible-when: error == schema-version-older-than-binary
+      - name: schema-version-newer-error
+        widget: prefixed-message
+        bind: offending-value
+        format: "[ERR] domain-model.yaml schema_version {offending-value} is newer than this Core release supports ({expected}); run parlay upgrade"
+        visible-when: error == schema-version-newer-than-binary
+      - name: undeclared-entity-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] {yaml-path} references undeclared entity '{offending-value}'"
+        visible-when: error == undeclared-entity-reference
+      - name: operation-input-not-found-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] {yaml-path} names field '{offending-value}' which is not declared on the involved entity"
+        visible-when: error == operation-input-field-not-found
+      - name: enum-value-not-declared-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] {yaml-path} references enum value '{offending-value}' which is not declared"
+        visible-when: error == enum-value-not-declared
+      - name: field-type-outside-set-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] {yaml-path} declares type '{offending-value}' which is not in the closed set ({expected})"
+        visible-when: error == field-type-outside-closed-set
+      - name: relationship-cardinality-error
+        widget: prefixed-message
+        bind: yaml-path
+        format: "[ERR] {yaml-path} cardinality '{offending-value}' is not recognized ({expected})"
+        visible-when: error == relationship-cardinality-unknown
+    actions: []
+
+  md-deprecation-header:
+    source: "@parlay-tool/domain-model-yaml-migration/domain-modelmd-deprecation-header"
+    widget: indented-block
+    description: >
+      In-file surface: after a successful migrate-domain-model run, the
+      original domain-model.md carries a one-time deprecation header at
+      the top — the only Core-authored change to the file. The header is
+      plain markdown (not a code fence) and includes a one-line
+      "deprecated, see domain-model.yaml" notice, the relative path to
+      the YAML (./domain-model.yaml), and a one-sentence note that edits
+      to the markdown have no effect post-migration. Idempotent: a
+      second migration run (with --force) does not stack a second
+      header — the existing header is detected and left in place.
+    data:
+      inputs:
+        - name: yaml-relative-path
+          model: MigrationOutcome
+          field: yaml-path
+          from: computed
+    elements:
+      - name: deprecation-header
+        widget: indented-block
+        bind: yaml-relative-path
+        format: |
+          > **Deprecated** — see [`./domain-model.yaml`](./domain-model.yaml).
+          > Edits to this markdown have no effect post-migration; the YAML is the live source.
+        visible-when: always
+    actions: []
+
+cross-cutting:
+  - id: domain-model-schema-artifact
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    target-pattern: "internal/embedded/schemas/domain-model.schema.md"
+    transform: >
+      Create a new schema document at the schemas path describing the
+      domain-model.yaml shape: top-level `schema_version` (required
+      integer; first released value is 1), `enums`, `entities`,
+      `relationships`, and `operations`. Document the closed-set field
+      types: uuid, string, int, float, bool, datetime, ref (with
+      `target: <Entity>`), and named enums. Document the closed-set
+      relationship cardinalities: one-to-one, one-to-many, many-to-one,
+      many-to-many. Document operations: `input` is a list of field
+      names from involved entities (resolved by deep validation);
+      `effects` is a list of declarative free-text statements with no
+      syntactic check. Document hand-editing as a first-class flow.
+      Document that adding a field-type primitive or enum value requires
+      a schema_version bump and a per-version migrator entry; no code
+      outside the schema changes for the type system itself. The schema
+      file is auto-discovered by the existing schemas/*.schema.md
+      embed glob — no registration step required. Authored once Q1
+      (enum tone) and Q2 (field shape) resolve; until then, capture the
+      safe defaults (closed-tone-set, flat-only fields) explicitly with
+      a note pointing at this feature's open-questions block.
+    introduces:
+      - "Schema doc: top-level `schema_version`, `enums`, `entities`, `relationships`, `operations` sections"
+      - "Closed field-type set: {uuid, string, int, float, bool, datetime, ref, <named-enum>}"
+      - "Closed cardinality set: {one-to-one, one-to-many, many-to-one, many-to-many}"
+      - "Hand-editing-as-first-class-flow note"
+    open-questions:
+      - enum-tone-vocabulary
+      - entity-field-shape
+    backward-compatible: false
+
+  - id: domain-model-deep-validator
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    target-files:
+      - internal/agent/validate.go
+    transform: >
+      Add a domain-model deep validator alongside the existing buildfile,
+      surface, blueprint, and layout validators. Define a `deepDomainModel`
+      parsed structure (schema_version, enums, entities, relationships,
+      operations) and a `ValidateDomainModel(path string, content []byte)`
+      entry point. Implement the validation passes:
+      (1) parse YAML and confirm the top-level schema_version is present
+      and is an integer — fail with missing-schema-version when absent;
+      (2) compare the file's schema_version to the binary's expected
+      version — older versions are routed by the schema-version dispatch
+      cross-cutting, newer versions fail with schema-version-newer-than-binary,
+      unreachably-old fail with schema-version-unreachable;
+      (3) for each entity field, validate `type` is in the closed set or
+      names a declared enum (open-question:entity-field-shape: under flat-only
+      reject inline object literals; under allow-nested validate
+      recursively against the same field rules);
+      (4) for each enum value, validate `tone` (open-question:enum-tone-vocabulary:
+      under closed-set reject unknown tones; under open-string accept any
+      string and skip tone validation);
+      (5) for each relationship, validate `from` and `to` resolve to a
+      declared entity, and `cardinality` is in the closed set;
+      (6) for each operation, validate every `input` field name resolves
+      to a real field on a declared entity. Report every unresolved
+      reference (not just the first) via a stable ValidationError code
+      (kind enum from buildfile model). Reuse the per-process cache
+      pattern from the adapter validator: once a YAML passes validation
+      in a single CLI invocation, subsequent reads in the same invocation
+      reuse the validated in-memory model. The validator is intrinsic
+      to every read path — there is no separate "validate" entry-point
+      that callers can skip. Wire the validator into `internal/commands/validate.go`
+      as a new `--type domain-model` case (see separate cross-cutting).
+    introduces:
+      - "deepDomainModel struct (schema_version, enums, entities, relationships, operations)"
+      - "ValidateDomainModel(path, content) entry point"
+      - "ValidationError codes: missing-schema-version, schema-version-older-than-binary, schema-version-newer-than-binary, schema-version-unreachable, field-type-outside-closed-set, relationship-cardinality-unknown, undeclared-entity-reference, operation-input-field-not-found, enum-value-not-declared"
+      - "Per-process cache for parsed and validated domain models"
+    open-questions:
+      - enum-tone-vocabulary
+      - entity-field-shape
+    caching: per-process
+    backward-compatible: yes
+
+  - id: domain-model-validate-cli-type
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model"
+    target-files:
+      - internal/commands/validate.go
+    transform: >
+      Extend the `parlay validate --type` switch to recognize
+      `domain-model` and route to the new ValidateDomainModel entry
+      point. The case mirrors the existing buildfile, surface, blueprint,
+      and infrastructure cases — call ValidateDomainModel with the file
+      path and content, return errors via the same structured channel.
+      No new CLI flag — `--type domain-model` is an additive entry in
+      the existing switch.
+    introduces:
+      - "validate.go: case `\"domain-model\"`: dispatches to agent.ValidateDomainModel"
+    backward-compatible: yes
+
+  - id: domain-model-schema-version-dispatch
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model,@parlay-tool/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    target-files:
+      - internal/agent/validate.go
+    transform: >
+      Add a per-version migrator chain alongside the deep validator.
+      Every read of domain-model.yaml first inspects schema_version and
+      dispatches: equal-to-binary → reader proceeds directly; older-than-binary
+      → in-memory model is routed through the per-version migrator chain
+      (e.g., v1→v2, v2→v3) before handing to the rest of the pipeline,
+      with the on-disk file unchanged; newer-than-binary → fail with
+      schema-version-newer-than-binary; unreachably-old → fail with
+      schema-version-unreachable. Migrators are pure functions over the
+      in-memory model — they do not write to disk, do not consult the
+      network, and do not require AI inference. Adding a new
+      schema_version requires adding exactly one migrator (from the
+      previous version to the new one); chaining is automatic. This is
+      Flow B (standing forward-compatibility), independent of Flow A
+      (one-shot markdown→YAML port) handled by the migrate-domain-model
+      command. load-domain-model invokes this same chain before merging.
+    introduces:
+      - "DomainModelMigrator interface (FromVersion(), ToVersion(), Migrate(model))"
+      - "Migrator registry keyed by source version; chain is automatic"
+      - "Dispatch function ResolveDomainModelVersion(version) returning the chain to apply"
+    caching: none
+    backward-compatible: yes
+
+  - id: domain-model-path-resolution
+    source: "@parlay-tool/domain-model-yaml-migration/define-a-versioned-yaml-schema-for-the-domain-model,@parlay-tool/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    target-files:
+      - internal/config/context.go
+    transform: >
+      Add a `DomainModelPath()` method on `*Context` that returns the
+      active root's domain-model.yaml absolute path
+      (filepath.Join(c.Root.Path, "domain-model.yaml")). Document the
+      contract: exactly one canonical model per parlay project, at the
+      active root — not per-feature. Each child root in a multi-root
+      project has an independent domain-model.yaml; one child's model
+      never bleeds into another's. Path resolution is via the same
+      active-root resolver every other command uses (cwd-walk, --root
+      flag, PARLAY_ROOT). Read paths consult this method; they do not
+      hard-code the path. The repo-level root holds the schema (under
+      .parlay/schemas/domain-model.schema.md), shared across every
+      active root — this reuses the existing SchemasPath() helper and
+      schema-load discipline; no new behavior there.
+    introduces:
+      - "(*Context).DomainModelPath() string method"
+      - "Canonical contract: one domain-model.yaml per active root, never per-feature, located at <activeRoot>/domain-model.yaml"
+    caching: per-process
+    backward-compatible: no
+
+  - id: domain-model-read-path-precedence
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml,@parlay-tool/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    target-files:
+      - internal/config/context.go
+    transform: >
+      Add a `LoadDomainModel()` method on `*Context` that consults only
+      domain-model.yaml at the active root. The .md (if present, as a
+      pre-migration artifact) is never parsed, never merged, never
+      consulted as a fallback. The precedence rule has a single
+      enforcement point in this method; all callers (extract, load,
+      build-feature, generate-code, migrate-domain-model) go through it.
+      A project with both .md and .yaml has the YAML as sole live state.
+      A project with only .md and no YAML is treated as having no domain
+      model — the read returns a "no domain-model.yaml" sentinel that
+      callers translate into their own errors (extract writes a fresh
+      YAML; load and other consumers fail with an actionable error
+      pointing at parlay migrate-domain-model or parlay extract-domain-model).
+      Edits to the .md after migration have no effect on tooling output;
+      the YAML is the only source.
+    introduces:
+      - "(*Context).LoadDomainModel() (*DomainModelArtifact, error)"
+      - "Sentinel error: ErrNoDomainModel for callers to translate into their own messages"
+      - "Read-path enforcement point: every domain-model consumer routes through this method"
+    caching: per-process
+    backward-compatible: no
+
+  - id: migrate-domain-model-cobra-command
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    target-pattern: "internal/commands/migrate_domain_model.go"
+    transform: >
+      Create a new cobra command `migrateDomainModelCmd` in
+      internal/commands/migrate_domain_model.go (snake_case file naming
+      per the adapter's convention). The command accepts no positional
+      argument; flags are `--dry-run`, `--force`, plus the inherited
+      `--root` and `--ambiguity-as-signal`. The RunE handler
+      `runMigrateDomainModel` follows the run<CommandName> naming
+      convention: it resolves the active root via the standard resolver,
+      checks for an existing domain-model.yaml (idempotency guard),
+      reads the legacy domain-model.md when present, and either prints
+      "nothing to migrate" (greenfield), exits with "already migrated"
+      (yaml exists and --force not passed), prints the planned YAML +
+      diff (--dry-run), or writes the YAML and prepends the deprecation
+      header to the .md (default and --force paths). The AI parsing of
+      the .md content lives in the migrate-domain-model skill — the
+      command itself orchestrates the flow and handles the filesystem
+      side-effects.
+      (open-question:migrate-command-ownership: under core-cli, this
+      file lives in Core; under studio-installer, this file is created
+      in Studio's tree instead. The handler signature stays identical
+      in either case so Studio can shell into it.)
+    introduces:
+      - "internal/commands/migrate_domain_model.go: migrateDomainModelCmd cobra command + runMigrateDomainModel handler"
+      - "Idempotency guard: refuse to overwrite domain-model.yaml without --force"
+      - "Deprecation-header prepender (idempotent — does not stack a second header)"
+    open-questions:
+      - migrate-command-ownership
+    caching: none
+    backward-compatible: no
+
+  - id: migrate-domain-model-root-registration
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    target-files:
+      - internal/commands/root.go
+    transform: >
+      Register the new cobra command in internal/commands/root.go's
+      init() via `rootCmd.AddCommand(migrateDomainModelCmd)`, alongside
+      the existing extractDomainModelCmdImpl and loadDomainModelCmdImpl
+      registrations (around lines 231-232). The registration is a single
+      additive line; it does not touch any existing AddCommand call.
+      (open-question:migrate-command-ownership: under core-cli, this
+      registration is added; under studio-installer, this registration
+      is omitted from Core's root.go because the command is delivered
+      via Studio's bundled installer instead.)
+    introduces:
+      - "rootCmd.AddCommand(migrateDomainModelCmd) line in init()"
+    open-questions:
+      - migrate-command-ownership
+    backward-compatible: yes
+
+  - id: migrate-domain-model-skill-file
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    target-pattern: "internal/embedded/skills/migrate-domain-model.skill.md"
+    transform: >
+      Create the embedded skill file at
+      internal/embedded/skills/migrate-domain-model.skill.md with the
+      standard parlay skill structure: YAML frontmatter (name,
+      description), arguments section, steps section. The skill walks
+      the AI agent through detecting the legacy .md, parsing it, and
+      handing the converted YAML to the CLI command for the filesystem
+      side-effects. The skill is auto-discovered by the existing
+      skills/*.skill.md embed glob — no registration step required.
+    introduces:
+      - "internal/embedded/skills/migrate-domain-model.skill.md (new skill)"
+    open-questions:
+      - migrate-command-ownership
+    backward-compatible: yes
+
+  - id: migrate-domain-model-deployer-title
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    target-files:
+      - internal/deployer/claude.go
+    transform: >
+      In internal/deployer/claude.go's `skillTitle()` map (lines 144-169),
+      add a new entry:
+      `"migrate-domain-model": "Convert domain-model.md to domain-model.yaml"`.
+      This title is shared by the Claude and Cursor deployers per the
+      project config's `skill-titles: core/internal/deployer/claude.go:skillTitle()`
+      shared rule. The change is a single additive line in the existing
+      titles map.
+    introduces:
+      - "skillTitle map entry: migrate-domain-model → 'Convert domain-model.md to domain-model.yaml'"
+    open-questions:
+      - migrate-command-ownership
+    backward-compatible: yes
+
+  - id: migrate-domain-model-generic-deployer-list
+    source: "@parlay-tool/domain-model-yaml-migration/migrate-existing-domain-modelmd-projects-to-yaml"
+    target-files:
+      - internal/deployer/generic.go
+    transform: >
+      In core/internal/deployer/generic.go's Deploy(), add a new line to
+      the hardcoded CLI utility commands list that AGENT_INSTRUCTIONS.md
+      surfaces:
+      `- `parlay migrate-domain-model [--dry-run] [--force] [--root <name>]` — Convert domain-model.md to domain-model.yaml`.
+      The list is a documentation list (one bullet per parlay subcommand
+      worth surfacing to a generic agent); per the project memory
+      "new commands need both artifacts", missing this update strands
+      generic-deployer users on the deprecated format. The bullet sits
+      after parlay status / parlay promote-root for grouping.
+      (open-question:migrate-command-ownership: under core-cli, this
+      bullet is added; under studio-installer, the bullet is omitted
+      from Core's generic deployer list because the command is not part
+      of Core's CLI in that scenario.)
+    introduces:
+      - "AGENT_INSTRUCTIONS.md bullet for parlay migrate-domain-model"
+    open-questions:
+      - migrate-command-ownership
+    backward-compatible: yes
+
+  - id: extract-domain-model-yaml-emission
+    source: "@parlay-tool/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    target-files:
+      - internal/embedded/skills/extract-domain-model.skill.md
+    transform: >
+      Update the embedded skill at extract-domain-model.skill.md so the
+      AI agent emits a single domain-model.yaml at the active root
+      (using (*Context).DomainModelPath()) instead of the per-feature
+      spec/intents/<feature>/domain-model.md path. The skill steps that
+      currently say "Write `spec/domain-model.md`" or
+      "Create `spec/intents/<feature>/domain-model.md`" change to
+      "Write `<activeRoot>/domain-model.yaml` with `schema_version: 1`
+      and the aggregated extraction across all features". Per-feature
+      .md emission is removed entirely from the skill. If the YAML write
+      fails, exit non-zero without writing a fallback .md. Existing
+      per-feature .md files (from the pre-migration world) are not
+      touched, not re-emitted, not consulted as input. Greenfield
+      projects (no feature intents) produce an empty-but-valid YAML
+      (declared schema_version, empty enums/entities/relationships/operations
+      lists).
+      The cobra stub command in extract_domain_model.go is unchanged —
+      it remains an AI-skill-only command per the existing pattern.
+    introduces:
+      - "Updated skill steps: write to <activeRoot>/domain-model.yaml only; no per-feature .md output"
+      - "Empty-but-valid greenfield YAML emission rule"
+    backward-compatible: no
+
+  - id: load-domain-model-yaml-only-and-url
+    source: "@parlay-tool/domain-model-yaml-migration/update-extract-domain-model-and-load-domain-model-to-round-trip-yaml"
+    target-files:
+      - internal/embedded/skills/load-domain-model.skill.md
+    transform: >
+      Update the embedded skill at load-domain-model.skill.md so the AI
+      agent accepts only YAML input. Markdown sources (path with .md
+      extension or URL whose body is markdown) are refused with the
+      actionable message
+      "load accepts YAML only; run `parlay migrate-domain-model` in the source project first".
+      The argument may be a local file path or an HTTP(S) URL — URL
+      inputs are fetched, validated as YAML, and routed through the
+      schema_version migrator chain (Flow B) before merging. Network
+      errors and non-200 responses exit non-zero with the offending
+      response surfaced. HTTPS certificate verification is honored by
+      default; bypass flags are out of scope for this feature.
+      Conflicts (incoming entity name collides with an existing one but
+      fields differ) trigger a designer disambiguation prompt with
+      side-by-side fields and four choices: keep local, take incoming,
+      merge field-by-field, rename one. Field-by-field walks each
+      differing field individually with the same option set scoped to
+      that field. Non-conflict entities (incoming entity not present
+      locally, or present and structurally identical) merge silently.
+      A merge that would leave the local YAML in an invalid state
+      (broken references introduced by partial merge) is rejected as a
+      whole — partial writes are not committed.
+      The cobra stub command in load_domain_model.go is unchanged — it
+      remains an AI-skill-only command per the existing pattern; the
+      URL fetcher is implemented inside the skill via the agent's Bash
+      / WebFetch tooling, not in Go.
+    introduces:
+      - "Updated skill steps: YAML-only input gate, URL fetcher, schema_version migration before merge, four-option conflict disambiguation"
+    backward-compatible: no
+
+plan:
+  modifies:
+    - path: internal/agent/validate.go
+      sources:
+        - cross-cutting/domain-model-deep-validator
+        - cross-cutting/domain-model-schema-version-dispatch
+        - component/validation-error-reporter
+    - path: internal/commands/validate.go
+      sources:
+        - cross-cutting/domain-model-validate-cli-type
+    - path: internal/config/context.go
+      sources:
+        - cross-cutting/domain-model-path-resolution
+        - cross-cutting/domain-model-read-path-precedence
+    - path: internal/commands/root.go
+      sources:
+        - cross-cutting/migrate-domain-model-root-registration
+    - path: internal/deployer/claude.go
+      sources:
+        - cross-cutting/migrate-domain-model-deployer-title
+    - path: internal/deployer/generic.go
+      sources:
+        - cross-cutting/migrate-domain-model-generic-deployer-list
+    - path: internal/embedded/skills/extract-domain-model.skill.md
+      sources:
+        - cross-cutting/extract-domain-model-yaml-emission
+        - component/extract-domain-model-output
+    - path: internal/embedded/skills/load-domain-model.skill.md
+      sources:
+        - cross-cutting/load-domain-model-yaml-only-and-url
+        - component/load-domain-model-conflict-prompt
+        - component/load-domain-model-version-notice
+  creates:
+    - path: internal/embedded/schemas/domain-model.schema.md
+      sources:
+        - cross-cutting/domain-model-schema-artifact
+    - path: internal/commands/migrate_domain_model.go
+      sources:
+        - cross-cutting/migrate-domain-model-cobra-command
+        - component/migrate-domain-model-command
+        - component/migrate-domain-model-dry-run
+        - component/migrate-domain-model-force
+        - component/migrate-domain-model-multi-root
+        - component/md-deprecation-header
+    - path: internal/embedded/skills/migrate-domain-model.skill.md
+      sources:
+        - cross-cutting/migrate-domain-model-skill-file
+source-signatures:
+  intents: "sha256:31de76db4f61a7a86bac897a3038990e9bbf7e0bd9efdb2cbf4e61ce4bf91359"
+  dialogs: "sha256:83612f1ee78a2b2dc67894c66f2ad9aa24af24076f10462d4ed8838476018ab2"
+  surface: "sha256:6215968bdd02024f3cf4227b9a3135372ebcc27ac77de7f07c612d94c7ed0ed5"
+  infrastructure: "sha256:024b5edbc0af10addd499507de25549eaf313f10ea55c55228e0631df286d37f"
+  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"

@@ -1,7 +1,7 @@
 // parlay-extends: claude-md-section-preservation/claudemd-marker-preservation
 // parlay-extends: parlay-tool/parlay-loop/claude-adapter-subagent-deployment
 // parlay-extends: parlay-tool/parlay-loop/parlay-loop-cli-command-registration
-// parlay-extends: studio-support/domain-model-yaml-migration/migrate-domain-model-deployer-title
+// parlay-extends: parlay-tool/domain-model-yaml-migration/migrate-domain-model-deployer-title
 // parlay-extends: parlay-tool/create-domain-model/deployer-claude-stale-skill-cleanup
 
 package deployer

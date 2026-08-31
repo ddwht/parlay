@@ -1,0 +1,712 @@
+feature: parlay-tool/layout-aware-build
+framework: Go testing (stdlib testing) + skill-document static checks
+
+# This feature edits skill markdown and a schema markdown — both are
+# documentation artifacts consumed by the AI agent at run time. The
+# testcases reflect that posture: each suite verifies a contract by
+# checking that the relevant skill / schema file documents the rule, OR
+# by simulating the build behavior the rule mandates against a fixture
+# feature with synthetic layout / surface / domain inputs.
+#
+# Each invariant in the infrastructure fragments seeds one or more cases
+# in the matching suite below. Verify bullets from the intents seed the
+# disambiguation-prompt component suite.
+
+suites:
+  - name: disambiguation-prompt-rendering
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity"
+    cases:
+      - name: prompt-displays-page-and-node-location
+        description: |
+          The prompt's location-message line names the page path, the
+          layout-node path inside that page, and the human label of the
+          node, in the format `<page-path> > <layout-node-path>
+          ("<node-label>")`.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - verify: element
+            target: location-message
+          - verify: text
+            target: location-message
+            expected: "ambiguous binding at:\n  pages/tasks.md > region/toolbar/button[2] (\"Process\")"
+
+      - name: candidate-list-uses-stable-numeric-selectors
+        description: |
+          The candidate list is ordered and each entry has a stable
+          numeric selector starting at 1. Each entry shows the domain-
+          element reference and the AI confidence value.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - verify: element
+            target: candidate-list
+          - verify: count
+            target: candidate-list
+            expected: 2
+          - verify: text
+            target: candidate-list
+            expected: "  [1] @demo-group/tasks/operation/processTask  (ai-confidence: 0.62)\n  [2] @demo-group/tasks/operation/processBatch (ai-confidence: 0.58)"
+
+      - name: escape-options-include-quit-and-skip
+        description: |
+          The prompt offers `[q] quit` (abort with non-zero exit) and
+          `[s] skip` (record `unresolved` and continue) below the
+          numeric candidates.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - verify: element
+            target: escape-options
+          - verify: text
+            target: escape-options
+            expected: "  [q] quit (abort build, exit non-zero)\n  [s] skip (record as `unresolved`, continue, buildfile will be invalid)"
+
+      - name: numeric-selection-records-designer-binding
+        description: |
+          A numeric selection records the chosen binding with
+          `confidence: designer`, the source triple, the timestamp of
+          the choice, and the candidate list at the moment of selection.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - action: input
+            target: choose-prompt
+            value: "1"
+          - verify: state
+            target: Binding.confidence
+            expected: designer
+          - verify: state
+            target: Binding.domain_element
+            expected: "@demo-group/tasks/operation/processTask"
+
+      - name: quit-aborts-build-with-non-zero-exit
+        description: |
+          Pressing `[q]` aborts the build with a non-zero exit code.
+          No partial buildfile is written; recorded choices made
+          earlier in the same run are also discarded.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - action: input
+            target: choose-prompt
+            value: "q"
+          - verify: error
+            target: quit
+            expected: "build aborted by designer"
+          - verify: file-exists
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml.partial"
+          - verify: visible
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml.partial"
+            expected: false
+
+      - name: skip-records-unresolved-and-continues
+        description: |
+          Pressing `[s]` records the binding as `unresolved` and
+          continues the build. The resulting buildfile fails its own
+          validity check.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - action: input
+            target: choose-prompt
+            value: "s"
+          - verify: state
+            target: Binding.value
+            expected: unresolved
+
+      - name: multiple-ambiguities-prompt-one-at-a-time-in-lex-order
+        description: |
+          Multiple ambiguities in one run produce a sequence of prompts
+          shown one at a time in deterministic (page-path, node-path)
+          lexicographic order — never as a batched multi-select.
+        steps:
+          - action: render
+            target: disambiguation-prompt
+          - verify: count
+            target: location-message
+            expected: 1
+
+  - name: two-pass-binding-resolution-pipeline
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/run-a-two-pass-binding-resolution-during-build"
+    cases:
+      - name: tasks-page-resolves-end-to-end-via-pass-1
+        description: |
+          A Tasks page with a Task entity, a clarity.datagrid whose
+          status column declares contentShape: badge, and a clarity.button
+          labeled "Create task" produces a buildfile with all bindings
+          resolved by Pass 1; no Pass-2 invocations are recorded.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: state
+            target: BindingsByConfidence.rules
+            expected: 7
+          - verify: state
+            target: BindingsByConfidence.ai
+            expected: 0
+          - verify: state
+            target: BindingsByConfidence.designer
+            expected: 0
+
+      - name: pass-2-invoked-only-when-pass-1-leaves-ambiguity
+        description: |
+          A page with a "Save" button matched by two domain operations
+          (`updateTask` and `saveDraft`) triggers Pass 2 for that node;
+          other nodes resolved by Pass 1 do not re-enter Pass 2.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-save"
+          - verify: state
+            target: 'Binding[node:save-button].confidence'
+            expected: ai
+          - verify: state
+            target: Pass2Invocations
+            expected: 1
+
+      - name: pass-2-ambiguity-triggers-disambiguation-prompt
+        description: |
+          A page with a "Process" button where Pass 2 returns two
+          candidates within the confidence threshold transfers control
+          to the interactive disambiguation prompt.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: element
+            target: disambiguation-prompt
+
+      - name: orphan-layout-node-fails-build-without-phantom-binding
+        description: |
+          A layout node with no surface fragment to feed it produces
+          an `orphan-layout-node` build error during build, not a
+          phantom binding from AI.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/orphan"
+          - verify: error
+            target: build
+            expected: "orphan-layout-node"
+          - verify: file-exists
+            target: ".parlay/build/demo-group/orphan/buildfile.yaml"
+
+      - name: rerun-on-identical-inputs-produces-stable-source-triples
+        description: |
+          Re-running parlay build-feature on identical inputs records
+          bindings whose source triples are stable across runs, even
+          though Pass-2 lexical reasoning text may differ.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "(source triples identical across both runs)"
+
+      - name: feature-scoped-inference-no-cross-feature-candidates
+        description: |
+          Inference is bounded to the active feature. Cross-feature
+          surface fragments and domain operations are never auto-bound.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: state
+            target: Pass2CandidateSet.cross_feature_count
+            expected: 0
+
+      - name: skill-documents-two-pass-pipeline
+        description: |
+          The build-feature skill markdown explicitly describes both
+          passes, the Pass-1-then-Pass-2 ordering, and the prohibition
+          on AI invocation at codegen time.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "Pass 1"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "Pass 2"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "orphan-layout-node"
+
+  - name: starter-rule-set-and-project-extension
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/define-a-starter-rule-set-extensible-per-project"
+    cases:
+      - name: starter-rules-only-resolves-tasks-page
+        description: |
+          A project with no `wiring.rules:` block uses only the starter
+          rules and resolves the Tasks-page example end-to-end via
+          Pass 1.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: state
+            target: WiringRulesProject
+            expected: 0
+          - verify: state
+            target: BindingsByConfidence.rules
+            expected: 7
+
+      - name: project-rule-fires-and-records-rule-name
+        description: |
+          A project rule mapping `tone` on a layout column to
+          `clarity.badge.tone` fires on eligible nodes; the buildfile
+          records `confidence: rules` and the project rule name.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-tone-rule"
+          - verify: state
+            target: 'Binding[node:status-column].rule'
+            expected: "project/tone-to-badge-tone"
+
+      - name: rule-conflict-at-same-precedence-fails-build
+        description: |
+          Two project rules matching the same node with the same
+          precedence produce a `rule-conflict` build error naming
+          both rule definitions.
+        steps:
+          - action: navigate
+            target: "build-feature @parlay-tool/conflicting-rules"
+          - verify: error
+            target: build
+            expected: "rule-conflict"
+
+      - name: project-rule-overrides-starter-rule-with-attribution
+        description: |
+          A project rule at higher precedence than a starter rule on
+          the same node fires; the buildfile annotates which rule
+          fired so the override is auditable.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/override-starter"
+          - verify: state
+            target: 'Binding[node:badge-column].rule'
+            expected: "project/<override-name>"
+
+      - name: project-rule-cannot-disable-starter-via-precedence
+        description: |
+          A project rule whose precedence would silently disable a
+          starter rule (placed below it for the same match) is rejected
+          at rule-load time with `rule-precedence-error`.
+        steps:
+          - action: navigate
+            target: "build-feature @parlay-tool/disable-starter"
+          - verify: error
+            target: build
+            expected: "rule-precedence-error"
+
+      - name: rule-with-missing-domain-field-fails-at-load-time
+        description: |
+          A rule whose `match` predicate references a domain field
+          that does not exist fails at rule-load time, not at match
+          time, so authoring errors surface immediately.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/rule-bad-field"
+          - verify: error
+            target: build
+            expected: "rule-load-error"
+
+      - name: rule-non-termination-rejected-statically
+        description: |
+          A rule whose `bind` output would re-trigger another rule
+          (or itself) is rejected at rule-load time with
+          `rule-termination-error`.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/rule-recursive"
+          - verify: error
+            target: build
+            expected: "rule-termination-error"
+
+      - name: schema-documents-wiring-rules-section
+        description: |
+          The buildfile schema markdown documents the `wiring.rules:`
+          top-level section and the closed-shape rule fields {match,
+          bind, precedence, confidence}.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "wiring.rules"
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "precedence"
+
+      - name: skill-enumerates-starter-rule-families
+        description: |
+          The build-feature skill enumerates the three starter rule
+          families: structural-hint, action-verb, and single-candidate.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "structural-hint"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "action-verb"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "single-candidate"
+
+  - name: interactive-disambiguation-choice-recording
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/raise-an-interactive-disambiguation-prompt-when-both-passes-leave-ambiguity"
+    cases:
+      - name: rerun-after-recorded-choice-skips-prompt
+        description: |
+          Re-running build immediately after a designer choice
+          completes without re-prompting; the recorded choice is read
+          from the buildfile.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: count
+            target: disambiguation-prompt
+            expected: 0
+
+      - name: candidate-list-change-invalidates-recorded-choice
+        description: |
+          Renaming the chosen domain operation (e.g., `processTask`
+          → `processTaskItem`) invalidates the recorded choice and
+          re-triggers the prompt with the updated candidate list.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - action: navigate
+            target: "rename-operation processTask processTaskItem"
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: element
+            target: disambiguation-prompt
+          - verify: text
+            target: candidate-list
+            expected: "processTaskItem"
+
+      - name: new-ambiguity-preserves-prior-choice
+        description: |
+          Adding a new ambiguous node to the layout produces a fresh
+          prompt for that node only; previously recorded choices for
+          unchanged nodes are preserved.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - action: navigate
+            target: "add-button @demo-group/tasks-with-process Save"
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: count
+            target: disambiguation-prompt
+            expected: 1
+
+      - name: choices-stored-in-buildfile-only
+        description: |
+          Recorded choices live in the buildfile only — never in
+          surface, domain, or layout artifacts. Designer decisions
+          are build-time state, not authoring artifacts.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-process/buildfile.yaml"
+            expected: "confidence: designer"
+          - verify: file-content
+            target: "spec/intents/demo-group/tasks-with-process/surface.md"
+            expected: "(no `confidence: designer` markers)"
+
+      - name: skill-documents-numeric-q-s-input-shapes
+        description: |
+          The build-feature skill documents the three accepted input
+          shapes: numeric digit, `q`, and `s`, with the exact
+          persistence semantics for each.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "[q] quit"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "[s] skip"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "confidence: designer"
+
+      - name: skill-documents-prompt-ordering
+        description: |
+          The skill specifies that multiple ambiguities surface in
+          deterministic (page-path, node-path) lexicographic order,
+          one at a time.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "lexicographic"
+
+  - name: buildfile-bindings-section
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/record-resolved-bindings-in-the-buildfile-with-traceability-triples"
+    cases:
+      - name: bindings-emitted-as-peer-section
+        description: |
+          A buildfile produced for the Tasks-page example contains a
+          `bindings:` section as a peer to models, fixtures, routes,
+          components, cross-cutting, source-signatures.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "bindings:"
+
+      - name: rules-binding-records-rule-name
+        description: |
+          A binding produced by Pass 1 records `confidence: rules`
+          and the name of the rule that fired (`starter/<name>` or
+          `project/<name>`).
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "starter/contentShape-badge"
+
+      - name: ai-binding-records-session-identifier
+        description: |
+          A binding produced by Pass 2 is recorded with `confidence:
+          ai` and the AI session/run identifier so the choice is
+          auditable.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-save"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-save/buildfile.yaml"
+            expected: "confidence: ai"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-save/buildfile.yaml"
+            expected: "ai_session"
+
+      - name: designer-binding-records-timestamp-and-candidates
+        description: |
+          A binding produced by an interactive prompt is recorded
+          with `confidence: designer`, the timestamp of the choice,
+          and the candidate list at the moment of decision.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-process/buildfile.yaml"
+            expected: "confidence: designer"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-process/buildfile.yaml"
+            expected: "candidate_list:"
+
+      - name: removing-layout-node-removes-binding-entry
+        description: |
+          Removing a layout node and re-running build produces a
+          buildfile whose `bindings:` no longer carries that node's
+          entry.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - action: navigate
+            target: "remove-node @demo-group/tasks tasks.md status-column"
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "(status-column entry absent from bindings)"
+
+      - name: renaming-layout-node-id-triggers-fresh-resolution
+        description: |
+          Renaming a layout-node `id` produces a build where the old
+          entry is dropped, the new node triggers fresh resolution
+          (rules → ai → prompt as needed), and the buildfile
+          reflects the renamed node.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - action: navigate
+            target: "rename-node @demo-group/tasks tasks.md task-status-column status-col"
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "id: status-col"
+
+      - name: unknown-presentation-hint-fails-finalize
+        description: |
+          A binding with an unknown presentation hint
+          (`presentation: clarity.foobar`) fails the build at
+          finalize time with a clear error naming the offending hint
+          and the active adapter version.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/unknown-hint"
+          - verify: error
+            target: build
+            expected: "unknown-presentation-hint"
+
+      - name: bindings-section-feature-scoped
+        description: |
+          One feature's buildfile carries `bindings:` entries only
+          for that feature's pages — never for pages in another
+          feature.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+            expected: "(no entries with feature key other than demo-group/tasks)"
+
+      - name: schema-documents-bindings-section
+        description: |
+          The buildfile schema markdown documents the `bindings:`
+          section as a peer top-level section, the source triple
+          shape, the confidence enum, and the per-confidence
+          provenance.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "bindings:"
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "source triple"
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "confidence"
+
+      - name: schema-marks-bindings-section-non-backward-compatible
+        description: |
+          The schema explicitly notes that the `bindings:` section
+          addition is NOT backward-compatible — older buildfiles
+          must regenerate via parlay build-feature, not be patched.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/schemas/buildfile.schema.md"
+            expected: "regenerate"
+
+  - name: headless-build-mode
+    component: disambiguation-prompt
+    intent: "@parlay-tool/layout-aware-build/headless-build-for-ci"
+    cases:
+      - name: non-interactive-flag-with-ambiguity-fails-fast
+        description: |
+          Running `parlay build-feature --non-interactive` on a
+          feature with one ambiguous binding exits non-zero with the
+          binding-candidates listed in the error and no buildfile is
+          written.
+        steps:
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks-with-process"
+          - verify: error
+            target: build
+            expected: "ambiguous-binding"
+          - verify: file-exists
+            target: ".parlay/build/demo-group/tasks-with-process/buildfile.yaml"
+
+      - name: non-interactive-no-ambiguity-succeeds
+        description: |
+          Running `parlay build-feature --non-interactive` on a
+          feature with no ambiguities produces a buildfile that
+          passes the same testcases the interactive build would.
+        steps:
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks"
+          - verify: state
+            target: BuildExitCode
+            expected: 0
+          - verify: file-exists
+            target: ".parlay/build/demo-group/tasks/buildfile.yaml"
+
+      - name: ci-no-tty-orphan-node-mode-invariant
+        description: |
+          A simulated CI run (no TTY) on an `orphan-layout-node`
+          condition produces the same error message and exit code as
+          an interactive run on the same input.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/orphan"
+          - verify: error
+            target: build
+            expected: "orphan-layout-node"
+
+      - name: non-interactive-flag-overrides-tty-detection
+        description: |
+          `parlay build-feature --non-interactive` invoked locally
+          with a TTY present uses the non-interactive code path.
+          The flag wins over TTY detection.
+        steps:
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks-with-process"
+          - verify: error
+            target: build
+            expected: "ambiguous-binding"
+
+      - name: prior-designer-choice-honored-in-ci
+        description: |
+          A CI run on a feature whose buildfile already has a
+          designer-recorded binding for what would otherwise be an
+          ambiguous node succeeds; the existing recorded choice is
+          honored, the prompt is not re-raised, and the binding
+          stays `confidence: designer`.
+        steps:
+          - action: navigate
+            target: "build-feature @demo-group/tasks-with-process"
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks-with-process"
+          - verify: state
+            target: BuildExitCode
+            expected: 0
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-process/buildfile.yaml"
+            expected: "confidence: designer"
+
+      - name: two-ci-workers-stable-source-triples
+        description: |
+          Two CI workers running `parlay build-feature
+          --non-interactive` against the same source state produce
+          buildfiles whose recorded source triples are identical for
+          every binding (including any AI-resolved ones); only AI
+          lexical reasoning text may differ.
+        steps:
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks-with-save"
+          - action: navigate
+            target: "build-feature --non-interactive @demo-group/tasks-with-save"
+          - verify: file-content
+            target: ".parlay/build/demo-group/tasks-with-save/buildfile.yaml"
+            expected: "(source triples identical across both runs)"
+
+      - name: skill-documents-dual-detection
+        description: |
+          The build-feature skill documents both detection paths
+          (TTY check OR `--non-interactive` flag) and the rule that
+          the flag wins over TTY in both directions.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "TTY"
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "--non-interactive"
+
+      - name: skill-documents-atomic-buildfile-commit
+        description: |
+          The skill documents the atomic-commit invariant: either
+          the buildfile is committed whole or nothing reaches the
+          output directory.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "atomic"
+
+      - name: skill-documents-ci-exit-code-contract
+        description: |
+          The skill states explicitly that CI's pass/fail derives
+          from the exit code, not from stdout pattern matching.
+        steps:
+          - verify: file-content
+            target: "internal/embedded/skills/build-feature.skill.md"
+            expected: "exit code"
