@@ -1,0 +1,1952 @@
+schema_version: 3
+feature: parlay-tool/root-retirement
+framework: "Go stdlib testing (sibling _test.go files per the adapter's tests-alongside convention)"
+# Nine suites, one per infrastructure.md fragment. Cases come 1:1 from each
+# fragment's Invariants: bullets — the criterion text on every case is the
+# bullet's own wording, copied verbatim, with the ref citing the fragment in
+# @feature/infrastructure:<fragment-slug> form.
+#
+# SHAPE NOTE (recorded deliberately): this feature has no surface.yaml and no
+# capabilities.yaml, so its criteria live in infrastructure.md Invariants.
+# The v2/v3 suite kind: discriminator is closed at {presentation, operation}
+# and has no infrastructure member yet — that gap is the subject of the
+# specced-but-unbuilt feature parlay-tool/testcases-infrastructure-suite-kind.
+# Until it ships, these suites carry kind: presentation with
+# component: cross-cutting/<id> and source_refs citing the infrastructure
+# fragment, which validates mechanically and keeps full criterion accounting
+# (the alternative, the v1 no-kind shape, is testcases-v1-unsupported since
+# v0.3). When that feature ships, regenerate this file with kind:
+# infrastructure per the regenerate policy.
+#
+# The steps use the closed testcases vocabulary; for a CLI feature,
+# `action: render` with a `value:` carrying the invocation means "run the
+# command in this configuration" (the convention established by the
+# status-feature-phases and architectural-prose-artifact suites), and
+# verify: state/error/file-* assert on the resulting process behavior and
+# on-disk effects.
+suites:
+    # ===========================================================================
+    # Suite 1 — Retirement target and destination preconditions
+    # ===========================================================================
+    - kind: presentation
+      name: retirement-target-and-destination-preconditions
+      file: internal/commands/retire_root_test.go
+      component: cross-cutting/retirement-target-and-destination-preconditions
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+      intent: "@parlay-tool/root-retirement/end-a-subproject-without-pretending-it-never-happened"
+      cases:
+        - name: a target naming exactly one registered child resolves, naming none refuses with the registered roots enumerated
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A target naming exactly one registered child root resolves; a target naming none is refused and the refusal enumerates the registered roots."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution, retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where <name> is exactly one registered child"
+            - verify: state
+              target: target-resolution
+              expected: "resolved to the single registered child root"
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where <name> matches no registered child"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused, and the refusal lists every registered child root by name"
+        - name: a target matching more than one candidate is refused without selecting one
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A target matching more than one candidate is refused without selecting one."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where <name> matches two registered children"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused; no candidate is selected by ordering or proximity"
+        - name: an unregistered directory carrying root configuration is refused as a target
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A directory carrying root configuration that is not registered is refused as a target."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where <name> is a directory with .parlay config but no roots.yaml entry"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused, stating the directory looks like a root but is not registered"
+        - name: the parent root holding shared resources and the registration cannot be the target
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The root holding the shared resources and the root registration cannot be resolved as a target."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> naming the parent root itself"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused; ending the parent is the project ending, not a subproject ending"
+        - name: an existing destination refuses before the root's contents are read
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "An existing destination refuses the run before the root's contents are read."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight, content-reads]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> with .parlay/retired/<name>/ already present"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused naming the existing destination and both possible explanations"
+            - verify: state
+              target: content-reads
+              expected: "zero reads of the retiring root's contents occurred"
+        - name: no enumeration, sweep or content read happens before resolution and destination checks succeed
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "No enumeration, sweep or content read occurs before resolution and destination checking have both succeeded."
+          exercises: [retire-root-preflight]
+          observes: [content-reads]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root with a failing target resolution, instrumented to record file access"
+            - verify: state
+              target: content-reads
+              expected: "no enumeration, sweep, or content read preceded the resolution and destination checks"
+        - name: a registered path resolving outside the project refuses before any enumeration, archive or removal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A registered path that resolves outside the project refuses the run, and the refusal happens before any enumeration, archive or removal."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution, project-state]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where the registration records a path resolving outside the project"
+            - verify: error
+              target: target-resolution
+              expected: "refused, stating the registered path does not resolve inside the project"
+            - verify: state
+              target: project-state
+              expected: "no enumeration, archive or removal has occurred"
+        - name: an absolute registered path is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "An absolute registered path is refused; a child root is located relative to its parent."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where the registration records an absolute relative-path"
+            - verify: error
+              target: target-resolution
+              expected: "refused, stating a child root is located relative to its parent"
+        - name: a registered path leaving the project through traversal is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A registered path leaving the project through traversal segments is refused."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where the registration records ../<dir>"
+            - verify: error
+              target: target-resolution
+              expected: "refused, stating the path escapes the project root"
+        - name: a registered path that is a link resolving outside the project is refused on the resolved path
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A registered path that is a link resolving outside the project is refused, judged on the resolved path rather than on the name."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where the registered directory is a symlink to a location outside the project"
+            - verify: error
+              target: target-resolution
+              expected: "refused naming the resolved location outside the project root"
+        - name: content outside the project survives a run refused on containment grounds
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "Content outside the project is neither archived nor removed by a run refused on any of these grounds."
+          exercises: [retire-root-preflight]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> for each escaping registration, with populated content at the location the path names"
+            - verify: file-content
+              target: project-state
+              expected: "the content outside the project is byte-identical and still present"
+            - verify: state
+              target: project-state
+              expected: "the project tree is byte-identical"
+        - name: the containment judgment is applied again to a path read from a journal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The containment judgment is applied again to the path a resumed run reads from its journal, not only to the one it read from the registration."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, journal-file, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> where an outstanding journal records a path outside the project"
+            - verify: error
+              target: retirement-journal
+              expected: "the resume is refused, stating the journal names a path that is not inside the project"
+            - verify: file-content
+              target: project-state
+              expected: "the location the journal named is untouched"
+        - name: a registered root name that is not a plain slug refuses before any mutation
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A registered root name that is not a plain slug refuses the run before any mutation, whatever its registered path says."
+          exercises: [retire-root-preflight]
+          observes: [target-resolution, project-state]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "retire-root <name> where the registration records a traversing name and an ordinary, contained path"
+            - verify: error
+              target: target-resolution
+              expected: "refused, stating the name is not a usable path component"
+            - verify: state
+              target: project-state
+              expected: "the project tree and everything outside it are byte-identical"
+        - name: the accepted name shape is a closed slug
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "A name carrying a separator, a traversal segment, a dot, whitespace or upper case is refused; the ordinary names this project produces are accepted."
+          exercises: [target-resolution]
+          observes: [target-resolution]
+          steps:
+            - action: render
+              target: target-resolution
+              value: "each of a traversing, separated, dotted, spaced, upper-cased, dash-edged and empty name, and the ordinary names this project produces"
+            - verify: state
+              target: target-resolution
+              expected: "every malformed name is refused and every ordinary name is accepted"
+        - name: destructive steps act through a handle rooted at the project
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "Every destructive step acts through a handle rooted at the project, so a path component replaced with a route out of the project after containment was judged is refused rather than followed, and content outside the project survives the attempt."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose intermediate directory is replaced with a link out of the project after containment was judged and before the removal"
+            - verify: error
+              target: retirement-journal
+              expected: "the removal is refused rather than following the link"
+            - verify: file-exists
+              target: project-state
+              expected: "the content outside the project is intact"
+        - name: the record, the journal and the registration are written through the rooted handle
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The retirement record, the journal and the rewritten root registration are written through that same handle: a location swapped for a route out of the project refuses the write rather than landing outside, and nothing is created outside the project by the attempt."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose retired-roots location, and then whose .parlay directory, is replaced with a link out of the project immediately before each of the record write, the journal write and the registration rewrite"
+            - verify: error
+              target: retirement-journal
+              expected: "each write is refused rather than following the link"
+            - verify: state
+              target: project-state
+              expected: "nothing is created outside the project"
+        - name: the journal removal is rooted on the same terms
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The removal of the journal is rooted on the same terms, so a swapped location cannot make the run delete a file the project does not own."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose retired-roots location is replaced with a link to a directory holding a same-named file, immediately before the journal removal"
+            - verify: error
+              target: retirement-journal
+              expected: "the removal is refused"
+            - verify: file-exists
+              target: project-state
+              expected: "the file outside the project is still there"
+    # ===========================================================================
+    # Suite 2 — Feature disposition preflight
+    # ===========================================================================
+    - kind: presentation
+      name: feature-disposition-preflight
+      file: internal/commands/root_dispositions_test.go
+      component: cross-cutting/feature-disposition-preflight
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+      intent: "@parlay-tool/root-retirement/say-what-became-of-every-feature-in-the-root"
+      cases:
+        - name: a complete record with closed-set terms and rationales passes the preflight
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record naming every enumerated feature exactly once, each carrying a term from the closed set and a rationale, passes the preflight."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record covering every enumerated feature exactly once, valid terms, rationales present"
+            - verify: state
+              target: disposition-preflight
+              expected: "preflight passes"
+        - name: a record omitting an enumerated feature is refused naming the omitted feature
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record omitting an enumerated feature is refused, naming the omitted feature."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record missing one enumerated feature"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused, and the refusal names the omitted feature"
+        - name: a record naming a feature the enumeration did not produce is refused naming it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record naming a feature the enumeration did not produce is refused, naming it."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record naming one feature that is not in the root"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused, and the refusal names the extra entry"
+        - name: a record naming one feature more than once is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record naming one feature more than once is refused."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record naming the same feature twice"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused as a duplicate"
+        - name: a term outside the closed set of three is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A term outside the closed set of three is refused."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record with term 'abandoned'"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused, naming the three accepted terms"
+        - name: a valid term with no rationale is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A disposition carrying a valid term and no rationale is refused."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record entry with term delivered-and-deleted and empty rationale"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused; a term with no rationale is a classification nobody can check"
+        - name: the rationale is never parsed and never widens the accepted terms
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A rationale is never parsed and never widens the accepted terms; the same three terms are accepted whatever any rationale says."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "records whose rationales contain term-like text, YAML syntax, and directives"
+            - verify: state
+              target: disposition-preflight
+              expected: "acceptance decisions identical to the same records with plain rationales; only the three closed terms accepted"
+        - name: a delivery that was a removal is recordable as delivered-and-deleted with the rationale carrying the story
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A feature whose delivery was the removal of something, witnessed only by markers on other features' files that this run deletes, is recordable as delivered-and-deleted with that stated in its rationale."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "record entry: term delivered-and-deleted, rationale describing the retraction and its markers"
+            - verify: state
+              target: disposition-preflight
+              expected: "accepted with no fourth term involved"
+        - name: a feature carrying only a placeholder baseline is enumerated and needs a disposition
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A feature carrying only a placeholder baseline is enumerated and requires a disposition like any other."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "root containing a feature whose only build state is a placeholder baseline; record omits it"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused naming that feature — it is enumerated like any other"
+        - name: a feature carrying an incomplete artifact subset is enumerated and needs a disposition
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A feature carrying an incomplete subset of the build artifacts its siblings carry is enumerated and requires a disposition like any other."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "root where one feature has buildfile only, siblings have buildfile+testcases; record omits it"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused naming that feature"
+        - name: buildfile-and-testcases without a coverage review is not classified as unbuilt
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A feature with a buildfile and testcases and no coverage review is not classified as unbuilt on that basis."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "feature with buildfile.yaml and testcases.yaml, no coverage-decisions.yaml, declared delivered-and-deleted"
+            - verify: state
+              target: disposition-preflight
+              expected: "the declared term stands; nothing is inferred from the artifact set"
+        - name: no mutation occurs while the preflight is unsatisfied
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "No mutation occurs while the preflight is unsatisfied."
+          exercises: [disposition-preflight]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "any refused record, followed by a full tree comparison"
+            - verify: state
+              target: project-state
+              expected: "byte-identical to before the run"
+        - name: the disposition record is readable alongside the preserved contents after a completed run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "The disposition record, rationales included, is present and readable alongside the preserved contents after a completed run."
+          exercises: [disposition-preflight]
+          observes: [disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "completed retirement"
+            - verify: file-exists
+              target: disposition-record-file
+            - verify: file-content
+              target: disposition-record-file
+              expected: "every disposition with its term and rationale, verbatim"
+        - name: a record carrying an undefined key is refused naming it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record carrying a key the shape does not define is refused, naming the unrecognized key, rather than decoded with that key dropped."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight, disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "a record with a misspelled top-level key, and one with a misspelled key inside an entry"
+            - verify: error
+              target: disposition-preflight
+              expected: "each is refused, and the refusal names the key that was not recognized"
+        - name: a target under a term that names no target is refused as a contradiction
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A disposition carrying a target under a term that names no target is refused as the contradiction it is."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight, disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "a record whose delivered-and-deleted and built-but-undelivered entries each carry a target"
+            - verify: error
+              target: disposition-preflight
+              expected: "refused naming the term and the target it contradicts"
+        - name: a record saying exactly what its shape defines is accepted unchanged
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A record that says exactly what its shape defines is accepted unchanged by the closed reading."
+          exercises: [disposition-preflight]
+          observes: [disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "a well-formed record with a term, a target and a rationale"
+            - verify: state
+              target: disposition-record-file
+              expected: "loaded, with every field decoded as written"
+        - name: an acknowledged reference stops blocking and is listed with its reason
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledged reference naming an artifact, a reference and a rationale stops that one finding blocking the retirement, and the preview lists it under its own heading with the reason given rather than dropping it silently."
+          exercises: [retire-root-preflight]
+          observes: [disposition-preflight, sweep-findings, retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a preview with a record acknowledging a finding by its artifact and reference"
+            - verify: text
+              target: retire-root-preflight
+              expected: "the finding appears under an acknowledged heading with the rationale given"
+            - verify: state
+              target: retire-root-preflight
+              expected: "it no longer blocks execution"
+        - name: an acknowledgment matches only an exact artifact and reference
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment matches only on the finding's full identity: a different path, position, reference or kind — or a path that is merely a prefix of the finding's — dismisses nothing, so a second occurrence of the same reference is a second judgment."
+          exercises: [retire-root-preflight]
+          observes: [disposition-preflight, retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "runs whose acknowledgment names a different path, a different reference, and a path that is only a prefix of the finding's"
+            - verify: error
+              target: retire-root-preflight
+              expected: "each still refuses naming the finding, since none of the three dismisses it"
+        - name: an unacknowledged finding still refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "A finding nobody acknowledged still refuses the retirement, so the dismissal narrows nothing about what is reported."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a run with two findings and an acknowledgment covering one"
+            - verify: error
+              target: retire-root-preflight
+              expected: "refused naming the unacknowledged finding, and not naming the acknowledged one"
+        - name: an incomplete or unrecognized acknowledgment is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment carrying no path, no position, no reference, no kind, no rationale, or a key the shape does not define, is refused like any other part of the record."
+          exercises: [disposition-preflight]
+          observes: [disposition-preflight, disposition-record-file]
+          steps:
+            - action: render
+              target: disposition-preflight
+              value: "records whose acknowledgment omits the path, the reference, the rationale, and one carrying an undefined key"
+            - verify: error
+              target: disposition-preflight
+              expected: "each is refused, naming what is wrong"
+        - name: an acknowledgment matching no finding says so
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:feature-disposition-preflight"
+            text: "An acknowledgment that matches no finding is reported as having matched none, so a misspelling is visible rather than looking like a refusal nobody can explain."
+          exercises: [retire-root-preflight]
+          observes: [retire-root-preflight]
+          steps:
+            - action: render
+              target: retire-root-preflight
+              value: "a preview whose acknowledgment names an artifact no finding came from"
+            - verify: text
+              target: retire-root-preflight
+              expected: "the preview reports that the acknowledgment matched no finding"
+    # ===========================================================================
+    # Suite 3 — Project-wide, source-aware inbound sweep
+    # ===========================================================================
+    - kind: presentation
+      name: project-wide-source-aware-inbound-sweep
+      file: internal/commands/root_retirement_sweep_test.go
+      component: cross-cutting/project-wide-source-aware-inbound-sweep
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+      intent: "@parlay-tool/root-retirement/refuse-while-anything-outside-the-root-still-stands-on-it"
+      cases:
+        - name: a reference held in a third root is found — the sweep is project-wide
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A reference held in a root other than the retiring one is found; a sweep run against a single root is insufficient and is not what runs."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "project with a reference to the retiring root held in a sibling root that is neither retiring nor active"
+            - verify: state
+              target: sweep-findings
+              expected: "the sibling-root reference is among the findings"
+        - name: an ownership marker on surviving source naming a retiring-root feature blocks
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "An ownership marker on a surviving source file naming a feature of the retiring root blocks the retirement."
+          exercises: [root-sweep]
+          observes: [sweep-findings, root-sweep]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "surviving source file with a parlay-feature: marker naming a retiring-root feature"
+            - verify: state
+              target: sweep-findings
+              expected: "marker reported as a finding"
+            - verify: error
+              target: root-sweep
+              expected: "retirement refused while the finding stands"
+        - name: a reference into the root's namespace matching no enumerated feature blocks
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A reference naming a location in the retiring root's namespace that corresponds to no enumerated feature blocks the retirement."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "marker naming a path under the retiring root that has no feature directory"
+            - verify: state
+              target: sweep-findings
+              expected: "reported — path-space matching catches what feature enumeration cannot"
+        - name: a shipped-guidance instruction naming something only the root provides blocks
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "An instruction in a shipped guidance document naming something only the retiring root provides blocks the retirement."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "deployed skill document instructing the reader to run a command only the retiring root provides"
+            - verify: state
+              target: sweep-findings
+              expected: "instruction reported as a blocking finding"
+        - name: the same instruction in generated document and generating source is two findings
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "The same instruction in a generated document and in the source it is generated from is reported as two findings."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "instruction present in a deployed module and in its embedded source"
+            - verify: count
+              target: sweep-findings
+              expected: 2
+        - name: out-of-root ownership blocks unless a disposition re-homes it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "An ownership claim by the root's features over work living outside the root blocks the retirement unless a disposition re-homes it."
+          exercises: [root-sweep]
+          observes: [sweep-findings, root-sweep]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "retiring-root feature owning a file outside the root, no re-homing disposition"
+            - verify: error
+              target: root-sweep
+              expected: "blocked on the out-of-root ownership"
+            - action: render
+              target: root-sweep
+              value: "same project, with an authority-re-homed-to disposition covering the file"
+            - verify: state
+              target: sweep-findings
+              expected: "the ownership finding no longer blocks"
+        - name: narrative prose mentioning the root does not block
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "Narrative prose mentioning the retiring root does not block the retirement."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "comment and doc prose mentioning the retiring root's name with no instruction and no marker"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding for the prose mentions"
+        - name: every finding carries artifact, position, and exact reference
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "Every finding carries owning artifact, position and exact reference."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "project seeded with findings of each kind"
+            - verify: state
+              target: sweep-findings
+              expected: "each finding names its file, its position within it, and the reference as written"
+        - name: the sweep completes before any mutation
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "The sweep completes before any mutation."
+          exercises: [root-sweep]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "run with findings present, instrumented for write ordering"
+            - verify: state
+              target: project-state
+              expected: "no write of any kind precedes sweep completion"
+        - name: a plain group-qualified reference is found wherever it is written
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A plain group-qualified feature reference is found wherever it is written: in source comments, in configuration values, in prose, and in a sibling root's own specifications."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding <group>/<feature> in a source comment, a build-state value, markdown prose, and a sibling root's infrastructure.md"
+            - verify: state
+              target: sweep-findings
+              expected: "each occurrence is a blocking finding carrying the retiring feature it names"
+        - name: a component-qualified reference under a retiring feature is found
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A component-qualified reference under a retiring feature is found."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding <group>/<feature>/cross-cutting/<component> and a deeper path under it"
+            - verify: state
+              target: sweep-findings
+              expected: "each is a blocking finding"
+        - name: a plain reference in a deployed copy, its module and its authoring source is three findings
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "The same plain reference in a deployed document, in the module it was deployed from and in the authoring source it was generated from is three findings."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding the same group-qualified reference in .claude/skills/, .parlay/modules/ and the embedded authoring source"
+            - verify: state
+              target: sweep-findings
+              expected: "three findings, one per artifact"
+        - name: a longer identifier containing a feature name is not a reference to it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A longer identifier that merely contains a feature's name is not reported as a reference to it."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a document holding identifiers that contain a feature slug as a substring"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding is raised for that document"
+        - name: a single-segment feature name counts only where a path continues it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A single-segment feature name is reported only where a path continues it, and the same name in ordinary prose is not."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over one document using a single-segment feature name as an ordinary word and another using it as a path prefix"
+            - verify: state
+              target: sweep-findings
+              expected: "the path-ish use is a finding and the prose use is not"
+        - name: every finding carries the reference exactly as written
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "Every finding carries the reference exactly as written, with no trailing punctuation absorbed into it."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a document whose reference ends a sentence"
+            - verify: state
+              target: sweep-findings
+              expected: "the finding's reference is the reference alone, without the sentence's punctuation"
+        - name: a file that cannot be read refuses the retirement
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A file that is present but cannot be read refuses the retirement rather than being passed over."
+          exercises: [root-sweep]
+          observes: [sweep-failures, retire-root-preflight]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding a file that cannot be read"
+            - verify: state
+              target: sweep-failures
+              expected: "a scan failure naming the file"
+            - verify: error
+              target: retire-root-preflight
+              expected: "the retirement is refused — cannot tell is not none"
+        - name: a structurally broken text document is still scanned as text
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A structurally broken text document is scanned as text and the references written in it are found; being unparseable is not itself a condition this sweep detects or reports."
+          exercises: [root-sweep]
+          observes: [sweep-findings, sweep-failures]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a document whose structure is broken but whose text holds a reference"
+            - verify: state
+              target: sweep-findings
+              expected: "the reference is found"
+            - verify: state
+              target: sweep-failures
+              expected: "no failure is recorded for that document"
+        - name: binary content is passed over without becoming a failure
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "Binary content is passed over without becoming a scan failure."
+          exercises: [root-sweep]
+          observes: [sweep-failures]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding a binary file"
+            - verify: state
+              target: sweep-failures
+              expected: "no failure is recorded for the binary file"
+        - name: a nested git checkout is skipped whole
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A nested git checkout below the project root — marked by a .git file or directory, as a worktree, submodule or vendored clone is — is skipped whole: its contents are another commit's copy of the project, and neither its markers nor its instructions are findings."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project holding a nested checkout, marked by a .git file and again by a .git directory, whose files carry ownership markers and command instructions naming the retiring root"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding comes from the nested checkout in either case"
+        - name: a skipped checkout is not a scan failure and does not reach readiness
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "A skipped checkout is not a scan failure either, and re-home readiness is never judged against one."
+          exercises: [root-sweep]
+          observes: [sweep-failures, rehome-readiness]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep over a project whose nested checkout holds a stale marker naming a re-homed feature"
+            - verify: state
+              target: sweep-failures
+              expected: "no failure names the checkout"
+            - verify: state
+              target: rehome-readiness
+              expected: "no readiness error names a file inside it"
+        - name: the disposition record in use is exempt, and nothing broader
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:project-wide-source-aware-inbound-sweep"
+            text: "The disposition record passed to the run is exempt from the sweep, at exactly its resolved path; another file shaped like a disposition record is scanned like anything else."
+          exercises: [root-sweep]
+          observes: [sweep-findings]
+          steps:
+            - action: render
+              target: root-sweep
+              value: "a sweep with the disposition record inside the project tree, alongside a second file of the same shape and a similar name"
+            - verify: state
+              target: sweep-findings
+              expected: "no finding names the record in use, and the second file is scanned like any other"
+    # ===========================================================================
+    # Suite 4 — Re-home target readiness
+    # ===========================================================================
+    - kind: presentation
+      name: re-home-target-readiness
+      file: internal/commands/root_dispositions_test.go
+      component: cross-cutting/re-home-target-readiness
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+      intent: "@parlay-tool/root-retirement/refuse-while-anything-outside-the-root-still-stands-on-it"
+      cases:
+        - name: a re-home target naming no feature refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "A re-home target that names no feature in the project refuses the retirement."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "authority-re-homed-to naming a feature that exists nowhere in the project"
+            - verify: error
+              target: rehome-readiness
+              expected: "refused — surviving code needs a home that exists before the run"
+        - name: a re-home target that is itself retired refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "A re-home target that is itself retired refuses the retirement."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "target feature with an applied retirement amendment"
+            - verify: error
+              target: rehome-readiness
+              expected: "refused — a retirement record cannot own live code"
+        - name: a target with an authored but unapplied retirement refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "A re-home target carrying an authored but unapplied retirement refuses the retirement."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "target feature whose ledger holds a retirement authored and waiting"
+            - verify: error
+              target: rehome-readiness
+              expected: "refused — authored-and-waiting is not active"
+        - name: an active target that does not yet claim the work refuses
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "A re-home target that exists and is active but does not yet claim the surviving work refuses the retirement."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "surviving file still marked with the retiring root's feature, target active but not claiming it"
+            - verify: error
+              target: rehome-readiness
+              expected: "refused naming the file whose claim has not moved"
+        - name: a target satisfying all three conditions permits, checked before any mutation
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "A re-home target satisfying all three conditions permits the retirement to proceed, and the check runs before any mutation."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness, project-state]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "target exists, is active, and the surviving files already carry its markers"
+            - verify: state
+              target: rehome-readiness
+              expected: "check passes"
+            - verify: state
+              target: project-state
+              expected: "check completed before any mutation occurred"
+        - name: target resolution crosses root boundaries
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:re-home-target-readiness"
+            text: "Target resolution crosses root boundaries."
+          exercises: [rehome-readiness]
+          observes: [rehome-readiness]
+          steps:
+            - action: render
+              target: rehome-readiness
+              value: "re-home target living in a different root than the retiring feature"
+            - verify: state
+              target: rehome-readiness
+              expected: "resolved across the root boundary"
+    # ===========================================================================
+    # Suite 5 — Complete-directory archive with manifest
+    # ===========================================================================
+    - kind: presentation
+      name: complete-directory-archive-with-manifest
+      file: internal/commands/root_archive_test.go
+      component: cross-cutting/complete-directory-archive-with-manifest
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+      intent: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+      cases:
+        - name: every file, configuration and adapters and build state included, is preserved byte-identical
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "Every file in the child directory, configuration and adapters and build state included, is present in the preserved copy with identical bytes."
+          exercises: [root-archive]
+          observes: [archive-contents]
+          steps:
+            - action: render
+              target: root-archive
+              value: "child directory with config.yaml, adapters, and build state"
+            - verify: file-content
+              target: archive-contents
+              expected: "every member of the child directory present under contents/ with identical bytes"
+        - name: the manifest names every member with its hash and covers itself
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "The manifest names every preserved member with its content hash and covers itself."
+          exercises: [root-archive]
+          observes: [archive-manifest]
+          steps:
+            - action: render
+              target: root-archive
+              value: "completed archive"
+            - verify: file-content
+              target: archive-manifest
+              expected: "one entry per preserved member with its sha256, plus a hash covering the manifest's own member list"
+        - name: a failure during archiving leaves the project exactly as it was
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "A failure during archiving leaves the project exactly as it was."
+          exercises: [root-archive]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: root-archive
+              value: "archiving interrupted mid-copy"
+            - verify: state
+              target: project-state
+              expected: "byte-identical to before the run; no destination directory promoted"
+        - name: archive and manifest are complete before the registration changes
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "The archive and manifest are complete before the project's registration of the root changes."
+          exercises: [root-archive]
+          observes: [mutation-order]
+          steps:
+            - action: render
+              target: root-archive
+              value: "completed retirement, instrumented for write ordering"
+            - verify: state
+              target: mutation-order
+              expected: "archive and manifest writes strictly precede the roots-index write"
+        - name: every staged member is re-hashed against the manifest before promotion
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "Every staged member is re-read and re-hashed against the manifest before the archive is promoted, and a member whose archived bytes disagree with its recorded hash aborts the run, naming that member."
+          exercises: [root-archive]
+          observes: [root-archive, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: root-archive
+              value: "a retirement whose staged copy is altered between the copy and the verification"
+            - verify: error
+              target: root-archive
+              expected: "aborted, naming the member whose archived bytes disagree with the manifest"
+            - verify: state
+              target: project-state
+              expected: "the project tree is byte-identical and the root is still registered"
+        - name: a source member changing between the walk and the copy is caught
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "A source member that changed between the walk and the copy is caught by that verification rather than promoted into an archive that fails its own integrity check."
+          exercises: [root-archive]
+          observes: [root-archive, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: root-archive
+              value: "a retirement whose source member is rewritten after the walk hashed it and before the copy reached it"
+            - verify: error
+              target: root-archive
+              expected: "aborted, naming the member that changed"
+            - verify: state
+              target: project-state
+              expected: "no archive is promoted"
+        - name: verification hashes archived bytes rather than counting members
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:complete-directory-archive-with-manifest"
+            text: "The verification hashes archived bytes; an archive whose member count and paths are intact but whose contents are not still fails it."
+          exercises: [root-archive]
+          observes: [root-archive, archive-manifest]
+          steps:
+            - action: render
+              target: root-archive
+              value: "a retirement whose staged members have their contents swapped, leaving every path and the member count intact"
+            - verify: error
+              target: root-archive
+              expected: "verification fails"
+    # ===========================================================================
+    # Suite 6 — Escaping paths and unreadable members fail closed
+    # ===========================================================================
+    - kind: presentation
+      name: escaping-paths-and-unreadable-members-fail-closed
+      file: internal/commands/root_archive_test.go
+      component: cross-cutting/escaping-paths-unreadable-members-fail-closed
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+      intent: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+      cases:
+        - name: a symlink resolving outside the child directory aborts before anything is written
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "A symbolic link whose target resolves outside the child directory aborts the run before anything is written."
+          exercises: [archive-walk]
+          observes: [archive-walk, project-state]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "child directory containing a symlink to a file outside it"
+            - verify: error
+              target: archive-walk
+              expected: "aborted on the escaping link"
+            - verify: state
+              target: project-state
+              expected: "nothing written"
+        - name: a symlink resolving inside the child directory is preserved
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "A symbolic link whose target resolves inside the child directory is preserved."
+          exercises: [archive-walk]
+          observes: [archive-contents]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "child directory containing an internal symlink"
+            - verify: state
+              target: archive-contents
+              expected: "the internal link preserved like any other member"
+        - name: a traversal-segment escape aborts before anything is written
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "A member whose resolved path lands outside the child directory through a traversal segment aborts the run before anything is written."
+          exercises: [archive-walk]
+          observes: [archive-walk, project-state]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "member path with ../ segments resolving outside the child directory"
+            - verify: error
+              target: archive-walk
+              expected: "aborted on the escaping path"
+            - verify: state
+              target: project-state
+              expected: "nothing written"
+        - name: escape is judged on the resolved path, not the name
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "Escape is determined by the resolved path, not by the textual form of the name."
+          exercises: [archive-walk]
+          observes: [archive-walk, archive-contents]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "ordinary-looking name resolving outside; traversal-laden name resolving inside"
+            - verify: error
+              target: archive-walk
+              expected: "the ordinary-looking escape aborts"
+            - verify: state
+              target: archive-contents
+              expected: "the traversal-laden inside path is preserved"
+        - name: an unreadable member aborts before anything is written
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "A member that cannot be read aborts the run before anything is written."
+          exercises: [archive-walk]
+          observes: [archive-walk, project-state]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "one member with permissions removed"
+            - verify: error
+              target: archive-walk
+              expected: "aborted on the unreadable member"
+            - verify: state
+              target: project-state
+              expected: "nothing written"
+        - name: neither condition is ever resolved by skipping the member and continuing
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "Neither condition is ever resolved by skipping the member and continuing."
+          exercises: [archive-walk]
+          observes: [archive-contents]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "walk over a directory with an escaping and an unreadable member"
+            - verify: state
+              target: archive-contents
+              expected: "no archive claiming completeness exists with either member silently absent"
+        - name: a run aborted by either condition leaves the project exactly as it was
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "A run aborted by either condition leaves the project exactly as it was, with no archive, no record and no change to the root registration."
+          exercises: [archive-walk]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "aborted runs of both kinds, followed by full tree comparison"
+            - verify: state
+              target: project-state
+              expected: "no archive, no record, registration unchanged, tree byte-identical"
+        - name: the refusal names the member that caused it
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:escaping-paths-and-unreadable-members-fail-closed"
+            text: "The refusal names the member that caused it."
+          exercises: [archive-walk]
+          observes: [archive-walk]
+          steps:
+            - action: render
+              target: archive-walk
+              value: "aborted runs of both kinds"
+            - verify: error
+              target: archive-walk
+              expected: "each refusal names the offending member's path"
+    # ===========================================================================
+    # Suite 7 — Archive invisibility to discovery, and archive integrity
+    # ===========================================================================
+    - kind: presentation
+      name: archive-invisibility-to-discovery-and-archive-integrity
+      file: internal/commands/retired_roots_test.go
+      component: cross-cutting/archive-invisibility-and-integrity
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+      intent: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+      cases:
+        - name: a preserved feature appears in no enumeration of live features
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "A preserved feature does not appear in any enumeration of live features."
+          exercises: [retired-roots-check]
+          observes: [live-enumeration]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "project after a completed retirement; run every live-feature enumeration"
+            - verify: state
+              target: live-enumeration
+              expected: "no preserved feature appears"
+        - name: preserved build state appears in no enumeration of live build state
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "Preserved build state does not appear in any enumeration of live build state."
+          exercises: [retired-roots-check]
+          observes: [live-enumeration]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "project after a completed retirement; run every live build-state walk"
+            - verify: state
+              target: live-enumeration
+              expected: "no preserved build state appears"
+        - name: the integrity check passes immediately after a completed retirement
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "The integrity check passes immediately after a completed retirement."
+          exercises: [retired-roots-check]
+          observes: [retired-roots-check]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "retired-roots --check right after a completed retirement"
+            - verify: state
+              target: retired-roots-check
+              expected: "clean"
+        - name: the integrity check reports a member whose bytes changed
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "The integrity check reports a preserved member whose content changed after the fact."
+          exercises: [retired-roots-check]
+          observes: [integrity-report]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "one preserved member's bytes altered, then --check"
+            - verify: state
+              target: integrity-report
+              expected: "the changed member reported"
+        - name: the integrity check reports a missing member
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "The integrity check reports a preserved member that is missing."
+          exercises: [retired-roots-check]
+          observes: [integrity-report]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "one preserved member deleted, then --check"
+            - verify: state
+              target: integrity-report
+              expected: "the missing member reported"
+        - name: the integrity check reports a member present but not listed
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "The integrity check reports a member present in the archive and absent from the manifest."
+          exercises: [retired-roots-check]
+          observes: [integrity-report]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "a file added inside the archive, then --check"
+            - verify: state
+              target: integrity-report
+              expected: "the unlisted member reported"
+        - name: a preserved placeholder baseline passes the integrity check unchanged
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "A preserved placeholder baseline naming no intents and no sources passes the integrity check unchanged."
+          exercises: [retired-roots-check]
+          observes: [integrity-report]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "archive containing a placeholder baseline naming no intents and no sources"
+            - verify: state
+              target: integrity-report
+              expected: "reported intact — history, not corruption"
+        - name: emptiness of preserved build state never raises an integrity finding
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:archive-invisibility-to-discovery-and-archive-integrity"
+            text: "No integrity finding is raised on the grounds that preserved build state is empty."
+          exercises: [retired-roots-check]
+          observes: [integrity-report]
+          steps:
+            - action: render
+              target: retired-roots-check
+              value: "archive where most features carry empty or placeholder build state"
+            - verify: state
+              target: integrity-report
+              expected: "zero findings whose reason is emptiness or thinness"
+    # ===========================================================================
+    # Suite 8 — Mutation order, rollback and the resumable journal
+    # ===========================================================================
+    - kind: presentation
+      name: mutation-order-rollback-and-the-resumable-journal
+      file: internal/commands/retirement_journal_test.go
+      component: cross-cutting/mutation-order-rollback-resumable-journal
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+      intent: "@parlay-tool/root-retirement/never-leave-a-project-half-retired"
+      cases:
+        - name: interruption before the archive is complete leaves the project exactly as it was
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "An interruption before the archive is complete leaves the project exactly as it was."
+          exercises: [retirement-journal]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "run interrupted mid-archive"
+            - verify: state
+              target: project-state
+              expected: "byte-identical to before the run"
+        - name: interruption after the archive and before registration leaves prior state or a journal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "An interruption after the archive is complete and before the registration changes leaves either the prior state or an outstanding resumable journal."
+          exercises: [retirement-journal]
+          observes: [journal-file, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "run interrupted between archive completion and deregistration"
+            - verify: file-exists
+              target: journal-file
+            - verify: state
+              target: project-state
+              expected: "either restored prior state, or the journal present and the registration still naming the root"
+        - name: no interruption leaves registration missing while contents are in place
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "No interruption leaves the registration missing the root while its contents are still in place."
+          exercises: [retirement-journal]
+          observes: [registration-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "interruptions injected at every step boundary"
+            - verify: state
+              target: registration-state
+              expected: "at no point is the root deregistered while its directory is still in place"
+        - name: no interruption leaves registration naming the root with contents moved and no journal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "No interruption leaves the registration naming the root while its contents have moved and no journal exists."
+          exercises: [retirement-journal]
+          observes: [registration-state, journal-file]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "interruptions injected at every step boundary"
+            - verify: state
+              target: registration-state
+              expected: "whenever contents have moved and the root is still registered, the journal exists"
+            - verify: file-exists
+              target: journal-file
+        - name: the journal lists the outstanding steps in execution order
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "The journal lists the outstanding steps in execution order."
+          exercises: [retirement-journal]
+          observes: [journal-file]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "post-archive interruption"
+            - verify: file-content
+              target: journal-file
+              expected: "outstanding steps only, in the order they must happen, in actionable terms"
+        - name: a resumed run performs outstanding steps and repeats no completed ones
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "A resumed run performs the outstanding steps and does not repeat completed ones."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, registration-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root re-run with an outstanding journal, then resume confirmed"
+            - verify: state
+              target: retirement-journal
+              expected: "only journal steps executed; the completed archive is not re-attempted"
+            - verify: state
+              target: registration-state
+              expected: "root deregistered; journal removed"
+        - name: a second retirement of the same root refuses while a journal is outstanding
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "A second retirement of the same root refuses while a journal is outstanding."
+          exercises: [retirement-journal]
+          observes: [retirement-journal]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "fresh retire-root of the same root while the journal is outstanding"
+            - verify: error
+              target: retirement-journal
+              expected: "refused naming the part-finished run"
+        - name: after a completed run the registration does not name the root
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-and-the-resumable-journal"
+            text: "After a completed run the registration does not name the root and no journal outlives it."
+          exercises: [retirement-journal]
+          observes: [registration-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "completed retirement"
+            - verify: state
+              target: registration-state
+              expected: "roots.yaml no longer names the root"
+        - name: an in-flight retirement is found by its journal, not through the registration
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "An in-flight retirement is found by its journal without consulting the root registration, and is found equally when named by the root's registered path."
+          exercises: [retirement-journal]
+          observes: [journal-file, registration-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> after an interruption that already removed the registration"
+            - verify: state
+              target: journal-file
+              expected: "the outstanding journal is found and the run resumes from it"
+            - action: render
+              target: retirement-journal
+              value: "retire-root <relative-path> naming the same in-flight retirement by its registered path"
+            - verify: state
+              target: journal-file
+              expected: "the same journal is found and resumed"
+        - name: a run interrupted at any boundary is completed by the next run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A run interrupted at any mutation boundary is completed by the next run, including one interrupted after the registration has already been changed."
+          exercises: [retirement-journal]
+          observes: [registration-state, journal-file, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement interrupted at each mutation boundary in turn, each followed by a further run"
+            - verify: state
+              target: registration-state
+              expected: "the registration no longer names the root"
+            - verify: state
+              target: journal-file
+              expected: "no journal outlives the completed run"
+            - verify: file-exists
+              target: project-state
+              expected: "the archive holds the contents, the manifest, the dispositions and the retirement record"
+        - name: every journal step can be performed again without harm
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "Every step the journal names can be performed again without harm, whatever part of it already succeeded."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a resume of a run whose directory removal and deregistration already succeeded"
+            - verify: state
+              target: retirement-journal
+              expected: "the remaining work completes without repeating or failing on the parts already done"
+        - name: a journal that cannot be read refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal that cannot be read or parsed refuses the run rather than being treated as nothing in flight."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, journal-file]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with an outstanding journal that cannot be parsed"
+            - verify: error
+              target: retirement-journal
+              expected: "refused naming the journal, rather than starting a fresh run"
+        - name: a file in the journal location not named for a root is refused rather than read
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A file in the journal location whose name is not a root name is refused rather than read."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, journal-file]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a scan of the journal location holding a file whose name is not a root name"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, stating the filename does not name a root"
+        - name: a journal claiming a root other than the one it is filed under is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal recording a root other than the name it is filed under is refused, and nothing is deleted or deregistered on its authority."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, registration-state, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a genuine journal renamed so its filename no longer names the root it records"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming both the root recorded and the name it is filed under"
+            - verify: state
+              target: project-state
+              expected: "the root's directory is still in place and the registration still names it"
+        - name: a journal recording a malformed root or an escaping path is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal recording a root that is not a plain slug, or a path that leaves the project, is refused."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal recording a traversing root, and one recording a path outside the project"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, naming the shape that failed"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a journal with undefined keys or a second document is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal carrying a key the shape does not define, or more than one document, is refused rather than decoded with the surplus dropped."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, journal-file]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal carrying an undefined key, and one carrying a second YAML document"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, naming what was not recognized"
+        - name: a journal whose steps are not a tail of the execution order is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal whose outstanding steps are empty, unknown, duplicated or out of the order they must happen in is refused."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal whose outstanding steps are in turn empty, unknown, duplicated and reordered"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused against the order the steps must happen in"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a journal with no verified archive behind it is refused rather than resumed
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal with no archive at the canonical destination for its root, or whose archive has no manifest that reads back and verifies, is refused rather than resumed — so a hand-written journal cannot retire a live root."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal whose archive is absent, one whose archive has no readable manifest, and a hand-written journal naming a live root no retirement ever started"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, naming the archive that does not stand behind it"
+            - verify: state
+              target: project-state
+              expected: "the live root is byte-identical and still registered"
+        - name: a journal that fails authentication refuses even a run aimed elsewhere
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal that fails authentication refuses the run even when the run was aimed at a different root, and leaves the project unchanged."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <other-root> while an unauthenticatable journal sits in the journal location"
+            - verify: error
+              target: retirement-journal
+              expected: "refused rather than passing the file over on the way to the named target"
+            - verify: state
+              target: project-state
+              expected: "the project tree is byte-identical"
+        - name: a journal this operation wrote authenticates and resumes
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal this operation actually wrote authenticates and resumes, and the digest it records survives a completed step."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, registration-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> against a genuine part-finished retirement"
+            - verify: state
+              target: retirement-journal
+              expected: "the journal authenticates and the outstanding steps complete"
+            - verify: state
+              target: registration-state
+              expected: "the registration no longer names the root"
+        - name: a journal must name its archive by the manifest file's digest
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal recording no manifest digest, or a digest other than the one the archive's manifest file carries, is refused — a manifest rewritten consistently under a journal no longer matches it."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal recording no digest, and again with the manifest rewritten consistently beneath a genuine journal"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, the second naming the two digests that disagree"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: archived members are re-hashed against the manifest before the journal is acted on
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "The archived members are re-read and re-hashed against the manifest before the journal is acted on, so archived bytes that changed while the manifest did not are caught."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with an archived member's bytes altered and its manifest left untouched"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, stating the archive does not hold what its manifest describes"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a manifest naming no members is not a root's archive
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A manifest naming no members is refused as not being a root's archive."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> against an archive whose manifest verifies and names nothing"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, since a root preserves at least its own configuration"
+        - name: a step claimed finished must have left its evidence
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A step the journal claims finished must have left its evidence: a finished record step requires a retirement record beside the archive naming the same root and the same path."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal claiming the record step finished while no record stands, and again with a record describing another retirement"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused as claimed progress the archive does not show"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: live contents are compared by content, not by name, before they are destroyed
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "While the root's contents are still in place, every live file must hash to the value the manifest records for it, so the run destroys contents only once every one of them is provably in the preserved copy; comparing names alone is not sufficient and is not what happens."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> against a part-finished retirement whose root still holds its contents"
+            - verify: state
+              target: archive-manifest
+              expected: "every live file is hashed and compared against the manifest's recorded hash for the same path"
+            - verify: state
+              target: project-state
+              expected: "the contents are destroyed only once every one of them matches"
+        - name: a live file whose bytes differ from the archived copy refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A live file holding different bytes from its archived copy refuses the run, including when the difference is an honest edit made while the run was interrupted, and the refusal says the archive is stale and the retirement should be run again from what is there."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> after a file in the root was edited while the run was interrupted"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming the file and saying the archive is stale and the retirement should be run again"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a live file the archive does not name refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A live file the archive does not name at all refuses the run."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> after a file appeared in the root that the archive never held"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming the file the archive does not hold"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a forged chain with the right paths and the wrong bytes is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A forged chain naming every live path but holding different bytes — with the manifest, its digest, the record and the journal all recomputed to agree — is refused, because what is checked is the content that would be destroyed rather than the shape of the artifacts."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, registration-state, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <live-root> against a hand-built chain naming every path the live root holds, with different bytes under each and every artifact recomputed to agree"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, saying the live bytes are not the archived ones"
+            - verify: state
+              target: registration-state
+              expected: "the live root is byte-identical and still registered"
+        - name: a byte-identical forged chain passes, and is harmless on those terms
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A forged chain whose archive holds the root's actual bytes satisfies every check, and is harmless on those terms: it has preserved what it proposes to remove, the removal still passes a person, and every destroyed byte is readable in the archive afterwards. Authenticity is not established by any of this and is not claimed."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-contents]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <live-root> against a hand-built chain whose archive holds the root's actual bytes, confirmed by a person"
+            - verify: state
+              target: retirement-journal
+              expected: "the checks pass and the run completes"
+            - verify: file-content
+              target: archive-contents
+              expected: "every byte the run destroyed is readable in the archive afterwards"
+        - name: a resumed run passes the same authorization a fresh execution does
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A resumed run passes the same authorization a fresh execution does: unattended it refuses without asking, and attended it proceeds only on an explicit confirmation; a preview of a part-finished run remains available unattended and commits to nothing."
+          exercises: [retire-root-authorization]
+          observes: [retirement-journal, retire-root-authorization, project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "retire-root <name> against a part-finished retirement, unattended and with --non-interactive"
+            - verify: error
+              target: retire-root-authorization
+              expected: "refused without asking a question nobody can answer"
+            - action: render
+              target: retire-root-authorization
+              value: "the same run attended, answering anything other than yes"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered, and a preview leaves the project byte-identical"
+        - name: the preservation comparison runs again at the removal itself
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "That comparison is performed again immediately before the removal itself, on every path that reaches it, and not only when the run was admitted — a file written or edited while the confirmation was waiting is content no archive holds."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, mutation-order, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a fresh run and a resumed run, each reaching the removal step"
+            - verify: state
+              target: mutation-order
+              expected: "the full live-against-manifest and archived-against-manifest comparison runs immediately before the removal on both paths"
+            - verify: state
+              target: project-state
+              expected: "the removal proceeds only when it passes"
+        - name: content appearing between authorization and the removal refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "Content that appears or changes between authorization and the removal refuses the run, naming the file and the stale-archive remedy, and nothing is removed or deregistered."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement in which a file is edited, and one in which a file is created, in the window between the confirmation and the removal"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, naming the file and saying to run the retirement again from what is there"
+            - verify: file-exists
+              target: project-state
+              expected: "the unpreserved file is intact, the root's directory is still in place and the root is still registered"
+        - name: an archive altered in that same window aborts the removal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "The archived half is re-verified at that same boundary, so an archive altered while the confirmation was waiting aborts the removal too."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-contents, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose archived copy is altered in the window between the confirmation and the removal"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, saying the archive no longer matches what it claims to preserve"
+            - verify: state
+              target: project-state
+              expected: "the root's directory is still in place"
+    # ===========================================================================
+    # Suite 9 — Retirement authorization, preview and unattended runs
+    # ===========================================================================
+    - kind: presentation
+      name: retirement-authorization-preview-and-unattended-runs
+      file: internal/commands/retire_root_test.go
+      component: cross-cutting/retirement-authorization-preview-unattended
+      source_refs:
+        - "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+      intent: "@parlay-tool/root-retirement/end-a-subproject-without-pretending-it-never-happened"
+      cases:
+        - name: a preview on its own leaves the project byte-identical
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "A preview requested on its own leaves the project byte-identical."
+          exercises: [retire-root-authorization]
+          observes: [project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "retire-root <name> --preview, then full tree comparison"
+            - verify: state
+              target: project-state
+              expected: "byte-identical — nothing written, nothing reserved, no state behind"
+        - name: execution proceeds only after explicit authorization following a shown preview
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "Execution proceeds only after explicit authorization following a shown preview."
+          exercises: [retire-root-authorization]
+          observes: [retire-root-authorization, project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "interactive run answering the confirmation with no"
+            - verify: state
+              target: project-state
+              expected: "nothing changed"
+            - action: render
+              target: retire-root-authorization
+              value: "interactive run answering the confirmation with yes"
+            - verify: state
+              target: retire-root-authorization
+              expected: "execution proceeded, after the preflight report was shown"
+        - name: an unattended execution refuses, writes nothing, and states the missing person as the reason
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "An unattended execution refuses and writes nothing, and says that the absence of a person is the reason."
+          exercises: [retire-root-authorization]
+          observes: [retire-root-authorization, project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "retire-root <name> --non-interactive"
+            - verify: error
+              target: retire-root-authorization
+              expected: "refused, the message naming the absence of a person to authorize as the reason"
+            - verify: state
+              target: project-state
+              expected: "nothing written"
+        - name: an unattended preview succeeds and writes nothing
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "An unattended preview succeeds and writes nothing."
+          exercises: [retire-root-authorization]
+          observes: [retire-root-authorization, project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "retire-root <name> --preview --non-interactive"
+            - verify: state
+              target: retire-root-authorization
+              expected: "preview reported, exit zero"
+            - verify: state
+              target: project-state
+              expected: "nothing written"
+        - name: retiring a root whose features have artifacts is permitted
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "Retiring a root whose features have artifacts is permitted by this operation."
+          exercises: [retire-root-authorization]
+          observes: [retire-root-authorization]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "root whose features carry buildfiles, testcases, and generated code; authorized run"
+            - verify: state
+              target: retire-root-authorization
+              expected: "the retirement proceeds — built features do not block root retirement"
+        - name: retiring one of those features on its own remains refused with its existing reason and message
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "Retiring one of those features on its own remains refused with its existing reason and message."
+          exercises: [feature-retirement-refusal]
+          observes: [feature-retirement-refusal]
+          steps:
+            - action: render
+              target: feature-retirement-refusal
+              value: "feature-level retirement of a built feature via the existing amendment path"
+            - verify: error
+              target: feature-retirement-refusal
+              expected: "still refused by feature-retirement-has-output, with its existing message unchanged"
+        - name: the retirement record is not accepted as the owner of any surviving work
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-authorization-preview-and-unattended-runs"
+            text: "The retirement record is not accepted as the owner of any surviving work."
+          exercises: [retire-root-authorization]
+          observes: [rehome-validation]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "disposition attempting to re-home surviving work to the retirement record itself"
+            - verify: error
+              target: rehome-validation
+              expected: "refused — only a live feature can own surviving work; a record of an ending cannot"

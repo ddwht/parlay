@@ -1,4 +1,4 @@
-// parlay-feature: domain-model-editor/feature-contributions
+// parlay-feature: parlay-tool/domain-document-api
 // parlay-component: cross-cutting/contribution-impact
 // parlay-artifact: test
 
@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/editor/domain"
+	"github.com/ddwht/parlay/core/internal/domainmodel"
 )
 
-func rootModel() domain.Model {
-	return domain.Model{
+func rootModel() domainmodel.Model {
+	return domainmodel.Model{
 		SchemaVersion: 1,
-		Entities: []domain.Entity{
-			{Name: "ExpenseReport", Fields: []domain.Field{{Name: "id", Type: "uuid"}}},
+		Entities: []domainmodel.Entity{
+			{Name: "ExpenseReport", Fields: []domainmodel.Field{{Name: "id", Type: "uuid"}}},
 		},
 	}
 }
@@ -24,8 +24,8 @@ func rootModel() domain.Model {
 // exists for: the proposal is one line, and the work it creates is spread
 // across everyone else's fixtures.
 func TestImpactNamesTheFeaturesAndFixturesANewFieldReaches(t *testing.T) {
-	contribution := domain.Model{SchemaVersion: 1, Entities: []domain.Entity{
-		{Name: "ExpenseReport", Fields: []domain.Field{
+	contribution := domainmodel.Model{SchemaVersion: 1, Entities: []domainmodel.Entity{
+		{Name: "ExpenseReport", Fields: []domainmodel.Field{
 			{Name: "id", Type: "uuid"},
 			{Name: "settledAt", Type: "datetime"},
 		}},
@@ -78,14 +78,14 @@ func TestImpactNamesTheFeaturesAndFixturesANewFieldReaches(t *testing.T) {
 // existing fixture holds one. Reporting an empty audience would read as "we
 // checked and found people".
 func TestABrandNewEntityHasNoAudience(t *testing.T) {
-	contribution := domain.Model{SchemaVersion: 1, Entities: []domain.Entity{
-		{Name: "Approval", Fields: []domain.Field{{Name: "id", Type: "uuid"}}},
+	contribution := domainmodel.Model{SchemaVersion: 1, Entities: []domainmodel.Entity{
+		{Name: "Approval", Fields: []domainmodel.Field{{Name: "id", Type: "uuid"}}},
 	}}
 	imp := Impact("approvals", "p", rootModel(), contribution, ProjectFacts{
 		EntityUsers: map[string][]string{"ExpenseReport": {"dashboard"}},
 	})
 
-	if len(imp.Additions) != 1 || imp.Additions[0].Kind != domain.KindEntity {
+	if len(imp.Additions) != 1 || imp.Additions[0].Kind != domainmodel.KindEntity {
 		t.Fatalf("additions = %#v", imp.Additions)
 	}
 	if len(imp.Affects) != 0 {
@@ -96,8 +96,8 @@ func TestABrandNewEntityHasNoAudience(t *testing.T) {
 // A conflict makes the contribution inapplicable, and the people relying on
 // the root's description are exactly who needs to know.
 func TestAConflictIsReportedAndBlocksApplication(t *testing.T) {
-	contribution := domain.Model{SchemaVersion: 1, Entities: []domain.Entity{
-		{Name: "ExpenseReport", Fields: []domain.Field{{Name: "id", Type: "string"}}},
+	contribution := domainmodel.Model{SchemaVersion: 1, Entities: []domainmodel.Entity{
+		{Name: "ExpenseReport", Fields: []domainmodel.Field{{Name: "id", Type: "string"}}},
 	}}
 	imp := Impact("submit-expense", "p", rootModel(), contribution, ProjectFacts{
 		EntityUsers: map[string][]string{"ExpenseReport": {"dashboard"}},
@@ -115,9 +115,9 @@ func TestAConflictIsReportedAndBlocksApplication(t *testing.T) {
 }
 
 func TestProposedEntitiesMapsEachNameToItsProposer(t *testing.T) {
-	got := ProposedEntities(map[string]domain.Model{
-		"approvals": {Entities: []domain.Entity{{Name: "Approval"}}},
-		"payments":  {Entities: []domain.Entity{{Name: "Payment"}}},
+	got := ProposedEntities(map[string]domainmodel.Model{
+		"approvals": {Entities: []domainmodel.Entity{{Name: "Approval"}}},
+		"payments":  {Entities: []domainmodel.Entity{{Name: "Payment"}}},
 	})
 	if got["Approval"] != "approvals" || got["Payment"] != "payments" {
 		t.Errorf("proposals = %#v", got)
@@ -128,9 +128,9 @@ func TestProposedEntitiesMapsEachNameToItsProposer(t *testing.T) {
 // is named, the answer has to be the same on every run — a message that
 // changes between two identical runs reads as the project changing.
 func TestASharedProposalNamesAStableProposer(t *testing.T) {
-	in := map[string]domain.Model{
-		"zebra": {Entities: []domain.Entity{{Name: "Approval"}}},
-		"alpha": {Entities: []domain.Entity{{Name: "Approval"}}},
+	in := map[string]domainmodel.Model{
+		"zebra": {Entities: []domainmodel.Entity{{Name: "Approval"}}},
+		"alpha": {Entities: []domainmodel.Entity{{Name: "Approval"}}},
 	}
 	for i := 0; i < 20; i++ {
 		if got := ProposedEntities(in)["Approval"]; got != "alpha" {

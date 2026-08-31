@@ -453,8 +453,6 @@ func init() {
 
 	// Utility commands for agent consumption
 	rootCmd.AddCommand(validateCmd)
-	// parlay-feature: design-loop/vocabulary-validation
-	// parlay-component: cross-cutting/core-cli-wiring
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(upgradeCmd)
 
@@ -470,8 +468,9 @@ func init() {
 	// Multi-root commands.
 	rootCmd.AddCommand(addRootCmd)
 	rootCmd.AddCommand(promoteRootCmd)
+	rootCmd.AddCommand(retireRootCmd)
+	rootCmd.AddCommand(retiredRootsCmd)
 	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(domainEditCmd)
 
 	// Agent-facing probes live under `parlay internal`; the AI-agent stubs
 	// stay runnable but out of the help listing. See internal_group.go.

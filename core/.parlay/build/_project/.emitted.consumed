@@ -1,0 +1,14 @@
+core/internal/commands/retire_root.go
+core/internal/commands/root_dispositions.go
+core/internal/commands/root_retirement_sweep.go
+core/internal/commands/root_archive.go
+core/internal/commands/retired_roots.go
+core/internal/commands/retirement_journal.go
+core/internal/commands/root.go
+core/internal/config/roots_index.go
+core/internal/commands/retire_root_test.go
+core/internal/commands/root_dispositions_test.go
+core/internal/commands/root_retirement_sweep_test.go
+core/internal/commands/root_archive_test.go
+core/internal/commands/retired_roots_test.go
+core/internal/commands/retirement_journal_test.go

@@ -1,4 +1,4 @@
-// parlay-feature: domain-model-editor/feature-contributions
+// parlay-feature: parlay-tool/domain-document-api
 // parlay-component: domain-impact
 
 package commands
@@ -13,8 +13,8 @@ import (
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/domainmodel"
 	"github.com/ddwht/parlay/core/internal/parser"
-	"github.com/ddwht/parlay/internal/editor/domain"
 	"github.com/spf13/cobra"
 )
 
@@ -59,8 +59,8 @@ func runDomainImpact(cmd *cobra.Command, args []string) error {
 	slug := parser.FeatureSlug(args[0])
 
 	contributionPath := filepath.Join(cfg.FeaturePath(slug), ContributionFile)
-	contribution, err := domain.LoadFile(contributionPath)
-	if errors.Is(err, domain.ErrNoContribution) {
+	contribution, err := domainmodel.LoadFile(contributionPath)
+	if errors.Is(err, domainmodel.ErrNoContribution) {
 		out := domainImpactOutput{
 			ContributionImpact: agent.ContributionImpact{
 				Feature: slug, Path: contributionPath, Applicable: true,
@@ -73,7 +73,7 @@ func runDomainImpact(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("read %s: %w", contributionPath, err)
 	}
 
-	root, _, err := domain.Load(cmd.Context(), cfg.Root.Path)
+	root, _, err := domainmodel.Load(cmd.Context(), cfg.Root.Path)
 	if err != nil {
 		return fmt.Errorf("read the project domain model: %w", err)
 	}
@@ -89,7 +89,7 @@ func runDomainImpact(cmd *cobra.Command, args []string) error {
 	}
 
 	if domainImpactApply {
-		if _, applyErr := domain.ApplyContribution(cmd.Context(), cfg.Root.Path, contribution); applyErr != nil {
+		if _, applyErr := domainmodel.ApplyContribution(cmd.Context(), cfg.Root.Path, contribution); applyErr != nil {
 			// The report is still emitted — a refusal the caller cannot see
 			// the reason for is a refusal they will work around. The conflict
 			// detail is in out.Conflicts.
@@ -178,14 +178,14 @@ func collectProjectFacts(cfg *config.Context) (agent.ProjectFacts, error) {
 // domain-model validator reports a broken model against the file itself, and
 // failing an unrelated feature's capabilities check because a third feature's
 // contribution is malformed would be the wrong place to learn about it.
-func loadContributions(cfg *config.Context) map[string]domain.Model {
+func loadContributions(cfg *config.Context) map[string]domainmodel.Model {
 	features, err := cfg.AllFeatures()
 	if err != nil {
 		return nil
 	}
-	out := map[string]domain.Model{}
+	out := map[string]domainmodel.Model{}
 	for _, slug := range features {
-		m, loadErr := domain.LoadFile(filepath.Join(cfg.FeaturePath(slug), ContributionFile))
+		m, loadErr := domainmodel.LoadFile(filepath.Join(cfg.FeaturePath(slug), ContributionFile))
 		if loadErr != nil {
 			continue
 		}

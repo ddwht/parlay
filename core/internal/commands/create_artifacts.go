@@ -1,7 +1,6 @@
 // parlay-feature: artifact-decision
 // parlay-component: ArtifactDecisionPrompt
 // parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
-// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 
 package commands
 
@@ -14,13 +13,6 @@ var createArtifactsCmdImpl = &cobra.Command{
 	Short: "Determine and create surface.yaml/surface.md, capabilities.yaml/infrastructure.md, or both (use /parlay-create-artifacts skill)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runCreateArtifactsHandler,
-}
-
-func init() {
-	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
-	// --no-editor: skip the open-editor prompt at the end. Also binds the
-	// deprecated --no-studio spelling.
-	registerNoEditorFlags(createArtifactsCmdImpl)
 }
 
 // runCreateArtifactsHandler is the RunE for `parlay create-artifacts`.

@@ -283,7 +283,7 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
    ```
    ````
 
-   The list is not decoration and it is not the same as the recommended set from step 4 — the designer may have overridden it, and what matters downstream is what is on disk. The driver reads it to decide which follow-on options to offer at the boundary; `domain-model` in particular earns an offer to open the editor before the build phase reads the model. Report the names, not the filenames: `domain-model`, `surface`, `capabilities`, `infrastructure`.
+   The list is not decoration and it is not the same as the recommended set from step 4 — the designer may have overridden it, and what matters downstream is what is on disk. The driver reads it to decide which follow-on options to offer at the boundary; `domain-model` in particular earns a review pause before the build phase reads the model. Report the names, not the filenames: `domain-model`, `surface`, `capabilities`, `infrastructure`.
 
 ## Error Handling
 

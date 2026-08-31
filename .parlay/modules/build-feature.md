@@ -283,7 +283,7 @@ parlay internal gate @{feature} --stage build
    - Process exit code is the source of truth: zero on success, non-zero on any error path.
    - CI scripts MUST NOT pattern-match stdout/stderr text. Wording may change across versions; only the exit code is stable.
    - Two CI workers running against the same source state produce buildfiles whose recorded source triples are identical for every binding (including any AI-resolved ones). Lexical AI reasoning text may differ; the recorded triples are stable.
-   - This rule governs build-feature's own output only. `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception — its wording is pinned stable on purpose for `studio-cli-hooks` to pattern-match — see that skill's step 6 for why. Don't generalize this exception; don't "fix" that one to match this rule.
+   - This rule governs build-feature's own output only. `create-domain-model`'s greenfield-stub message is a deliberate, narrow exception — its wording is pinned stable by that feature's own testcases — see that skill's step 6 for why. Don't generalize this exception; don't "fix" that one to match this rule.
 
 8. **Generate buildfile.yaml** at `.parlay/build/{feature}/buildfile.yaml` (tool-internal location — designer never sees this):
    - Set `feature:`, `schema_version: 1`, and `adapter:` (or `adapter-set:` for multi-target projects) fields

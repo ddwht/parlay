@@ -26,17 +26,6 @@ jobs:
         with:
           go-version: "1.24.2"
 
-      # The binary embeds the Vite bundle, so the release needs a Node toolchain.
-      # Its absence here is why every released binary shipped an empty dist/ and
-      # answered the UI routes with a 503 — goreleaser's before-hooks now run the
-      # npm build, and those hooks cannot run without this step.
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/editor/ui/package-lock.json
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:

@@ -1,63 +1,59 @@
-// parlay-feature: domain-model-editor/domain-model-editor-validation
+// parlay-feature: parlay-tool/domain-document-api
 // parlay-component: cross-cutting/out-of-process-validate-endpoint
 //
-// The component name says out-of-process and the mechanism is not, which is
-// deliberate rather than overlooked. The identifier is a spec anchor: it is named
-// by studio/.parlay/build/domain-model-editor/domain-model-editor-validation/
-// buildfile.yaml and its testcases, and the marker-to-buildfile correspondence is
-// what the coverage and drift checks read. Renaming it here alone would break
-// that correspondence; renaming it properly is a spec migration across those
-// artifacts, which is not this change. Recorded so the next reader knows the
-// staleness was priced rather than missed.
+// The component name says out-of-process and there has been neither a process
+// boundary nor an endpoint for some time. The identifier is a spec anchor read
+// by the coverage and drift checks through the marker-to-buildfile
+// correspondence; renaming it here alone would break that correspondence, and
+// renaming it properly is a spec migration across those artifacts. Recorded so
+// the next reader knows the staleness was priced rather than missed.
 // parlay-artifact: test
 //
-// The parity / drift alarm, and the editor's no-binary proof.
+// The one-engine alarm.
 //
-// The alarm runs a shared fixture corpus through BOTH Core's domain-model
-// validator directly AND the POST /api/domain-model/validate endpoint, and
-// asserts the two finding sets are identical per fixture. Because both paths now
-// run the SAME in-process validator, it guards the editor's wrapper — the YAML a
-// draft is re-serialized to, the wire Model round-trip, the element-path and
-// severity mapping — and not Core's rules. A mismatch means the editor perturbed
-// the model on the way through. That was always the suite's purpose; its own
-// comment said so while the two paths were two processes.
+// There is exactly one set of domain-model rules in this repository —
+// agent.ValidateDomainModelStructuredMode — and three ways to reach it. This
+// suite runs a shared fixture corpus through all three and asserts they return
+// the same findings:
 //
-// Two things changed with the merge.
+//	direct  agent.ValidateDomainModelStructuredMode on the fixture bytes
+//	seam    domainmodel.Validate through the domainValidator ValidatorFunc,
+//	        which is the path the write gate uses
+//	cli     `parlay validate --type domain-model --json` reading the bytes
+//	        from stdin
 //
-// It used to sit behind `//go:build integration` and skip unless a built `parlay`
-// was on PATH or at PARLAY_BIN, because the "direct" side shelled out to one.
-// Neither the tag nor the skip gates anything now — the direct side is a function
-// call — so it runs on the default `go test ./...` like any other test. A drift
-// alarm that only rings in a CI stage somebody remembered to configure is most of
-// a drift alarm missing.
+// What it guards is not the rules — one engine cannot disagree with itself —
+// but the three wrappers around it. The seam leg decodes the fixture into a
+// Model and lets domainmodel re-serialize it, so a round-trip that perturbs
+// the document (a dropped operations block, a re-typed scalar, a lost field)
+// shows up as a finding that one leg reports and another does not. The CLI leg
+// covers the label and the JSON projection. A mismatch means a wrapper changed
+// the model or the finding on the way through.
 //
-// And it moved here from internal/editor/domain. The direct side needs
-// core/internal/agent, which is importable only from under core/; the endpoint
-// side needs the editor's subsystem, which is importable from anywhere. This
-// package is the only one that can see both. The corpus below is carried over
-// unchanged.
+// It replaces a two-leg version whose second leg was an HTTP endpoint in the
+// browser editor. The editor is gone; the witness is not, because deleting a
+// cross-path check and promising a replacement later is how the paths get to
+// disagree unobserved. Phase 4.1 adds the `parlay domain validate` leg to this
+// same corpus when that command exists.
 
 package commands
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"gopkg.in/yaml.v3"
 
 	"github.com/ddwht/parlay/core/internal/agent"
-	"github.com/ddwht/parlay/internal/editor/domain"
+	"github.com/ddwht/parlay/core/internal/domainmodel"
 )
 
 // parityCorpus is one draft per closed error code plus a clean fixture. Each is
-// validated through both paths; the finding sets must match.
+// validated through every leg; the finding sets must match.
 var parityCorpus = map[string]string{
 	"clean": `schema_version: 1
 entities:
@@ -125,99 +121,99 @@ operations:
 `,
 }
 
+// findingKey is the normalized comparison form: the closed code, the element
+// path the finding is anchored to, and the severity. Everything the three legs
+// are allowed to render differently (field names, JSON tags, struct types) is
+// dropped; everything they must agree on is kept.
+func findingKey(code, path, severity string) string {
+	return code + "@" + path + "/" + severity
+}
+
 // directFindings runs the fixture bytes straight through Core's validator — the
-// same call, label, and mode the CLI's --json mode uses — and returns the
-// normalized (sorted) finding key set.
+// same call, label, and mode the CLI's --json mode uses.
 func directFindings(t *testing.T, model []byte) []string {
 	t.Helper()
-	raw := agent.ValidateDomainModelStructuredMode(domain.StdinLabel, model, agent.ModeAuthoring)
+	raw := agent.ValidateDomainModelStructuredMode(domainmodel.StdinLabel, model, agent.ModeAuthoring)
 	keys := make([]string, 0, len(raw))
 	for _, f := range raw {
-		keys = append(keys, f.Code+"@"+f.Context+"/"+f.Severity)
+		keys = append(keys, findingKey(f.Code, f.Context, f.Severity))
 	}
 	sort.Strings(keys)
 	return keys
 }
 
-// parityValidateRequest and parityValidateResponse are the wire shapes of the
-// validate endpoint, declared here rather than reused from the editor package
-// because they are unexported there. Restating them is the point: the suite
-// exercises the endpoint the way the browser does, over JSON, and a change to
-// either shape should surface here as a decode failure rather than be absorbed
-// by sharing a struct with the code under test.
-type parityValidateRequest struct {
-	Model domain.Model `json:"model"`
-}
-
-type parityValidateResponse struct {
-	Fields []struct {
-		Field    string `json:"field"`
-		Code     string `json:"code"`
-		Severity string `json:"severity"`
-	} `json:"fields"`
-}
-
-// endpointFindings runs the model bytes through the POST /validate endpoint
-// (which calls the same validator) and returns the normalized finding key set.
-func endpointFindings(t *testing.T, modelYAML []byte) []string {
+// seamFindings runs the fixture through the ValidatorFunc seam: decode to a
+// Model, then let domainmodel.Validate re-serialize it and call domainValidator
+// — the exact path a save takes before it writes.
+func seamFindings(t *testing.T, modelYAML []byte) []string {
 	t.Helper()
 
-	// The endpoint receives the draft as JSON. Parse the fixture YAML into the
-	// wire Model and re-marshal to the validate request body; the wrapper then
-	// re-serializes it to YAML for the validator.
-	var model domain.Model
+	var model domainmodel.Model
 	if err := yaml.Unmarshal(modelYAML, &model); err != nil {
 		t.Fatalf("parse fixture yaml: %v", err)
 	}
-	// Carry the deprecated operations block onto the wire model so the endpoint
-	// sees it (mirrors how the browser draft would).
+	// The deprecated operations block is not part of the typed Model, so carry
+	// it across explicitly; a draft that drops it on the way in would validate
+	// clean for the wrong reason.
 	var opsProbe struct {
 		Operations []map[string]any `yaml:"operations"`
 	}
 	_ = yaml.Unmarshal(modelYAML, &opsProbe)
 	model.Operations = opsProbe.Operations
 
-	body, err := json.Marshal(parityValidateRequest{Model: model})
+	// The real validator Core wires in production. Injecting one here would
+	// test the injection.
+	findings, err := domainmodel.Validate(context.Background(), domainValidator, model)
 	if err != nil {
-		t.Fatalf("marshal request: %v", err)
+		t.Fatalf("validate through the seam: %v", err)
 	}
-
-	// The real subsystem with the real validator Core wires in production.
-	// Injecting one here would test the injection.
-	s := domain.New("/project", domainValidator, domain.ContributionSource{})
-	r := chi.NewRouter()
-	s.Mount(r)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/domain-model/validate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("endpoint status = %d; body=%s", w.Code, w.Body.String())
-	}
-	var resp parityValidateResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode endpoint output: %v\n%s", err, w.Body.String())
-	}
-	keys := make([]string, 0, len(resp.Fields))
-	for _, f := range resp.Fields {
-		keys = append(keys, f.Code+"@"+f.Field+"/"+f.Severity)
+	keys := make([]string, 0, len(findings))
+	for _, f := range findings {
+		keys = append(keys, findingKey(f.Code, f.Field, f.Severity))
 	}
 	sort.Strings(keys)
 	return keys
 }
 
-// TestValidateParityAcrossEndpointAndDirectCLI is the drift alarm.
-func TestValidateParityAcrossEndpointAndDirectCLI(t *testing.T) {
+// cliFindings runs the fixture through `validate --type domain-model --json`
+// with the bytes on stdin and decodes the finding array it prints.
+func cliFindings(t *testing.T, modelYAML []byte) []string {
+	t.Helper()
+
+	cmd, out := newDMVCmd(string(modelYAML))
+	// A blocking finding makes this return an ExitCodeError, which is the
+	// contract, not a failure of the run — the findings are on stdout either
+	// way and comparing them is the point.
+	_ = runValidateDomainModelJSON(cmd, "-")
+
+	var findings []agent.ValidationError
+	if err := json.Unmarshal(out.Bytes(), &findings); err != nil {
+		t.Fatalf("decode CLI output: %v\n%s", err, out.String())
+	}
+	keys := make([]string, 0, len(findings))
+	for _, f := range findings {
+		keys = append(keys, findingKey(f.Code, f.Context, f.Severity))
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// TestValidateParityAcrossReachPaths is the one-engine alarm.
+func TestValidateParityAcrossReachPaths(t *testing.T) {
 	for name, model := range parityCorpus {
 		t.Run(name, func(t *testing.T) {
 			direct := directFindings(t, []byte(model))
-			endpoint := endpointFindings(t, []byte(model))
-			if strings.Join(direct, "|") != strings.Join(endpoint, "|") {
-				t.Fatalf("parity drift for %q:\n  direct:   %v\n  endpoint: %v", name, direct, endpoint)
+			seam := seamFindings(t, []byte(model))
+			cli := cliFindings(t, []byte(model))
+
+			if strings.Join(direct, "|") != strings.Join(seam, "|") {
+				t.Errorf("seam disagrees with the validator for %q:\n  direct: %v\n  seam:   %v", name, direct, seam)
 			}
-			// A corpus entry that provokes nothing on either side would pass
-			// this comparison while testing nothing. Only "clean" is allowed to
-			// be empty.
+			if strings.Join(direct, "|") != strings.Join(cli, "|") {
+				t.Errorf("CLI disagrees with the validator for %q:\n  direct: %v\n  cli:    %v", name, direct, cli)
+			}
+			// A corpus entry that provokes nothing on every leg would pass the
+			// comparisons while testing nothing. Only "clean" may be empty.
 			if name != "clean" && len(direct) == 0 {
 				t.Fatalf("fixture %q produced no findings; it no longer exercises the code it names", name)
 			}
@@ -225,23 +221,23 @@ func TestValidateParityAcrossEndpointAndDirectCLI(t *testing.T) {
 	}
 }
 
-// TestEditorValidatesWithNoBinary is what replaces
+// TestValidatesWithNoBinary is what replaces
 // TestBinaryLocatedOnceAtConstruction, which asserted the editor resolved a
-// `parlay` executable once at construction and reused it. There is no executable
-// to resolve now; the claim worth keeping is that validation depends on nothing
-// outside the process.
+// `parlay` executable once at construction and reused it. There is no
+// executable to resolve now; the claim worth keeping is that validation
+// through the seam depends on nothing outside the process.
 //
-// PATH is emptied rather than trusted to be clean. This machine has a real parlay
-// installed, so a test that merely ran here would pass just as happily against
-// the subprocess it is meant to prove gone.
-func TestEditorValidatesWithNoBinary(t *testing.T) {
+// PATH is emptied rather than trusted to be clean. This machine has a real
+// parlay installed, so a test that merely ran here would pass just as happily
+// against the subprocess it is meant to prove gone.
+func TestValidatesWithNoBinary(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("PARLAY_BIN", "")
 
 	// A draft with no schema_version, so Core has something to say about it.
 	// Asserting a specific code confirms the real rules ran — an empty result
 	// would be equally consistent with a validator that did nothing at all.
-	got := endpointFindings(t, []byte("entities:\n  - name: Order\n    fields:\n      - name: id\n        type: uuid\n        required: true\n"))
+	got := seamFindings(t, []byte("entities:\n  - name: Order\n    fields:\n      - name: id\n        type: uuid\n        required: true\n"))
 	if !slices.ContainsFunc(got, func(k string) bool { return strings.HasPrefix(k, "missing-schema-version@") }) {
 		t.Fatalf("want missing-schema-version from the real validator with no binary on PATH, got %v", got)
 	}

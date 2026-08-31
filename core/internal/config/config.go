@@ -4,7 +4,6 @@
 // parlay-extends: initiatives/directory-classification-validation
 // parlay-extends: initiatives/duplicate-slug-detection
 // parlay-extends: initiatives/cross-tree-traversal-consistency
-// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 
 package config
 
@@ -24,18 +23,10 @@ type ProjectConfig struct {
 	// the raw key via its own inline struct to convert old projects into an
 	// adapter-set; nothing else may consult it.
 
-	// NoEditor mirrors the parlay.no_editor key in .parlay/config.yaml:
-	// when true, the offer to open the domain-model editor is suppressed
-	// for every invocation in this project, regardless of the --no-editor
-	// flag. The merge with the per-invocation flag is logical OR — either
-	// source suppresses the offer.
-	//
-	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
-	NoEditor bool `yaml:"no_editor,omitempty"`
-
-	// no_studio: (the pre-rename spelling of no_editor) was removed in
-	// v0.3. A config still carrying it gets the default behavior; set
-	// parlay.no_editor.
+	// The domain-model editor's opt-out key (and its pre-rename spelling)
+	// was removed with the editor itself — there is no offer left to
+	// suppress. A config still carrying either key is silently inert
+	// (decoding is non-strict).
 
 	// Feedback mirrors the parlay.feedback key in .parlay/config.yaml:
 	// when true, findings and per-run tallies are appended to
@@ -75,17 +66,6 @@ type ProjectConfig struct {
 	// Old projects whose founding docs drifted before the switch run
 	// `parlay migrate-ledger` once to accept current text as the founding
 	// state.
-}
-
-// NoEditorEnabled reports whether this project has opted out of the
-// open-editor offer via parlay.no_editor. Callers use this rather than
-// reading the field so the answer stays single-sourced. (The pre-rename
-// no_studio spelling was honoured here until v0.3.)
-func (c *ProjectConfig) NoEditorEnabled() bool {
-	if c == nil {
-		return false
-	}
-	return c.NoEditor
 }
 
 // MachineCriteriaAuthorityAllowed reports whether this project has opted in to

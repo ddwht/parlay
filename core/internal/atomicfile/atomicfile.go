@@ -1,4 +1,4 @@
-// parlay-feature: studio-foundation/studio-deployer
+// parlay-feature: parlay-tool/atomic-file-writes
 // parlay-section: cross-cutting
 // parlay-extends: studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency
 
@@ -20,9 +20,9 @@
 // is what makes mtimes mean something — a changed timestamp indicates changed
 // content rather than merely a command having been run.
 //
-// This code is salvaged from internal/editor/deployer, which is being deleted
-// with the design-loop skill it deployed. It was the better-engineered of the two
-// deployers on exactly this point: core's paths did unconditional os.WriteFile,
+// This code was salvaged from the editor tree's deployer, ahead of that tree's
+// deletion. It was the better-engineered of the two deployers on exactly this
+// point: core's paths did unconditional os.WriteFile,
 // rewriting every file on every upgrade. Porting it before the deletion, rather
 // than after, is deliberate — the alternative is deleting it and hoping to
 // remember.

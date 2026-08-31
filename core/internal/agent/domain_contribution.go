@@ -1,7 +1,7 @@
-// parlay-feature: domain-model-editor/feature-contributions
+// parlay-feature: parlay-tool/domain-document-api
 // parlay-component: cross-cutting/contribution-impact
 
-// The diff itself lives in internal/editor/domain, with the loader and the
+// The diff itself lives in core/internal/domainmodel, with the loader and the
 // serializer — one decoder and one definition of "conflict" for the file. What
 // lives here is the layer core owns: which features a proposed change reaches,
 // and which of their fixtures would have to carry a new field.
@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/ddwht/parlay/core/internal/domainmodel"
 	"github.com/ddwht/parlay/core/internal/parser"
-	"github.com/ddwht/parlay/internal/editor/domain"
 )
 
 // FixtureEntity is one (feature, fixture, entity) triple present in the
@@ -64,12 +64,12 @@ type FixtureNeed struct {
 // ContributionImpact is the whole answer for one feature: what it proposes,
 // what disagrees, what was already there, and who it reaches.
 type ContributionImpact struct {
-	Feature   string            `json:"feature"`
-	Path      string            `json:"path"`
-	Additions []domain.Element  `json:"additions"`
-	Conflicts []domain.Conflict `json:"conflicts"`
-	Redundant []domain.Element  `json:"redundant"`
-	Affects   []EntityAudience  `json:"affects"`
+	Feature   string                 `json:"feature"`
+	Path      string                 `json:"path"`
+	Additions []domainmodel.Element  `json:"additions"`
+	Conflicts []domainmodel.Conflict `json:"conflicts"`
+	Redundant []domainmodel.Element  `json:"redundant"`
+	Affects   []EntityAudience       `json:"affects"`
 	// Applicable is false when the contribution conflicts. Stated rather than
 	// left to be derived from len(conflicts), because "can this land" is the
 	// question the loop asks and a caller getting the derivation wrong would
@@ -79,8 +79,8 @@ type ContributionImpact struct {
 
 // Impact diffs a feature's contribution against the root model and works out
 // who the additions reach.
-func Impact(feature, path string, root, contribution domain.Model, facts ProjectFacts) ContributionImpact {
-	d := domain.Diff(root, contribution)
+func Impact(feature, path string, root, contribution domainmodel.Model, facts ProjectFacts) ContributionImpact {
+	d := domainmodel.Diff(root, contribution)
 
 	imp := ContributionImpact{
 		Feature:    feature,
@@ -98,7 +98,7 @@ func Impact(feature, path string, root, contribution domain.Model, facts Project
 	newFieldsByEntity := map[string][]string{}
 	var touched []string
 	for _, a := range d.Additions {
-		if a.Kind != domain.KindField || a.Entity == "" {
+		if a.Kind != domainmodel.KindField || a.Entity == "" {
 			continue
 		}
 		if _, seen := newFieldsByEntity[a.Entity]; !seen {
@@ -109,7 +109,7 @@ func Impact(feature, path string, root, contribution domain.Model, facts Project
 	// A conflict reaches people too — arguably more urgently, since somebody
 	// is already relying on the root's description.
 	for _, c := range d.Conflicts {
-		if c.Kind != domain.KindField || c.Entity == "" {
+		if c.Kind != domainmodel.KindField || c.Entity == "" {
 			continue
 		}
 		if _, seen := newFieldsByEntity[c.Entity]; !seen {
@@ -189,7 +189,7 @@ func CapabilityEntities(path string, content []byte) []string {
 // A name proposed by more than one feature keeps the first proposer in sorted
 // feature order, so the message is stable across runs. Which of two features
 // gets named matters far less than the message being reproducible.
-func ProposedEntities(contributions map[string]domain.Model) map[string]string {
+func ProposedEntities(contributions map[string]domainmodel.Model) map[string]string {
 	features := make([]string, 0, len(contributions))
 	for f := range contributions {
 		features = append(features, f)

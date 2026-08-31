@@ -339,8 +339,13 @@ func TestLayoutSchemaVersionFieldIsSnakeCase(t *testing.T) {
 // TestDesignSpecScopedAwayFromLayout guards the Phase 5 design-spec
 // scoping decision: design-spec.yaml must document itself as
 // non-layout enrichment only, with the per-fragment structural layout:
-// field removed and cross-references to layout.schema.md in both
-// directions.
+// field removed and a cross-reference to layout.schema.md.
+//
+// The reverse leg — layout.schema.md carrying a heading back to
+// design-spec.schema.md — was asserted here until layout.schema.md's
+// Design-Loop and Figma claims were removed by governance. layout.schema.md
+// now states its own scope without naming design-spec, so only the
+// design-spec side of the cross-reference is checked.
 func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
 	designSpec, err := schemasFS.ReadFile("schemas/design-spec.schema.md")
 	if err != nil {
@@ -357,20 +362,6 @@ func TestDesignSpecScopedAwayFromLayout(t *testing.T) {
 		if !strings.Contains(designSpecBody, kw) {
 			t.Errorf("design-spec.schema.md missing %q", kw)
 		}
-	}
-
-	layout, err := schemasFS.ReadFile("schemas/layout.schema.md")
-	if err != nil {
-		t.Fatalf("failed to read layout.schema.md: %v", err)
-	}
-	// Anchored on a heading that names the other schema, not on the heading's
-	// exact wording. What matters is that layout.schema.md carries a section
-	// about its relationship to design-spec.schema.md; whether that heading says
-	// "Relationship to", "How this relates to", or something else is an editorial
-	// choice, and failing the build over it teaches people to stop editing
-	// headings rather than to keep the cross-reference.
-	if !hasHeadingMentioning(string(layout), "design-spec.schema.md") {
-		t.Error("layout.schema.md has no heading cross-referencing design-spec.schema.md")
 	}
 }
 

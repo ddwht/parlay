@@ -139,7 +139,7 @@ Running inline means loading the phase modules the subagent would have loaded �
 
 `kind` is `blocked` rather than the decision's own kind because the envelope reports the run's outcome, not the decision's category; `decision` carries the category. Print the phase's `question` and `options` verbatim — the point of the envelope is that whoever reads the CI log can see the choice they need to make without re-running anything.
 
-**What does not change.** Gap analysis still runs and still reports; critical gaps are surfaced in the log even though the boundary is auto-answered, because a gap the run advanced past is exactly what a later reader needs to find. `parlay internal gate --stage build` blockers at the build boundary are still hard blocks — they were never acknowledgeable interactively either, so there is nothing for the flag to relax. The domain-model editor offer (step 11) is skipped entirely: it opens a browser and blocks on a human, which unattended means hanging forever.
+**What does not change.** Gap analysis still runs and still reports; critical gaps are surfaced in the log even though the boundary is auto-answered, because a gap the run advanced past is exactly what a later reader needs to find. `parlay internal gate --stage build` blockers at the build boundary are still hard blocks — they were never acknowledgeable interactively either, so there is nothing for the flag to relax.
 
 **Thread the flag into the phase subagents.** They raise the decisions, so they need to know a human will not see them — a phase aware of the mode declares its `default:` and, where it has a choice, prefers reporting a condition over raising a decision nobody can answer. Pass it in the subagent prompt alongside the feature reference and starting phase.
 
@@ -195,7 +195,7 @@ Running inline means loading the phase modules the subagent would have loaded �
    - Pre-load on-disk upstream artifacts if `--from` skipped phases in this group (dialogs needs intents; artifacts needs intents + dialogs).
    - It runs **Gap analysis** at the end of the intents phase and the dialogs phase (step 9) and folds the result into the `context:` of the boundary decision.
    - Every boundary and every override comes back as a decision request; the driver prompts and resumes (see above).
-   - The artifacts phase's boundary decision carries an `artifacts:` list naming what it wrote. If that list contains `domain-model`, offer the editor (step 11) before the designer→build boundary is answered.
+   - The artifacts phase's boundary decision carries an `artifacts:` list naming what it wrote. If that list contains `domain-model`, tell the user where the file is and that hand edits made before the build phase are picked up (step 11), before the designer→build boundary is answered.
    - Whatever that list contains, run the contribution review (step 11.5) before the designer→build boundary is answered. A feature's contribution is a proposal against the project model, and the boundary is where it gets accepted or left standing.
 
 6. **Enter the build phase-group** (at the designer→build boundary):
@@ -229,22 +229,23 @@ Running inline means loading the phase modules the subagent would have loaded �
     - On "Stay" — resume the subagent with `stay`; let the user iterate. Re-run gap analysis on request.
     - On "Exit" — end the loop with the user-exit summary (step 12).
 
-11. **Offer the domain-model editor** (at the artifacts boundary, when the artifacts phase wrote `domain-model`):
+11. **Pause for a domain-model review** (at the artifacts boundary, when the artifacts phase wrote `domain-model`):
 
-    The loop is the normal path to a domain model — the artifacts phase authors `domain-model.yaml` whenever a feature introduces entities or vocabulary. The offer used to be dispatched only from `parlay create-domain-model`, the standalone command, so a designer who reached the model through the loop never saw it. This is where it belongs.
+    The loop is the normal path to a domain model — the artifacts phase authors `domain-model.yaml` whenever a feature introduces entities or vocabulary. A hand edit made here is read; one made after the build phase runs is not, and nothing else in the loop tells the designer that. This is where it belongs.
 
     Add one more option to the phase-boundary question of step 10, alongside Proceed / Stay / Exit:
 
-    > **Review and edit the domain model before building?** — Opens the editor in a browser. The build phase reads this model, so edits made now are picked up; edits made after are not.
+    > **Review and edit the domain model before building?** — Opens nothing — edit the YAML directly. The build phase reads this model, so edits made now are picked up; edits made after are not.
 
     On accept:
-    - Run `parlay domain-edit`. **Block until the session ends** — the editor exits on its own idle timeout or when the user stops it. Do not background it and advance; the whole point is that the build phase reads the model afterwards.
+    - Name the file: `<activeRoot>/domain-model.yaml`. The user edits it by hand, in whatever editor they already use. Wait for them to say they are done — do not advance while an edit is in progress; the whole point is that the build phase reads the model afterwards.
+    - Offer `parlay validate --type domain-model <path>` as the way to check an edit before advancing, and run it when they ask.
     - Then run `parlay internal check-drift @{feature-ref}` and report what it says. The domain model is a **shared** source: an edit dirties every feature that reads it, not only this one. Name that consequence — features other than this one may now be stale, and this loop will not fix them.
-    - Then re-present the boundary question. Opening the editor is not itself an answer to "advance to build?", and treating it as one would advance without a confirmation.
+    - Then re-present the boundary question. Pausing for a hand edit is not itself an answer to "advance to build?", and treating it as one would advance without a confirmation.
 
-    On decline, proceed as normal — the option is an offer, never a gate.
+    On decline, proceed as normal — the pause is an offer, never a gate.
 
-    The same three gates that governed the old prompt still apply: skip the offer entirely when `--no-editor` was passed or `parlay.no_editor` is true in project config, and when the session is not interactive. `--non-interactive` skips it for the same reason, more bluntly: the offer opens a browser and blocks until a human closes it, so unattended it does not time out, it hangs. (The pre-rename `--no-studio`/`parlay.no_studio` spellings were removed in v0.3 and are no longer honoured.)
+    Skip the pause entirely when the session is not interactive. `--non-interactive` skips it for the same reason: there is nobody to hand the file to, and an unattended run has no edit to wait for.
 
 11.5. **Review the feature's domain-model contribution** (at the artifacts→build boundary, before the boundary question of step 10 is answered):
 
@@ -264,13 +265,13 @@ Running inline means loading the phase modules the subagent would have loaded �
 
     Then add one more option to the phase-boundary question of step 10:
 
-    > **Accept this contribution into the project domain model?** — Accept / Adjust in the editor / Leave it proposed.
+    > **Accept this contribution into the project domain model?** — Accept / Edit the contribution file / Leave it proposed.
 
-    - **Accept** — run `parlay internal domain-impact @{feature-ref} --apply`. The merge is additive and goes through the same write path as `domain-edit`. Then run `parlay internal check-drift @{feature-ref}` and report it: the domain model is shared, so accepting dirties every feature that reads it, not only this one.
-    - **Adjust in the editor** — run `parlay domain-edit --contribution @{feature-ref}` and block until the session ends, exactly as step 11 does. Then re-run `domain-impact` and re-present, because the answer may have changed.
+    - **Accept** — run `parlay internal domain-impact @{feature-ref} --apply`. The merge is additive and goes through the same validated, atomic write path as any other accepted contribution. Then run `parlay internal check-drift @{feature-ref}` and report it: the domain model is shared, so accepting dirties every feature that reads it, not only this one.
+    - **Edit the contribution file** — edit `spec/intents/{feature}/domain-model.yaml` directly, then re-run `parlay internal domain-impact @{feature-ref}` and re-present, because the answer may have changed.
     - **Leave it proposed** — nothing is written. The contribution stays on disk, and other features referencing its entities report `capabilities-entity-pending` rather than failing. This is a valid answer, not a deferral to nag about.
 
-    **When `conflicts` is non-empty, do not offer Accept.** The command exits non-zero and writes nothing; there is no auto-merge and no last-writer-wins, because which of two descriptions is right is a design question. Present both descriptions and route the user back to the artifacts phase or into the editor.
+    **When `conflicts` is non-empty, do not offer Accept.** The command exits non-zero and writes nothing; there is no auto-merge and no last-writer-wins, because which of two descriptions is right is a design question. Present both descriptions and route the user back to the artifacts phase.
 
     `--non-interactive` skips the offer and reports the impact as information, exactly as it skips step 11 — an unattended run has nobody to accept on its behalf.
 
@@ -290,7 +291,7 @@ The driver — never a phase — uses AskUserQuestion for:
 - Readiness warnings response (proceed / stay / exit)
 - Phase failure recovery (retry / stay / exit)
 - Backing up to an earlier phase when `--from` prerequisites are missing or upstream output is stale
-- The domain-model editor offer at the artifacts boundary (step 11)
+- The domain-model review pause at the artifacts boundary (step 11)
 - The contribution review at the artifacts boundary — accept / adjust / leave proposed (step 11.5)
 - Every `parlay-decision` block a phase-group returns
 
@@ -305,7 +306,7 @@ The driver — never a phase — uses AskUserQuestion for:
 - NEVER create a new feature without explicit user confirmation — zero matches must prompt, never auto-create.
 - NEVER advance a phase-group boundary without a passing `parlay internal gate` for the target stage. The designer→build boundary is gated by the driver's own `parlay internal gate @{feature} --stage build` call (step 6); the build→code and code→done boundaries are gated by the injected **Step 0 — Gate** inside the build and code modules, which report a `failure` decision on a non-zero exit. A gate's `blockers[]` are hard blocks — not acknowledgeable; only `warnings[]` are.
 - NEVER advance past a `parlay internal gate --stage build` blocker at the build boundary — a blocker is a hard block; only warnings are acknowledgeable. (This subsumes the former bare check-readiness ERROR rule: the gate includes check-readiness and then some.)
-- NEVER treat opening the domain-model editor as an answer to the boundary question — re-ask after the editor session ends, or the loop advances on a confirmation nobody gave.
+- NEVER treat the domain-model review pause as an answer to the boundary question — re-ask after it, or the loop advances on a confirmation nobody gave.
 - NEVER answer an `ambiguity`, `overwrite`, or `failure` decision from a default, under any flag. Abort with the envelope and exit 11. A flag that says "do not ask me" is not a flag that says "guess for me".
 - NEVER infer a missing `default:` under `--non-interactive` — a phase that omitted one on an advancement decision is a bug in that phase, and taking the first option hides it behind a run that happened to work.
 

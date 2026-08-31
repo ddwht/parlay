@@ -88,7 +88,24 @@ func SaveRootsIndex(idx *RootsIndex) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(rootsIndexPath(idx.ParentPath), data, 0644)
+	// Written through a handle rooted at the parent, not through the
+	// joined path. The index is what every reader consults to know which
+	// roots exist, and root retirement rewrites it as the last step of a
+	// destructive run — so a .parlay replaced with a link out of the
+	// project between one step and the next must not be able to carry
+	// this write outside, leaving the real index untouched while the run
+	// reports the root deregistered. The relative path is a fixed
+	// two-component constant, so the rooted handle can only ever land on
+	// the project's own index.
+	//
+	// parlay-feature: parlay-tool/root-retirement
+	// parlay-component: cross-cutting/retirement-target-and-destination-preconditions
+	root, err := os.OpenRoot(idx.ParentPath)
+	if err != nil {
+		return fmt.Errorf("open project root %s: %w", idx.ParentPath, err)
+	}
+	defer root.Close()
+	return root.WriteFile(filepath.Join(ParlayDir, RootsIndexFile), data, 0644)
 }
 
 // AppendRootToIndex adds a new child to the index, persists, and returns
@@ -107,6 +124,35 @@ func AppendRootToIndex(idx *RootsIndex, child Root) (*RootsIndex, error) {
 		}
 	}
 	idx.Children = append(idx.Children, child)
+	return idx, SaveRootsIndex(idx)
+}
+
+// RemoveRootFromIndex removes the named child from the index, persists,
+// and returns the updated index. The counterpart of AppendRootToIndex,
+// with the same persist-or-refuse shape: it refuses when the named child
+// is absent rather than succeeding vacuously, because the caller
+// (root retirement) treats "the registration no longer names the root"
+// as the completion of a mutation it performed, not as a state it found.
+//
+// parlay-feature: parlay-tool/root-retirement
+// parlay-component: cross-cutting/mutation-order-rollback-resumable-journal
+func RemoveRootFromIndex(idx *RootsIndex, name string) (*RootsIndex, error) {
+	if idx == nil {
+		return nil, fmt.Errorf("nil index")
+	}
+	kept := make([]Root, 0, len(idx.Children))
+	found := false
+	for _, existing := range idx.Children {
+		if existing.Name == name {
+			found = true
+			continue
+		}
+		kept = append(kept, existing)
+	}
+	if !found {
+		return nil, fmt.Errorf("child root %q is not registered", name)
+	}
+	idx.Children = kept
 	return idx, SaveRootsIndex(idx)
 }
 

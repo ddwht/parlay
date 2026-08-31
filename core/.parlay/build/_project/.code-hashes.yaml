@@ -1,57 +1,97 @@
 schema-version: 2
-generated-at: "2026-08-17T11:19:13Z"
+generated-at: "2026-08-30T23:48:54Z"
 files:
+    core/internal/agent/active_page.go:
+        component: active-page-resolver
+        hash: efdbf3e612e3127d
+        provenance: adopted
     core/internal/agent/adapter_doc.go:
         component: canonical-adapter-model
-        hash: 221d14c79a3b87ec
+        hash: 1757632b589570b2
+        provenance: adopted
+    core/internal/agent/assembly_derivation.go:
+        component: assembly-projection
+        hash: 46c697ec5d62ce19
+        provenance: adopted
+    core/internal/agent/assembly_validation.go:
+        component: assembly-validation
+        hash: 22a8a706a5fdb600
+        provenance: adopted
     core/internal/agent/blueprint_resolver.go:
         component: blueprint-scope-and-precedence
         hash: 27486ce63b174370
     core/internal/agent/blueprint_resolver_test.go:
         component: blueprint-scope-and-precedence
         hash: b02679216be29a55
-    core/internal/agent/coverage_hash.go:
-        component: coverage-review-gate
-        hash: 2e886141bdf7a4c6
-    core/internal/agent/coverage_hash_test.go:
-        component: coverage-review-gate
-        hash: f779e58e4124d255
+    core/internal/agent/criterion_graduation.go:
+        component: transitional-severity-graduation
+        hash: b5a30f4cde51b0c8
+        provenance: adopted
+    core/internal/agent/criterion_graduation_test.go:
+        component: transitional-severity-graduation
+        hash: 00cd20a02961ef3b
+        provenance: adopted
     core/internal/agent/domain_contribution.go:
         component: cross-cutting/contribution-impact
-        hash: dfd12c843a9b2d2b
+        hash: b856c7fa49c1513f
+        provenance: adopted
     core/internal/agent/domain_contribution_test.go:
         component: cross-cutting/contribution-impact
         hash: 399d6da5bc12f52f
+    core/internal/agent/graduation_conformance_test.go:
+        component: transitional-severity-graduation
+        hash: f15bc9d3ba89b9ed
+        provenance: adopted
     core/internal/agent/pattern_fragment_classifier.go:
         component: pattern-fragment-classifier
         hash: 04fb6665d749ab84
     core/internal/agent/pattern_fragment_classifier_test.go:
         component: pattern-fragment-classifier
         hash: 2d5ed8a6d77d7cd6
+    core/internal/agent/resolve_intent_authority.go:
+        component: active-specification-resolver
+        hash: 0f3c12c312cc11c3
+        provenance: adopted
+    core/internal/agent/resolve_intent_authority_test.go:
+        component: active-specification-resolver
+        hash: ad3ddc4bf0a96a28
+        provenance: adopted
     core/internal/agent/severity_doc_test.go:
         component: validation-mode-dispatch
-        hash: a415f639c52609eb
+        hash: d0a422ea1ca4c2a6
+        provenance: adopted
     core/internal/agent/structured_domain_model_validation_test.go:
         component: cross-cutting/element-path-on-every-finding
-        hash: 0d577de02d68aef7
+        hash: e7f38b27462720c5
+        provenance: adopted
     core/internal/agent/validate_adapter.go:
         component: complete-adapter-validator
         hash: 5057fca9ddaf8d46
     core/internal/agent/validate_adapter_set.go:
         component: adapter-kind-discriminator
-        hash: d8d6c454bf7a6021
+        hash: 9bdd7b7de0a45411
+        provenance: adopted
     core/internal/agent/validate_adapter_set_links.go:
         component: adapter-set-link-enforcement
         hash: eb3b2a76cb64dcb4
     core/internal/agent/validate_adapter_set_links_test.go:
         component: adapter-set-link-enforcement
         hash: 93827ba080c17df8
+    core/internal/agent/validate_adapter_set_root_test.go:
+        component: adapter-kind-discriminator
+        hash: a0a10833ac3413ea
+        provenance: adopted
     core/internal/agent/validate_adapter_set_test.go:
         component: adapter-kind-discriminator
         hash: d8dab4dd950dbd5b
     core/internal/agent/validate_amendment.go:
         component: amendment-artifact
-        hash: 85e9a16f79358f28
+        hash: 0bac6750bde760d3
+        provenance: adopted
+    core/internal/agent/validate_amendment_test.go:
+        component: amendment-artifact
+        hash: 10edfe87b2a8a824
+        provenance: adopted
     core/internal/agent/validate_authored.go:
         component: authored-unit-validation
         hash: bad6745d47f2f3bc
@@ -60,10 +100,16 @@ files:
         hash: 4c3eb93228ece2cc
     core/internal/agent/validate_blueprint_scope.go:
         component: blueprint-scope-and-precedence
-        hash: 7b9dafac85c9221c
+        hash: 9f8dfe793583e92d
+        provenance: adopted
+    core/internal/agent/validate_blueprint_scope_conformance_test.go:
+        component: blueprint-scope-and-precedence
+        hash: a9a812ecb20bd8b4
+        provenance: adopted
     core/internal/agent/validate_blueprint_scope_test.go:
         component: blueprint-scope-and-precedence
-        hash: 570e770db48924e3
+        hash: 9b905e7b707c0152
+        provenance: adopted
     core/internal/agent/validate_buildfile_canonical.go:
         component: multi-target-buildfile-schema
         hash: 7b5dd2fc27e9d150
@@ -72,16 +118,19 @@ files:
         hash: 04b0d354e5cfd3a6
     core/internal/agent/validate_capabilities.go:
         component: capabilities-artifact
-        hash: 3e2f7c82422fc969
+        hash: c21f7f74cf3be970
+        provenance: adopted
     core/internal/agent/validate_capabilities_test.go:
         component: capabilities-artifact
         hash: 92d22028e090f876
-    core/internal/agent/validate_coverage_review.go:
-        component: coverage-review-gate
-        hash: 2adf42250ba97739
-    core/internal/agent/validate_coverage_review_test.go:
-        component: coverage-review-gate
-        hash: e83b4161a7c3ae85
+    core/internal/agent/validate_criteria_presence.go:
+        component: criteria-presence
+        hash: cbc2c299421d6496
+        provenance: adopted
+    core/internal/agent/validate_criteria_presence_test.go:
+        component: criteria-presence
+        hash: 7aa55538ad5c87a0
+        provenance: adopted
     core/internal/agent/validate_dialog.go:
         component: DialogValidationResult
         hash: 91cfe50160e80931
@@ -90,13 +139,16 @@ files:
         hash: 1a5ebf9e128c2006
     core/internal/agent/validate_domain_model.go:
         component: validate-go-split-domain-model
-        hash: e1646f923c42c3d1
+        hash: f7639c1da1f3879d
+        provenance: adopted
     core/internal/agent/validate_domain_model_test.go:
         component: validation-error-reporter
-        hash: 88e45cac89bcefa8
+        hash: 607234d05101e733
+        provenance: adopted
     core/internal/agent/validate_infrastructure.go:
         component: InfrastructureValidationResult
-        hash: 0b8703be8630300e
+        hash: db34e2d5375b871c
+        provenance: adopted
     core/internal/agent/validate_infrastructure_test.go:
         component: portability-lint
         hash: e7a7ab63b44e4150
@@ -108,7 +160,8 @@ files:
         hash: 8b0fd1edc2e493a0
     core/internal/agent/validate_layout.go:
         component: ""
-        hash: 1ad70d6dd9e1032d
+        hash: 5ed98dce65685444
+        provenance: adopted
     core/internal/agent/validate_layout_test.go:
         component: adapter-validator-deep-vocabulary-and-tokens
         hash: d2a8b5ab6d31f0da
@@ -120,7 +173,8 @@ files:
         hash: 1caaa9205e63f285
     core/internal/agent/validate_project_multi_target_test.go:
         component: cli-and-deployer-registration
-        hash: fe4d7c07a8f43444
+        hash: eac5761dbdc62a02
+        provenance: adopted
     core/internal/agent/validate_supports.go:
         component: adapter-supports-contract
         hash: 37bef5a56ea00409
@@ -129,25 +183,42 @@ files:
         hash: b4b1d96934705d2b
     core/internal/agent/validate_testcases_v2.go:
         component: testcases-v2
-        hash: 7f0451b57ee6c794
+        hash: 471e4496f8d6ad0f
+        provenance: adopted
     core/internal/agent/validate_testcases_v2_test.go:
         component: testcases-v2
-        hash: 08d0c29f681dc752
+        hash: 780c39bec41cfd9d
+        provenance: adopted
     core/internal/agent/validation_mode.go:
         component: validation-mode-dispatch
-        hash: 04605875b39ac40b
+        hash: 3b811a689b1ecd69
+        provenance: adopted
     core/internal/agent/validation_mode_test.go:
         component: validation-mode-dispatch
-        hash: 61a7392393501ccd
+        hash: e9e319ac03714251
+        provenance: adopted
     core/internal/atomicfile/atomicfile.go:
         component: ""
         hash: 236605ce3510d170
     core/internal/atomicfile/atomicfile_test.go:
         component: ""
         hash: aed716a6b5cd5807
+    core/internal/commands/active_spec_cmd.go:
+        component: active-specification-resolver
+        hash: c26337e6d743884f
+        provenance: adopted
+    core/internal/commands/active_spec_cmd_test.go:
+        component: active-specification-resolver
+        hash: 63cb08a684150b7e
+        provenance: adopted
+    core/internal/commands/active_specification.go:
+        component: active-specification-resolver
+        hash: 9d425c48f969f6cb
+        provenance: adopted
     core/internal/commands/add_feature.go:
         component: FeatureScaffoldConfirmation
-        hash: f92a67b1cfffcc38
+        hash: 1bec61cbc21a904f
+        provenance: adopted
     core/internal/commands/add_root.go:
         component: add-child-root-result
         hash: 44971be36d1dc429
@@ -157,6 +228,14 @@ files:
     core/internal/commands/affected_set_test.go:
         component: affected-set-probe
         hash: 5698705b948f6c5a
+    core/internal/commands/apply_governance.go:
+        component: governance-amendment-apply
+        hash: 48902fc9b6f3221b
+        provenance: adopted
+    core/internal/commands/assembly_readiness.go:
+        component: assembly-readiness
+        hash: 0622539b3c88bd05
+        provenance: adopted
     core/internal/commands/authored_units.go:
         component: authored-unit-ingestion
         hash: bf90bafb6ffc800f
@@ -165,46 +244,99 @@ files:
         hash: 7de5fb9be638b31a
     core/internal/commands/baseline_ledger_test.go:
         component: baseline-freeze-semantics
-        hash: e32ffe8d3efac400
+        hash: bd93dd0c206b6de8
+        provenance: adopted
+    core/internal/commands/boundary_claims.go:
+        component: boundary-claim-registry
+        hash: b414a01b588357be
+        provenance: adopted
+    core/internal/commands/boundary_witness_test.go:
+        component: boundary-claim-registry
+        hash: d720effce627b99c
+        provenance: adopted
     core/internal/commands/check_amendments.go:
         component: amendment-ledger-check
-        hash: af1ec64825bcf1dc
+        hash: 98d01eb2e80009f5
+        provenance: adopted
     core/internal/commands/check_amendments_test.go:
         component: amendment-ledger-check
-        hash: 1db6722f7c91ae6c
+        hash: d5c5be31ac4db166
+        provenance: adopted
+    core/internal/commands/check_applied.go:
+        component: refine-preflight
+        hash: c2ae576cfb96b547
+        provenance: adopted
+    core/internal/commands/check_applied_test.go:
+        component: refine-preflight
+        hash: 4d0efc55097595f3
+        provenance: adopted
     core/internal/commands/check_coverage.go:
         component: CoverageReport
-        hash: 595c90811d78e7e3
+        hash: 5a6830853e098349
+        provenance: adopted
     core/internal/commands/check_readiness.go:
         component: check-readiness
-        hash: 3e7ba6254037a7a3
-    core/internal/commands/check_review_gate.go:
-        component: coverage-review-gate-failure
-        hash: bf1767213706f442
-    core/internal/commands/check_review_gate_test.go:
-        component: review-gate
-        hash: f1e332b5b69669b8
+        hash: b1001ce64237567b
+        provenance: adopted
+    core/internal/commands/check_readiness_criteria_test.go:
+        component: criteria-presence
+        hash: b00bc6d9772ee542
+        provenance: adopted
+    core/internal/commands/check_readiness_unapplied_test.go:
+        component: unapplied-amendments-readiness
+        hash: 01b2e1b13f1191a5
+        provenance: adopted
     core/internal/commands/check_supports.go:
         component: pre-codegen-support-gate-failure
         hash: 20f5f56fed1567bf
     core/internal/commands/check_supports_test.go:
         component: pre-codegen-support-gate-failure
         hash: 203ee1499bb53257
+    core/internal/commands/check_testcases_ready.go:
+        component: producer-readiness-probe
+        hash: 3682712eeb524e31
+        provenance: adopted
     core/internal/commands/check_write_set.go:
         component: codegen-read-set-and-layer-pipeline
-        hash: a8bbeb5c81fb5ae7
+        hash: bb8eb90d26b98fc9
+        provenance: adopted
     core/internal/commands/check_write_set_test.go:
         component: codegen-read-set-and-layer-pipeline
         hash: 7a9c5a7eb8057185
+    core/internal/commands/composition_signature.go:
+        component: composition-signature
+        hash: 2963c543f34fbafb
+        provenance: adopted
+    core/internal/commands/coverage_exceptions.go:
+        component: coverage-exception-ledger
+        hash: c3689b96487be7a9
+        provenance: adopted
+    core/internal/commands/coverage_exceptions_test.go:
+        component: coverage-exception-ledger
+        hash: d2fa5eddcf67b0df
+        provenance: adopted
     core/internal/commands/create_artifacts.go:
         component: ArtifactDecisionPrompt
         hash: fbe0a9151fdfc404
     core/internal/commands/create_dialogs.go:
         component: DialogGenerationReport
-        hash: c5a7daad7655e2be
+        hash: f68369b7464226e2
+        provenance: adopted
     core/internal/commands/create_domain_model.go:
         component: ""
         hash: 22c944a916a812ad
+    core/internal/commands/criteria_authority.go:
+        component: criteria-authority-record
+        hash: e96124e2f30db25d
+        provenance: adopted
+    core/internal/commands/criteria_authority_cmd.go:
+        component: criteria-authority-cli
+        hash: 372364be1b6a758d
+        provenance: adopted
+    core/internal/commands/criteria_authority_test.go:
+        component: criteria-authority-record
+        hash: 3501999709415b89
+        provenance: adopted
     core/internal/commands/domain_impact.go:
         component: domain-impact
         hash: f0a56ed9dc06eeee
@@ -213,34 +345,78 @@ files:
         hash: 5188f9376b41a4f4
     core/internal/commands/domain_parity_test.go:
         component: cross-cutting/out-of-process-validate-endpoint
-        hash: 106508f8ee580d28
+        hash: de9c2593ea4b9381
+        provenance: adopted
     core/internal/commands/domain_validator.go:
         component: cross-cutting/out-of-process-validate-endpoint
         hash: 16e73c395ecec32e
+    core/internal/commands/emit_assembly.go:
+        component: assembly-emitter
+        hash: dd92f712cd1e3c73
+        provenance: adopted
+    core/internal/commands/emit_base.go:
+        component: adapter-emit-base-resolution
+        hash: 739924b02d632beb
+        provenance: adopted
+    core/internal/commands/emit_base_test.go:
+        component: adapter-emit-base-resolution
+        hash: b17d9007fe89eea8
+        provenance: adopted
     core/internal/commands/feature_phase.go:
         component: ""
-        hash: 7ceb6219f50ab287
+        hash: 0367d47cdf450a6b
+        provenance: adopted
     core/internal/commands/feature_phase_test.go:
         component: ""
-        hash: c99ede440d2cc361
+        hash: e63dda503f2492cd
+        provenance: adopted
     core/internal/commands/feedback_export.go:
         component: export
         hash: bd522474d3013975
     core/internal/commands/feedback_record.go:
         component: agent-event-intake
         hash: 22383022d2e18bba
+    core/internal/commands/gate.go:
+        component: gate-aggregator
+        hash: 4f6324f052f6b995
+        provenance: adopted
+    core/internal/commands/gate_all.go:
+        component: gate-sweep
+        hash: 73a29bdf03216507
+        provenance: adopted
+    core/internal/commands/gate_test.go:
+        component: gate-aggregator
+        hash: b6c25707cf01fbf0
+        provenance: adopted
+    core/internal/commands/inbound_references.go:
+        component: inbound-reference-inventory
+        hash: 697a05d74a64fcc9
+        provenance: adopted
+    core/internal/commands/inbound_references_test.go:
+        component: inbound-reference-inventory
+        hash: 81c846658b40cc1a
+        provenance: adopted
     core/internal/commands/infrastructure_concept_shared_test.go:
         component: infrastructure-concept-shared
         hash: db7ea9a6523b96b5
     core/internal/commands/init.go:
         component: init-agent-identity-prompt
-        hash: b5fc46c6949a63b0
+        hash: ab71d9e588c5b20d
+        provenance: adopted
     core/internal/commands/loop.go:
         component: LoopInvocationAndFeatureResolution
         hash: f5a42cc3352e5bec
     core/internal/commands/loop_test.go:
         component: LoopInvocationAndFeatureResolution
         hash: dcd3dd349d1c8135
+    core/internal/commands/merged_routes.go:
+        component: merged-route-table
+        hash: 5ec42f4289706001
+        provenance: adopted
+    core/internal/commands/merged_routes_test.go:
+        component: merged-route-table
+        hash: 411426edb9246ae6
+        provenance: adopted
     core/internal/commands/migrate_capabilities.go:
         component: capabilities-migration-operations-extraction
         hash: ba56a67db9f42f8d
@@ -265,6 +441,14 @@ files:
     core/internal/commands/migrate_domain_operations_test.go:
         component: domain-operations-migration-prompt
         hash: 8910547c8173f122
+    core/internal/commands/migrate_ledger.go:
+        component: ledger-migration
+        hash: 1371fd1d730ee050
+        provenance: adopted
+    core/internal/commands/migrate_ledger_test.go:
+        component: ledger-migration
+        hash: 739fc3a217575355
+        provenance: adopted
     core/internal/commands/migrate_spec.go:
         component: spec-migration-report
         hash: e29226673c5fd355
@@ -273,10 +457,12 @@ files:
         hash: fc2d4115c990d9df
     core/internal/commands/migrate_verify.go:
         component: verify-relocation-migration
-        hash: b287af640932607a
+        hash: 46e3347356cbdfdf
+        provenance: adopted
     core/internal/commands/migrate_verify_test.go:
         component: verify-relocation-migration
-        hash: 11aa268894cd0ed9
+        hash: a82092d4b4d253c3
+        provenance: adopted
     core/internal/commands/move_feature.go:
         component: MoveResult
         hash: db10d6bd341235ba
@@ -298,9 +484,18 @@ files:
     core/internal/commands/parse.go:
         component: cross-root-reference-validation-error
         hash: d9d339aa9ffdb2d9
+    core/internal/commands/record_exception.go:
+        component: exception-authoring
+        hash: fc5328cab9f00271
+        provenance: adopted
+    core/internal/commands/refine_journal.go:
+        component: refine-preflight
+        hash: aaf91506519995a1
+        provenance: adopted
     core/internal/commands/register_adapter.go:
         component: adapter-registration
-        hash: faf0c1acc501a836
+        hash: ed3d2c19a1491f27
+        provenance: adopted
     core/internal/commands/register_adapter_vocabulary_test.go:
         component: adapter-parser-vocabulary-and-tokens
         hash: 77b97aaa259db479
@@ -310,12 +505,70 @@ files:
     core/internal/commands/repair_test.go:
         component: RepairReport
         hash: 551d1084ca55e28e
-    core/internal/commands/review_coverage.go:
-        component: coverage-review-authoring
-        hash: 32d9720117654a5f
-    core/internal/commands/review_coverage_test.go:
-        component: coverage-review-gate
-        hash: 611014cc7862e304
+    core/internal/commands/retire_root.go:
+        component: cross-cutting/retirement-target-and-destination-preconditions
+        hash: 12093b4c4b888d2f
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/retire_root_test.go:
+        component: cross-cutting/retirement-target-and-destination-preconditions
+        hash: 90ee19881e7eb40e
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/retired_contribution.go:
+        component: retired-contribution-check
+        hash: 3f40e99751dc8223
+        provenance: adopted
+    core/internal/commands/retired_roots.go:
+        component: cross-cutting/archive-invisibility-and-integrity
+        hash: ba830b694567741e
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/retired_roots_test.go:
+        component: cross-cutting/archive-invisibility-and-integrity
+        hash: 4b4d8d4d1f600879
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/retirement_journal.go:
+        component: cross-cutting/mutation-order-rollback-resumable-journal
+        hash: 7d2832f511acab99
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/retirement_journal_test.go:
+        component: cross-cutting/mutation-order-rollback-resumable-journal
+        hash: bd20a12cc84ff6c9
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_archive.go:
+        component: cross-cutting/complete-directory-archive-with-manifest
+        hash: a0158b65223a5d67
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_archive_test.go:
+        component: cross-cutting/complete-directory-archive-with-manifest
+        hash: db5a3037db107418
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_dispositions.go:
+        component: cross-cutting/feature-disposition-preflight
+        hash: 364756451896d443
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_dispositions_test.go:
+        component: cross-cutting/feature-disposition-preflight
+        hash: 05de479713e4c8a9
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_retirement_sweep.go:
+        component: cross-cutting/project-wide-source-aware-inbound-sweep
+        hash: 60c0d24b683659b8
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
+    core/internal/commands/root_retirement_sweep_test.go:
+        component: cross-cutting/project-wide-source-aware-inbound-sweep
+        hash: 68d67c448467d13c
+        provenance: generated
+        emitted-at: "2026-08-30T23:48:54Z"
     core/internal/commands/scaffold_operations.go:
         component: multi-target-buildfile-schema
         hash: 6dd6c0e43b7159a2
@@ -330,10 +583,16 @@ files:
         hash: 583b437d15521078
     core/internal/commands/surface_region_shared_test.go:
         component: surface-region-shared
-        hash: 2bb9466a439b1dc8
+        hash: 5e6bec542a8b111b
+        provenance: adopted
     core/internal/commands/sync.go:
         component: ""
-        hash: d140f558c58331b7
+        hash: 61b3107dc0bc7c9e
+        provenance: adopted
+    core/internal/commands/testcases_readiness.go:
+        component: mechanical-testcase-readiness
+        hash: 4bd9761638680d96
+        provenance: adopted
     core/internal/commands/testdata/multitarget/apps/api/prisma/schema.prisma:
         component: ""
         hash: fb703f2ee66b05d2
@@ -366,16 +625,19 @@ files:
         hash: 778d698cf738a56c
     core/internal/commands/upgrade.go:
         component: upgrade-refresh-confirmation
-        hash: 867b4cf80fb75754
+        hash: dff74ba1359ca03b
+        provenance: adopted
     core/internal/commands/upgrade_test.go:
         component: bare-parent-upgrade-error
         hash: 5271a12fbc792002
     core/internal/commands/validate.go:
         component: validate
-        hash: 6070ed0d9ac90c8a
+        hash: b6ce7bdc6aa648db
+        provenance: adopted
     core/internal/commands/validate_domain_model_json_test.go:
         component: cross-cutting/json-validation-mode
-        hash: e831b0cceaccf971
+        hash: a06c88c9e2021434
+        provenance: adopted
     core/internal/commands/validate_intent_dialog_test.go:
         component: validate
         hash: 3dfbdd18fdb978d7
@@ -384,25 +646,30 @@ files:
         hash: 71d173c4c52fe3fb
     core/internal/commands/validate_testcases_coverage_test.go:
         component: validate
-        hash: 7f56fd79aa1f7297
+        hash: 20e5fd55b0fabe57
+        provenance: adopted
     core/internal/config/config.go:
         component: ""
-        hash: 59307f0795a91252
+        hash: b7f3c7c0b7337c5c
+        provenance: adopted
     core/internal/config/config_test.go:
         component: directory-classification-validation
         hash: 045d3a7b2a158c00
     core/internal/config/context.go:
         component: ""
-        hash: b92b260799bd5a5d
+        hash: e8504d267026a59b
+        provenance: adopted
     core/internal/config/context_domain_model_test.go:
         component: extract-domain-model-output
-        hash: dc7f6032b416660a
+        hash: fb047b106b5c577e
+        provenance: adopted
     core/internal/config/resolver.go:
         component: ""
         hash: b6681d3b25ab7f5c
     core/internal/config/topology.go:
         component: ""
-        hash: 44d797d08610d55f
+        hash: 894945cf29626365
+        provenance: adopted
     core/internal/config/topology_test.go:
         component: ""
         hash: 538ac545e1613db5
@@ -417,13 +684,16 @@ files:
         hash: d4ead2109ef6a440
     core/internal/embedded/adapters/nestjs-application.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: 50928b3876144ac1
+        hash: b349776748433d9f
+        provenance: adopted
     core/internal/embedded/adapters/openapi-rest.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: a706d89d6dc95128
+        hash: 7f055e3e1288f8c0
+        provenance: adopted
     core/internal/embedded/adapters/prisma-postgres.adapter.yaml:
         component: bundled-adapter-set-presets
-        hash: 8458b3012af0a714
+        hash: 89b84000743f8fdc
+        provenance: adopted
     core/internal/embedded/agents.go:
         component: ""
         hash: aa8cdfcba8cefd43
@@ -435,40 +705,58 @@ files:
         hash: 9877ef67b2e20f73
     core/internal/embedded/presets/angular-clarity-only.adapter-set.yaml:
         component: ""
-        hash: 12ff77051fc37bc8
+        hash: a6c6843bee419f9c
+        provenance: adopted
     core/internal/embedded/presets/angular-nest-prisma.adapter-set.yaml:
         component: ""
         hash: efe16a1def16248d
     core/internal/embedded/presets/react-antd-only.adapter-set.yaml:
         component: ""
-        hash: 01b3e8a186211c62
+        hash: 69a6448b280d3439
+        provenance: adopted
     core/internal/embedded/presets/react-nest-prisma.adapter-set.yaml:
         component: ""
         hash: 93705e99401b7f00
+    core/internal/embedded/retired_artifact_test.go:
+        component: retired-artifact-lint
+        hash: 808ade51c6ee355a
+        provenance: adopted
     core/internal/embedded/schemas/adapter-set.schema.md:
         component: ""
-        hash: b8f8c49a12d3e213
+        hash: 18530316606469a4
+        provenance: adopted
     core/internal/embedded/schemas/adapter.schema.md:
         component: ""
-        hash: 381156174040d46f
+        hash: 6b224db01e7b5fcf
+        provenance: adopted
     core/internal/embedded/schemas/amendment.schema.md:
         component: ""
-        hash: abaa481a5a622766
+        hash: fe3209b22771dee3
+        provenance: adopted
     core/internal/embedded/schemas/authored.schema.md:
         component: ""
-        hash: a322250322ba613f
+        hash: fdd5257b5212023c
+        provenance: adopted
     core/internal/embedded/schemas/buildfile.schema.md:
         component: ""
-        hash: a24db0309defcd63
+        hash: 43192385bd5a90ca
+        provenance: adopted
     core/internal/embedded/schemas/capabilities.schema.md:
         component: ""
-        hash: 2faab46c8675233d
-    core/internal/embedded/schemas/coverage-review.schema.md:
+        hash: 876d24137964aa23
+        provenance: adopted
+    core/internal/embedded/schemas/coverage-decisions.schema.md:
         component: ""
-        hash: 5aba6657ca068fb9
+        hash: ea48bd0396cc2719
+        provenance: adopted
+    core/internal/embedded/schemas/criteria-authority.schema.md:
+        component: ""
+        hash: b2828fa772f6bd89
+        provenance: adopted
     core/internal/embedded/schemas/domain-model.schema.md:
         component: ""
-        hash: 0e68ba7d43f09457
+        hash: 93f9831f14cea948
+        provenance: adopted
     core/internal/embedded/schemas/errors.schema.md:
         component: ""
         hash: 64ce8e17d40d9e59
@@ -486,22 +774,27 @@ files:
         hash: 1b3a98353214f3c9
     core/internal/embedded/schemas/schema-versioning.schema.md:
         component: ""
-        hash: 1b33f4d04893591c
+        hash: 05a847a70701b477
+        provenance: adopted
     core/internal/embedded/schemas/steps.schema.md:
         component: ""
         hash: 7d3736f85b046c4f
     core/internal/embedded/skills/build-feature.skill.md:
         component: ""
-        hash: b3f08823e309f849
+        hash: ab8dc302823302a8
+        provenance: adopted
     core/internal/embedded/skills/create-adapter.skill.md:
         component: ""
-        hash: abb3e8dcf2015714
+        hash: ba4bca0f0bd1d2cc
+        provenance: adopted
     core/internal/embedded/skills/create-domain-model.skill.md:
         component: extract-domain-model-output
-        hash: ffda2ab2a8e124c5
+        hash: 783c3dfc23b9b383
+        provenance: adopted
     core/internal/embedded/skills/generate-code.skill.md:
         component: ""
-        hash: d631c5581664c74c
+        hash: acb1a89a3bab3505
+        provenance: adopted
     core/internal/embedded/skills/load-domain-model.skill.md:
         component: load-domain-model-conflict-prompt
         hash: 4bcb75a6827e2f8e
@@ -522,19 +815,23 @@ files:
         hash: d1a2b93c216bde03
     core/internal/parser/amendment.go:
         component: amendment-artifact
-        hash: d6c065a093704ff4
+        hash: 645bd26d0fdd9ae9
+        provenance: adopted
     core/internal/parser/amendment_test.go:
         component: amendment-artifact
-        hash: 80ebfae996122212
+        hash: 4e1eaa8e390fa960
+        provenance: adopted
     core/internal/parser/capabilities.go:
         component: capabilities-artifact
-        hash: ee74660ee0cb6fe5
+        hash: ae09c6f0c22f5ea1
+        provenance: adopted
     core/internal/parser/capabilities_test.go:
         component: capabilities-artifact
         hash: 4e7788afe3d95a53
     core/internal/parser/coverage_review.go:
         component: coverage-review-gate
-        hash: 5202a9c47db8eb40
+        hash: 5b9606306d64babd
+        provenance: adopted
     core/internal/parser/coverage_review_test.go:
         component: coverage-review-gate
         hash: 42bfe6dce85defbe
@@ -552,7 +849,8 @@ files:
         hash: 42cada951ec97495
     core/internal/parser/surface_yaml.go:
         component: surface-yaml-and-migrator
-        hash: c85acc09c0ee67f7
+        hash: 89be378d91a15a36
+        provenance: adopted
     core/internal/parser/surface_yaml_test.go:
         component: surface-yaml-and-migrator
         hash: 825fc82c43f973fd

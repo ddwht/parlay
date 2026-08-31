@@ -118,7 +118,6 @@ func registerInternalCommands() {
 		// state: it records how far an in-flight refinement got so an
 		// interrupted run resumes instead of restarting.
 		reachability(refineJournalCmd, ClassPipelineHelper),
-		reachability(serveCmd, ClassPipelineHelper),
 	)
 	rootCmd.AddCommand(internalCmd)
 }

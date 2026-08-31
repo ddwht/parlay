@@ -1,0 +1,809 @@
+feature: parlay-tool/root-retirement
+schema_version: 1
+adapter: go-cli
+
+# Pure-infrastructure feature — the root-retirement operation is CLI-and-
+# engine work with no surface fragments, no capability operations, and no
+# domain entities. All work is expressed as nine cross-cutting entries, one
+# per infrastructure.md fragment. Single-target project (no adapter-set.yaml)
+# — legacy single-adapter shape applies; no `targets:` block, no `bindings:`
+# block (no layout-bearing pages).
+#
+# Path convention: this feature lives under the `core` child root, so all
+# target paths are relative to <repo>/core/. The retirement operation itself
+# acts on the PARENT (repo-level) root at runtime — the roots index it edits
+# is <parent>/.parlay/roots.yaml and the archive destination is
+# <parent>/.parlay/retired/<root>/ — but every line of code implementing it
+# lives in core/internal/, like every other parlay command.
+#
+# Chosen on-disk layout for a retirement (recorded here so codegen and the
+# testcases agree; refine only with a matching testcases update):
+#   <parent>/.parlay/retired/<root>/contents/   — the byte-for-byte copy of
+#                                                 the complete child directory
+#   <parent>/.parlay/retired/<root>/manifest.yaml
+#                                               — every member + sha256, and a
+#                                                 self-covering hash entry
+#   <parent>/.parlay/retired/<root>/dispositions.yaml
+#                                               — the operator-authored record,
+#                                                 preserved verbatim
+#   <parent>/.parlay/retired/<root>/retirement-record.yaml
+#                                               — what was decided, when, and
+#                                                 where the evidence went
+#   <parent>/.parlay/retired/<root>.journal.yaml
+#                                               — the resumable journal; exists
+#                                                 only between a post-archive
+#                                                 failure and a resumed
+#                                                 completion, sibling of the
+#                                                 destination so its presence
+#                                                 never collides with the
+#                                                 destination-must-not-exist
+#                                                 precondition
+# `.parlay/retired/` sits under a dot-directory, which every discovery walk
+# (config.DiscoverRootsBelow, ScanFeatureTree anchored on registered roots)
+# already skips — invisibility to discovery is structural, and the tests for
+# cross-cutting/archive-invisibility-and-integrity assert it stays that way.
+
+fixtures: {}
+
+routes: []
+
+components: {}
+
+cross-cutting:
+  # ---------------------------------------------------------------------------
+  # Fragment 1: Retirement target and destination preconditions
+  # ---------------------------------------------------------------------------
+  - id: retirement-target-and-destination-preconditions
+    source: "@parlay-tool/root-retirement/end-a-subproject-without-pretending-it-never-happened"
+    target-files:
+      # Command registration: the retire-root cobra command is wired in the
+      # root command's init(), where every other subcommand already registers
+      # (rootCmd.AddCommand block, see internal/commands/root.go init()).
+      - internal/commands/root.go
+    target-creates:
+      # One-file-per-command per the adapter's file-conventions. Owns the
+      # cobra command definition, target-name resolution against the parent's
+      # roots index, and the destination-absence precondition.
+      - internal/commands/retire_root.go
+    transform: >
+      Introduce a `parlay retire-root <name>` cobra command (snake_case file,
+      runRetireRoot handler per run-function-naming convention). Target
+      resolution: load the parent's roots index via config.LoadRootsIndex and
+      resolve <name> against registered children only — exactly-one match
+      proceeds; zero matches refuses and the refusal enumerates the registered
+      child roots; more than one candidate refuses without selecting by
+      ordering or proximity; a directory that carries .parlay root
+      configuration but is not in the index refuses with that stated as the
+      reason; and the parent root itself (the one holding the shared resources
+      and roots.yaml) is never a valid target. Destination checking: the
+      archive destination <parent>/.parlay/retired/<name>/ is stat'd for
+      absence before anything else is read, and an existing destination
+      refuses the run naming both possible explanations (an earlier retirement
+      of the same root, or unrelated content under the same name) as the
+      operator's call. Resolution and destination checking both happen once,
+      before any enumeration, sweep, or read of the root's contents — the
+      command's preflight sequencing enforces this ordering. Register the
+      command in root.go's init() AddCommand block. Errors wrap with
+      verb-phrase prefixes per the error-wrapping convention.
+
+
+      Path containment: resolution alone is NOT authorization to act on a
+      location. roots.yaml records a relative path, the archive walk reads
+      that directory and the final journal step os.RemoveAll's it, and the
+      index is an ordinary YAML file a hand edit or a bad merge can change
+      — so the registered path is validated for containment before it can
+      become either. Refuse, fail-closed, when the registration is empty or
+      absolute (a child root is located relative to its parent), when it
+      leaves the parent lexically (".." segments, "." alone), when
+      filepath.EvalSymlinks of the joined path lands anywhere other than
+      strictly inside filepath.EvalSymlinks of the parent (so a symlink
+      pointing out of the project is refused however ordinary its name),
+      when it resolves to the parent root itself, and when the resolution
+      fails for any reason other than the directory not existing — cannot
+      tell is not inside. A non-existent directory resolves to the
+      lexically contained join, since nothing can be archived or removed
+      there. The same judgment is applied to the RelativePath a resumed run
+      reads out of its journal, immediately before the removal, because the
+      journal is a file on disk like any other and is where the deletion
+      target of a resumed run comes from.
+
+
+      The NAME is validated on the same grounds and for the same reason.
+      It is concatenated into the staging directory, the archive
+      destination and the journal filename, all three of which are
+      created, renamed and removed, and the destination rollback is a
+      recursive delete — so a name carrying a separator or a traversal
+      segment addresses a location exactly as a path does. Require a
+      plain slug, `^[a-z0-9]+(?:-[a-z0-9]+)*$`: lowercase alphanumerics
+      in dash-separated words, no separators, no dots, no whitespace, no
+      upper case, no leading or trailing dash, non-empty. Restrict the
+      shape rather than escape it — escaping asks every future caller to
+      remember to escape, while a closed shape is checked once at the
+      boundary and lets everything downstream treat the name as one safe
+      path component. Enforce it at resolution (so no preflight, staging
+      or destination path is ever built from an unvalidated name) and
+      again on the root name a journal records and the name a journal
+      file is filed under.
+
+
+      And perform the destructive steps through a handle rooted at the
+      project root — os.OpenRoot on the parent, then Root.RemoveAll /
+      Remove / Rename / MkdirAll / WriteFile — rather than through the
+      resolved absolute path. resolveContainedChildDir establishes a
+      fact about a moment; between that moment and the deletion an
+      intermediate directory can be replaced with a symlink leading out
+      of the project, and an ordinary os.RemoveAll on the resolved path
+      would follow it. Re-checking narrows that interval rather than
+      closing it. A rooted handle resolves each component and acts in
+      one sequence and refuses any component leading outside the root,
+      so there is no interval to exploit. This covers the staging
+      cleanup, the retired-roots directory removal, the promote rename,
+      the destination rollback and the removal of the retired root's
+      directory. It also covers every WRITE the run performs, which is
+      the same problem wearing different clothes: the retirement record
+      (writeRetirementRecord), the journal (WriteRetirementJournal), the
+      journal's removal, and the rewritten root registration all land in
+      locations a concurrent swap can redirect, and a path-based write
+      would then create the file outside the project while leaving the
+      real location without it — the half-retired state reached by
+      another route. For the registration this means config.SaveRootsIndex
+      itself writes through an os.Root handle opened on the parent, at
+      the fixed two-component relative path .parlay/roots.yaml, rather
+      than through the joined path; every caller benefits and none can
+      opt out. The archive copy itself writes into a staging directory
+      the same run created, under an already-validated single-component
+      name.
+    introduces:
+      - "retireRootCmd cobra command + runRetireRoot handler (internal/commands/retire_root.go)"
+      - "resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, error) — exactly-one resolution with enumerated refusals, gated on path containment"
+      - "resolveContainedChildDir(parentPath, relPath string) (string, error) — EvalSymlinks + strict-descendant containment of a registered path, fail-closed; called at resolution and again on every journal-driven removal"
+      - "validateRootName(name string) error — closed slug shape for a registered root NAME, which is a path component of the staging directory, the archive destination and the journal file"
+      - "mutateUnderParent / removeUnderParent — every destructive step performed through an os.Root handle rooted at the project, closing the interval between a containment judgment and the act it authorizes"
+      - "retirementJournalRel / retirementRecordRel — project-relative locations for the rooted writes, alongside the existing destination and staging forms"
+      - "writeRetirementRecord(parentPath, rootName string, record *retirementRecord) error — rooted record write, keyed by validated root name rather than by an absolute destination"
+      - "config.SaveRootsIndex writing through an os.Root handle on the parent at .parlay/roots.yaml (internal/config/roots_index.go)"
+      - "checkRetirementDestination(parentPath, rootName string) error — destination-absence precondition"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 2: Feature disposition preflight
+  # ---------------------------------------------------------------------------
+  - id: feature-disposition-preflight
+    source: "@parlay-tool/root-retirement/say-what-became-of-every-feature-in-the-root"
+    target-creates:
+      # Disposition record parsing, the closed three-term vocabulary, and the
+      # enumeration-vs-record completeness check. Shared with fragment 4
+      # (re-home target readiness), which validates one of the three terms.
+      - internal/commands/root_dispositions.go
+    transform: >
+      Introduce the disposition record: an operator-authored YAML file passed
+      via --dispositions <path>, mapping every feature in the retiring root to
+      exactly one disposition. The term vocabulary is closed at three —
+      `delivered-and-deleted`, `built-but-undelivered`,
+      `authority-re-homed-to` (the third carrying a target feature ref) — and
+      every disposition requires a non-empty free-text `rationale`. The
+      preflight enumerates the retiring root's features itself (via
+      config.ScanFeatureTree over the target root's spec/intents tree) and
+      compares that enumeration against the record: a record omitting an
+      enumerated feature is refused naming the omitted feature; a record
+      naming a feature the enumeration did not produce is refused naming it;
+      a record naming one feature more than once is refused; a term outside
+      the closed set is refused naming the three accepted terms; a
+      disposition with a valid term and no rationale is refused. The
+      rationale is never parsed and never consulted to decide anything — the
+      same three terms are accepted whatever any rationale says. Nothing
+      about whether a feature was built is derived from the presence, absence
+      or emptiness of its build state: enumeration is directory-based over
+      spec/intents, and a feature carrying only a placeholder baseline, or an
+      incomplete subset of build artifacts, or a buildfile without a coverage
+      review, is enumerated and requires a disposition exactly like any
+      other. No mutation occurs while the preflight is unsatisfied. On a
+      completed run the record is preserved verbatim at
+      <destination>/dispositions.yaml alongside the archive.
+
+
+      The record is read STRUCTURALLY CLOSED, because it is the
+      authorization for a deletion. Decode through a yaml.Decoder with
+      KnownFields(true) rather than yaml.Unmarshal, so a key the shape does
+      not define is an error naming that key rather than something silently
+      dropped — a misspelled `raitonale:` would otherwise become a missing
+      rationale and a misspelled `dispositons:` an empty record that
+      authorizes every deletion by accounting for nothing. Refuse a second
+      YAML document in the same file (decode again and require io.EOF),
+      whose dispositions would never be presented for checking. And refuse
+      a `target:` carried under a term that names no target: the term moves
+      nothing while the target says authority moved, and honouring either
+      statement decides on the operator's behalf which was meant.
+
+
+      THE RECORD ALSO CARRIES THE OPERATOR'S JUDGMENTS ABOUT INBOUND
+      REFERENCES. The sweep is deliberately wide and fail-closed and
+      cannot decide on its own that a particular mention is only a
+      mention; that judgment belongs to a person, and until now the
+      person had nowhere to record it, so the only way past an assessed
+      finding was to delete the sentence that caused it. Add an optional
+      `acknowledged-references:` section of {path, position, reference,
+      kind, rationale} entries, decoded under the same KnownFields(true)
+      strictness and requiring all five fields non-empty. An entry
+      dismisses ONE finding — the full identity the preview reports:
+      reference, position and kind must all be identical and the
+      artifact must be the same file, with the path written either
+      relative to the project root or absolutely (the preview reports
+      one form and a person may copy either). No prefix, no pattern, no
+      wildcard, and no position-blind match that would silently cover a
+      second occurrence or a future one — an
+      acknowledgment covering findings the operator has not read is
+      indistinguishable from switching the check off. The preflight
+      partitions the blocking findings: matched ones move to
+      pf.Acknowledged and are printed in the preview under their own
+      heading WITH THE RATIONALE (listed, never silently dropped);
+      everything else still populates MissingBlock and still refuses, so
+      fail-closed is unchanged. Acknowledgments matching no finding are
+      reported as such, so a misspelling is visible rather than looking
+      like a refusal nobody can explain.
+    introduces:
+      - "DispositionRecord / Disposition types + LoadDispositionRecord(path string) — strict (KnownFields) YAML decode with closed-vocabulary term validation, single-document enforcement, and term/target contradiction refusal"
+      - "checkDispositionCompleteness(enumerated []string, record *DispositionRecord) []error — no-missing / no-extra / no-duplicate comparison"
+      - "the closed term set {delivered-and-deleted, built-but-undelivered, authority-re-homed-to}"
+      - "AcknowledgedReference {Path, Reference, Rationale} + the acknowledged-references section — the operator's recorded dismissal of one exactly-named inbound finding"
+      - "AcknowledgedReference.matches / DispositionRecord.acknowledges — exact artifact-and-reference matching, relative or absolute path, no prefixes or patterns"
+      - "DispositionRecord.Path — where the record was read from, resolved, so the sweep exempts exactly that file"
+      - "unmatchedAcknowledgments(...) []AcknowledgedReference — acknowledgments that dismissed nothing, reported so a misspelling is visible"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 3: Project-wide, source-aware inbound sweep
+  # ---------------------------------------------------------------------------
+  - id: project-wide-source-aware-inbound-sweep
+    source: "@parlay-tool/root-retirement/refuse-while-anything-outside-the-root-still-stands-on-it"
+    target-creates:
+      # The sweep is its own engine, distinct from the feature-retirement
+      # inventory in inbound_references.go (which stays untouched: its
+      # closed, single-root, specification-only scope is deliberate and
+      # correct where it lives — this feature reads it for reference and
+      # never widens it).
+      - internal/commands/root_retirement_sweep.go
+    transform: >
+      Introduce the project-wide inbound sweep for a retiring root. Scope: it
+      spans every root in the project (the parent and every registered child,
+      not the active root only), and it reads source trees, shipped guidance
+      documents (deployed .claude/skills/, .parlay/modules/, repo-level
+      CLAUDE.md), schema documents (deployed .parlay/schemas/ AND the
+      embedded authoring sources under internal/embedded/), and
+      specifications. Matching is against the retiring root's whole path
+      space — any reference into the root's namespace counts, including
+      ownership markers (parlay-feature:/parlay-component: headers) naming a
+      feature or path of the retiring root, references to paths under the
+      root that correspond to no enumerated feature, and instructions in
+      guidance documents naming a command or artifact only the retiring root
+      provides. The same instruction found in a generated document and in
+      the source it is generated from is reported as two findings, one per
+      file. Ownership held by the retiring root's features over files
+      outside the root's directory blocks the retirement unless a
+      disposition re-homes it (cross-checked against the disposition
+      record's authority-re-homed-to entries). Narrative prose that merely
+      mentions the root's name does not block — the line is what the
+      reference does if the root goes away.
+
+
+      Reference GRAMMAR: markers, `@feature` refs and `--root <name>` are
+      the decorated forms and are not the common ones. For every feature
+      the retiring root enumerates, also match the slug written plainly —
+      the group-qualified `<group>/<feature>` as it appears in Go comments,
+      YAML values and markdown prose — together with its component- and
+      deeper-qualified extensions `<group>/<feature>/<component>/...`.
+      Word-bound both ends: the leading position must not be a word
+      character, a dot or a hyphen (so `codesign-loop/design-loop` is not a
+      hit on `design-loop/design-loop`), a leading slash IS allowed so a
+      reference embedded in a longer path still matches, and a path segment
+      is a dot-separated word run so a sentence-ending period stays outside
+      the captured reference. Path-ish context check: a slug that is itself
+      group-qualified matches as written, while a single-segment slug is an
+      ordinary word and counts only when at least one further path segment
+      follows it. Anything surviving both guards is REPORTED — never
+      dropped on suspicion of coincidence, since a person dismisses a false
+      positive while reading the preview and a missed reference is
+      discovered only after the root is gone. Classify these as a distinct
+      finding kind (group-qualified-reference) carrying the feature named,
+      and evaluate them after the marker and @ref branches so a decorated
+      form keeps its own classification.
+
+
+      Fail-closed, stated to the scope that actually exists: this is a
+      LINE-BASED LEXICAL scan. It reads each eligible file as text and
+      applies its line patterns; it parses no source, configuration or
+      schema document into structure and claims no understanding of
+      structure. Content whose first 8 KiB holds a NUL byte is binary,
+      carries no textual reference, and is passed over without becoming a
+      failure. A file present but UNREADABLE, and a directory that cannot
+      be listed, are scan failures that refuse the retirement — "cannot
+      tell" is never reported as "none". Do NOT claim an unparseable
+      condition: nothing here parses, a structurally broken text document
+      is scanned like any other text and the references in it are still
+      found, and promising a detection the engine does not perform is the
+      overstatement this wording exists to remove. Every finding carries
+      the owning artifact path, the position within it (line or field), and
+      the reference as written — the same triple the feature-retirement
+      Inventory reports, reused as a shape precedent. The sweep runs to
+      completion before any mutation.
+
+
+      TWO EXCLUSIONS, both found by running the real thing against this
+      repository. First, skip any directory below the project root that
+      is a git checkout of its own — isSeparateCheckout tests for a .git
+      entry, FILE OR DIRECTORY, since a linked worktree marks itself
+      with a file and a submodule or vendored clone with a directory.
+      Such a tree is another commit's copy of the project: its markers
+      name whatever the features were called then, they read exactly
+      like live inbound references, and the operator cannot resolve them
+      because editing a checkout of an old commit into agreement with
+      the present one is not a thing anyone should do. Skipping is
+      SkipDir, so nothing below becomes a scan failure either, and
+      re-home readiness — which judges the findings the sweep produced —
+      is thereby never judged against a stale checkout. Second, exempt
+      the disposition record actually in use, at exactly its resolved
+      path (DispositionRecord.Path, set by LoadDispositionRecord and
+      never decoded from the file): the record necessarily enumerates
+      every feature in the retiring root, so scanning it reports the
+      operator's own answers back as evidence against them. Exactly that
+      path and nothing broader — no suffix or name matching — so a
+      second file shaped like a disposition record is scanned like
+      anything else.
+    introduces:
+      - "sweepRootRetirement(parentPath string, target config.Root, dispositions *DispositionRecord) (RootSweepResult, error)"
+      - "RootSweepFinding {Path, Position, Ref, Kind, Feature, Blocking} and RootSweepResult {Findings, Failures} types — fail-closed aggregation"
+      - "path-space matcher: reference detection against the root's namespace, not only its enumerated features"
+      - "groupQualifiedFeatureRes(features []string) []*regexp.Regexp — word-bounded, path-ish-guarded matcher for plain group-qualified and component-qualified feature references"
+      - "the sweepKindGroupQualifiedReference finding kind"
+      - "isSeparateCheckout(dir string) bool — a .git entry (file or directory) marks a nested checkout, whose contents are another commit's copy of the project rather than project content"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 4: Re-home target readiness
+  # ---------------------------------------------------------------------------
+  - id: re-home-target-readiness
+    source: "@parlay-tool/root-retirement/refuse-while-anything-outside-the-root-still-stands-on-it"
+    target-creates:
+      # Lives with the disposition machinery it validates — an
+      # authority-re-homed-to term is only as good as its target.
+      - internal/commands/root_dispositions.go
+    transform: >
+      Validate every authority-re-homed-to disposition target before the run
+      mutates anything, across root boundaries (the target is by
+      construction in a different root from the feature releasing the
+      work). Three conditions, all checked pre-mutation: the named feature
+      exists in the project (resolution crosses roots via the parent's
+      index; a name resolving to no feature refuses); it is active — a
+      feature carrying a retirement of its own, whether applied or authored
+      and waiting to be applied (check-amendments' pending_retirement /
+      terminal-retirement state), is not active, because a record of
+      something ending cannot own live code; and it already claims the
+      surviving work — the ownership markers on the surviving files must
+      already name the target feature, not the retiring one, because a
+      target that will take ownership afterwards does not own the work
+      during the retirement. Each refusal names the target, the failing
+      condition, and for the third condition the file whose claim has not
+      moved.
+    introduces:
+      - "checkRehomeTargets(parentPath string, record *DispositionRecord, findings RootSweepResult) []error — exists / active / already-claims validation, cross-root"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 5: Complete-directory archive with manifest
+  # ---------------------------------------------------------------------------
+  - id: complete-directory-archive-with-manifest
+    source: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+    target-creates:
+      # The archive walk, copy, and manifest engine. Shared with fragment 6
+      # (escaping paths / unreadable members), which governs the same walk's
+      # failure modes.
+      - internal/commands/root_archive.go
+    transform: >
+      Introduce the archive engine: preserve the complete child directory
+      byte for byte — configuration, adapters, and all build state included,
+      never a curated subset — into <destination>/contents/, and write
+      <destination>/manifest.yaml listing every preserved member with its
+      sha256 content hash. The manifest covers itself: it carries a hash
+      over its own sorted member list, so a reader can establish both that
+      the contents are unchanged and that the list of contents is
+      unchanged. The archive is assembled complete before any other part of
+      the project changes; a failure at any point during archiving leaves
+      the project exactly as it was — stage into a temporary directory
+      sibling of the destination and promote by rename only when complete
+      (the atomicity mechanism is the implementation's choice; the
+      invariant is complete-or-absent). Placeholder baselines and empty
+      build state are copied exactly as they are — emptiness is never read
+      as a signal.
+
+
+      VERIFICATION HASHES THE ARCHIVED BYTES. The member hashes are
+      necessarily computed on the SOURCE during the fragment-6 walk, since
+      that is the only moment escape and readability can be judged before
+      anything is written — which leaves an interval in which the source
+      can change concurrently and the copy can itself go wrong. So after
+      the copy and before the manifest is written and the staging directory
+      promoted, re-read every staged member from <staging>/contents/ and
+      re-hash it (os.Readlink + hash of the literal target for a symlink
+      member), requiring equality with the hash the manifest records; a
+      disagreement aborts the run naming that member, while the live tree
+      is still untouched. Counting members is NOT verification and must not
+      stand in for it: a member list of the right length can hold the wrong
+      bytes, and an archive that fails its own integrity check the moment
+      it is written preserves nothing verifiable. Keep the manifest
+      read-back as well — it re-derives the self-covering hash from the
+      member list — but as a second check, not the only one.
+    introduces:
+      - "archiveRoot(target config.Root, destination string) (*ArchiveManifest, error) — walk, copy, staged-byte verification, manifest, self-covering hash"
+      - "verifyStagedArchive(contentsDir string, members []memberEntry) error — re-reads and re-hashes every archived member against the manifest before promotion"
+      - "ArchiveManifest type {Members []{Path, SHA256}, ManifestHash} with WriteManifest/ReadManifest"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 6: Escaping paths and unreadable members fail closed
+  # ---------------------------------------------------------------------------
+  - id: escaping-paths-unreadable-members-fail-closed
+    source: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+    target-creates:
+      # The same walk fragment 5 introduces; this entry owns its two
+      # fail-closed refusals.
+      - internal/commands/root_archive.go
+    transform: >
+      Two conditions met while walking the child directory abort the
+      retirement before any content is copied and before the project has
+      changed in any way. (1) Escape: a symbolic link is followed only when
+      its target resolves inside the child directory; one resolving outside
+      aborts the run, as does any member whose resolved path lands outside
+      the directory by any other route, a traversal segment included.
+      Escape is judged on the resolved path (filepath.EvalSymlinks +
+      containment check against the resolved child root), never on the
+      textual form of the name, and is evaluated for every member during
+      the walk, before any copying. Neither wrong answer is taken:
+      following the escape would preserve content the root does not own,
+      skipping it would produce a copy claiming completeness it does not
+      have. (2) Unreadable member: a member that cannot be read aborts the
+      run — there is no partial archive, because a copy silently missing a
+      file nobody could read is indistinguishable from a complete one. Both
+      refusals name the member that caused them, and a run aborted by
+      either leaves the project exactly as it was: no archive, no record,
+      no change to the root registration.
+    introduces:
+      - "validateArchiveWalk(childPath string) ([]memberEntry, error) — full pre-copy walk with per-member resolved-path containment and readability checks"
+      - "errEscapingMember / errUnreadableMember error values naming the refused member"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 7: Archive invisibility to discovery, and archive integrity
+  # ---------------------------------------------------------------------------
+  - id: archive-invisibility-and-integrity
+    source: "@parlay-tool/root-retirement/keep-the-roots-work-verifiably-not-merely-out-of-the-way"
+    target-files:
+      # Registration of the retired-roots command in the same init() block
+      # as fragment 1's command.
+      - internal/commands/root.go
+    target-creates:
+      # The integrity check: `parlay retired-roots [--check]`.
+      - internal/commands/retired_roots.go
+    transform: >
+      Introduce a `parlay retired-roots` cobra command listing retired roots
+      found under <parent>/.parlay/retired/, with --check reading each
+      archive's manifest back and reporting members whose content changed,
+      members that are missing, and members present in the archive but
+      absent from the manifest — exclusion from discovery is not exclusion
+      from verification. A preserved placeholder baseline naming no intents
+      and no sources passes the check unchanged: verification compares
+      bytes against recorded hashes and never raises a finding on the
+      grounds that preserved build state is empty or thin, because a check
+      that read thinness as damage would fire on the bulk of what a typical
+      retired root preserves and stop being read. Invisibility to
+      discovery: preserved paths live under <parent>/.parlay/retired/,
+      inside the .parlay dot-directory that every live-work walk already
+      skips — config.DiscoverRootsBelow skips dot-directories, and feature /
+      build-state enumeration (config.ScanFeatureTree, Context.AllFeatures,
+      BuildPath walks) is anchored on registered roots, which the retired
+      root no longer is after deregistration. This entry adds regression
+      tests pinning both facts (a retired root's features appear in no live
+      enumeration; its build state appears in no live build-state walk) so
+      a future walker cannot silently start reading archives, and registers
+      the new command in root.go's init().
+    introduces:
+      - "retiredRootsCmd cobra command + runRetiredRoots handler (list + --check)"
+      - "verifyArchiveIntegrity(destination string) (IntegrityReport, error) — changed / missing / unlisted member detection via manifest read-back"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 8: Mutation order, rollback and the resumable journal
+  # ---------------------------------------------------------------------------
+  - id: mutation-order-rollback-resumable-journal
+    source: "@parlay-tool/root-retirement/never-leave-a-project-half-retired"
+    target-files:
+      # The registration change is the last mutation, and the roots index
+      # needs a removal operation with the same persist-or-refuse shape
+      # AppendRootToIndex already has.
+      - internal/config/roots_index.go
+    target-creates:
+      - internal/commands/retirement_journal.go
+    transform: >
+      Order the retirement's mutations so the archive and the retirement
+      record are complete before the project's registration of the root
+      changes, and the registration changes last — add a
+      RemoveRootFromIndex counterpart to AppendRootToIndex in
+      config/roots_index.go (refusing when the named child is absent), and
+      make runRetireRoot call it as its final step. A failure at any point
+      either restores exactly the prior state (pre-archive failures: the
+      staged archive directory is removed and nothing else was written) or
+      leaves an explicit resumable journal at
+      <parent>/.parlay/retired/<root>.journal.yaml naming the outstanding
+      steps in the order they must happen, in terms a person can act on
+      and a resumed run can execute (closed step vocabulary:
+      write-record, deregister-root — the archive is complete before any
+      journal exists, by the ordering above). A resumed `parlay
+      retire-root <name>` finds the journal, reports what is already done
+      and what remains, and continues from the journal rather than
+      starting over — completed steps are not repeated, because their
+      preconditions were consumed (the destination now exists, the
+      contents have moved). While a journal is outstanding, another
+      retirement of the same root refuses, naming the part-finished run.
+      The run is complete only when the registration no longer names the
+      root; the journal is removed in the same final step.
+
+
+      THE JOURNAL IS FOUND BEFORE THE REGISTRATION IS CONSULTED. This is
+      what makes the ordering resumable rather than merely recorded. The
+      terminal step removes the root's directory, then the registration,
+      then the journal, so the state a resume most needs to reach is one
+      where the registration no longer names the root — and a runRetireRoot
+      that resolved its target through the roots index FIRST could never
+      reach it, leaving a journal that documents an interruption nothing
+      can finish. So runRetireRoot scans <parent>/.parlay/retired/ for
+      *.journal.yaml by filename before calling resolveRetirementTarget,
+      matches a journal by the root name or the registered path it records
+      (mirroring the name-or-relative-path rule), and resumes on the
+      journal's own contents; only when nothing is in flight does it fall
+      back to resolving a registered target. Every step of the terminal
+      journal entry is idempotent — skip the directory removal when the
+      directory is already gone, skip the deregistration when the index no
+      longer names the root, tolerate an already-absent journal file — so a
+      resumed run completes whatever remains however much of the final step
+      already happened. A journal that cannot be read or parsed is an error
+      rather than a miss: "cannot tell" is not "nothing in flight", and
+      starting a fresh destructive run over a part-finished one is the
+      failure this ordering exists to prevent.
+
+
+      AUTHENTICATE THE JOURNAL BEFORE ACTING ON IT. Because it is found
+      by scanning a location rather than by being handed over, and
+      because what a resumed run does on its authority is delete a
+      directory and remove a registration with no preflight, no sweep
+      and no disposition record, the file is a delegation of destructive
+      authority — and a file in a known location with a known extension
+      is the easiest artifact in the project to produce. Establish that
+      it is this operation's own record, refusing loudly otherwise:
+      (a) decode through yaml.Decoder with KnownFields(true) and require
+      a single document, so an unknown key is refused rather than
+      dropped and a file that is mostly something else cannot present as
+      a sparse valid journal; (b) require the recorded root to pass
+      validateRootName AND to equal the filename stem it is filed under
+      — a journal claiming one root while filed under another is
+      claiming authority over a retirement it is not the record of;
+      (c) require the recorded relative-path to pass containment;
+      (d) require the outstanding steps to be a NON-EMPTY SUFFIX of the
+      canonical order [write-record, deregister-root] — steps are
+      completed from the front, so that single rule rules out unknown,
+      duplicated, reordered, post-terminal and empty lists together;
+      (e) require the archive the journal is the tail of to stand at the
+      canonical destination for that name, with a manifest.yaml that
+      reads back and verifies its self-covering hash. (e) is the
+      load-bearing check: writing a file is trivial and producing a
+      verified archive is not, so it is what stops a hand-written
+      journal from deregistering and deleting a live root. Also validate
+      the filename stem itself before reading the file, and let any
+      authentication failure refuse the whole run — including one aimed
+      at a different root — rather than skipping the file on the way to
+      a legitimate target.
+
+
+      WHAT THESE CHECKS ESTABLISH, STATED HONESTLY. They do not
+      establish provenance and must not be described as doing so. The
+      journal, the manifest, the retirement record and the digest are
+      all files writable by whoever runs the tool; a party who can forge
+      one can forge the set consistently, and no comparison among them
+      distinguishes a genuine artifact from a well-made forgery. That
+      needs a trust anchor outside the repository — a signature, a key,
+      an append-only log the forger cannot reach — and this operation
+      has none. Authenticity is OUT OF SCOPE; encode the residual rather
+      than a claim the code cannot keep. What is delivered is three
+      properties.
+
+
+      CONSISTENCY. The checks above, plus: verifyArchivedMembers reads
+      every member the manifest names out of <dest>/contents and
+      requires the recorded hash (extracted from verifyStagedArchive so
+      the promote path and the resume path run the identical
+      comparison); a manifest naming NO members is refused, since a root
+      preserves at least its own .parlay configuration; the journal
+      carries manifest-digest, the sha256 of the manifest FILE's bytes,
+      recorded at creation and required to equal the on-disk digest
+      (distinct from the manifest's own hash over its list, which
+      travels with the list and is recomputed by anyone who rewrites
+      it); and authenticateJournalProgress requires every step the
+      journal claims finished to have left its evidence — a finished
+      write-record means a retirement-record.yaml beside the archive
+      naming the same root and relative path. None of this proves
+      origin. All of it catches corruption, partial writes, stale
+      artifacts and honest operator mistakes, which is what actually
+      goes wrong.
+
+
+      INTEGRITY — the real safety property, and the one worth
+      implementing fully: nothing is destroyed unless it is provably
+      preserved. While deregister-root is outstanding the contents are
+      still in place, so archivePreservesLiveContents hashes every live
+      file and requires EQUALITY with the manifest's recorded hash for
+      that same path — not merely that the path is named. Combined with
+      verifyArchivedMembers the chain is live == manifest == archived,
+      so the deletion proceeds only over bytes that demonstrably exist
+      in the preserved copy. A filename-only comparison is insufficient
+      and must not be written: an archive holding the right paths and
+      the wrong bytes would authorize destroying the real ones. A
+      mismatch REFUSES, including the honest case of a file edited while
+      the run was interrupted — the archive is stale, the newer bytes
+      are not in it, and finishing would destroy them — and the refusal
+      names the file and says to run the retirement again from what is
+      actually there. Refusal is the correct outcome for a stale
+      archive, not a case to engineer around.
+
+
+      RUN THAT COMPARISON AT THE DESTRUCTIVE BOUNDARY, not only at
+      admission. Admission decides whether a run may proceed and happens
+      BEFORE the operator is asked to confirm; the prompt then waits on
+      a human, which is an unbounded interval in which an open editor, a
+      build or another terminal can write into the contents about to be
+      destroyed. Anything appearing then is in no archive. So
+      assertContentsPreserved re-reads the manifest and re-runs BOTH
+      halves — verifyArchivedMembers over <dest>/contents and
+      archivePreservesLiveContents over the live directory, including
+      its no-unnamed-paths refusal — inside the deregister-root step,
+      after the remove-contents event fires and immediately before
+      removeUnderParent, on every path that reaches the removal (fresh
+      run and resume alike; the fresh path has the same prompt-shaped
+      window). Both halves, because the archived side can move in the
+      same window as the live side and half a chain proves nothing. A
+      refusal there aborts with the stale-archive guidance and removes
+      nothing.
+
+
+      AUTHORIZATION, which is not the journal's to give. resumeRetirement
+      passes the same gate a fresh execution does: unattended
+      (--non-interactive or no TTY) it refuses WITHOUT asking, and
+      attended it proceeds only on an explicit y/yes; --preview of a
+      part-finished run stays available unattended and commits to
+      nothing. This is what reduces the residual — a chain forged by
+      someone who already has repository write access — to a person
+      being asked, at a terminal, to confirm destroying bytes that are
+      verifiably archived and readable from the archive afterwards.
+    introduces:
+      - "RemoveRootFromIndex(idx *config.RootsIndex, name string) (*config.RootsIndex, error) in internal/config/roots_index.go"
+      - "RetirementJournal type + LoadRetirementJournal/WriteRetirementJournal — ordered outstanding-step record"
+      - "FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) — locates an in-flight retirement by scanning the journal location, without consulting the root registration, refusing any file there that is not named for a root"
+      - "authenticateJournal(parentPath, fileStem string, j *RetirementJournal) error — filename/root binding, slug and containment checks, and the verified-archive requirement that stops a hand-written journal from retiring a live root"
+      - "validateJournalSteps(where string, outstanding []string) error — the outstanding list must be a non-empty suffix of the canonical step order"
+      - "journalStepOrder — the canonical step order the outstanding list is checked against"
+      - "RetirementJournal.ManifestDigest — the manifest file's digest, recorded at journal creation, binding one journal to one archive"
+      - "verifyArchivedMembers(contentsDir string, members []ManifestMember) error — the member re-hashing shared by archive promotion and journal authentication"
+      - "manifestDigest(manifestPath string) (string, error) — hash of the manifest FILE, distinct from its self-covering member-list hash"
+      - "archivePreservesLiveContents(childDir string, members []ManifestMember) error — every live file must HASH-EQUAL its archived member, so a deletion proceeds only over bytes provably present in the preserved copy"
+      - "assertContentsPreserved(parentPath, rootName, childDir string) error — the same comparison re-run inside the deregister-root step immediately before the removal, closing the window the confirmation prompt opens"
+      - "authenticateJournalProgress(...) error — claimed progress cross-checked against the evidence on disk"
+      - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
+    caching: none
+    backward-compatible: true
+
+  # ---------------------------------------------------------------------------
+  # Fragment 9: Retirement authorization, preview and unattended runs
+  # ---------------------------------------------------------------------------
+  - id: retirement-authorization-preview-unattended
+    source: "@parlay-tool/root-retirement/end-a-subproject-without-pretending-it-never-happened"
+    target-creates:
+      # The command surface half of retire_root.go: --preview, the
+      # confirmation prompt, and the unattended refusal.
+      - internal/commands/retire_root.go
+    transform: >
+      Give the retire-root command its confirmation contract. --preview runs
+      the entire preflight — target resolution, destination availability,
+      the features requiring dispositions, the inbound sweep findings,
+      re-home readiness, and the extent of what would be preserved (file
+      count, adapters, build state) — and writes nothing, reserves
+      nothing, and leaves no state behind: a preview asked for on its own
+      leaves the project byte-identical. Execution requires explicit
+      authorization from a person after that preview has been shown — a
+      Y/N confirmation prompt (invoke-destructive per the adapter:
+      mandatory confirmation, never skipped) naming what will be
+      preserved, where, and what will be deregistered. A run that cannot
+      ask — no TTY, or --non-interactive — refuses and writes nothing,
+      and says the absence of a person to authorize it is the reason;
+      preview remains available unattended because reporting commits to
+      nothing. This authorization is the operation's own: the existing
+      feature-retirement refusal (feature-retirement-has-output in
+      check_amendments.go) keeps its current meaning, scope, and message —
+      nothing in this feature touches it — and the retirement record
+      written at <destination>/retirement-record.yaml is history, never
+      accepted as the owner of surviving work (the sweep's re-home check
+      recognizes only live features as owners, never a retirement
+      record).
+    introduces:
+      - "--preview and --dispositions flags; --non-interactive refusal path with the no-person-present reason"
+      - "confirmation prompt gating execution (yn-prompt, mandatory)"
+      - "retirement-record writer: what was decided, dispositions summary, evidence location"
+    caching: none
+    backward-compatible: true
+
+# No wiring rules (no layout-bearing pages in this feature).
+# No bindings (no layout-bearing pages in this feature).
+
+plan:
+  modifies:
+    - path: internal/commands/root.go
+      sources:
+        - cross-cutting/retirement-target-and-destination-preconditions
+        - cross-cutting/archive-invisibility-and-integrity
+    - path: internal/config/roots_index.go
+      sources:
+        - cross-cutting/mutation-order-rollback-resumable-journal
+  creates:
+    - path: internal/commands/retire_root.go
+      sources:
+        - cross-cutting/retirement-target-and-destination-preconditions
+        - cross-cutting/retirement-authorization-preview-unattended
+    - path: internal/commands/root_dispositions.go
+      sources:
+        - cross-cutting/feature-disposition-preflight
+        - cross-cutting/re-home-target-readiness
+    - path: internal/commands/root_retirement_sweep.go
+      sources:
+        - cross-cutting/project-wide-source-aware-inbound-sweep
+    - path: internal/commands/root_archive.go
+      sources:
+        - cross-cutting/complete-directory-archive-with-manifest
+        - cross-cutting/escaping-paths-unreadable-members-fail-closed
+    - path: internal/commands/retired_roots.go
+      sources:
+        - cross-cutting/archive-invisibility-and-integrity
+    - path: internal/commands/retirement_journal.go
+      sources:
+        - cross-cutting/mutation-order-rollback-resumable-journal
+decisions:
+  - id: journal-vocabulary-owns-directory-removal
+    component: cross-cutting/mutation-order-rollback-resumable-journal
+    decided: "Removing the retired root's directory is a sub-action of the deregister-root journal step (directory first, index second), not a third vocabulary member."
+    why: "The step vocabulary is closed at {write-record, deregister-root}; folding the move into deregister-root keeps it closed while preserving never-deregistered-while-the-directory-stands."
+    enforced-by:
+      - internal/commands/retirement_journal.go
+    obsolete-when: "The infrastructure fragment widens the journal step vocabulary."
+  - id: target-match-name-or-relative-path
+    component: cross-cutting/retirement-target-and-destination-preconditions
+    decided: "A target matches a child by registered name OR by registered relative path; matching two distinct children this way is the more-than-one-candidate refusal."
+    why: "With name-only matching, the index's own uniqueness rules make more than one candidate unreachable, leaving the mandated multi-candidate refusal dead code."
+    enforced-by:
+      - internal/commands/retire_root.go
+    obsolete-when: "Target addressing gains an explicit disambiguator that separates name-addressing from path-addressing."
+  - id: rehomed-ownership-nonblocking-at-sweep
+    component: cross-cutting/project-wide-source-aware-inbound-sweep
+    decided: "An ownership-marker finding whose feature a disposition re-homes is reported but non-blocking at sweep level; re-home readiness separately requires the surviving file to already carry the target's marker."
+    why: "The sweep's blocks-unless-re-homed clause and readiness's already-claims condition would otherwise contradict on the same file; splitting blocking authority this way satisfies both invariants."
+    enforced-by:
+      - internal/commands/root_retirement_sweep.go
+      - internal/commands/root_dispositions.go
+    obsolete-when: "Marker re-claiming becomes an action the retirement run performs itself."
+source-signatures:
+  intents: "sha256:eecc1d8e6f0b4d90b3fec7bf7e6e719c8eae72d269173bbbca868ca2ec105ace"
+  dialogs: "sha256:148a59d61716acc7453546ff0836bb585fbbb531fab2e0bb4aa7e8d666e21533"
+  infrastructure: "sha256:6e81fa3bf6509ab303eefa3468bd92e715bfbe2355eed2fe667d81ef9b2dba28"
+  composition: "sha256:7304c870daa2cc3dcfd11d0d728d383993880b12f4864fba8d0c29f09267faa7"
+  adapter-version: "sha256:da302e2bfa84c7e1165e1829678bafb54ad23cd7087ebfe02e7a9ca8fe44513e"

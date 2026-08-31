@@ -136,24 +136,24 @@ Analyze all features in the active root and write a single
           Created empty domain-model.yaml stub at <activeRoot>/domain-model.yaml — ready to author.
 
       The wording "Created empty domain-model.yaml stub at {path} —
-      ready to author." is **stable** — the studio-cli-hooks feature
-      pattern-matches on this single line to chain its "Open
-      Studio's Domain Model Editor?" prompt. This is a deliberate,
-      narrow exception to the general "CI must not pattern-match
-      stdout" rule stated in `build-feature` and `generate-code` —
-      those skills' own output stays unstable-by-design; only this one
-      greenfield-stub line is pinned. Don't generalize this exception
-      to other output, and don't "fix" it to match the general rule.
+      ready to author." is **stable** — this feature's own testcases
+      assert it verbatim, because the one line is what distinguishes an
+      empty stub from a populated extraction for whoever reads the
+      output. This is a deliberate, narrow exception to the general
+      "CI must not pattern-match stdout" rule stated in `build-feature`
+      and `generate-code` — those skills' own output stays
+      unstable-by-design; only this one greenfield-stub line is pinned.
+      Don't generalize this exception to other output, and don't "fix"
+      it to match the general rule.
 
    3. **Safety invariant.** A designer who hand-authored a domain
-      model in Studio and then runs `parlay create-domain-model` must
+      model and then runs `parlay create-domain-model` must
       never have their work clobbered by the greenfield branch. The
       existing-file check in 6.1 holds that invariant.
 
    4. **TTY-agnostic.** The greenfield path produces the same output
       and exit code in CI / non-TTY runs as in interactive ones —
-      this skill never inspects TTY state. Only the Studio hook (a
-      separate feature, downstream of this skill) cares about TTY.
+      this skill never inspects TTY state.
 
 7. **Validate** — invoke:
 

@@ -12,10 +12,6 @@ A **layout** describes the visual / structural composition of a page using compo
 
 This file defines the **universal container fields** that every layout-author may use on every container node, regardless of which adapter is active. The full layout schema (node shape, child arrays, leaf-component properties, vocabulary pinning syntax) is owned by `@studio-support/page-layout-field` and will be added here as that feature lands. This stub establishes the universal-container-fields contract so the vocabulary-extension and layout-pipeline features can refer to a single source of truth for container chrome.
 
-## Relationship to design-spec.schema.md
-
-Layout and design-spec (`.parlay/build/<feature>/design-spec.yaml`) both describe a page's UI, with a deliberately disjoint scope: this file owns structural composition — which components exist, how they nest, `direction`/`gap`/`padding`/`alignment` — and design-spec owns non-layout enrichment on top of that structure — exact widget variant, state-specific visuals, and color/spacing/motion token values. Neither restates the other's fields. A layout node never carries a `variants:` map or a `motion:` token; a design-spec never declares `direction` or child ordering. See `design-spec.schema.md`'s "Relationship to layout.schema.md" section for the full statement and the migration note for design-specs authored before this split (their now-removed per-fragment `layout:` field predates this schema's node-tree ownership of structure).
-
 ## Universal container fields
 
 The following four fields are available on **every** container node in **every** vocabulary, regardless of which adapter is active:
@@ -53,32 +49,6 @@ This is enforced at **adapter parse time**, not at layout-validate time — the 
 **New adapter files** reject the re-declaration at parse time, so the violation cannot reach disk in a freshly-authored adapter.
 
 **Adding a new universal field** is a layout-schema change — not a vocabulary change. It requires migrating every adapter to confirm none of them re-declare the new field, and it requires bumping the layout schema version. This is rare; the four-field set above is intentionally conservative.
-
-<!--
-parlay-feature: design-loop/design-loop
-parlay-component: cross-cutting/on-disk-artifact-contract
--->
-
-## Optional `figma:` block (Design Loop)
-
-A layout MAY declare an optional top-level `figma:` block that records the Figma file the Parlay Studio Design Loop targets for this page. The block is **optional** — existing layout YAMLs without it continue to validate clean, so read-only Domain Model Editor use of layouts (which never invokes the Design Loop) stays unaffected.
-
-```yaml
-figma:
-  file_url: <URL string>
-```
-
-| Field | Value type | Required | Description |
-|---|---|---|---|
-| `file_url` | URL string | required when `figma:` is present | The Figma file the Design Loop reads and writes for this page. Consumed by the `parlay-design-loop` skill (see `.claude/skills/parlay-design-loop/SKILL.md`) — its step 3 and step 6 `get_metadata` calls target this URL, and step 5's write tools (`use_figma`, `add_code_connect_map`, `send_code_connect_mappings`) push edits into the same file. |
-
-The `figma:` block is the **per-feature** location for the Figma file URL. The URL is NOT stored in `studio-config.yaml`, NOT in any environment variable, and NOT at the page schema's root — different features routinely operate on different Figma files, so the URL is a per-feature concern, not a global one.
-
-When `figma:` is absent (or omitted entirely) the layout is still a valid layout file — it just cannot be the target of a design-loop run, since the loop has no Figma file URL to call `get_metadata` against. Validators MUST accept layouts without the block; the block may be omitted whenever the page is read-only or has no design-loop integration.
-
-### v1 contents
-
-In v1 the `figma:` block declares only `file_url:`. A `team_url:` field and a per-node Figma node ID map were considered and **deferred** — pinning speculative fields before the first round-trip produces real data would force premature schema revision. Once `design-loop-result.yaml` actually carries node IDs from a real round-trip, a follow-up feature can extend the `figma:` block to persist them.
 
 <!--
 parlay-section: cross-cutting
@@ -174,7 +144,7 @@ The closed set of stable error codes the precheck registers for this feature:
 - `missing-schema-version` — `schema_version` key absent.
 - `vocabulary-version-mismatch` — page declares a vocabulary version that does not match the registered adapter version.
 - `unknown-component-type` — node references a `type` outside the declared vocabulary.
-- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer). This used to be one of two codes for the same violation, the other being the Design Loop vocabulary validator's `spacing-token-check` rule; that validator and its `Rule` enum are gone, so this is now the only code for it. The duplication the old note explained away no longer exists.
+- `raw-value-where-token-required` — a token-typed field (e.g., `gap`, `padding`) carries a raw value (e.g., `24px`, bare integer).
 - `wiring-in-layout` — node carries a wiring field (`dataSource`, `binding`, expression-string fields) that does not belong in a layout block.
 - `universal-field-value-invalid` — a universal container field whose values are a fixed enum (`direction`, `alignment`) carries a value outside it. Distinct from `unknown-token`: these two sets are owned by this schema rather than by the active adapter, so a project cannot widen them by declaring a token. Absent is always legal — every universal field is optional, and omitting one means "the framework default".
 

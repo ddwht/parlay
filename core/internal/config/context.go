@@ -39,10 +39,10 @@ type Context struct {
 // This is the only constructor. There used to be a second one,
 // NewContextWithStudioDetection, which the cobra entry layer called so
 // that every command handler carried a record of whether the separate
-// parlay-studio binary was on PATH. That binary is retired and the
-// editor it fronted is now in-process (see OpenDomainEditor), so the
-// record had nothing left to gate: what it actually did was make every
-// single parlay invocation shell out to a program that no longer exists.
+// parlay-studio binary was on PATH. That binary was retired, then the
+// in-process editor that replaced it was retired too, so the record had
+// nothing left to gate: what it actually did was make every single parlay
+// invocation shell out to a program that no longer exists.
 func NewContext(result *ResolutionResult, idx *RootsIndex) *Context {
 	c := &Context{Resolution: result, Index: idx}
 	if result != nil {
