@@ -531,3 +531,163 @@ func TestRetireRoot_RetirementRecordIsNotAcceptedAsAnOwner(t *testing.T) {
 		t.Errorf("the refusal should say only a live feature can own surviving work; got: %v", err)
 	}
 }
+
+// --- Suite 1 (continued): registration is not path authorization ------
+//
+// The roots index is an ordinary YAML file, and every destructive step
+// of a retirement is derived from the path it records: the archive walk
+// reads that directory, and the final step deletes it. So a registered
+// path that does not resolve strictly inside the project is refused
+// before anything is enumerated, archived, or removed.
+
+// registerRawRoot rewrites the parent's roots index by hand, so a test
+// can present the registration a bad merge or a hand edit would leave
+// rather than the one AppendRootToIndex would allow.
+func registerRawRoot(t *testing.T, parent, name, relativePath string) {
+	t.Helper()
+	body := "children:\n" +
+		"  - name: " + name + "\n" +
+		"    relative-path: " + relativePath + "\n"
+	path := filepath.Join(parent, config.ParlayDir, config.RootsIndexFile)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// plantOutsideRoot builds a directory that looks exactly like a child
+// root — config, a feature with founding documents, and a file whose
+// survival the test checks — at a location the project does not contain.
+func plantOutsideRoot(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, config.ParlayDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, config.ParlayDir, config.ConfigFile),
+		[]byte("ai-agent: Generic\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeChildFeature(t, dir, "ghost")
+	if err := os.WriteFile(filepath.Join(dir, "precious.txt"),
+		[]byte("content that is not the project's to destroy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRetireRoot_RegisteredPathEscapingTheProjectRefusesBeforeAnyMutation(t *testing.T) {
+	// Each case registers a path a retirement must not act on, with a
+	// real, populated directory behind it wherever the path would land.
+	cases := []struct {
+		name string
+		// rel builds the registered relative-path, given the parent and
+		// a scratch directory outside the project; it also plants the
+		// content that must survive, and returns the directory whose
+		// survival is asserted.
+		setup func(t *testing.T, parent, scratch string) (rel string, mustSurvive string)
+		// want is a phrase the refusal has to contain, so the message
+		// names the reason rather than failing incidentally.
+		want string
+	}{
+		{
+			name: "traversal-out-of-the-project",
+			setup: func(t *testing.T, parent, scratch string) (string, string) {
+				outside := filepath.Join(parent, "..", "escape")
+				plantOutsideRoot(t, outside)
+				return "../escape", outside
+			},
+			want: "escapes the project root",
+		},
+		{
+			name: "absolute-registration",
+			setup: func(t *testing.T, parent, scratch string) (string, string) {
+				plantOutsideRoot(t, scratch)
+				return scratch, scratch
+			},
+			want: "is absolute",
+		},
+		{
+			name: "symlink-resolving-out-of-the-project",
+			setup: func(t *testing.T, parent, scratch string) (string, string) {
+				plantOutsideRoot(t, scratch)
+				if err := os.Symlink(scratch, filepath.Join(parent, "linked")); err != nil {
+					t.Fatal(err)
+				}
+				return "linked", scratch
+			},
+			want: "outside the project root",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetRetirementState(t)
+			parent := makeRetirementParent(t)
+			scratch, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel, mustSurvive := tc.setup(t, parent, scratch)
+			registerRawRoot(t, parent, "old", rel)
+
+			// Everything else about the run is in order: a complete
+			// disposition record, a person present, and a yes. Only the
+			// registered path is wrong, so nothing but the containment
+			// check can be what refuses.
+			retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("ghost"))
+			interactiveTTY(t)
+
+			outsideBefore := treeSnapshot(t, mustSurvive)
+			parentBefore := treeSnapshot(t, parent)
+
+			cmd, _ := retireCmd(t, parent, "y\n")
+			err = runRetireRoot(cmd, []string{"old"})
+			if err == nil {
+				t.Fatal("a registered path that does not resolve inside the project must refuse the retirement")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the refusal must say why the path was refused (want %q); got: %v", tc.want, err)
+			}
+
+			// Fail closed means fail before anything happens: neither the
+			// project nor the directory the registration pointed at has
+			// been read into an archive or removed.
+			assertTreeUnchanged(t, parentBefore, treeSnapshot(t, parent))
+			assertTreeUnchanged(t, outsideBefore, treeSnapshot(t, mustSurvive))
+			if _, statErr := os.Stat(filepath.Join(mustSurvive, "precious.txt")); statErr != nil {
+				t.Errorf("content outside the project must survive a refused retirement: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRetireRoot_JournalNamingAnEscapingPathRefusesTheResume(t *testing.T) {
+	// A journal is a file on disk like any other, and the deletion
+	// target of a resumed run is derived from it, so the containment
+	// check is applied again on every resume rather than once at
+	// registration time.
+	resetRetirementState(t)
+	parent := makeRetirementParent(t)
+	outside := filepath.Join(parent, "..", "escape-journal")
+	plantOutsideRoot(t, outside)
+	addRetirementChild(t, parent, "old", "old", "alpha")
+	interactiveTTY(t)
+
+	if err := os.MkdirAll(retiredRootsDir(parent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	journal := &RetirementJournal{
+		Root:         "old",
+		RelativePath: "../escape-journal",
+		Outstanding:  []string{journalStepDeregisterRoot},
+	}
+	if err := WriteRetirementJournal(parent, journal); err != nil {
+		t.Fatal(err)
+	}
+
+	before := treeSnapshot(t, outside)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil || !strings.Contains(err.Error(), "not inside the project") {
+		t.Fatalf("a resume whose journal names a path outside the project must refuse; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, outside))
+}

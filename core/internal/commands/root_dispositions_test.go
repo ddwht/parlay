@@ -397,3 +397,86 @@ func TestRehome_TargetResolutionCrossesRootBoundaries(t *testing.T) {
 		t.Errorf("target resolution must cross root boundaries; got: %v", errs)
 	}
 }
+
+// --- Suite 2 (continued): the record is read structurally closed -------
+//
+// The disposition record is the authorization for a deletion. These
+// cases pin that a record which does not say exactly what it appears to
+// say is refused rather than silently reinterpreted.
+
+func TestDispositions_UnknownTopLevelKeyRefused(t *testing.T) {
+	_, err := loadRecord(t, `dispositons:
+  - feature: alpha
+    term: delivered-and-deleted
+    rationale: shipped and later removed
+`)
+	if err == nil {
+		t.Fatal("a misspelled top-level key must be refused — silently ignoring it yields an empty record that authorizes a deletion nobody wrote down")
+	}
+	if !strings.Contains(err.Error(), "dispositons") {
+		t.Errorf("the refusal must name the key it did not recognize; got: %v", err)
+	}
+}
+
+func TestDispositions_UnknownEntryKeyRefused(t *testing.T) {
+	_, err := loadRecord(t, `dispositions:
+  - feature: alpha
+    term: delivered-and-deleted
+    raitonale: shipped and later removed
+`)
+	if err == nil {
+		t.Fatal("a misspelled entry key must be refused — dropping it turns a written rationale into a missing one")
+	}
+	if !strings.Contains(err.Error(), "raitonale") {
+		t.Errorf("the refusal must name the key it did not recognize; got: %v", err)
+	}
+}
+
+func TestDispositions_TargetOnATermThatNamesNoneRefused(t *testing.T) {
+	for _, term := range []string{dispositionDeliveredAndDeleted, dispositionBuiltButUndelivered} {
+		t.Run(term, func(t *testing.T) {
+			_, err := loadRecord(t, `dispositions:
+  - feature: alpha
+    term: `+term+`
+    target: "@keeper"
+    rationale: shipped and later removed
+`)
+			if err == nil {
+				t.Fatalf("%s carrying a target must be refused — the term moves nothing while the target says authority moved, and honouring one of them picks for the operator", term)
+			}
+			if !strings.Contains(err.Error(), "@keeper") || !strings.Contains(err.Error(), term) {
+				t.Errorf("the refusal must name the contradiction it found; got: %v", err)
+			}
+		})
+	}
+}
+
+func TestDispositions_SecondDocumentRefused(t *testing.T) {
+	_, err := loadRecord(t, "dispositions:\n"+
+		"  - feature: alpha\n"+
+		"    term: delivered-and-deleted\n"+
+		"    rationale: shipped and later removed\n"+
+		"---\n"+
+		"dispositions:\n"+
+		"  - feature: beta\n"+
+		"    term: built-but-undelivered\n"+
+		"    rationale: never shipped\n")
+	if err == nil {
+		t.Fatal("a record carrying a second YAML document must be refused — the second document's dispositions are never presented for checking")
+	}
+}
+
+func TestDispositions_ClosedReadingStillAcceptsAWellFormedRecord(t *testing.T) {
+	rec, err := loadRecord(t, `dispositions:
+  - feature: alpha
+    term: authority-re-homed-to
+    target: "@keeper"
+    rationale: keeper carries the helper now
+`)
+	if err != nil {
+		t.Fatalf("closing the reading must not refuse a record that says exactly what it means: %v", err)
+	}
+	if len(rec.Dispositions) != 1 || rec.Dispositions[0].Target != "@keeper" {
+		t.Errorf("the record must decode as written: %+v", rec.Dispositions)
+	}
+}

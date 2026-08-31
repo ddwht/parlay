@@ -16,6 +16,14 @@
 // with the destination-must-not-exist precondition of a fresh run. It
 // exists only between a post-archive failure and a resumed completion.
 //
+// It is also found by SCANNING that location, before the registration is
+// consulted — see FindRetirementJournal. The terminal step removes the
+// directory, then the registration, then the journal, so the state a
+// resume most needs to reach is one the registration can no longer
+// describe. Resolving the target through the registration first would
+// make that state unreachable, which is the difference between a journal
+// that records an interruption and one that can finish it.
+//
 // The step vocabulary is closed at two: write-record and deregister-root
 // (decision: journal-vocabulary-owns-directory-removal).
 // The archive is complete before any journal exists, by the ordering
@@ -26,6 +34,13 @@
 // its contents are still in place), and the journal is removed in the
 // same final step (so whenever the contents have moved and the root is
 // still registered, the journal exists).
+//
+// Every part of that step is idempotent — a missing directory is skipped,
+// an already-deregistered root is skipped, an absent journal file is
+// tolerated — so a resumed run completes whatever remains however much of
+// the step already succeeded. That is what makes the registration removal
+// the last mutation whose failure matters: the only thing that can fail
+// after it is the journal removal, and re-running finishes exactly that.
 
 package commands
 
@@ -33,6 +48,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -100,6 +116,61 @@ func LoadRetirementJournal(parentPath, rootName string) (*RetirementJournal, err
 	return &j, nil
 }
 
+// journalFileSuffix is the extension of every in-flight retirement
+// journal, and the only thing a resume needs in order to find one.
+const journalFileSuffix = ".journal.yaml"
+
+// FindRetirementJournal looks for an in-flight retirement matching the
+// operator's argument WITHOUT consulting the root registration.
+//
+// This is the resumability boundary. The final step of a retirement
+// removes the root's directory, deregisters the root, and then removes
+// the journal, so a failure between the last two leaves a journal for a
+// root the registration no longer names. Resolving the target through
+// the registration first would make exactly that state unreachable —
+// the run that must be resumed is the one whose registration has
+// already gone. So the journal location is scanned first, by filename,
+// and a match resumes on the journal's own contents; only when nothing
+// is in flight does the run fall back to resolving a registered target.
+//
+// The argument matches a journal by the root name it records or by the
+// registered path it records, mirroring resolveRetirementTarget's
+// name-or-relative-path rule. A journal that cannot be read or parsed
+// is an error rather than a miss: "cannot tell" is not "nothing in
+// flight", and starting a fresh destructive run over a part-finished
+// one is the failure this refuses.
+func FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) {
+	dir := retiredRootsDir(parentPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan retirement journals in %s: %w", dir, err)
+	}
+	cleanName := filepath.ToSlash(filepath.Clean(name))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), journalFileSuffix) {
+			continue
+		}
+		root := strings.TrimSuffix(e.Name(), journalFileSuffix)
+		j, err := LoadRetirementJournal(parentPath, root)
+		if err != nil {
+			return nil, err
+		}
+		if j == nil {
+			continue
+		}
+		if j.Root == "" {
+			return nil, fmt.Errorf("retirement journal %s names no root — a part-finished retirement that cannot say what it was retiring is refused rather than passed over", filepath.Join(dir, e.Name()))
+		}
+		if j.Root == name || filepath.ToSlash(filepath.Clean(j.RelativePath)) == cleanName {
+			return j, nil
+		}
+	}
+	return nil, nil
+}
+
 // WriteRetirementJournal persists the journal for the named root.
 func WriteRetirementJournal(parentPath string, j *RetirementJournal) error {
 	data, err := yaml.Marshal(j)
@@ -119,8 +190,8 @@ func WriteRetirementJournal(parentPath string, j *RetirementJournal) error {
 // every event is a no-op. Events fired, in order of a full run:
 //
 //	enumerate-features, sweep, archive-walk, stage-archive,
-//	archive-copy (per member), promote, write-journal, write-record,
-//	remove-contents, deregister-index, remove-journal
+//	archive-copy (per member), verify-archive, promote, write-journal,
+//	write-record, remove-contents, deregister-index, remove-journal
 var retirementHook func(event string) error
 
 // retirementEvent fires the hook for one named boundary. A non-nil
@@ -170,7 +241,13 @@ func executeJournal(parentPath string, idx *config.RootsIndex, j *RetirementJour
 			// The root's directory is removed before the registration
 			// stops naming it: at no point is the root deregistered
 			// while its directory is still in place.
-			childDir := filepath.Join(parentPath, filepath.FromSlash(j.RelativePath))
+			// The journal's path is re-validated for containment on every
+			// resumed run: the deletion target is derived from it, and a
+			// journal is an on-disk file like any other.
+			childDir, pathErr := resolveContainedChildDir(parentPath, j.RelativePath)
+			if pathErr != nil {
+				return fmt.Errorf("retirement journal for %q names a path that is not inside the project: %w", j.Root, pathErr)
+			}
 			if _, err := os.Lstat(childDir); err == nil {
 				if err := retirementEvent("remove-contents"); err != nil {
 					return err

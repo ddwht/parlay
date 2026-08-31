@@ -267,3 +267,219 @@ func TestSweep_CompletesBeforeAnyMutation(t *testing.T) {
 	}
 	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
 }
+
+// --- Suite 3 (continued): the grammar features are actually written in
+//
+// Markers, `@feature` refs and `--root <name>` are the DECORATED ways of
+// naming a feature. The ordinary way is to write the group-qualified
+// slug down: `design-loop/design-loop` in a Go comment, a YAML value
+// naming `studio-foundation/studio-deployer`, prose in a shipped skill
+// naming a component under it. Every one of those keeps pointing at the
+// retiring root after it is gone, so every one of them is a finding.
+
+// groupSweepFixture builds a retiring root whose features are
+// group-qualified, the way real features are named.
+func groupSweepFixture(t *testing.T) (parent string, retiring config.Root) {
+	t.Helper()
+	resetRetirementState(t)
+	parent = makeRetirementParent(t)
+	retiring = addRetirementChild(t, parent, "old", "old",
+		"design-loop/design-loop", "studio-foundation/studio-deployer")
+	addRetirementChild(t, parent, "lib", "lib", "helper")
+	return parent, retiring
+}
+
+// assertGroupQualifiedHit requires a blocking group-qualified finding in
+// the named artifact, carrying the reference as written.
+func assertGroupQualifiedHit(t *testing.T, result RootSweepResult, artifact, ref string) {
+	t.Helper()
+	for _, f := range result.Findings {
+		if !strings.Contains(f.Path, artifact) {
+			continue
+		}
+		if f.Kind != sweepKindGroupQualifiedReference {
+			continue
+		}
+		if f.Ref != ref {
+			t.Errorf("%s: the finding must carry the reference as written (got %q, want %q)", artifact, f.Ref, ref)
+			return
+		}
+		if !f.Blocking {
+			t.Errorf("%s: a live reference into the retiring root must block: %+v", artifact, f)
+		}
+		if f.Feature == "" {
+			t.Errorf("%s: the finding must name the retiring feature it found: %+v", artifact, f)
+		}
+		return
+	}
+	t.Errorf("%s: a plain group-qualified reference (%q) must be found; findings: %+v", artifact, ref, result.Findings)
+}
+
+func TestSweep_PlainGroupQualifiedReferencesAreFoundInEveryCorpus(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+
+	// A Go comment in surviving source.
+	writeParentFile(t, parent, "internal/shared/loop.go",
+		"// The phase order here mirrors design-loop/design-loop.\npackage shared\n")
+	// A YAML value in surviving build state.
+	writeParentFile(t, parent, "lib/.parlay/build/helper/buildfile.yaml",
+		"feature: helper\nderived-from: design-loop/design-loop\n")
+	// Markdown prose in a document nobody generated.
+	writeParentFile(t, parent, "docs/architecture.md",
+		"Phase ordering is owned by design-loop/design-loop and nothing else.\n")
+
+	result := runSweep(t, parent, retiring, nil)
+	assertGroupQualifiedHit(t, result, "loop.go", "design-loop/design-loop")
+	assertGroupQualifiedHit(t, result, "buildfile.yaml", "design-loop/design-loop")
+	assertGroupQualifiedHit(t, result, "architecture.md", "design-loop/design-loop")
+}
+
+func TestSweep_ComponentQualifiedReferencesAreFound(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+	writeParentFile(t, parent, "internal/deploy/runner.go",
+		"// Delegates to studio-foundation/studio-deployer/cross-cutting/deploy-step.\npackage deploy\n")
+	writeParentFile(t, parent, "docs/deploy.md",
+		"See studio-foundation/studio-deployer/cross-cutting/deploy-step/notes for the sequence.\n")
+
+	result := runSweep(t, parent, retiring, nil)
+	assertGroupQualifiedHit(t, result, "runner.go",
+		"studio-foundation/studio-deployer/cross-cutting/deploy-step")
+	assertGroupQualifiedHit(t, result, "deploy.md",
+		"studio-foundation/studio-deployer/cross-cutting/deploy-step/notes")
+}
+
+func TestSweep_GroupQualifiedReferenceInGeneratedAndDeployedCopies(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+	instruction := "Rebuild design-loop/design-loop before shipping.\n"
+	// The deployed copy, the module it was deployed from, and the
+	// embedded authoring source are three artifacts and three findings.
+	writeParentFile(t, parent, ".claude/skills/parlay-loop/SKILL.md", instruction)
+	writeParentFile(t, parent, ".parlay/modules/loop.md", instruction)
+	writeParentFile(t, parent, "core/internal/embedded/skills/loop.skill.md", instruction)
+
+	result := runSweep(t, parent, retiring, nil)
+	var hits int
+	for _, f := range result.Findings {
+		if f.Kind == sweepKindGroupQualifiedReference && strings.Contains(f.Ref, "design-loop/design-loop") {
+			hits++
+		}
+	}
+	if hits != 3 {
+		t.Errorf("a generated copy, the module it came from and the embedded source are three findings; got %d: %+v", hits, result.Findings)
+	}
+}
+
+func TestSweep_GroupQualifiedReferenceHeldInASiblingRootSpec(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+	// A sibling root's own specification naming the retiring root's
+	// feature: neither root is the active one, and a single-root sweep
+	// would never look here.
+	writeParentFile(t, parent, "lib/spec/intents/helper/infrastructure.md",
+		"**Behavior**: The helper defers phase ordering to design-loop/design-loop.\n")
+
+	result := runSweep(t, parent, retiring, nil)
+	assertGroupQualifiedHit(t, result, "lib/spec/intents/helper/infrastructure.md",
+		"design-loop/design-loop")
+
+	// And the retirement refuses while it stands.
+	retireRootDispositions = writeDispositionsFile(t,
+		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+	retireRootNonInteractive = true
+	cmd, _ := retireCmd(t, parent, "")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil || !strings.Contains(err.Error(), "infrastructure.md") {
+		t.Errorf("the retirement must refuse naming the sibling-root reference; got: %v", err)
+	}
+}
+
+func TestSweep_GroupQualifiedMatchingIsWordBounded(t *testing.T) {
+	parent, retiring := groupSweepFixture(t)
+	// None of these name the retiring root's features. A match here
+	// would be a false positive produced by substring matching.
+	writeParentFile(t, parent, "docs/nearby.md",
+		"The codesign-loop/design-loop-notes file is unrelated.\n"+
+			"So is redesign-loops and the design-loop idea in general.\n"+
+			"predesign-loop/design-loopy names nothing here.\n")
+
+	result := runSweep(t, parent, retiring, nil)
+	for _, f := range result.Findings {
+		if strings.Contains(f.Path, "nearby.md") {
+			t.Errorf("word boundaries must keep a longer identifier from matching a feature slug: %+v", f)
+		}
+	}
+}
+
+func TestSweep_BareWordFeatureNeedsAPathIshContext(t *testing.T) {
+	// A single-segment feature slug is an ordinary English word as often
+	// as it is a reference, so it counts only in a path-ish context.
+	// This is the guard that keeps the wider grammar usable; it never
+	// applies to the group-qualified slugs the corpus actually uses.
+	parent, retiring := sweepFixture(t) // features: alpha, beta
+	writeParentFile(t, parent, "docs/prose.md",
+		"The alpha release was fine and beta went out on time.\n")
+	writeParentFile(t, parent, "docs/pathish.md",
+		"Regenerate alpha/handbook before the release.\n")
+
+	result := runSweep(t, parent, retiring, nil)
+	for _, f := range result.Findings {
+		if strings.Contains(f.Path, "prose.md") {
+			t.Errorf("a bare word matching a single-segment slug in prose must not block: %+v", f)
+		}
+	}
+	if hits := findingsMatching(result, "pathish.md"); len(hits) == 0 {
+		t.Errorf("the same slug in a path-ish context must be found; findings: %+v", result.Findings)
+	}
+}
+
+func TestSweep_IsALineBasedLexicalScanThatRefusesWhatItCannotRead(t *testing.T) {
+	// What the sweep detects is exactly what it says it detects: written
+	// references, found by reading lines. Nothing is parsed, so nothing
+	// is claimed about structure — but a file that cannot be READ at all
+	// refuses the retirement, because a check whose purpose is to
+	// establish that nothing points here cannot report a clean result
+	// over something it did not read.
+	parent, retiring := groupSweepFixture(t)
+
+	// A file whose contents are structurally broken YAML is still
+	// scanned line by line, and the reference in it is still found.
+	writeParentFile(t, parent, "lib/broken.yaml",
+		"feature: [unclosed\n  derived-from: design-loop/design-loop\n")
+	// A binary file carries no textual reference and is passed over
+	// without becoming a failure.
+	writeParentFile(t, parent, "lib/blob.bin", "\x00\x01\x02binary design-loop/design-loop\x00")
+	// A file that cannot be read is a scan failure.
+	sealed := writeParentFile(t, parent, "lib/sealed.go", "package lib\n")
+	if err := os.Chmod(sealed, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(sealed, 0o644) })
+
+	result := runSweep(t, parent, retiring, nil)
+	assertGroupQualifiedHit(t, result, "broken.yaml", "design-loop/design-loop")
+	for _, f := range result.Failures {
+		if strings.Contains(f.Path, "broken.yaml") {
+			t.Errorf("a lexical scan has no parse step and so no parse failure: %+v", f)
+		}
+		if strings.Contains(f.Path, "blob.bin") {
+			t.Errorf("binary content carries no textual reference and is not a failure: %+v", f)
+		}
+	}
+	sealedFailure := false
+	for _, f := range result.Failures {
+		if strings.Contains(f.Path, "sealed.go") {
+			sealedFailure = true
+		}
+	}
+	if !sealedFailure {
+		t.Fatalf("a file that cannot be read must be a scan failure naming it; failures: %+v", result.Failures)
+	}
+
+	retireRootDispositions = writeDispositionsFile(t,
+		deliveredDispositions("design-loop/design-loop", "studio-foundation/studio-deployer"))
+	retireRootNonInteractive = true
+	cmd, _ := retireCmd(t, parent, "")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil || !strings.Contains(err.Error(), "cannot tell is not none") {
+		t.Errorf("an unreadable file must refuse the retirement; got: %v", err)
+	}
+}

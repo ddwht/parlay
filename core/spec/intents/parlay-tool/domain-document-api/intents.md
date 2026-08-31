@@ -1,35 +1,41 @@
 # Domain document API
 
-> The project's shared vocabulary lives in one document, and the code that can read it, write it safely, and say whether it is valid was built inside an editing surface that is going away. This feature is where that code belongs instead. Its promise is that the DOCUMENT is the contract: a published format, complete validation of it, and document-level read and write with concurrency safety — so a hand editor, an agent, and any editing surface built later are all the same kind of client, and none of them holds a private path into the file.
+> The project's shared vocabulary lives in one document, and the code that can read it, write it safely, and say whether it is valid was built inside an editing surface that is going away. This feature is where that code belongs instead.
+>
+> The DIRECTION it commits to is that the document is the contract: one published format, one validator, one guarded write path, and no client holding a private door into the file. What it DELIVERS is the home for that code and the behavior that home already has — safe load of the stored document, deterministic rewrite, replacement guarded by a content-identity comparison, and comparison of a feature's proposal against the shared document — owned by one unit inside the tool, with every producer inside the tool reaching it.
+>
+> Three things the direction implies are deliberately NOT promised here, because they are not built: a public entry point that lets a client outside this codebase read and write through the same path; a validator whose rule set is closed over everything the departing editing surface enforced on its own side; and a save gate that every write must clear. Each is a later amendment to this feature, and until those amendments land the promises below are scoped to callers inside the tool. Establishing where the code lives is what this feature is for, and a founding document that also claimed the amendments would leave nothing to check them against.
 
 ---
 
 ## Change the shared domain model without the tool that wrote it
 
-**Goal**: Someone who needs the project's shared vocabulary to say something new can make it say that, working only from the documented file, so the change is never gated on having one particular editing surface running.
+**Goal**: Someone who needs the project's shared vocabulary to say something new can make it say that, working from the file itself, so the change is not gated on having one particular editing surface running.
 **Persona**: A person or agent changing the vocabulary the whole project shares
 **Priority**: P0
 **Context**: The domain model is a single document every feature reads, and the only complete read-modify-write path over it — safe load, deterministic rewrite, concurrency-checked save, contribution merge — was built as the inside of one editing surface. Everyone else has the file and a validator, and no guarded way to write. When that surface goes away the safe path must not go with it, and when a new one is built later it must not be given a private door.
-**Action**: Make the document itself the contract — publish its format, validate that format completely, and offer read and write of the whole document — rather than exposing per-element operations shaped by one editor's screens.
+**Action**: Make the document itself the unit of the contract — one owned core that loads, rewrites, checks and replaces the whole document — rather than exposing per-element operations shaped by one editor's screens.
 **Objects**: domain model document, document format, validation finding, content-identity token, contribution
 
 **Constraints**:
 - The unit of the contract is the whole document. Per-element operations are refused as a contract shape: they encode the editing gestures of whichever surface asked for them first, and every later client inherits that surface's model of what an edit is.
 - Editing conveniences are explicitly NOT contract. Cascading a rename, prefilling a field, generating a name from a label — these may differ between clients and are allowed to, because every write is checked against the same rules and lands through the same guarded writer.
-- The submitted document is in the published format itself, not a translation of it. A client that can produce the file can write; a client that could only produce some other shape would be asking for a second definition of the format.
-- Exactly one writer persists the document, and every client reaches it. Two writers means two definitions of what a valid write is, which this project has produced before and paid for.
-- What a client may do is bounded by what the validation rules allow, not by what the client's own screens prevent. A rule an editing surface enforces only on its own side is not a rule.
+- The document's own on-disk format is the format, not a translation of it. A caller that can produce the file can write; one that could only produce some other shape would be asking for a second definition of the format.
+- Exactly one writer persists the document, and every producer inside this tool reaches it. Two writers means two definitions of what a valid write is, which this project has produced before and paid for. Whether a client OUTSIDE this codebase reaches the same writer is not settled here: no such entry point exists yet, and the amendment that adds one is where that promise is made.
+- A rule an editing surface enforces only on its own side is not a rule; what a client may do is meant to be bounded by the shared validation rules rather than by the client's own screens. That is the standard the rule set is being moved toward, not a claim that it already covers every restriction the departing surface applied — closing it is a later amendment, and the gate that makes the bound binding on every write is another.
 - The same guarantees hold for the derived writer that merges a feature's contribution: it is a client of the same core, not a second path around it.
 
 **Verify**:
 - A document produced by hand and the same document produced through the tool are byte-identical on disk.
 - No operation in the contract names a single entity, field, enum or relationship as its subject; the subject is always the document.
-- Every persisted change to the document is observable as having passed the single writer.
-- A client that enforces its own extra restriction still cannot write anything the shared rules reject.
-- A client that enforces none of its own restrictions still cannot write anything the shared rules reject.
+- Every persisted change made anywhere in this codebase is observable as having passed the single writer.
+- A caller that enforces its own extra restriction still cannot write anything the shared rules reject.
+- A caller that enforces none of its own restrictions still cannot write anything the shared rules reject.
 
 **Questions**:
-- The guarded write path exists but has no entry point outside this codebase yet, so today the principle is real for callers inside the tool and only aspirational for anyone else. Giving it a public entry point is the first thing that makes this intent true end-to-end, and it is deliberately not part of establishing where the code lives.
+- The guarded write path exists and has no entry point outside this codebase, so the promise above is real for callers inside the tool and, for anyone else, a direction rather than a delivery. A public entry point is a planned amendment to this feature, not a current promise of it, and it is deliberately not part of establishing where the code lives.
+- The validator's rule set is not closed over everything the departing editing surface enforced on its own side. Until the amendment that closes it lands, "the shared rules" means the rules the engine holds today, and a restriction that only ever lived in that surface leaves with it.
+- Nothing yet obliges a write to clear a validation gate before persisting; the writer performs the concurrency comparison, not a verdict on validity. The gate, its finding classes and its non-worsening rule are a planned amendment.
 
 ---
 
@@ -49,7 +55,7 @@
 - A rejection reports both the token presented and the token the document now carries, so the client can tell "someone else changed it" from "I sent the wrong thing" without reading the file to guess.
 - The writer never merges. Reconciling two changes is a judgement about meaning, and a writer that guesses at it is a writer that occasionally guesses wrong silently.
 - A project that has no document yet is a real starting state, not an error: a distinguished token stands for "there is nothing here", and a write presenting it creates the document. Any other token presented against an absent document is a stale read, not a create.
-- The check must hold across separate processes, not only within one, because the writers are separate processes.
+- The check is meant to hold across separate processes, not only within one, because the writers are separate processes. What holds today is the comparison itself, performed on the stored bytes immediately before the replacement; making the pair indivisible across processes is a planned amendment, and the bound is stated in the questions below rather than promised here.
 
 **Verify**:
 - A write presenting the token from its own read succeeds, and the stored document afterwards is what was submitted.
@@ -57,7 +63,7 @@
 - The failure names both the current and the attempted token.
 - A write presenting the empty-document token against an absent document creates it.
 - A write presenting any other token against an absent document fails.
-- Two writes from separate processes racing on the same document leave one of the two changes stored whole; neither leaves a blend of the two.
+- Two writes from separate processes racing on the same document leave one of the two changes stored whole; neither leaves a blend of the two, because the replacement itself is indivisible.
 
 **Questions**:
 - The check protects writers that cooperate with it. An editor that ignores the protocol entirely can still replace the file between another writer's read and its write; that write is then detected on the next read, not prevented. Stating the bound is the honest position, and narrowing the window is a hardening task rather than a change to this promise.
@@ -153,11 +159,11 @@
 **Persona**: A person or agent checking a domain model document before relying on it
 **Priority**: P0
 **Context**: The document is checked from more than one place: on the way in to a write, and directly when someone asks. Those two paths once ran different code — one shelled out to the other — and every divergence between them showed up as the tool contradicting itself about the same file.
-**Action**: Keep one engine that turns a document into findings, and have every checking path call it and pass what it returns through unaltered.
+**Action**: Keep one engine that turns a document into findings, and have every checking path call it and pass what it returns through unaltered — a claim about agreement between paths, not about the rule set being complete.
 **Objects**: domain model document, validation rule, finding, severity, element path, fix
 
 **Constraints**:
-- One engine owns every rule. A checking path that adds a rule of its own has created a document that is valid in one place and not another.
+- One engine owns every rule there is. A checking path that adds a rule of its own has created a document that is valid in one place and not another. Which rules the engine holds is a separate question from whether it is the only holder of them, and only the second is settled here.
 - Findings pass through verbatim: the code, the element path, the severity, the message and the suggested fix are the engine's, and a consumer neither renames, reclassifies, nor rewords them.
 - The element path anchoring a finding uses one grammar across every path, so a person can carry a finding from one report to another without translating it.
 - A finding that is about the document as a whole rather than any element says so with a distinguished path, rather than pointing at an arbitrary element or at nothing.

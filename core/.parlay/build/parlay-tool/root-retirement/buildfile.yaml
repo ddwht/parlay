@@ -85,9 +85,31 @@ cross-cutting:
       command's preflight sequencing enforces this ordering. Register the
       command in root.go's init() AddCommand block. Errors wrap with
       verb-phrase prefixes per the error-wrapping convention.
+
+
+      Path containment: resolution alone is NOT authorization to act on a
+      location. roots.yaml records a relative path, the archive walk reads
+      that directory and the final journal step os.RemoveAll's it, and the
+      index is an ordinary YAML file a hand edit or a bad merge can change
+      — so the registered path is validated for containment before it can
+      become either. Refuse, fail-closed, when the registration is empty or
+      absolute (a child root is located relative to its parent), when it
+      leaves the parent lexically (".." segments, "." alone), when
+      filepath.EvalSymlinks of the joined path lands anywhere other than
+      strictly inside filepath.EvalSymlinks of the parent (so a symlink
+      pointing out of the project is refused however ordinary its name),
+      when it resolves to the parent root itself, and when the resolution
+      fails for any reason other than the directory not existing — cannot
+      tell is not inside. A non-existent directory resolves to the
+      lexically contained join, since nothing can be archived or removed
+      there. The same judgment is applied to the RelativePath a resumed run
+      reads out of its journal, immediately before the removal, because the
+      journal is a file on disk like any other and is where the deletion
+      target of a resumed run comes from.
     introduces:
       - "retireRootCmd cobra command + runRetireRoot handler (internal/commands/retire_root.go)"
-      - "resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, error) — exactly-one resolution with enumerated refusals"
+      - "resolveRetirementTarget(idx *config.RootsIndex, name string) (config.Root, error) — exactly-one resolution with enumerated refusals, gated on path containment"
+      - "resolveContainedChildDir(parentPath, relPath string) (string, error) — EvalSymlinks + strict-descendant containment of a registered path, fail-closed; called at resolution and again on every journal-driven removal"
       - "checkRetirementDestination(parentPath, rootName string) error — destination-absence precondition"
     caching: none
     backward-compatible: true
@@ -127,8 +149,22 @@ cross-cutting:
       other. No mutation occurs while the preflight is unsatisfied. On a
       completed run the record is preserved verbatim at
       <destination>/dispositions.yaml alongside the archive.
+
+
+      The record is read STRUCTURALLY CLOSED, because it is the
+      authorization for a deletion. Decode through a yaml.Decoder with
+      KnownFields(true) rather than yaml.Unmarshal, so a key the shape does
+      not define is an error naming that key rather than something silently
+      dropped — a misspelled `raitonale:` would otherwise become a missing
+      rationale and a misspelled `dispositons:` an empty record that
+      authorizes every deletion by accounting for nothing. Refuse a second
+      YAML document in the same file (decode again and require io.EOF),
+      whose dispositions would never be presented for checking. And refuse
+      a `target:` carried under a term that names no target: the term moves
+      nothing while the target says authority moved, and honouring either
+      statement decides on the operator's behalf which was meant.
     introduces:
-      - "DispositionRecord / Disposition types + LoadDispositionRecord(path string) — YAML parsing with closed-vocabulary term validation"
+      - "DispositionRecord / Disposition types + LoadDispositionRecord(path string) — strict (KnownFields) YAML decode with closed-vocabulary term validation, single-document enforcement, and term/target contradiction refusal"
       - "checkDispositionCompleteness(enumerated []string, record *DispositionRecord) []error — no-missing / no-extra / no-duplicate comparison"
       - "the closed term set {delivered-and-deleted, built-but-undelivered, authority-re-homed-to}"
     caching: none
@@ -166,17 +202,55 @@ cross-cutting:
       disposition re-homes it (cross-checked against the disposition
       record's authority-re-homed-to entries). Narrative prose that merely
       mentions the root's name does not block — the line is what the
-      reference does if the root goes away. Fail-closed: a file that is
-      present but unreadable or unparseable is recorded as a scan failure
-      that refuses the retirement; "cannot tell" is never reported as
-      "none". Every finding carries the owning artifact path, the position
-      within it (line or field), and the reference as written — the same
-      triple the feature-retirement Inventory reports, reused as a shape
-      precedent. The sweep runs to completion before any mutation.
+      reference does if the root goes away.
+
+
+      Reference GRAMMAR: markers, `@feature` refs and `--root <name>` are
+      the decorated forms and are not the common ones. For every feature
+      the retiring root enumerates, also match the slug written plainly —
+      the group-qualified `<group>/<feature>` as it appears in Go comments,
+      YAML values and markdown prose — together with its component- and
+      deeper-qualified extensions `<group>/<feature>/<component>/...`.
+      Word-bound both ends: the leading position must not be a word
+      character, a dot or a hyphen (so `codesign-loop/design-loop` is not a
+      hit on `design-loop/design-loop`), a leading slash IS allowed so a
+      reference embedded in a longer path still matches, and a path segment
+      is a dot-separated word run so a sentence-ending period stays outside
+      the captured reference. Path-ish context check: a slug that is itself
+      group-qualified matches as written, while a single-segment slug is an
+      ordinary word and counts only when at least one further path segment
+      follows it. Anything surviving both guards is REPORTED — never
+      dropped on suspicion of coincidence, since a person dismisses a false
+      positive while reading the preview and a missed reference is
+      discovered only after the root is gone. Classify these as a distinct
+      finding kind (group-qualified-reference) carrying the feature named,
+      and evaluate them after the marker and @ref branches so a decorated
+      form keeps its own classification.
+
+
+      Fail-closed, stated to the scope that actually exists: this is a
+      LINE-BASED LEXICAL scan. It reads each eligible file as text and
+      applies its line patterns; it parses no source, configuration or
+      schema document into structure and claims no understanding of
+      structure. Content whose first 8 KiB holds a NUL byte is binary,
+      carries no textual reference, and is passed over without becoming a
+      failure. A file present but UNREADABLE, and a directory that cannot
+      be listed, are scan failures that refuse the retirement — "cannot
+      tell" is never reported as "none". Do NOT claim an unparseable
+      condition: nothing here parses, a structurally broken text document
+      is scanned like any other text and the references in it are still
+      found, and promising a detection the engine does not perform is the
+      overstatement this wording exists to remove. Every finding carries
+      the owning artifact path, the position within it (line or field), and
+      the reference as written — the same triple the feature-retirement
+      Inventory reports, reused as a shape precedent. The sweep runs to
+      completion before any mutation.
     introduces:
       - "sweepRootRetirement(parentPath string, target config.Root, dispositions *DispositionRecord) (RootSweepResult, error)"
-      - "RootSweepFinding {Path, Position, Ref, Kind} and RootSweepResult {Findings, Failures} types — fail-closed aggregation"
+      - "RootSweepFinding {Path, Position, Ref, Kind, Feature, Blocking} and RootSweepResult {Findings, Failures} types — fail-closed aggregation"
       - "path-space matcher: reference detection against the root's namespace, not only its enumerated features"
+      - "groupQualifiedFeatureRes(features []string) []*regexp.Regexp — word-bounded, path-ish-guarded matcher for plain group-qualified and component-qualified feature references"
+      - "the sweepKindGroupQualifiedReference finding kind"
     caching: none
     backward-compatible: true
 
@@ -229,17 +303,35 @@ cross-cutting:
       sha256 content hash. The manifest covers itself: it carries a hash
       over its own sorted member list, so a reader can establish both that
       the contents are unchanged and that the list of contents is
-      unchanged. The archive is assembled complete (walk fully validated
-      per fragment 6, then copied, then manifest written and verified by
-      reading back) before any other part of the project changes; a failure
-      at any point during archiving leaves the project exactly as it was —
-      stage into a temporary directory sibling of the destination and
-      promote by rename only when complete (the atomicity mechanism is the
-      implementation's choice; the invariant is complete-or-absent).
-      Placeholder baselines and empty build state are copied exactly as
-      they are — emptiness is never read as a signal.
+      unchanged. The archive is assembled complete before any other part of
+      the project changes; a failure at any point during archiving leaves
+      the project exactly as it was — stage into a temporary directory
+      sibling of the destination and promote by rename only when complete
+      (the atomicity mechanism is the implementation's choice; the
+      invariant is complete-or-absent). Placeholder baselines and empty
+      build state are copied exactly as they are — emptiness is never read
+      as a signal.
+
+
+      VERIFICATION HASHES THE ARCHIVED BYTES. The member hashes are
+      necessarily computed on the SOURCE during the fragment-6 walk, since
+      that is the only moment escape and readability can be judged before
+      anything is written — which leaves an interval in which the source
+      can change concurrently and the copy can itself go wrong. So after
+      the copy and before the manifest is written and the staging directory
+      promoted, re-read every staged member from <staging>/contents/ and
+      re-hash it (os.Readlink + hash of the literal target for a symlink
+      member), requiring equality with the hash the manifest records; a
+      disagreement aborts the run naming that member, while the live tree
+      is still untouched. Counting members is NOT verification and must not
+      stand in for it: a member list of the right length can hold the wrong
+      bytes, and an archive that fails its own integrity check the moment
+      it is written preserves nothing verifiable. Keep the manifest
+      read-back as well — it re-derives the self-covering hash from the
+      member list — but as a second check, not the only one.
     introduces:
-      - "archiveRoot(target config.Root, destination string) (*ArchiveManifest, error) — walk, copy, manifest, self-covering hash"
+      - "archiveRoot(target config.Root, destination string) (*ArchiveManifest, error) — walk, copy, staged-byte verification, manifest, self-covering hash"
+      - "verifyStagedArchive(contentsDir string, members []memberEntry) error — re-reads and re-hashes every archived member against the manifest before promotion"
       - "ArchiveManifest type {Members []{Path, SHA256}, ManifestHash} with WriteManifest/ReadManifest"
     caching: none
     backward-compatible: true
@@ -353,10 +445,34 @@ cross-cutting:
       retirement of the same root refuses, naming the part-finished run.
       The run is complete only when the registration no longer names the
       root; the journal is removed in the same final step.
+
+
+      THE JOURNAL IS FOUND BEFORE THE REGISTRATION IS CONSULTED. This is
+      what makes the ordering resumable rather than merely recorded. The
+      terminal step removes the root's directory, then the registration,
+      then the journal, so the state a resume most needs to reach is one
+      where the registration no longer names the root — and a runRetireRoot
+      that resolved its target through the roots index FIRST could never
+      reach it, leaving a journal that documents an interruption nothing
+      can finish. So runRetireRoot scans <parent>/.parlay/retired/ for
+      *.journal.yaml by filename before calling resolveRetirementTarget,
+      matches a journal by the root name or the registered path it records
+      (mirroring the name-or-relative-path rule), and resumes on the
+      journal's own contents; only when nothing is in flight does it fall
+      back to resolving a registered target. Every step of the terminal
+      journal entry is idempotent — skip the directory removal when the
+      directory is already gone, skip the deregistration when the index no
+      longer names the root, tolerate an already-absent journal file — so a
+      resumed run completes whatever remains however much of the final step
+      already happened. A journal that cannot be read or parsed is an error
+      rather than a miss: "cannot tell" is not "nothing in flight", and
+      starting a fresh destructive run over a part-finished one is the
+      failure this ordering exists to prevent.
     introduces:
       - "RemoveRootFromIndex(idx *config.RootsIndex, name string) (*config.RootsIndex, error) in internal/config/roots_index.go"
       - "RetirementJournal type + LoadRetirementJournal/WriteRetirementJournal — ordered outstanding-step record"
-      - "resume path in runRetireRoot: journal detection, completed-step skip, same-root re-entry refusal"
+      - "FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) — locates an in-flight retirement by scanning the journal location, without consulting the root registration"
+      - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
     caching: none
     backward-compatible: true
 

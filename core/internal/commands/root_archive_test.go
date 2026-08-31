@@ -375,3 +375,155 @@ func TestArchiveWalk_AbortedRunLeavesProjectExactlyAsItWas(t *testing.T) {
 		})
 	}
 }
+
+// --- Suite 5 (continued): the manifest describes the ARCHIVED bytes ---
+//
+// The member hashes are computed on the SOURCE, during the pre-copy walk
+// — the only moment escape and readability can be judged before anything
+// is written. That leaves a window between the walk and the copy. A
+// manifest nobody checked against the staged copy is a claim about the
+// source, not about the archive, and an archive that fails its own
+// integrity check the moment it is written preserves nothing verifiable.
+// So the staged bytes are re-hashed before the archive is promoted.
+
+// stagingContentsPath is where a run's copy lives before promotion.
+func stagingContentsPath(parent, name string) string {
+	return filepath.Join(retiredRootsDir(parent), ".staging-"+name, "contents")
+}
+
+func TestArchive_StagedBytesDisagreeingWithTheManifestAbortTheRun(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	before := treeSnapshot(t, parent)
+
+	// The seam: corrupt a staged member after the copy and before the
+	// verification, standing in for every way a copy can come out wrong.
+	corrupted := filepath.Join(stagingContentsPath(parent, "old"), "internal", "alpha.go")
+	retirementHook = func(event string) error {
+		if event == "verify-archive" {
+			return os.WriteFile(corrupted, []byte("package tampered\n"), 0o644)
+		}
+		return nil
+	}
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("archived bytes that do not hash to what the manifest records must abort the run")
+	}
+	if !strings.Contains(err.Error(), "internal/alpha.go") {
+		t.Errorf("the refusal must name the member whose bytes disagreed; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "does not match what it claims to preserve") {
+		t.Errorf("the refusal must say the archive does not match its own manifest; got: %v", err)
+	}
+
+	// Aborting before any mutation of the live tree is the point: the
+	// archive is complete-or-absent, and this one is absent.
+	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
+	if rootRegistered(t, parent, "old") == false {
+		t.Error("a failed integrity check must leave the root registered")
+	}
+}
+
+func TestArchive_SourceChangingBetweenWalkAndCopyIsCaught(t *testing.T) {
+	// The concurrent-change case the hashes exist to detect. Hashing the
+	// source and then counting members would let this through: the count
+	// is right and the bytes are not.
+	parent, child := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	before := treeSnapshot(t, parent)
+
+	source := filepath.Join(child.Path, "internal", "alpha.go")
+	retirementHook = func(event string) error {
+		if event == "archive-copy" {
+			// Rewrite a source member that the walk has already hashed
+			// and the copy has not yet reached.
+			return os.WriteFile(source, []byte("package changed_after_the_walk\n"), 0o644)
+		}
+		return nil
+	}
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("a source that changed between the walk and the copy must abort the run rather than yield an archive that fails its own integrity check")
+	}
+	if !strings.Contains(err.Error(), "internal/alpha.go") {
+		t.Errorf("the refusal must name the member that changed; got: %v", err)
+	}
+	// The source file itself changed (the test changed it), so the
+	// comparison is against the snapshot taken after that change.
+	after := treeSnapshot(t, parent)
+	before["old/internal/alpha.go"] = after["old/internal/alpha.go"]
+	assertTreeUnchanged(t, before, after)
+}
+
+func TestArchive_VerificationHashesMembersRatherThanCountingThem(t *testing.T) {
+	// A member list of the right length can still hold the wrong bytes.
+	// Swapping two members' contents preserves every count and every
+	// path, and changes only what the hashes are for.
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+
+	retirementHook = func(event string) error {
+		if event != "verify-archive" {
+			return nil
+		}
+		contents := stagingContentsPath(parent, "old")
+		a := filepath.Join(contents, "internal", "alpha.go")
+		b := filepath.Join(contents, ".parlay", "adapters", "go-cli.adapter.yaml")
+		aData, err := os.ReadFile(a)
+		if err != nil {
+			return err
+		}
+		bData, err := os.ReadFile(b)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(a, bData, 0o644); err != nil {
+			return err
+		}
+		return os.WriteFile(b, aData, 0o644)
+	}
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("an archive whose member count and paths are intact but whose bytes are swapped must still fail verification — counting members is not verifying them")
+	}
+}
+
+func TestArchive_HonestArchiveStillCompletesAndVerifies(t *testing.T) {
+	// The verification is a gate, not a wall: an archive that does match
+	// its manifest promotes, and the preserved copy verifies afterwards
+	// against the same hashes.
+	parent, child := archiveFixture(t)
+	childSnap := treeSnapshot(t, child.Path)
+	if err := runAuthorizedRetirement(t, parent); err != nil {
+		t.Fatalf("an archive matching its manifest must complete: %v", err)
+	}
+	dest := retirementDestination(parent, "old")
+	manifest, err := ReadManifest(filepath.Join(dest, "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("the manifest must read back and verify: %v", err)
+	}
+	contents := filepath.Join(dest, "contents")
+	for _, m := range manifest.Members {
+		sum, hashErr := archiveHashFile(filepath.Join(contents, filepath.FromSlash(m.Path)))
+		if hashErr != nil {
+			continue // symlink members are covered by the snapshot compare below
+		}
+		if sum != m.SHA256 {
+			t.Errorf("preserved member %s must hash to what the manifest records", m.Path)
+		}
+	}
+	preserved := treeSnapshot(t, contents)
+	for rel, want := range childSnap {
+		if got, ok := preserved[rel]; !ok || got != want {
+			t.Errorf("member %s must be preserved byte-identically (got %q, want %q)", rel, got, want)
+		}
+	}
+}
