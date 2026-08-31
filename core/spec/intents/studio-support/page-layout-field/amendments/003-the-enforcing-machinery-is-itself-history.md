@@ -4,6 +4,7 @@ date: 2026-08-31
 trigger: "amendment 002 described the root-retirement machinery in the present tense (it 'enforces mechanically'); that machinery was decommissioned the same day, after its one execution, so the sentence is now false as written"
 supersedes:
   - retired-assertions-are-history-not-green
+  - layout-schema-drops-design-loop-preservation
 affects:
   - "@studio-support/page-layout-field/infrastructure:layout-tree-schema"
 ---
