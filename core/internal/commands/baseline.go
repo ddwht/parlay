@@ -80,6 +80,23 @@ type Baseline struct {
 	// unknown. Any future rule that wants to read absence as ordinary
 	// application needs a version bump and a migration, not this field.
 	OutputlessAmendments map[string]bool `yaml:"outputless-amendments,omitempty"`
+
+	// TransitionReceipts records, per exact amendment FILENAME, HOW a
+	// transition was authorised: the canonicalisation scheme, the approval
+	// digest, the mode, the promises withdrawn, the entries affected, and the
+	// authority it advanced from.
+	//
+	// A boolean would record only that a code path once ran. This records what
+	// was approved, so a reader months later can audit the decision without
+	// reconstructing it — and the stored payload is structured rather than the
+	// rendered terminal text, because presentation may change without changing
+	// what was agreed.
+	//
+	// Same rules as the rest of the capsule: written in the atomic write that
+	// advances the marker, copied forward untouched, never recomputed. PRESENCE
+	// records that a ceremony happened. ABSENCE records only that no receipt
+	// was written by the path that produced this file.
+	TransitionReceipts map[string]TransitionReceipt `yaml:"transition-receipts,omitempty"`
 }
 
 // BaselineSchemaVersion is the current baseline format version.
@@ -797,6 +814,12 @@ func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) erro
 			baseline.OutputlessAmendments[name] = v
 		}
 	}
+	if len(op.Prior.Receipts) > 0 {
+		baseline.TransitionReceipts = make(map[string]TransitionReceipt, len(op.Prior.Receipts))
+		for name, r := range op.Prior.Receipts {
+			baseline.TransitionReceipts[name] = r
+		}
+	}
 
 	if op.Mode == authorityAdvance {
 		if baseline.Sources.Amendments == nil {
@@ -838,5 +861,84 @@ func applyAuthorityCapsule(baseline *Baseline, slug string, op authorityOp) erro
 		baseline.LastAppliedAmendment = op.To
 	}
 
+	return nil
+}
+
+// TransitionReceipt is durable evidence of how one amendment was authorised.
+//
+// It stores the COMPLETE canonical approval payload alongside its digest, so a
+// later reader can recompute the digest from the receipt rather than having to
+// reconstruct the payload from elsewhere. An earlier version stored a subset
+// and could not be checked against itself.
+//
+// What this is NOT: cryptographic authenticity. The baseline is not a signed
+// store, so anyone who can rewrite the payload can rewrite the digest beside
+// it. Recomputation is consistency and audit validation. The digest's security
+// value is as a bearer challenge bound to observed state DURING the ceremony;
+// its later value is exact, self-consistent provenance tied to the amendment
+// hash the capsule already carries.
+type TransitionReceipt struct {
+	Payload transitionPayload `yaml:"payload" json:"payload"`
+	Digest  string            `yaml:"digest" json:"digest"`
+}
+
+// Validate checks a stored receipt against itself and its key.
+func (r TransitionReceipt) Validate(key string) error {
+	if r.Payload.AmendmentFile != key {
+		return fmt.Errorf("receipt filed under %q describes %q", key, r.Payload.AmendmentFile)
+	}
+	recomputed, err := transitionDigest(r.Payload)
+	if err != nil {
+		return err
+	}
+	if recomputed != r.Digest {
+		return fmt.Errorf("receipt for %s does not match its own payload — the record of what was "+
+			"approved is internally inconsistent", key)
+	}
+	return nil
+}
+
+// validateAgainstCapsule additionally ties the receipt to the baseline holding
+// it.
+//
+// The last check is the one that makes this more than two values coexisting in
+// a file: the receipt's recorded amendment hash must equal the hash the capsule
+// itself stores for that record. Without it, "provenance tied to the amendment
+// hash the capsule already carries" is a claim about a link nothing enforces.
+func (r TransitionReceipt) validateAgainstCapsule(key, slug string, baseline Baseline) error {
+	if err := r.Validate(key); err != nil {
+		return err
+	}
+	if r.Payload.Feature != slug {
+		return fmt.Errorf("receipt records feature %q but is stored under %q",
+			r.Payload.Feature, slug)
+	}
+	if r.Payload.Scheme != transitionApprovalScheme {
+		return fmt.Errorf("receipt was written under canonicalisation %q, which this build does "+
+			"not recognise", r.Payload.Scheme)
+	}
+	if r.Payload.Mode != transitionModeWithdrawAndSplice {
+		return fmt.Errorf("receipt records transition mode %q, which this build does not "+
+			"recognise", r.Payload.Mode)
+	}
+	if r.Payload.AmendmentSeq <= 0 {
+		return fmt.Errorf("receipt records sequence %d", r.Payload.AmendmentSeq)
+	}
+	if r.Payload.AmendmentSeq > baseline.LastAppliedAmendment {
+		return fmt.Errorf("receipt records sequence %d, above the applied marker %d — a receipt "+
+			"exists only for a record that was applied", r.Payload.AmendmentSeq,
+			baseline.LastAppliedAmendment)
+	}
+	if baseline.Sources == nil {
+		return fmt.Errorf("the capsule records no amendment hashes, so the receipt is tied to nothing")
+	}
+	stored, ok := baseline.Sources.Amendments[key]
+	if !ok {
+		return fmt.Errorf("the capsule records no hash for %s, so the receipt is tied to nothing", key)
+	}
+	if stored != r.Payload.AmendmentHash {
+		return fmt.Errorf("the receipt was approved against amendment hash %s but the capsule "+
+			"records %s for that record", r.Payload.AmendmentHash, stored)
+	}
 	return nil
 }

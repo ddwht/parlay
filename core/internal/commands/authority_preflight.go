@@ -1,10 +1,16 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/gofrs/flock"
 
 	"gopkg.in/yaml.v3"
 
@@ -49,6 +55,9 @@ type appliedAuthority struct {
 	// Outputless records which of those records were blessed on a confirmed
 	// output-less claim, keyed by exact amendment filename.
 	Outputless map[string]bool
+	// Receipts record how each was authorised, keyed by exact amendment
+	// filename. See TransitionReceipt.
+	Receipts map[string]TransitionReceipt
 }
 
 // authorityMode says what a save may do to that capsule.
@@ -138,7 +147,13 @@ func (op authorityOp) validate() error {
 // inspect — lastAppliedAmendment folds both cases to 0, which would make a
 // corrupt baseline read as "nothing applied" and the whole ledger as pending.
 func observeAppliedAuthority(cfg *config.Context, slug string) (appliedAuthority, error) {
-	path := baselinePath(cfg, slug)
+	return observeAppliedAuthorityAt(baselinePath(cfg, slug), slug)
+}
+
+// observeAppliedAuthorityAt is the path-based form, so callers that work from a
+// root path rather than a resolved Context (the migrations) share one reader
+// and one set of receipt checks.
+func observeAppliedAuthorityAt(path, slug string) (appliedAuthority, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return appliedAuthority{}, nil
@@ -163,8 +178,114 @@ func observeAppliedAuthority(cfg *config.Context, slug string) (appliedAuthority
 			out.Outputless[k] = v
 		}
 	}
+	if len(baseline.TransitionReceipts) > 0 {
+		out.Receipts = make(map[string]TransitionReceipt, len(baseline.TransitionReceipts))
+		for k, v := range baseline.TransitionReceipts {
+			// Validate on the way IN. A validator nothing calls protects
+			// nothing: without this, a payload could be mutated while its
+			// stored digest stayed put, both observations would accept it,
+			// sameAuthority would compare equal digests, and every writer
+			// would copy the inconsistent receipt forward.
+			if err := v.validateAgainstCapsule(k, slug, baseline); err != nil {
+				return appliedAuthority{}, fmt.Errorf("the transition receipt for %s is not "+
+					"sound: %w", k, err)
+			}
+			out.Receipts[k] = v
+		}
+	}
 	return out, nil
 }
+
+// sameAuthority reports whether two observations describe the same authority.
+func sameAuthority(a, b appliedAuthority) bool {
+	if a.Through != b.Through || len(a.Hashes) != len(b.Hashes) ||
+		len(a.Outputless) != len(b.Outputless) || len(a.Receipts) != len(b.Receipts) {
+		return false
+	}
+	for k, v := range a.Hashes {
+		if b.Hashes[k] != v {
+			return false
+		}
+	}
+	for k, v := range a.Outputless {
+		if b.Outputless[k] != v {
+			return false
+		}
+	}
+	for k, v := range a.Receipts {
+		other, ok := b.Receipts[k]
+		if !ok || other.Digest != v.Digest {
+			return false
+		}
+	}
+	return true
+}
+
+// withVerifiedAuthority is the authority-storage transaction boundary.
+//
+// Every production path that writes a feature baseline's authority fields goes
+// through here. A cooperative lock protects only an invariant every cooperating
+// writer shares, so a lock held by one command and skipped by the others is not
+// exclusion — it is the same race with a different opponent. Observation,
+// validation against that observation, and replacement must all sit inside it.
+//
+// fn receives the capsule as re-observed UNDER the lock. It is proven equal to
+// what the caller planned against, so a concurrent writer's marker, hashes,
+// output-less evidence or receipts cannot be overwritten from a stale read —
+// atomic rename prevents a torn file, not a lost update.
+//
+// Not re-entrant: flock blocks a second acquisition from the same process, and
+// nothing here nests. Callers that already hold it use the locked layer.
+func withVerifiedAuthority(cfg *config.Context, slug string, planned appliedAuthority, fn func(current appliedAuthority) error) error {
+	return withVerifiedAuthorityAt(cfg.BuildPath(slug), baselinePath(cfg, slug), slug, planned, fn)
+}
+
+// withVerifiedAuthorityAt is the path-based form. Same boundary, same checks.
+func withVerifiedAuthorityAt(dir, blPath, slug string, planned appliedAuthority, fn func(current appliedAuthority) error) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create build dir for %s: %w", slug, err)
+	}
+	lock := flock.New(filepath.Join(dir, authorityLockName))
+	// Test hook: fires immediately before acquisition, so a test can interleave
+	// deterministically with a writer that is about to block on the lock.
+	// Nil in production.
+	if authorityLockAttemptHook != nil {
+		authorityLockAttemptHook(slug)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), authorityLockWait)
+	defer cancel()
+	locked, err := lock.TryLockContext(ctx, authorityLockRetry)
+	if err != nil || !locked {
+		return fmt.Errorf("%w: another process is writing %s's applied authority. Refusing "+
+			"rather than racing it", errAuthorityConflict, slug)
+	}
+	defer func() { _ = lock.Unlock() }()
+
+	current, err := observeAppliedAuthorityAt(blPath, slug)
+	if err != nil {
+		return fmt.Errorf("re-read applied authority for %s under lock: %w", slug, err)
+	}
+	if !sameAuthority(planned, current) {
+		return fmt.Errorf("%w: %s's applied authority changed while this operation was preparing, "+
+			"so what it planned no longer describes the feature. Nothing was written — re-run "+
+			"against the current state", errAuthorityConflict, slug)
+	}
+	return fn(current)
+}
+
+const authorityLockName = ".authority.lock"
+
+// errAuthorityConflict marks a refusal to race, so a caller can tell it apart
+// from a feature that simply could not be baselined.
+var errAuthorityConflict = errors.New("applied-authority conflict")
+
+var (
+	authorityLockWait  = 5 * time.Second
+	authorityLockRetry = 25 * time.Millisecond
+
+	// authorityLockAttemptHook is a test seam. Production leaves it nil.
+	authorityLockAttemptHook func(slug string)
+)
 
 // preserveAuthority is the safe operation: change nothing.
 func preserveAuthority(prior appliedAuthority) authorityOp {
@@ -461,12 +582,18 @@ func refusedGovernanceRecords(slug string, pending []parser.Amendment) []string 
 			slug, joinNames(governance), slug))
 	}
 	if len(combined) > 0 {
+		// NOT "split it into two amendments". That advice was in this message
+		// and it is false: the accounting rule is per-amendment, so a
+		// governance-only half immediately trips
+		// intent-supersession-unaccounted-affect for every entry sourced to the
+		// retiring promise. There is no split that satisfies both rules, which
+		// is exactly why this transition needed an applier of its own.
 		reasons = append(reasons, fmt.Sprintf("%s: %s carries both affects: and "+
-			"supersedes_intents:, and no single operation can apply it — apply-governance refuses "+
-			"anything with affects:, while a splice would withdraw the named promises with no "+
-			"confirmation. Refusing rather than applying half of it. Split it into a splice "+
-			"amendment and a governance amendment",
-			slug, joinNames(combined)))
+			"supersedes_intents:, so it has a splice to record AND promises to withdraw. A save "+
+			"records build evidence and approves nothing, so it will not apply it. Run "+
+			"`parlay internal apply-amendment @%s`, which shows the promises that would end and "+
+			"applies both halves together once you approve them",
+			slug, joinNames(combined), slug))
 	}
 	if len(invalid) > 0 {
 		reasons = append(reasons, fmt.Sprintf("%s: %s declares neither affects: nor a governance "+

@@ -213,7 +213,24 @@ func foundingDocDelta(baseline *Baseline, featureDir string) ([]string, error) {
 // buildfile sections, amendment records, last-applied-amendment, the
 // generated-at stamp — passes through untouched, so any real spec→build
 // staleness keeps reporting. This is deliberately NOT saveBuildState.
+//
+// It replaces the WHOLE baseline from a copy it read, so even though it
+// preserves the authority capsule it must take the same lock as every other
+// writer and read inside it: replacing a pre-read copy over a concurrent
+// writer's changes is a lost update whether or not authority moved.
 func restampFoundingHashes(rootPath, feature string) error {
+	buildDir := filepath.Join(rootPath, config.ParlayDir, config.BuildDir, filepath.FromSlash(feature))
+	blPath := filepath.Join(buildDir, ".baseline.yaml")
+	prior, err := observeAppliedAuthorityAt(blPath, feature)
+	if err != nil {
+		return err
+	}
+	return withVerifiedAuthorityAt(buildDir, blPath, feature, prior, func(appliedAuthority) error {
+		return restampFoundingHashesLocked(rootPath, feature)
+	})
+}
+
+func restampFoundingHashesLocked(rootPath, feature string) error {
 	featureDir := filepath.Join(rootPath, config.SpecDir, config.IntentsDir, filepath.FromSlash(feature))
 	blPath := filepath.Join(rootPath, config.ParlayDir, config.BuildDir, filepath.FromSlash(feature), ".baseline.yaml")
 
@@ -258,7 +275,7 @@ func restampFoundingHashes(rootPath, feature string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(blPath, out, 0o644)
+	return writeFileAtomic(blPath, out)
 }
 
 func runMigrateLedger(cmd *cobra.Command, args []string) error {

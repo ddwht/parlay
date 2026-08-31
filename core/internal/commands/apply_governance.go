@@ -211,13 +211,8 @@ func runApplyGovernance(cmd *cobra.Command, args []string) error {
 // feature nobody rebuilt.
 func advanceAppliedMarker(cfg *config.Context, slug string, seq int, amendments []parser.Amendment) error {
 	path := baselinePath(cfg, slug)
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("read baseline for %s: %w — a governance amendment applies to a feature that has one", slug, err)
-	}
-	var baseline Baseline
-	if err := yaml.Unmarshal(data, &baseline); err != nil {
-		return fmt.Errorf("parse baseline for %s: %w", slug, err)
 	}
 
 	prior, err := observeAppliedAuthority(cfg, slug)
@@ -238,16 +233,34 @@ func advanceAppliedMarker(cfg *config.Context, slug string, seq int, amendments 
 		return fmt.Errorf("advancing %s to %d names no newly applied record", slug, seq)
 	}
 
-	if err := applyAuthorityCapsule(&baseline, slug, advanceAuthority(prior, seq, newly)); err != nil {
-		return err
-	}
-	baseline.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
-
-	out, err := yaml.Marshal(&baseline)
-	if err != nil {
-		return err
-	}
-	return atomicfile.WriteAtomic(path, out)
+	// Same lock, same compare, same boundary as every other authority writer —
+	// AND the baseline is read inside it.
+	//
+	// Reading before the lock and writing after is a lost update even when the
+	// capsule compares equal: a concurrent save may legally update intents,
+	// source or buildfile hashes while preserving authority, and this would
+	// then write its stale pre-lock copy back over them. The rule is stronger
+	// than "capsule writers take the lock": every writer replacing the baseline
+	// must read the version it is going to modify while holding it.
+	return withVerifiedAuthority(cfg, slug, prior, func(current appliedAuthority) error {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read baseline for %s under lock: %w", slug, err)
+		}
+		var baseline Baseline
+		if err := yaml.Unmarshal(data, &baseline); err != nil {
+			return fmt.Errorf("parse baseline for %s: %w", slug, err)
+		}
+		if err := applyAuthorityCapsule(&baseline, slug, advanceAuthority(current, seq, newly)); err != nil {
+			return err
+		}
+		baseline.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+		out, err := yaml.Marshal(&baseline)
+		if err != nil {
+			return err
+		}
+		return atomicfile.WriteAtomic(path, out)
+	})
 }
 
 func joinNames(names []string) string {

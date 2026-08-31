@@ -143,6 +143,49 @@ A marker moved by hand with no recorded evidence buys nothing. A stored hash
 that no longer matches the record buys nothing. A record above the marker is
 pending however good its hash looks.
 
+### Applying a combined record
+
+An amendment carrying BOTH `affects:` and `supersedes_intents:` is legal, and
+for a built feature it is what the accounting rule PRODUCES: retiring a promise
+whose contract entries are still live requires naming each of them in that
+amendment's own `affects:`.
+
+Such a record has a splice somebody performed and promises somebody must
+approve, and neither half may be applied without the other. `save-build-state`
+records build evidence and approves nothing, so it refuses. `apply-governance`
+refuses anything carrying `affects:`, because that has a splice to record.
+
+`parlay internal apply-amendment @<feature>` is the applier. It requires two
+independent proofs, both bound to the exact record:
+
+1. **Splice evidence** — the refine journal names this amendment and reached
+   the test step, exactly as an ordinary refinement must. Relaxed for nothing.
+2. **Promise approval** — the founding promises that stop being in force are
+   printed in full, and the confirmation is bound by digest over the
+   amendment's bytes, the promise set and its text, the affected contract
+   entries, and the prior authority capsule.
+
+Run without `--confirm` to see the promises and obtain the digest; re-run with
+it to apply. The digest is the full SHA-256 of a canonical payload carrying a
+scheme identifier, the feature slug, the amendment's sequence and filename, the
+transition mode, the amendment hash, the promise snapshots, the affected refs
+and the complete prior capsule. It is a **bearer token**, so it is bound to its
+feature and its record: two features holding identical content do not share
+one. Any edit to the record, change to the promise set, or movement in the
+applied authority produces a different digest.
+
+Every writer of a feature's applied authority — `save-build-state`,
+`apply-governance` and `apply-amendment` — goes through one transaction
+boundary: acquire the feature's authority lock, re-observe the capsule, refuse
+if it no longer matches what the operation planned against, and only then
+replace. An atomic rename prevents a torn file, not a lost update, and a lock
+one writer skips is not exclusion.
+
+**Do not split such a record into two amendments.** The accounting rule is
+per-amendment, so a governance-only half trips
+`intent-supersession-unaccounted-affect` for every entry sourced to the
+retiring promise. There is no split that satisfies both rules.
+
 ### How a record was applied
 
 The baseline records the *method* alongside the evidence, in the same file and
@@ -157,6 +200,14 @@ the same atomic write:
 - `outputless-amendments` — optional, per exact amendment **filename**, marking
   a record blessed on a confirmed output-less claim rather than on emitted
   files. Additive, so no schema version changes.
+- `transition-receipts` — optional, per exact amendment **filename**, holding
+  the COMPLETE canonical approval payload alongside its digest, so the digest
+  can be recomputed from the receipt rather than reconstructed from elsewhere.
+  Written by `apply-amendment`. A boolean would record only that a code path
+  ran; this records what was approved, so the decision is auditable. Note what
+  it is *not*: the baseline is not a signed store, so recomputation is
+  consistency and audit validation, never cryptographic authenticity. Same
+  additive rules and the same absence semantics below.
 
   **Presence** positively records a confirmed output-less blessing. **Absence
   records only that no method was written by the baseline version or path that

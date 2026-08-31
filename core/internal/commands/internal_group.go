@@ -106,6 +106,7 @@ func registerInternalCommands() {
 		// saying somebody decided when nobody did.
 		reachability(approveCriteriaCmd, ClassSkillRequired),
 		reachability(applyGovernanceCmd, ClassSkillRequired),
+		reachability(applyAmendmentCmd, ClassSkillRequired),
 		reachability(compactCmd, ClassSkillRequired),
 		reachability(recordExceptionCmd, ClassSkillRequired),
 		reachability(retireDecisionCmd, ClassSkillRequired),

@@ -34,6 +34,19 @@ The fixes below replace every one of them with a proof supplied by the caller.
    `supersedes_intents:` presence. Only by workflow proof. WP1 onward depend on this.
 5. **No partial application states.** Where a record cannot be fully applied by one proven path,
    refuse. A half-applied amendment is the ambiguous authority the ledger exists to prevent.
+6. **A regression must discriminate.** Every test here must (a) establish its precondition — prove
+   the fixture actually reaches the guard before asserting on it; (b) assert the IDENTITY of the
+   intended guard or transition, not merely that an error was non-nil; and (c) where practical, be
+   mutation-tested by reverting the production condition it claims to pin, and observed to fail.
+
+   This is not advice. Seven tests on this branch passed while reaching nothing they named: an
+   archive test whose records the loader could not see; an ownership test whose snapshot keys never
+   matched; two where an earlier check fired first; a fixture generator journalling a state the real
+   selector cannot produce; a conflict test that never invoked the command it was named for; and a
+   concurrency test whose mutation landed before the code under test ran. Four were caught in
+   review, three only because an assertion on message text happened to fail.
+
+   **Green is an outcome; discriminating failure is the evidence.**
 
 ---
 

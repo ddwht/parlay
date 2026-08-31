@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -170,7 +171,20 @@ type featureSaveResult struct {
 // provides backward-compatible per-feature saves for unit tests that
 // operate on a single feature in isolation.
 func saveBuildStateForFeature(cfg *config.Context, slug, sourceRoot string) error {
-	baseline, err := buildBaseline(cfg, slug)
+	prior, err := observeAppliedAuthority(cfg, slug)
+	if err != nil {
+		return err
+	}
+	// Takes the same lock as every other writer. It preserves rather than
+	// advances, but preserving a STALE capsule over a concurrent advance is a
+	// lost update just the same.
+	return withVerifiedAuthority(cfg, slug, prior, func(current appliedAuthority) error {
+		return saveBuildStateForFeatureLocked(cfg, slug, sourceRoot, current)
+	})
+}
+
+func saveBuildStateForFeatureLocked(cfg *config.Context, slug, sourceRoot string, current appliedAuthority) error {
+	baseline, err := buildBaselineWithAuthority(cfg, slug, preserveAuthority(current))
 	if err != nil {
 		return fmt.Errorf("compute baseline: %w", err)
 	}
@@ -208,6 +222,37 @@ func saveBuildStateForFeature(cfg *config.Context, slug, sourceRoot string) erro
 // projectCodeHashesPath returns the project-level code-hashes sidecar path.
 func projectCodeHashesPath(cfg *config.Context) string {
 	return filepath.Join(cfg.ProjectBuildPath(), CodeHashesFile)
+}
+
+// commitFeatureBaseline writes one feature's baseline. Called only with the
+// feature's authority lock held, because it replaces the authority fields.
+func commitFeatureBaseline(cfg *config.Context, slug string, baseline *Baseline) error {
+	// Include per-feature buildfile section hashes (still useful for
+	// per-feature diff @feature in the build-feature skill).
+	bfPath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
+	if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
+		baseline.BuildfileSections = sectionHashes
+	}
+	baselineBytes, err := marshalBaseline(baseline)
+	if err != nil {
+		return fmt.Errorf("marshal baseline for %s: %w", slug, err)
+	}
+	blPath := baselinePath(cfg, slug)
+	if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
+		return fmt.Errorf("create build dir for %s: %w", slug, err)
+	}
+	// Write-if-changed. A re-save of an unedited feature would otherwise
+	// rewrite its baseline with nothing but a fresh generated-at stamp, which
+	// reblames the whole file and buries the one real change in a project-wide
+	// save behind dozens of timestamp-only diffs.
+	if unchanged, err := baselineContentUnchanged(blPath, baseline); err != nil {
+		return fmt.Errorf("compare baseline for %s: %w", slug, err)
+	} else if !unchanged {
+		if err := writeFileAtomic(blPath, baselineBytes); err != nil {
+			return fmt.Errorf("write baseline for %s: %w", slug, err)
+		}
+	}
+	return nil
 }
 
 // saveProjectBuildState atomically commits the full project build state:
@@ -287,8 +332,29 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 		if !plan.Bless[slug] {
 			continue
 		}
-		baseline, err := buildBaselineWithAuthority(cfg, slug, plan.Ops[slug])
+		// Every writer of a feature's authority shares one lock and one
+		// compare. A lock held by apply-amendment and skipped here would not be
+		// exclusion — it would be the same lost-update race with a different
+		// opponent.
+		op := plan.Ops[slug]
+		var baseline *Baseline
+		err := withVerifiedAuthority(cfg, slug, op.Prior, func(_ appliedAuthority) error {
+			bl, buildErr := buildBaselineWithAuthority(cfg, slug, op)
+			if buildErr != nil {
+				return buildErr
+			}
+			baseline = bl
+			return commitFeatureBaseline(cfg, slug, bl)
+		})
 		if err != nil {
+			// An authority conflict is NOT a skipped feature. "Refusing rather
+			// than racing" reported as an ordinary skip would let the run
+			// continue into stage 2 and consume the manifest, turning a failed
+			// comparison into a successful partial save.
+			if errors.Is(err, errAuthorityConflict) {
+				return nil, fmt.Errorf("%s: %w — nothing further was written and the emission "+
+					"manifest was not consumed", slug, err)
+			}
 			// Feature may not have intents yet, or has an unparseable one.
 			// Either way no baseline is written for it — record that so the
 			// summary can report it, rather than dropping the feature
@@ -296,36 +362,6 @@ func saveProjectBuildState(cmd *cobra.Command, cfg *config.Context, sourceRoot s
 			// appears in check-drift.
 			result.Skipped = append(result.Skipped, skippedFeature{Slug: slug, Reason: err.Error()})
 			continue
-		}
-
-		// Include per-feature buildfile section hashes (still useful for
-		// per-feature diff @feature in the build-feature skill).
-		bfPath := filepath.Join(cfg.BuildPath(slug), "buildfile.yaml")
-		if sectionHashes, err := hashBuildfileSections(bfPath); err == nil && sectionHashes != nil {
-			baseline.BuildfileSections = sectionHashes
-		}
-
-		baselineBytes, err := marshalBaseline(baseline)
-		if err != nil {
-			return nil, fmt.Errorf("marshal baseline for %s: %w", slug, err)
-		}
-
-		blPath := baselinePath(cfg, slug)
-		if err := os.MkdirAll(filepath.Dir(blPath), 0755); err != nil {
-			return nil, fmt.Errorf("create build dir for %s: %w", slug, err)
-		}
-		// Write-if-changed. A re-save of an unedited feature would otherwise
-		// rewrite its baseline with nothing but a fresh generated-at stamp,
-		// which reblames the whole file and buries the one real change in a
-		// project-wide save behind dozens of timestamp-only diffs. Skip the
-		// write when the only difference from disk is that stamp; any content
-		// difference (a changed hash, an added intent) still writes.
-		if unchanged, err := baselineContentUnchanged(blPath, baseline); err != nil {
-			return nil, fmt.Errorf("compare baseline for %s: %w", slug, err)
-		} else if !unchanged {
-			if err := writeFileAtomic(blPath, baselineBytes); err != nil {
-				return nil, fmt.Errorf("write baseline for %s: %w", slug, err)
-			}
 		}
 
 		fr := featureSaveResult{Slug: slug, IntentCount: len(baseline.Intents)}

@@ -629,10 +629,36 @@ report — which mode ran is part of what was blessed.
 
    **It confirms nothing about promises.** A governance amendment, or a
    combined one carrying both `affects:` and `supersedes_intents:`, stays
-   refused on this path however empty the manifest is. Governance goes through
-   `parlay internal apply-governance @{feature} --confirm`, which prints the
-   promises that would stop being in force — and that list, not this flag, is
-   what withdrawing them requires.
+   refused on this path however empty the manifest is.
+
+   **If this refinement withdraws a founding promise.** An amendment carrying
+   both `affects:` and `supersedes_intents:` has a splice to record AND promises
+   to withdraw, and neither half may be applied without the other. That is the
+   shape step 3.5 produces whenever the retiring promise still has live contract
+   entries, so it is ordinary, not exotic. The save will refuse it. Apply it
+   with:
+
+   ```
+   parlay internal apply-amendment @{feature}
+   ```
+
+   Run it with no `--confirm` first. It prints the founding promises that would
+   stop being in force — their goal and verify bullets, not their slugs — and a
+   digest. **Show that list to the user and get an explicit yes**, then re-run
+   with `--confirm <digest>`. The digest binds the approval to the amendment's
+   bytes, the promise set, the affected entries and the applied authority, so a
+   yes given for one state cannot be carried to another; if anything moved, ask
+   again.
+
+   Do not answer it yourself, and do not proceed under `--non-interactive` —
+   raise a `parlay-decision` block instead. A promise nobody agreed to withdraw
+   is still in force.
+
+   A record that withdraws promises and touches no contract entry has no splice
+   to record and goes through
+   `parlay internal apply-governance @{feature} --confirm` as before — that
+   command prints the same kind of list, and that list, not a filename, is what
+   withdrawal requires.
 
    **Then end the run's recoverable window**, in this order:
    `parlay internal refine-journal @{feature} --step re-baselined` followed by
