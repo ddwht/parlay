@@ -1,0 +1,206 @@
+members:
+    - path: .parlay/adapter-set.yaml
+      sha256: 02c8f75d531316c629a5d62f785cc2c8a996dc52a6f88dc9d8546f8cb126685e
+    - path: .parlay/adapters/go-studio-app.adapter.yaml
+      sha256: fd21606ba0b265fcd990e725755a8f4b85bdc3d652029b11857d092c51913099
+    - path: .parlay/adapters/react-vite-radix-tailwind.adapter.yaml
+      sha256: c9ccbfec7551973b6a42a9855792519785b1d0b43d4738294dda27118aac6739
+    - path: .parlay/build/_project/.baseline.yaml
+      sha256: e1a4f4f7acc99102976ee9d82c2810d3e8de4972dff8e075effa5f6ccff026e9
+    - path: .parlay/build/_project/.code-hashes.yaml
+      sha256: 3905a38db7195c853c29f41ef0e7d298dab4413e0877034564d39ceaddaaee73
+    - path: .parlay/build/design-loop/design-loop-fallback/.baseline.yaml
+      sha256: b964ec08fbf5aa5aca3bbbdf2b6942e8560509fa1da93e1e4855e3c78b592b68
+    - path: .parlay/build/design-loop/design-loop/.baseline.yaml
+      sha256: 00ea132646b741b77804d0bdc582a1dbf987a31e0a593cba63af910a8fe35629
+    - path: .parlay/build/design-loop/design-loop/buildfile.yaml
+      sha256: 8fe17ab0dbee20bfcc787f82dc4f1ea4640112791222ed377b4a35459f121572
+    - path: .parlay/build/design-loop/design-loop/coverage-review.yaml
+      sha256: 88eda623a694d5bdbda7aca6eba81e4db4d397e067c66933f0b9e91a8199684b
+    - path: .parlay/build/design-loop/design-loop/testcases.yaml
+      sha256: 3294bfe9ca0d0b0142dc3acfb58165b185c2449848959191d333befd02ba8064
+    - path: .parlay/build/design-loop/vocabulary-validation/.baseline.yaml
+      sha256: ec590ba1b187c01d7422a8726da930e1ed80146d543cb3ec233093b676c2855a
+    - path: .parlay/build/design-loop/vocabulary-validation/buildfile.yaml
+      sha256: 9915b4fb4682469e0eb88b2c76c3c2f285ebbeeb80d9aa6f062c7b77bd298ef3
+    - path: .parlay/build/design-loop/vocabulary-validation/coverage-review.yaml
+      sha256: 2a98eff741503c109fd3ab6c7a1f56bcaaca9a4575d8a2839940614e84c8285c
+    - path: .parlay/build/design-loop/vocabulary-validation/testcases.yaml
+      sha256: b20cc28f797d9285b66dca2e48fdace61f5bac4da8438fcbcd80ba37233a18b8
+    - path: .parlay/build/domain-model-editor/domain-model-editor-mvp/.baseline.yaml
+      sha256: 843cb2a4a26bf7d4fcf144c6739b358532c8a8286a457261d30722ade9fe8795
+    - path: .parlay/build/domain-model-editor/domain-model-editor-mvp/buildfile.yaml
+      sha256: dad5326f5dfa9c1c4e76107fadef06cfa365f888b98e0b97b8e579cfadb218ec
+    - path: .parlay/build/domain-model-editor/domain-model-editor-mvp/coverage-review.yaml
+      sha256: a585258a5efcec853dc63706d41a0fd4496b6ee13d896ec26839fc4ebcf94515
+    - path: .parlay/build/domain-model-editor/domain-model-editor-mvp/testcases.yaml
+      sha256: 282df823d5def3fc7e0467d881abf8fb6376dd7d7ab12bb33e76360112b0d285
+    - path: .parlay/build/domain-model-editor/domain-model-editor-relationships/.baseline.yaml
+      sha256: 7defcc5074f1037c17109844aa40c32883281f256b97b90cd80c27fa667bec67
+    - path: .parlay/build/domain-model-editor/domain-model-editor-relationships/buildfile.yaml
+      sha256: 405ca7ce0e3bf8193551bcb862c9983432ee6c61d9092832f1a35c226a6f9685
+    - path: .parlay/build/domain-model-editor/domain-model-editor-relationships/coverage-review.yaml
+      sha256: 24b05ec19104b1462b3e546633c84c1b3483adf50aa2e5653236fdb9254b9a52
+    - path: .parlay/build/domain-model-editor/domain-model-editor-relationships/testcases.yaml
+      sha256: 44fa39d6ff026486c835a8c2bb2f9ba7f3f37d3d72264beb80b0626705c588e0
+    - path: .parlay/build/domain-model-editor/domain-model-editor-validation/.baseline.yaml
+      sha256: 8fb68c16429652845c2d24f1f9950185c326882c2cd954d68567ddf54347a580
+    - path: .parlay/build/domain-model-editor/domain-model-editor-validation/buildfile.yaml
+      sha256: eb4229e67cbabd116c360d126d4c91dc4fdef1f622e35af2553702f35ee9e36e
+    - path: .parlay/build/domain-model-editor/domain-model-editor-validation/coverage-review.yaml
+      sha256: aa132f1a05d634e56b37d5fc19a0a4650a455ac4caeb559b42bf70a6559821c2
+    - path: .parlay/build/domain-model-editor/domain-model-editor-validation/testcases.yaml
+      sha256: 43cf2f7ede5d671b3d2081ddb4c737ba3b7ab50df927b9f24e730a82f053a785
+    - path: .parlay/build/studio-ai-authoring/initial-layout-proposal/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-ai-authoring/sync-back-ai-classification/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-deferred/collaboration-patterns/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-deferred/mid-edit-resumability/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-deferred/multi-screen-management/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-foundation/figma-mcp-client/.baseline.yaml
+      sha256: e08eafe69f2ab3f08abe0ac412b820d074ab2fdda4063c9d15e88da18b2436b6
+    - path: .parlay/build/studio-foundation/figma-mcp-client/buildfile.yaml
+      sha256: f56a206431e84bb5804dbf41b848f8283a7688e2c50b7f46dc4ede2c8d3c64cd
+    - path: .parlay/build/studio-foundation/figma-mcp-client/coverage-review.yaml
+      sha256: 4c3e5b39c258cabe75a1d338a7c2bfbd7b8d72fae445d02268a5cddb53d3b2df
+    - path: .parlay/build/studio-foundation/figma-mcp-client/testcases.yaml
+      sha256: 1984c980c92ed149dddd93d60a932a94396e4b6f541de6bbe02463e8ea1a0b5a
+    - path: .parlay/build/studio-foundation/figma-mcp-via-host-agent/.baseline.yaml
+      sha256: 4308cfd57f766cbd3153d385a71d44e3bee73e83e1af3a7e0dc1a9a825059339
+    - path: .parlay/build/studio-foundation/figma-mcp-via-host-agent/buildfile.yaml
+      sha256: fd717f0300409d72c9ba47bac16e20f8ade393b806d6e7d19a33cd8dbccb042f
+    - path: .parlay/build/studio-foundation/figma-mcp-via-host-agent/testcases.yaml
+      sha256: d4a2b1b10e0fe943f60a151073700d7ce2b018b7c0aa9bee933c55d896437e61
+    - path: .parlay/build/studio-foundation/studio-config/.baseline.yaml
+      sha256: b09dd6ca50be4e0b63f50b5ff7ea79cf9a8bf78a3584f407ad84496d056e68c1
+    - path: .parlay/build/studio-foundation/studio-config/buildfile.yaml
+      sha256: 551d9b49dde571a39ce3e17dbb88c5e35a6c1cf92c49e4c54f5eab61372b8b64
+    - path: .parlay/build/studio-foundation/studio-config/coverage-review.yaml
+      sha256: 749f4945a2e0d4c8f6dbb61ed1d6c0c0a4cdaf73dea58a2b201869c303aa060d
+    - path: .parlay/build/studio-foundation/studio-config/testcases.yaml
+      sha256: 89e46d872f2d1095afbf2fbf1a87ccb840e0bbf551c0302b49d61137917beb75
+    - path: .parlay/build/studio-foundation/studio-deployer/.baseline.yaml
+      sha256: 01b7e674da02bdb431d271e8220451d4ea2365ef32d3220d1f0cd28ffbc3827a
+    - path: .parlay/build/studio-foundation/studio-deployer/buildfile.yaml
+      sha256: d3b49d4bcf31b64f6689c8b36a3fa10a780352cf6c5ba198ce00690f16b40538
+    - path: .parlay/build/studio-foundation/studio-deployer/coverage-review.yaml
+      sha256: 890dcad8f9ba02bd5efec3ab01a335b919b9a96aa1d9b6ddfb40cbf4a18272b3
+    - path: .parlay/build/studio-foundation/studio-deployer/testcases.yaml
+      sha256: 6857469ed3d912f8b28a7379c4deeb729f230c290c984251ba97dc44a5b1f204
+    - path: .parlay/build/studio-foundation/web-server-harness/.baseline.yaml
+      sha256: 06c94bda554e0e6ff7f31fdd4d72519f2ad84263ff5e15fdf0607256db7a4f69
+    - path: .parlay/build/studio-foundation/web-server-harness/buildfile.yaml
+      sha256: 64b94ec57e035315bcb5e9669e29aeb435dbf6e45a800240e1b793c63874111c
+    - path: .parlay/build/studio-foundation/web-server-harness/coverage-review.yaml
+      sha256: c2cda919859c1bf43d0a6f148478ec95dde4337d098e7d8a9228e0a8651b55be
+    - path: .parlay/build/studio-foundation/web-server-harness/testcases.yaml
+      sha256: 2895c6f5901c65500cef13a1908a94a51bd53929102444e859673152be143870
+    - path: .parlay/build/studio-multi-adapter/cross-design-system-adapter/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/build/studio-multi-adapter/second-adapter-same-design-system/.baseline.yaml
+      sha256: 8a05288b98dbc75719466103f829adcdb6274866a079e2119edcc0598a8d0327
+    - path: .parlay/config.yaml
+      sha256: 854425ebcde09f022e5a079a61c04796f2bdf19b8a49511a8a93ccf6d0381fb3
+    - path: spec/intents/design-loop/design-loop-fallback/dialogs.md
+      sha256: abddc1f51e872236711a389935b16351eb989a5b3b4dfd2417328fb2e58d65b1
+    - path: spec/intents/design-loop/design-loop-fallback/intents.md
+      sha256: 00cc33fa287c658e52c4d914527403c33001be377f9cdc11ad352c6df0084966
+    - path: spec/intents/design-loop/design-loop/dialogs.md
+      sha256: c9abe54846166b5c4e4d5c244f1aaecfee92dc12826f202dbe64aa146275a2e0
+    - path: spec/intents/design-loop/design-loop/infrastructure.md
+      sha256: 9c1a4195e45aaa6129da32b05c552163dea27e8514d3fc8371a463de36e0d992
+    - path: spec/intents/design-loop/design-loop/intents.md
+      sha256: eb84d65d76cc3e7e9acd7001ef91da205f0fcbcb34cce627321e7b7967708db0
+    - path: spec/intents/design-loop/vocabulary-validation/dialogs.md
+      sha256: 0ad2c6ee7d7335ed6bc837f7470fe923462117daa3130326b13c4bcfc15a2115
+    - path: spec/intents/design-loop/vocabulary-validation/infrastructure.md
+      sha256: 3d11223600b175335b2f9f3fa8729d6da01b64e48c26f89a9bc76ed931bcc590
+    - path: spec/intents/design-loop/vocabulary-validation/intents.md
+      sha256: fb4d88211443e1dde785079e21b107ebc9081d7762bf950c924fe07ceabddcba
+    - path: spec/intents/domain-model-editor/domain-model-editor-mvp/dialogs.md
+      sha256: 570745e2d04a3f34dbefd992d07063f1fad6f96d03c6c43ac65e1f8d3ae1dd24
+    - path: spec/intents/domain-model-editor/domain-model-editor-mvp/infrastructure.md
+      sha256: e98dcf44c66f7396a81afbb011af804a66c23a1c8bd3183c56d243e69612b866
+    - path: spec/intents/domain-model-editor/domain-model-editor-mvp/intents.md
+      sha256: 60b55b6b30a6b460187f78c82e31de1003a3e0bf74adff6a68c56ed03009c858
+    - path: spec/intents/domain-model-editor/domain-model-editor-mvp/surface.yaml
+      sha256: e09529c550d4d0cdc51b34a2b7454a0c1918c96602874fb59e654d796d20a521
+    - path: spec/intents/domain-model-editor/domain-model-editor-relationships/dialogs.md
+      sha256: fee9b97238344c1ccb4608041736bd949ae48e61317d66695b111d5bbd03533c
+    - path: spec/intents/domain-model-editor/domain-model-editor-relationships/infrastructure.md
+      sha256: 567621e566730fb83f6de20b86905ed8095d8e8643d04c8499f99d47abc69533
+    - path: spec/intents/domain-model-editor/domain-model-editor-relationships/intents.md
+      sha256: 7f0dd0baebefdcd6a169e2f7a89e3221a36846a19c504f1db127cc8a429ee060
+    - path: spec/intents/domain-model-editor/domain-model-editor-relationships/surface.yaml
+      sha256: a7a59f4fb33cf824d7b700bbdb6103cfaf25d66a0605a73278de88916ae6d1a2
+    - path: spec/intents/domain-model-editor/domain-model-editor-validation/dialogs.md
+      sha256: 4e1ce9b1bb899dedab4f3b9a5b13e2bf77c634419041fa060341e40308207220
+    - path: spec/intents/domain-model-editor/domain-model-editor-validation/infrastructure.md
+      sha256: 0aa79db64e21b7c21c4d8625c9b783d69938fad9eee41099e43739bbfa0265d0
+    - path: spec/intents/domain-model-editor/domain-model-editor-validation/intents.md
+      sha256: b5687da943fc6462a43fd1d0716e735e7b959ccd54f9dd0f7f470997ee9710d3
+    - path: spec/intents/domain-model-editor/domain-model-editor-validation/surface.yaml
+      sha256: 1da5171e59cd752716a422f538958f95c6eabaa54e19aa738f132785b4ad1ada
+    - path: spec/intents/studio-ai-authoring/initial-layout-proposal/dialogs.md
+      sha256: 4a4a6689c8e03573495bb7e9f6d329938bd7d36ee1f1f42da145173010d9b0dc
+    - path: spec/intents/studio-ai-authoring/initial-layout-proposal/intents.md
+      sha256: 72d7f7fa33d87730366dd0c35d7c47294115e45e735c916004900b4b013a8b31
+    - path: spec/intents/studio-ai-authoring/sync-back-ai-classification/dialogs.md
+      sha256: 691ca1b1f8341cf6960f24300c0d3735b4e4ea68a0c236a00d96df697c696078
+    - path: spec/intents/studio-ai-authoring/sync-back-ai-classification/intents.md
+      sha256: 386b6e3ccf81047c6987e99843356f8f95e498adba0aec6751a091ead451654b
+    - path: spec/intents/studio-deferred/collaboration-patterns/dialogs.md
+      sha256: fd7c7bfb513d6c9af9324e1d75b86fb4b5fe22f082b7e5ab45ea58e440cd7d5a
+    - path: spec/intents/studio-deferred/collaboration-patterns/intents.md
+      sha256: a1dc3eb69a0ab2728bb128f3050c0f2a1de2f0af252720bd3d791162abccc75e
+    - path: spec/intents/studio-deferred/mid-edit-resumability/dialogs.md
+      sha256: 2d650238f3c9e52c3bd2f71cf64ada3bfde764de23555925232a1667067911ab
+    - path: spec/intents/studio-deferred/mid-edit-resumability/intents.md
+      sha256: fb39cc283d597241e83882fef27da8833a67bd455d6880e52c4b4aca5d2b7fde
+    - path: spec/intents/studio-deferred/multi-screen-management/dialogs.md
+      sha256: 99da334411265342d712c843bb9c6d1bc5c7443c5754945a2c0efc4cae53f33e
+    - path: spec/intents/studio-deferred/multi-screen-management/intents.md
+      sha256: 825c19f545793dc8f3a0f231bcbdcfeebaf771c989ba583940f6b9716262c51d
+    - path: spec/intents/studio-foundation/figma-mcp-client/dialogs.md
+      sha256: 43c98004fd28bb5a1ccc7a26d796639f4031c80b1b60b17381818338692ea49e
+    - path: spec/intents/studio-foundation/figma-mcp-client/infrastructure.md
+      sha256: 668caeebc05696a5e13f13251bef81574099088ed31297f3be215acd664434b9
+    - path: spec/intents/studio-foundation/figma-mcp-client/intents.md
+      sha256: c72b0502b0ab602c9f59fa69a8ff24c2c6c9a0191b9d4d2f953c6ca6f55dae75
+    - path: spec/intents/studio-foundation/figma-mcp-via-host-agent/dialogs.md
+      sha256: 9a78dc784cb141bf823d8d989f4d3107288d8785d0c3c48297f96940bb643fbe
+    - path: spec/intents/studio-foundation/figma-mcp-via-host-agent/infrastructure.md
+      sha256: 458577118c4ff50afdfd72c5deddcb0604c4ed42c1136d19c53daa5e5dd585fb
+    - path: spec/intents/studio-foundation/figma-mcp-via-host-agent/intents.md
+      sha256: 92d5cb96940d69bee5809c301f8a5e203605de5b8fa09997bbd3a9abf7f096ca
+    - path: spec/intents/studio-foundation/studio-config/dialogs.md
+      sha256: 4a9b0212f8998fb678d9934259e439316d9d72d2fa0b3568acce1e5e7495acfa
+    - path: spec/intents/studio-foundation/studio-config/infrastructure.md
+      sha256: 60883b7c2ed00331b1cca1f022f7eb2fb843224111c897f2f32419fce5f9eb93
+    - path: spec/intents/studio-foundation/studio-config/intents.md
+      sha256: c05c8d1e071089edeeee0276a64ef1345c26d9ab3fec49f0fbff6ae2ff8cf48d
+    - path: spec/intents/studio-foundation/studio-deployer/dialogs.md
+      sha256: 905e9622be0e1ee84373a22f688d5aa39a0329c25f13215ecd2c3f66c3490839
+    - path: spec/intents/studio-foundation/studio-deployer/infrastructure.md
+      sha256: 986151952a5b48cd2305be54d84c1a653b36980ad3acfc21b9e5e86c64728a85
+    - path: spec/intents/studio-foundation/studio-deployer/intents.md
+      sha256: 855bc27b78affb62ccb32208470c99d5bc35f4090185baa591bd599ff14d5b45
+    - path: spec/intents/studio-foundation/web-server-harness/dialogs.md
+      sha256: 1f38bd0671a7f0d8e97ccd8665a23d9fc16077060498d63a38ed86057828f307
+    - path: spec/intents/studio-foundation/web-server-harness/infrastructure.md
+      sha256: e3c6d71c64c1cc42ea5d022c17bcad9d683cf5c0aa99f455ecc9aa8ec09d4c38
+    - path: spec/intents/studio-foundation/web-server-harness/intents.md
+      sha256: a41608d7fd5889cca8cc36c3d488dd5eb455b7d84d958f840dad2f69a4899830
+    - path: spec/intents/studio-multi-adapter/cross-design-system-adapter/dialogs.md
+      sha256: 1fb09d5f37da16efeca19daf9a6d562f17c67f4c49e84041320d67ac6703c179
+    - path: spec/intents/studio-multi-adapter/cross-design-system-adapter/intents.md
+      sha256: ef062bce1f8bceddb049dc21116a3638f2f3c6db829c02f095c59b318fa2c197
+    - path: spec/intents/studio-multi-adapter/second-adapter-same-design-system/dialogs.md
+      sha256: eb946e71f2ebc984172edf6fcd7a9eea6f910c0e2faa196e541ae23a03a9cf5a
+    - path: spec/intents/studio-multi-adapter/second-adapter-same-design-system/intents.md
+      sha256: f0ed65c057c3c753170127939aa1d98e5bc21860077a8067378adc0974d08e3a
+manifest-hash: sha256:bc218e5b2990b656b1591f28e9ba81bc4ab4e524f1311ca7e044d7042a2950cb

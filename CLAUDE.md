@@ -68,7 +68,10 @@ intents, dialogs, and build artifacts; schemas, adapters, and the
 agent surface live at the repo-level root and are shared.
 
 - **core** (`core`) — Parlay Core — the spec-driven design and codegen engine
-- **studio** (`studio`) — Parlay Studio — designer-facing extension on top of Core (Figma round-trip, domain model editor)
+
+(The former **studio** child root was retired on 2026-08-31; its archived
+history lives at .parlay/retired/studio/ — verify with `parlay retired-roots
+--check` or the sha256 recipe in the retirement record.)
 <!-- parlay:end -->
 
 ## Skill and Schema Updates (dogfooding rule)

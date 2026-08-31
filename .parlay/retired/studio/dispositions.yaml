@@ -1,0 +1,630 @@
+# Operator disposition record for `parlay retire-root studio`.
+# Authored from the Phase 0.1 inventory (docs/plans/studio-teardown-inventory.md §3),
+# decisions D-011/D-014 in the overnight log, and the backend-only ruling of
+# 2026-08-30. One entry per feature in the retiring root; closed vocabulary.
+dispositions:
+  - feature: design-loop/design-loop
+    term: delivered-and-deleted
+    rationale: "Its one surviving delivery was the Design-Loop block in layout.schema.md, removed under the user-authorized 2026-08-31 disposition with a paired amendment on studio-support/page-layout-field."
+  - feature: design-loop/design-loop-fallback
+    term: built-but-undelivered
+    rationale: "Baseline hashes two intents; no buildfile, no code ever produced."
+  - feature: design-loop/vocabulary-validation
+    term: built-but-undelivered
+    rationale: "Fully built artifacts, but nothing was delivered: its only code trace was a stray marker on an unrelated command registration (root.go), corrected in the teardown; layout.schema.md itself records the validator is gone."
+  - feature: domain-model-editor/domain-model-editor-mvp
+    term: delivered-and-deleted
+    rationale: "Delivered the editor persistence core inside internal/editor; the editor is deleted and the surviving domain core was re-homed by the Phase 1 marker rewrite before this retirement."
+  - feature: domain-model-editor/domain-model-editor-relationships
+    term: delivered-and-deleted
+    rationale: "Delivered the relationships UI inside internal/editor/ui, deleted with the editor."
+  - feature: domain-model-editor/domain-model-editor-validation
+    term: authority-re-homed-to
+    target: parlay-tool/domain-document-api
+    rationale: "Its surviving deliveries (the validator seam in domain_validator.go and the one-engine parity test) carry the founding feature's markers as of the Phase 1 rewrite."
+  - feature: studio-ai-authoring/initial-layout-proposal
+    term: built-but-undelivered
+    rationale: "Placeholder baseline (intents:{}/sources:{}); nothing delivered."
+  - feature: studio-ai-authoring/sync-back-ai-classification
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/collaboration-patterns
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/mid-edit-resumability
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-deferred/multi-screen-management
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-foundation/figma-mcp-client
+    term: built-but-undelivered
+    rationale: "Fully built artifacts; no code was ever produced or kept."
+  - feature: studio-foundation/figma-mcp-via-host-agent
+    term: delivered-and-deleted
+    rationale: "Its delivery was a retraction: the absence of direct MCP code, witnessed by eight parlay-extends markers on editor config/server files. Those witnesses are deleted with the editor, so what it delivered leaves with it. Classified per D-011/D; built-but-undelivered would falsify what the witnesses recorded."
+  - feature: studio-foundation/studio-config
+    term: delivered-and-deleted
+    rationale: "Delivered internal/editor/config, deleted with the editor server."
+  - feature: studio-foundation/studio-deployer
+    term: authority-re-homed-to
+    target: parlay-tool/atomic-file-writes
+    rationale: "Its surviving delivery, core/internal/atomicfile, is used core-wide and carries the founding feature's markers as of the Phase 1 rewrite."
+  - feature: studio-foundation/web-server-harness
+    term: delivered-and-deleted
+    rationale: "Delivered internal/editor/server, deleted with the editor."
+  - feature: studio-multi-adapter/cross-design-system-adapter
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+  - feature: studio-multi-adapter/second-adapter-same-design-system
+    term: built-but-undelivered
+    rationale: "Placeholder baseline; nothing delivered."
+
+# References the operator accepts as historical prose, not live dependencies.
+# Each was reviewed against the Phase 0.1 inventory and the teardown decisions log.
+acknowledged-references:
+  - path: .claude/settings.local.json
+    position: line 9
+    reference: "studio-foundation/web-server-harness"
+    kind: group-qualified-reference
+    rationale: "A stale entry in the user's local tool-permission allowlist quoting an old debugging one-liner; user-owned convenience config, not project dependency."
+  - path: core/.parlay/build/parlay-tool/architectural-prose-artifact/testcases.yaml
+    position: line 170
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen build-state example prose from when the studio root existed; historical record."
+  - path: core/.parlay/build/parlay-tool/architectural-prose-artifact/testcases.yaml
+    position: line 617
+    reference: "studio/spec/intents/studio-foundation/figma-mcp-client/intents.md"
+    kind: path-reference
+    rationale: "Frozen build-state example prose from when the studio root existed; historical record."
+  - path: core/.parlay/build/parlay-tool/root-retirement/buildfile.yaml
+    position: line 299
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The retirement feature's own build instructions quote a studio feature as the worked example of what the sweep must find."
+  - path: core/.parlay/build/parlay-tool/status-feature-phases/buildfile.yaml
+    position: line 103
+    reference: "studio/spec/intents/widget/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/.parlay/build/parlay-tool/status-feature-phases/testcases.yaml
+    position: line 562
+    reference: "studio/spec/intents/widget"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/.parlay/build/studio-support/page-layout-field/buildfile.yaml
+    position: line 319
+    reference: "@design-loop/design-loop"
+    kind: feature-reference
+    rationale: "The byte-equivalence constraint retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/.parlay/build/studio-support/page-layout-field/buildfile.yaml
+    position: line 335
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The byte-equivalence constraint retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/.parlay/build/studio-support/page-layout-field/buildfile.yaml
+    position: line 34
+    reference: "@design-loop/design-loop"
+    kind: feature-reference
+    rationale: "The byte-equivalence constraint retired by amendment 001-layout-schema-drops-design-loop-preservation; retained as frozen build history."
+  - path: core/.parlay/build/studio-support/page-layout-field/testcases.yaml
+    position: line 415
+    reference: 'description: "The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged."'
+    kind: ownership-marker
+    rationale: "Reviewed against the Phase 0.1 inventory: historical/example prose, not a live dependency."
+  - path: core/internal/agent/validate_adapter_set_root_test.go
+    position: line 113
+    reference: "studio/.parlay/adapter-set.yaml"
+    kind: path-reference
+    rationale: "Test fixture string describing a historical scenario; synthetic path, not a live reference."
+  - path: core/internal/agent/validate_adapter_set_root_test.go
+    position: line 115
+    reference: "studio/internal/ui/src/"
+    kind: path-reference
+    rationale: "Test fixture string describing a historical scenario; synthetic path, not a live reference."
+  - path: core/internal/commands/feature_phase_test.go
+    position: line 287
+    reference: "studio/widget"
+    kind: path-reference
+    rationale: "Test fixture using the historical root name; synthetic, not live."
+  - path: core/internal/commands/feature_phase_test.go
+    position: line 298
+    reference: "studio/widget"
+    kind: path-reference
+    rationale: "Test fixture using the historical root name; synthetic, not live."
+  - path: core/spec/intents/parlay-tool/build-integration-discovery-completeness/intents.md
+    position: line 36
+    reference: "studio/internal/"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/build-integration-discovery-completeness/intents.md
+    position: line 48
+    reference: "studio/pkg/..."
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    position: line 3
+    reference: "studio/internal/x.go"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    position: line 33
+    reference: "studio/internal/x.go"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    position: line 36
+    reference: "studio/internal/x.go"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    position: line 48
+    reference: "studio/internal/x.go"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/buildfile-plan-shape-validation/intents.md
+    position: line 49
+    reference: "studio/internal/x.go"
+    kind: path-reference
+    rationale: "Frozen founding-doc example path from when the studio root existed; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/dialogs.md
+    position: line 517
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "Frozen founding-doc worked example: multi-root's canonical example child was studio; historical example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/intents.md
+    position: line 246
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "Frozen founding-doc worked example naming the historical studio child; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/surface.yaml
+    position: line 450
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "Frozen surface examples naming the historical studio child; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/surface.yaml
+    position: line 471
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "Frozen surface examples naming the historical studio child; example prose."
+  - path: core/spec/intents/parlay-tool/multi-root/surface.yaml
+    position: line 492
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "Frozen surface examples naming the historical studio child; example prose."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 104
+    reference: "studio/.parlay/adapters/shared.adapter.yaml"
+    kind: path-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 105
+    reference: "studio/.parlay/build/_project/../../../core/domain-model.yaml"
+    kind: path-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 106
+    reference: "studio/.parlay/adapters/local.adapter.yaml"
+    kind: path-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 107
+    reference: "studio/.parlay/build/design-loop/design-loop/testcases.yaml"
+    kind: path-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 14
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 15
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 16
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 18
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 20
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 21
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 23
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 55
+    reference: "studio-deferred/mid-edit-resumability"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 56
+    reference: "studio-foundation/figma-mcp-client"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 59
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 60
+    reference: "studio-foundation/figma-mcp-via-host-agent"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 61
+    reference: "studio-foundation/figma-mcp-via-host-agent"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 62
+    reference: "studio-deferred/mid-edit-resumability"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 74
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 75
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 79
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/root-retirement/dialogs.md
+    position: line 94
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The root-retirement feature's own dialogs use the studio root's features as worked examples of retirement; they document this very operation."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    position: line 168
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    position: line 242
+    reference: "studio/spec/intents/shared/widget/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    position: line 278
+    reference: "--root studio"
+    kind: command-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/dialogs.md
+    position: line 283
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/infrastructure.md
+    position: line 99
+    reference: "studio/spec/intents/widget/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/intents.md
+    position: line 122
+    reference: "--root studio"
+    kind: command-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/intents.md
+    position: line 125
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 124
+    reference: "--root studio"
+    kind: command-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 127
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 47
+    reference: "--root studio"
+    kind: command-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 50
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 65
+    reference: "--root studio"
+    kind: command-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/parlay-tool/status-feature-phases/surface.yaml
+    position: line 68
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "Frozen spec examples showing multi-root status output for a project that had a studio root; historical example prose, not an instruction that requires the root to exist."
+  - path: core/spec/intents/studio-support/page-layout-field/amendments/001-layout-schema-drops-design-loop-preservation.md
+    position: line 17
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The amendment records the removal of the Design-Loop block; naming the retired feature is the record's purpose."
+  - path: core/spec/intents/studio-support/page-layout-field/amendments/001-layout-schema-drops-design-loop-preservation.md
+    position: line 21
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The amendment records the removal of the Design-Loop block; naming the retired feature is the record's purpose."
+  - path: core/spec/intents/studio-support/page-layout-field/amendments/001-layout-schema-drops-design-loop-preservation.md
+    position: line 74
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The amendment records the removal of the Design-Loop block; naming the retired feature is the record's purpose."
+  - path: core/spec/intents/studio-support/structured-domain-model-validation/amendments/001-cli-only-role-after-studio-teardown.md
+    position: line 4
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    kind: path-reference
+    rationale: "The amendment records this feature's release from the Studio parity contract; the path names what was retired."
+  - path: core/spec/intents/studio-support/structured-domain-model-validation/intents.md
+    position: line 3
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    kind: path-reference
+    rationale: "Frozen founding doc's historical reference to the Studio half of the original parity contract, retired by amendment 001; prose, not dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 109
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 110
+    reference: "studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 111
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 112
+    reference: "studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 113
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 114
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 119
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 133
+    reference: "studio-foundation/studio-config"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 134
+    reference: "domain-model-editor/domain-model-editor-mvp"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 148
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 158
+    reference: "studio/domain-model-editor/domain-model-editor-validation"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 217
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 218
+    reference: "studio/internal/vocabulary"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 219
+    reference: "domain-model-editor/domain-model-editor-mvp"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 220
+    reference: "domain-model-editor/domain-model-editor-relationships"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 221
+    reference: "domain-model-editor/domain-model-editor-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 222
+    reference: "studio-ai-authoring/initial-layout-proposal"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 223
+    reference: "studio-ai-authoring/sync-back-ai-classification"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 224
+    reference: "studio-deferred/collaboration-patterns"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 225
+    reference: "studio-deferred/mid-edit-resumability"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 226
+    reference: "studio-deferred/multi-screen-management"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 227
+    reference: "studio-foundation/figma-mcp-client"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 228
+    reference: "studio-foundation/figma-mcp-via-host-agent"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 229
+    reference: "studio-foundation/studio-config"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 230
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 231
+    reference: "studio-foundation/web-server-harness"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 232
+    reference: "studio-multi-adapter/cross-design-system-adapter"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 233
+    reference: "studio-multi-adapter/second-adapter-same-design-system"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 244
+    reference: "studio/.parlay/config.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 245
+    reference: "studio/.parlay/adapter-set.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 246
+    reference: "studio/.parlay/adapters/go-studio-app.adapter.yaml"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 248
+    reference: "studio/.parlay/build/_project/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 384
+    reference: "studio/spec/intents/domain-model-editor/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 392
+    reference: "studio/spec/intents/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 404
+    reference: '> description: "The HTML comment marker attributing the optional figma: block section to parlay-feature: design-loop/design-loop is preserved byte-equivalent. The figma: block section itself is preserved unchanged."'
+    kind: ownership-marker
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 568
+    reference: "design-loop/design-loop-fallback"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 583
+    reference: "design-loop/vocabulary-validation"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 588
+    reference: "studio-foundation/studio-deployer"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency."
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 120
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 122
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 124
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 125
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 216
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 249
+    reference: "studio/.parlay/build/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 317
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 415
+    reference: "design-loop/design-loop"
+    kind: group-qualified-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 74
+    reference: "studio/spec/intents"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"
+  - path: docs/plans/studio-teardown-inventory.md
+    position: line 75
+    reference: "studio/.parlay/build/"
+    kind: path-reference
+    rationale: "The Phase 0.1 teardown inventory is the analysis record OF this retirement: quoting every feature, path and marker in the root is the document's purpose. Historical analysis prose, not a live dependency. (This occurrence was initially hidden from the preview by the path+reference filtering bug fixed alongside this record.)"

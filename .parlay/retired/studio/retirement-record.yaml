@@ -1,0 +1,64 @@
+root: studio
+relative-path: studio
+retired-at: "2026-08-31T07:40:34Z"
+archive: contents/
+manifest: manifest.yaml
+dispositions: dispositions.yaml
+preserved-members: 102
+feature-dispositions:
+    - feature: design-loop/design-loop
+      term: delivered-and-deleted
+      rationale: Its one surviving delivery was the Design-Loop block in layout.schema.md, removed under the user-authorized 2026-08-31 disposition with a paired amendment on studio-support/page-layout-field.
+    - feature: design-loop/design-loop-fallback
+      term: built-but-undelivered
+      rationale: Baseline hashes two intents; no buildfile, no code ever produced.
+    - feature: design-loop/vocabulary-validation
+      term: built-but-undelivered
+      rationale: 'Fully built artifacts, but nothing was delivered: its only code trace was a stray marker on an unrelated command registration (root.go), corrected in the teardown; layout.schema.md itself records the validator is gone.'
+    - feature: domain-model-editor/domain-model-editor-mvp
+      term: delivered-and-deleted
+      rationale: Delivered the editor persistence core inside internal/editor; the editor is deleted and the surviving domain core was re-homed by the Phase 1 marker rewrite before this retirement.
+    - feature: domain-model-editor/domain-model-editor-relationships
+      term: delivered-and-deleted
+      rationale: Delivered the relationships UI inside internal/editor/ui, deleted with the editor.
+    - feature: domain-model-editor/domain-model-editor-validation
+      term: authority-re-homed-to
+      target: parlay-tool/domain-document-api
+      rationale: Its surviving deliveries (the validator seam in domain_validator.go and the one-engine parity test) carry the founding feature's markers as of the Phase 1 rewrite.
+    - feature: studio-ai-authoring/initial-layout-proposal
+      term: built-but-undelivered
+      rationale: Placeholder baseline (intents:{}/sources:{}); nothing delivered.
+    - feature: studio-ai-authoring/sync-back-ai-classification
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
+    - feature: studio-deferred/collaboration-patterns
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
+    - feature: studio-deferred/mid-edit-resumability
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
+    - feature: studio-deferred/multi-screen-management
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
+    - feature: studio-foundation/figma-mcp-client
+      term: built-but-undelivered
+      rationale: Fully built artifacts; no code was ever produced or kept.
+    - feature: studio-foundation/figma-mcp-via-host-agent
+      term: delivered-and-deleted
+      rationale: 'Its delivery was a retraction: the absence of direct MCP code, witnessed by eight parlay-extends markers on editor config/server files. Those witnesses are deleted with the editor, so what it delivered leaves with it. Classified per D-011/D; built-but-undelivered would falsify what the witnesses recorded.'
+    - feature: studio-foundation/studio-config
+      term: delivered-and-deleted
+      rationale: Delivered internal/editor/config, deleted with the editor server.
+    - feature: studio-foundation/studio-deployer
+      term: authority-re-homed-to
+      target: parlay-tool/atomic-file-writes
+      rationale: Its surviving delivery, core/internal/atomicfile, is used core-wide and carries the founding feature's markers as of the Phase 1 rewrite.
+    - feature: studio-foundation/web-server-harness
+      term: delivered-and-deleted
+      rationale: Delivered internal/editor/server, deleted with the editor.
+    - feature: studio-multi-adapter/cross-design-system-adapter
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
+    - feature: studio-multi-adapter/second-adapter-same-design-system
+      term: built-but-undelivered
+      rationale: Placeholder baseline; nothing delivered.
