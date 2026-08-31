@@ -27,7 +27,7 @@ said both.
 |---|---|---|
 | What it is | **The root model — the source of truth.** | **A contribution — one feature's proposal.** |
 | Who reads it | Every read path above | `parlay internal domain-impact`, and the capabilities cross-reference |
-| Who writes it | `create-domain-model`, `domain-edit`, an accepted contribution | The designer, while working the feature |
+| Who writes it | `create-domain-model`, a hand edit, an accepted contribution | The designer, while working the feature |
 | Optional | No — a project with entities has one | Yes. A project that only ever authors the root model behaves exactly as it did before contributions existed. |
 
 Both files use the schema below, unchanged. A contribution holds **only what
@@ -39,7 +39,7 @@ where the two describe the same thing differently, **redundant** elements
 already present and identical, and **affects** — which other features
 reference each touched entity and which of their fixtures would need a new
 field. At the artifacts→build boundary the loop shows that report and offers
-accept / adjust / open-in-editor.
+accept / edit the contribution file / leave it proposed.
 
 **Accepting is additive and refuses on conflict.** The merge appends what the
 root lacks, in the contribution's declaration order, and never rewrites
@@ -47,8 +47,8 @@ anything. A contribution that describes an existing element differently is
 refused outright, naming both descriptions — there is no auto-merge and no
 last-writer-wins, because which of two descriptions is right is a design
 question. The merge runs through the same serializer, compare-and-swap and
-atomic write as `domain-edit`, so an accept from the CLI and an accept from
-the editor produce identical bytes.
+atomic write as any other accepted contribution, so the bytes do not depend
+on which caller performed the accept.
 
 **A reference to a proposed entity is pending, not wrong.** A
 `capabilities.yaml` naming an entity that only a contribution proposes reports
