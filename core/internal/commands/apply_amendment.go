@@ -396,10 +396,18 @@ type evolutionSubject struct {
 	// tool cannot verify it from prose and the receipt must say what was
 	// asserted rather than merely that something was.
 	Attestation string `yaml:"attestation" json:"attestation"`
-	// Scope is the exact attributed population, partitioned.
+	// Scope is the exact attributed population after the change, partitioned.
 	Scope lineageScope `yaml:"scope" json:"scope"`
+	// ScopeBefore is the population the promise justified BEFORE it, captured
+	// pre-splice. Stored so the receipt records what was approved rather than
+	// leaving a later reader to reconstruct a population that no longer exists.
+	ScopeBefore lineageScope `yaml:"scope-before" json:"scope_before"`
 	// PreservesUnlisted is the author's closure declaration.
 	PreservesUnlisted bool `yaml:"preserves-unlisted" json:"preserves_unlisted"`
+	// Consequences are the checked, structured results for each declared
+	// exception — which entry, as it was, what became of it, and where the
+	// disposition names one, the replacement that carries its work now.
+	Consequences []ConsequenceReceipt `yaml:"consequences,omitempty" json:"consequences,omitempty"`
 }
 
 // transitionDigest is the full SHA-256 of the canonical payload. Not truncated:

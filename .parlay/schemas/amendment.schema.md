@@ -312,13 +312,82 @@ population with a hole in it. Presence is probed with `Lstat`, so only genuine
 absence counts as absent — a dangling artifact is something that cannot be read,
 not something that is not there.
 
-**Supported today: the preservation form only.** `extend`, and a `revise` whose
-`exceptions:` list is empty. A revision declaring an exception, and every
-`narrow` and `retire`, is refused — those take support away from contract
-entries, and the accounting that collects those consequences is not built.
-A record touching several lineages is all-or-nothing: one unsupported
-transition refuses the whole record, because a partly applied one leaves a state
-no reader can classify.
+**Consequence accounting.** Every entry the closure does not cover carries a
+`disposition:`, and each disposition has an operational meaning the tool checks
+against the artifacts rather than a label left to the reader:
+
+| disposition | claim | checked |
+|---|---|---|
+| `retained` | survives, and the changed promise still supports it | present **and** still attributed to that lineage |
+| `revised` | survives, this record changed it, and it may now be justified elsewhere | present **and** named in `affects:` |
+| `removed` | gone, nothing takes it over | the entry is **not** present |
+| `replaced-by` | gone, and the named entry carries its work now | absent, and `replaced_by:` resolves |
+
+Each exception names its `intent:` — the lineage the consequence belongs to.
+Explicit, because a removed entry cannot be assigned to a lineage from what is
+left in the contract, and without it one consequence would silently satisfy
+another lineage's obligation. Identity is `(intent, ref)`: one contract entry
+may name several source intents, and a shared entry that disappears owes a
+consequence under **each** promise that justified it.
+
+**The replacement ref space is the whole ref grammar.** `replaced_by:` accepts
+exactly what `affects:` accepts: `@feature/operation:name`, `@feature/surface:name`,
+`@feature/infrastructure:name`, and the root-scoped `@feature/domain:Entity` —
+and the feature part may name **any** feature, not only this one. That is the
+ordinary shape of a narrowing rather than an exotic case: work that stops being
+promised here rarely evaporates, it moves to whatever already owns that ground,
+and that owner is frequently in another feature or is a domain entity.
+
+The resolver honours all of it. A replacement is resolved and fingerprinted
+wherever it lives, so the approval binds the entry's **content**, not merely its
+address, and a cross-feature replacement is no weaker a promise than a local one.
+Resolution *failure* is reported as failure: an artifact that exists and will not
+parse says so, and is never reported as a missing reference — that message sends
+somebody to fix a reference that was correct.
+
+`removed` and `replaced-by` are deliberately not required in `affects:` — an
+`affects:` ref must resolve against the current contract and a removed entry does
+not, so the disposition *is* the record of the removal.
+
+**Three different questions, never conflated.** *Existence* is asked of the whole
+contract by the resolver; *attribution* is asked of the promise's population; and
+`affects:` is *declared mutation* — provenance, never evidence of existence. An
+entry the splice re-sourced to another promise has left this lineage's population
+while remaining in the contract, and calling that `removed` is a lie the
+resolver catches.
+
+**Completeness rests on a pre-splice capture.** Scope derived after the splice
+cannot see a removed entry, so the refine journal records what each lineage
+justified when the amendment was written and before any artifact was mutated.
+`apply-amendment` then requires that every entry in that prior population either
+survives under the closure or carries exactly one disposition — a disappearance
+nobody accounted for is precisely what this accounting exists to catch — and
+refuses a consequence declared over an entry the promise never justified.
+Without that capture the record would be evidence only that somebody claimed a
+consequence.
+
+The capture is bound to the **exact record** — filename, whole-file hash and
+lineage set — not merely to a sequence. A sequence is not identity: a
+replacement of `NNN-slug.md` keeps it while changing the meaning, and the
+ceremony would then consume old evidence for new bytes.
+
+Each consequence is recorded **structurally**, not as prose: the lineage, the
+entry as it was (with its fingerprint), the disposition, and — for `retained`,
+`revised` and `replaced-by` — the entry or replacement as it now stands, bound
+by its own fingerprint and read from the whole-contract index rather than from a
+lineage's slice, because the subject may have left that slice. Those subjects
+are re-derived under the lock alongside the population, since the population
+alone cannot see a replacement.
+
+A `narrow` must declare at least one consequence. A narrowing that takes nothing
+away is a revision, and should say so — otherwise `narrow` becomes a quieter
+`revise` that skips the delta approval a revision owes.
+
+**Supported: `extend`, `revise` and `narrow`.** `retire` goes through the
+withdrawal ceremony instead, which shows the promise list rather than a delta:
+ending a promise and rewording one are different approvals, and one form cannot
+stand in for the other. A record touching several lineages is all-or-nothing,
+because a partly applied one leaves a state no reader can classify.
 
 ### Applying a combined record
 

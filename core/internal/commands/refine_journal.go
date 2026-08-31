@@ -82,6 +82,15 @@ func runRefineJournal(cmd *cobra.Command, args []string) error {
 	if refineJournalAsk != "" {
 		journal.Ask = refineJournalAsk
 	}
+	// Capturing the pre-splice inventory happens exactly here: the amendment
+	// exists, so its lineages are known, and the splice has not run, so the
+	// artifacts still hold what the promise justified.
+	if refineJournalStep == "amendment-written" && refineJournalAmendment > 0 {
+		if err := captureScopeBefore(cfg, slug, journal, refineJournalAmendment); err != nil {
+			return err
+		}
+	}
+
 	if refineJournalAmendment > 0 {
 		journal.Amendment = refineJournalAmendment
 	}

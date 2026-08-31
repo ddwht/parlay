@@ -287,8 +287,19 @@ type ScopeImpact struct {
 
 // ScopeException is one entry the closure assertion does NOT cover.
 type ScopeException struct {
+	// Intent is the lineage this consequence belongs to. Explicit, because a
+	// REMOVED entry cannot be assigned to a lineage from current attribution —
+	// it is gone. Without it, one exception on one lineage silently satisfies
+	// the obligations of another in the same record.
+	Intent      string `yaml:"intent"`
 	Ref         string `yaml:"ref"`
 	Disposition string `yaml:"disposition"`
+	// ReplacedBy names where the work went. Required by replaced-by and
+	// forbidden by every other disposition — the same rule the feature-level
+	// retirement outcome follows, and for the same reason: a reader months
+	// later cannot recover from silence whether the work moved or stopped
+	// mattering.
+	ReplacedBy string `yaml:"replaced_by,omitempty"`
 }
 
 // ScopeDispositions is the closed set an exception may declare.
@@ -313,16 +324,60 @@ func (a *Amendment) ValidateScopeImpact() []string {
 				"the entries it does not list, so without that assertion it states nothing about "+
 				"them and the transition cannot be approved against an inventory")
 	}
+	seen := map[string]bool{}
 	for _, ex := range si.Exceptions {
 		if strings.TrimSpace(ex.Ref) == "" {
 			problems = append(problems, "a scope_impact exception names no ref")
 			continue
 		}
+		if strings.TrimSpace(ex.Intent) == "" {
+			problems = append(problems, fmt.Sprintf(
+				"scope_impact exception %q names no intent — a consequence belongs to one "+
+					"lineage, and a removed entry cannot be assigned to one from what is left in "+
+					"the contract", ex.Ref))
+		}
+		// Canonicalise before comparing anything. A malformed ref would
+		// otherwise flow into the absent paths and be accepted as removed, and
+		// a non-canonical spelling would make exact comparisons lie.
+		canon, cerr := CanonicalScopeRef(ex.Ref)
+		if cerr != nil {
+			problems = append(problems, fmt.Sprintf("scope_impact exception %q: %v", ex.Ref, cerr))
+			continue
+		}
+		// Identity is (lineage, entry), not entry alone. One contract entry may
+		// name several source intents, so a shared entry that disappears owes a
+		// consequence under EACH promise that justified it — keying on the ref
+		// would reject the second as a duplicate and make the completeness
+		// requirement unsatisfiable.
+		key := strings.TrimSpace(ex.Intent) + "\x00" + canon
+		if seen[key] {
+			problems = append(problems, fmt.Sprintf(
+				"scope_impact dispositions %s under %q twice; one entry has one fate per lineage",
+				canon, strings.TrimSpace(ex.Intent)))
+		}
+		seen[key] = true
 		if !ScopeDispositions[ex.Disposition] {
 			problems = append(problems, fmt.Sprintf(
 				"scope_impact exception %q declares disposition %q; the set is closed: retained, "+
-					"revised, removed, replaced-by", ex.Ref, ex.Disposition))
+					"revised, removed, replaced-by", canon, ex.Disposition))
+		}
+		if strings.TrimSpace(ex.ReplacedBy) != "" {
+			if _, rerr := CanonicalScopeRef(ex.ReplacedBy); rerr != nil {
+				problems = append(problems, fmt.Sprintf(
+					"scope_impact exception %q names replacement %q: %v", canon, ex.ReplacedBy, rerr))
+			}
 		}
 	}
 	return problems
+}
+
+// CanonicalScopeRef parses a scope ref and returns its canonical spelling, so
+// two spellings of one entry cannot compare unequal and a malformed one cannot
+// be silently treated as an absent entry.
+func CanonicalScopeRef(raw string) (string, error) {
+	ref, err := ParseAmendmentRef(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("not a contract entry reference: %w", err)
+	}
+	return fmt.Sprintf("@%s/%s:%s", ref.Feature, ref.Kind, ref.Name), nil
 }

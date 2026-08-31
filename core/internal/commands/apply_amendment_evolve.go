@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,15 +36,22 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 	// a partial application would leave a lineage evolved and its sibling not,
 	// which no reader could classify.
 	var lineages []string
+	narrowing := map[string]bool{}
 	for _, tr := range record.IntentTransitions() {
 		switch tr.Mode {
 		case parser.IntentExtend, parser.IntentRevise:
 			lineages = append(lineages, tr.Intent)
+		case parser.IntentNarrow:
+			lineages = append(lineages, tr.Intent)
+			narrowing[tr.Intent] = true
 		default:
-			return fmt.Errorf("%s changes lineage %q with mode %q, which has no applier yet: a "+
-				"narrowing or a retirement can take support away from contract entries, and the "+
-				"accounting that collects those consequences is not built. The whole record is "+
-				"refused rather than partly applied",
+			// retire still belongs to the withdrawal ceremony, which shows the
+			// promise list rather than a delta: ending a promise and rewording
+			// one are different approvals, and one form cannot stand in for
+			// the other.
+			return fmt.Errorf("%s ends lineage %q with mode %q, which is not a change to a "+
+				"promise but the end of one — it goes through the withdrawal ceremony, not this "+
+				"one. The whole record is refused rather than partly applied",
 				amendmentIdentity(record), tr.Intent, tr.Mode)
 		}
 	}
@@ -62,13 +72,6 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 	if problems := record.ValidateScopeImpact(); len(problems) > 0 {
 		return fmt.Errorf("%s: the scope declaration is not usable:\n  - %s",
 			amendmentIdentity(record), joinLines(problems))
-	}
-	if len(si.Exceptions) > 0 {
-		return fmt.Errorf("%s declares %d scope exception(s), which means it takes support away "+
-			"from an entry. There is no applier for that yet: the accounting that collects the "+
-			"consequences of a declared loss is not built, and approving one without it would "+
-			"record a decision whose downstream effects nobody gathered",
-			amendmentIdentity(record), len(si.Exceptions))
 	}
 
 	// The ledger's own rules first and in full, before anything is shown.
@@ -100,6 +103,37 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 		return err
 	}
 
+	// Consequence accounting. Every declared exception is checked against the
+	// derived population and the splice: a disposition that contradicts what is
+	// on disk is a claim about a state nobody is in.
+	scopes := make([]lineageScope, 0, len(subjects))
+	for _, sub := range subjects {
+		scopes = append(scopes, sub.Scope)
+	}
+	// The prior subject population, captured before the splice mutated
+	// anything. Without it there is no evidence of what the promise justified:
+	// a removed entry is invisible after the fact, so any plausible absent ref
+	// could be declared a consequence.
+	journal, jerr := loadRefineJournal(cfg, slug)
+	if jerr != nil || journal == nil {
+		return fmt.Errorf("%s: the refine journal is unavailable, so the entries this promise "+
+			"justified BEFORE the change cannot be established", amendmentIdentity(record))
+	}
+	if err := scopeCaptureMatches(journal, record, lineages); err != nil {
+		return fmt.Errorf("%s: %w — an inventory is evidence about the record it was captured "+
+			"for and no other", amendmentIdentity(record), err)
+	}
+
+	consequences := checkScopeConsequences(cfg, slug, record, journal.ScopeBefore, scopes, narrowing)
+	if len(consequences.Problems) > 0 {
+		return fmt.Errorf("%s: the declared consequences do not match the contract:\n  - %s",
+			amendmentIdentity(record), joinLines(consequences.Problems))
+	}
+	for i := range subjects {
+		subjects[i].Consequences = consequences.ByLineage[subjects[i].Lineage]
+		subjects[i].ScopeBefore = scopeBeforeFor(journal.ScopeBefore, subjects[i].Lineage)
+	}
+
 	affects := append([]string(nil), record.Affects...)
 	sort.Strings(affects)
 	payload, err := buildTransitionPayload(slug, record, nil, affects, prior, spliceProof)
@@ -129,7 +163,7 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 			applyAmendmentConfirm, digest)
 	}
 
-	if err := commitEvolveTransition(cfg, slug, featDir, record, lineages, si, prior, payload, digest); err != nil {
+	if err := commitEvolveTransition(cfg, slug, featDir, record, lineages, si, prior, payload, digest, journal.ScopeBefore, narrowing); err != nil {
 		return err
 	}
 	out.Confirmed = true
@@ -199,7 +233,7 @@ func buildEvolutionSubjects(cfg *config.Context, slug, featDir string, record pa
 
 // commitEvolveTransition re-derives the mutable half of the subject under the
 // lock and advances.
-func commitEvolveTransition(cfg *config.Context, slug, featDir string, record parser.Amendment, lineages []string, si *parser.ScopeImpact, prior appliedAuthority, payload transitionPayload, digest string) error {
+func commitEvolveTransition(cfg *config.Context, slug, featDir string, record parser.Amendment, lineages []string, si *parser.ScopeImpact, prior appliedAuthority, payload transitionPayload, digest string, journalScopeBefore []lineageScope, narrowing map[string]bool) error {
 	return withVerifiedAuthority(cfg, slug, prior, func(current appliedAuthority) error {
 		// The capsule comparison the boundary performs says nothing about
 		// attribution, which comes from mutable contract artifacts. Re-derive
@@ -219,6 +253,30 @@ func commitEvolveTransition(cfg *config.Context, slug, featDir string, record pa
 			return fmt.Errorf("%s changed between approval and write. Nothing was written — "+
 				"re-run without --confirm and approve the current record", amendmentIdentity(record))
 		}
+		// The scope re-derivation only watches entries still attributed to the
+		// changed lineages, so on its own it cannot see a replacement or a
+		// revised entry that moved elsewhere. Re-derive the consequence
+		// subjects too, or an edit to a replacement between approval and write
+		// would change what the human agreed to while leaving the token valid.
+		nowConsequences := checkScopeConsequences(cfg, slug, record, journalScopeBefore, mustScopes(featDir, slug, lineages, record.Affects), narrowing)
+		if len(nowConsequences.Problems) > 0 {
+			return fmt.Errorf("the declared consequences no longer hold:\n  - %s",
+				joinLines(nowConsequences.Problems))
+		}
+		nowConsequenceDigest, err := consequenceDigest(nowConsequences.ByLineage)
+		if err != nil {
+			return err
+		}
+		approvedConsequenceDigest, err := consequenceDigest(consequencesOf(payload.Evolution))
+		if err != nil {
+			return err
+		}
+		if nowConsequenceDigest != approvedConsequenceDigest {
+			return fmt.Errorf("what becomes of the entries this record declares changed between " +
+				"approval and write — a replacement or a surviving entry is not what it was when " +
+				"it was approved. Nothing was written")
+		}
+
 		nowScopes, err := deriveLineageScope(featDir, slug, lineages, record.Affects)
 		if err != nil {
 			return err
@@ -298,6 +356,15 @@ func emitEvolvePreflight(cmd *cobra.Command, out applyAmendmentPreflight, subjec
 		for _, r := range refsOf(s.Scope.Unlisted) {
 			fmt.Fprintf(w, "    %s   [not declared changed]\n", r)
 		}
+		if len(s.Consequences) > 0 {
+			fmt.Fprintf(w, "\n  What becomes of the entries this record does declare:\n")
+			for _, c := range s.Consequences {
+				fmt.Fprintf(w, "    %s — %s\n", c.Ref, c.Claim)
+				if c.AfterRef != "" && c.AfterRef != c.Ref {
+					fmt.Fprintf(w, "      now carried by: %s\n", c.AfterRef)
+				}
+			}
+		}
 		fmt.Fprintf(w, "\n  You are asserting: %s\n", s.Attestation)
 		fmt.Fprintln(w, "  And: every entry above marked [not declared changed] remains")
 		fmt.Fprintln(w, "  supported by the new promise.")
@@ -311,3 +378,64 @@ func emitEvolvePreflight(cmd *cobra.Command, out applyAmendmentPreflight, subjec
 }
 
 var _ = strings.TrimSpace
+
+// mustScopes re-derives the post-splice population, treating a derivation
+// failure as an empty population so the comparison below refuses rather than
+// panicking. The scope derivation itself already refused unreadable artifacts
+// during the preflight; this is the belt on that brace.
+func mustScopes(featDir, slug string, lineages, affects []string) []lineageScope {
+	scopes, err := deriveLineageScope(featDir, slug, lineages, affects)
+	if err != nil {
+		return nil
+	}
+	return scopes
+}
+
+func consequencesOf(subjects []*evolutionSubject) map[string][]ConsequenceReceipt {
+	out := map[string][]ConsequenceReceipt{}
+	for _, s := range subjects {
+		out[s.Lineage] = s.Consequences
+	}
+	return out
+}
+
+// consequenceDigest hashes the COMPLETE structured result, so what the commit
+// re-check compares is what the approval showed and what the receipt stores.
+//
+// The earlier version listed fields by hand and had already drifted: it omitted
+// Claim — which is part of what the human reads and what gets stored — and took
+// Lineage from the outer map rather than the record. A hand-maintained
+// projection means a field added later is silently outside the comparison until
+// somebody remembers this function. Serialising the whole value through the
+// storage encoding removes that trap: a new field is covered the day it exists,
+// and the digest is taken over the shape the receipt actually round-trips to.
+func consequenceDigest(byLineage map[string][]ConsequenceReceipt) (string, error) {
+	// Only lineages that actually carry a consequence, so "no key" and "an
+	// empty list" canonicalise the same way. Otherwise the two sides of the
+	// comparison differ over nothing.
+	subject := map[string][]ConsequenceReceipt{}
+	for k, v := range byLineage {
+		if len(v) > 0 {
+			subject[k] = v
+		}
+	}
+	// Round-trip through the storage encoding first, for the same reason the
+	// transition receipt does: a value hashed in memory can differ from the one
+	// read back (nil versus empty, omitted versus zero), and the digest has to
+	// describe what will be on disk.
+	encoded, err := yaml.Marshal(subject)
+	if err != nil {
+		return "", fmt.Errorf("canonicalise the consequences: %w", err)
+	}
+	var out map[string][]ConsequenceReceipt
+	if err := yaml.Unmarshal(encoded, &out); err != nil {
+		return "", fmt.Errorf("canonicalise the consequences: %w", err)
+	}
+	// encoding/json sorts map keys, so this is canonical for a fixed struct.
+	data, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("canonicalise the consequences: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}

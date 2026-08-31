@@ -1268,48 +1268,14 @@ func TestStage1b_ConfirmedEvolveAppliesAndReceiptsTheSubject(t *testing.T) {
 	}
 }
 
-// The stage boundary. A revision that declares an entry loses support, and
-// every narrow or retire, waits for the accounting that collects those
-// consequences — approving a loss nobody gathered would be the bypass in a new
-// verb.
-func TestStage1b_UnsupportedTransitionsRefuseByReason(t *testing.T) {
+// The stage boundary, as Stage 2 leaves it. Narrowing and declared exceptions
+// are applicable now that their consequences are collected; a RETIREMENT is
+// not, because ending a promise and rewording one are different approvals and
+// one form cannot stand in for the other.
+func TestStage2_UnsupportedTransitionsRefuseByReason(t *testing.T) {
 	cases := []struct{ name, frontmatter, want string }{
 		{
-			name: "revise declaring an exception",
-			frontmatter: `amends_intents:
-  - intent: check-readiness
-    mode: revise
-    version:
-      title: T
-      goal: A narrower promise.
-      persona: Admin
-scope_impact:
-  version: 1
-  preserves_unlisted: true
-  exceptions:
-    - ref: "@my-feature/operation:y"
-      disposition: removed
-`,
-			want: "scope exception",
-		},
-		{
-			name: "narrow",
-			frontmatter: `amends_intents:
-  - intent: check-readiness
-    mode: narrow
-    version:
-      title: T
-      goal: A narrower promise.
-      persona: Admin
-scope_impact:
-  version: 1
-  preserves_unlisted: true
-  exceptions: []
-`,
-			want: "no applier yet",
-		},
-		{
-			name: "retire",
+			name: "retire belongs to the withdrawal ceremony",
 			frontmatter: `amends_intents:
   - intent: check-readiness
     mode: retire
@@ -1318,7 +1284,7 @@ scope_impact:
   preserves_unlisted: true
   exceptions: []
 `,
-			want: "no applier yet",
+			want: "not a change to a promise but the end of one",
 		},
 		{
 			name: "no scope declaration at all",
@@ -1332,6 +1298,41 @@ scope_impact:
 `,
 			want: "declares no scope_impact",
 		},
+		{
+			name: "disposition contradicts the contract",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: narrow
+    version:
+      title: T
+      goal: A narrower promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions:
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: removed
+`,
+			want: "still in the contract",
+		},
+		{
+			name: "narrowing that takes nothing away",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: narrow
+    version:
+      title: T
+      goal: A narrower promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+`,
+			want: "takes nothing away is a revision",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1344,11 +1345,14 @@ scope_impact:
 			writeAmendment(t, featureDir, "001-unsupported.md",
 				"---\namendment: unsupported\ndate: 2026-09-01\n"+tc.frontmatter+
 					"---\n\n## Change\nSomething.\n\n## Why\nBecause.\n\n## Acceptance\n- Done.\n")
+			// Re-capture for the record actually under test: an inventory is
+			// evidence about the amendment it was taken for.
+			writeRefineJournal(t, cfg, "my-feature", 1)
 
 			armApplyAmendment(t, "", false)
 			out, err := runApplyAmendment_(t, cfg, "@my-feature")
 			if err == nil {
-				t.Fatal("this transition has no applier and must refuse")
+				t.Fatal("this transition must refuse")
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("the refusal must say why; got %v", err)
@@ -1404,6 +1408,7 @@ To prove it is all or nothing.
 ## Acceptance
 - Refused.
 `)
+	writeRefineJournal(t, cfg, "my-feature", 1)
 	armApplyAmendment(t, "", false)
 	_, err := runApplyAmendment_(t, cfg, "@my-feature")
 	if err == nil {
@@ -1950,5 +1955,1163 @@ func TestStage1b_RawEntryNodesRefusesAmbiguousShapes(t *testing.T) {
 	got, err := resolvedEntryFingerprints(path, "operations", "id")
 	if err != nil || len(got) != 2 || got["a"] == got["b"] {
 		t.Errorf("a well-formed document must enumerate distinctly; got %v %v", got, err)
+	}
+}
+
+// Stage 2's headline: a narrowing whose consequences are collected can be
+// applied, and the ceremony shows what becomes of each entry it takes support
+// from.
+func TestStage2_NarrowingWithCollectedConsequencesApplies(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-narrowed.md", `---
+amendment: narrowed
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: narrow
+    version:
+      title: Check Cluster Readiness Only
+      goal: See if the cluster is ready. Node readiness is no longer promised.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions:
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: removed
+---
+
+## Change
+Node readiness is no longer promised, and its operation is gone.
+
+## Why
+It was never implemented.
+
+## Acceptance
+- Only cluster readiness is reported.
+`)
+	// The real order: the journal captures what the promise justified, and
+	// THEN the splice removes y. Capturing afterwards would record a
+	// population the change had already emptied.
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("a narrowing whose consequences are declared and consistent must be applicable: %v", err)
+	}
+	if !strings.Contains(prose, "What becomes of the entries this record does declare") {
+		t.Errorf("the ceremony must show the consequences; got:\n%s", prose)
+	}
+	if !strings.Contains(prose, "nothing takes it over") {
+		t.Errorf("the disposition's operational meaning must be shown, not its label; got:\n%s", prose)
+	}
+
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed narrowing: %v", err)
+	}
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	if bl.LastAppliedAmendment != 1 {
+		t.Errorf("marker = %d, want 1", bl.LastAppliedAmendment)
+	}
+	// The consequences are in the durable record, not just on screen.
+	ev := bl.TransitionReceipts["001-narrowed.md"].Payload.Evolution
+	if len(ev) != 1 || len(ev[0].Consequences) != 1 {
+		t.Fatalf("the receipt must record what was declared to become of each entry; got %+v", ev)
+	}
+	c := ev[0].Consequences[0]
+	if c.Ref != "@my-feature/operation:y" || c.Disposition != "removed" || c.Lineage != "check-readiness" {
+		t.Errorf("the receipt must record the structured result, not a sentence; got %+v", c)
+	}
+	if c.BeforeFingerprint == "" {
+		t.Error("the receipt must bind the entry as it was, or a later reader cannot audit what " +
+			"was actually given up")
+	}
+	if c.AfterRef != "" {
+		t.Errorf("a removed entry has no after subject; got %q", c.AfterRef)
+	}
+}
+
+// Every disposition has an operational meaning the tool checks against the
+// artifacts. A label whose interpretation is left to the reader is what
+// `retained` was refused for in Stage 1b.
+func TestStage2_DispositionsAreCheckedAgainstTheContract(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := evolvingFeature(t, dir)
+	scopes, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"},
+		[]string{"@my-feature/operation:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Precondition: y is attributed and present.
+	var found bool
+	for _, e := range scopes[0].Unlisted {
+		if e.Ref == "@my-feature/operation:y" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("fixture: expected y attributed and present; got %+v", scopes[0])
+	}
+
+	cfg := testContext(t)
+	rec := func(disp, replacedBy string) parser.Amendment {
+		return parser.Amendment{
+			Affects: []string{"@my-feature/operation:x"},
+			AmendsIntents: []parser.IntentAmendment{{
+				Intent: "check-readiness", Mode: parser.IntentNarrow,
+				Version: &parser.IntentVersion{Title: "T", Goal: "g", Persona: "Admin"},
+			}},
+			ScopeImpact: &parser.ScopeImpact{
+				Version: 1, PreservesUnlisted: true,
+				Exceptions: []parser.ScopeException{
+					{Intent: "check-readiness", Ref: "@my-feature/operation:y",
+						Disposition: disp, ReplacedBy: replacedBy},
+				},
+			},
+		}
+	}
+	// before == after here: nothing was spliced away, so a "survives"
+	// disposition is coherent and a "gone" one contradicts the contract.
+	check := func(a parser.Amendment) scopeConsequences {
+		return checkScopeConsequences(cfg, "my-feature", a, scopes, scopes, nil)
+	}
+	cases := []struct{ name, disp, replacedBy, want string }{
+		{"removed but still present", "removed", "", "still in the contract"},
+		{"revised but not in affects", "revised", "", "affects: does not name it"},
+		{"replaced-by with no replacement", "replaced-by", "", "names no replacement"},
+		{"replaced-by pointing nowhere", "replaced-by", "@my-feature/operation:ghost", "does not resolve"},
+		{"unknown disposition", "sort-of-kept", "", "no defined meaning"},
+		{"replacement on a disposition that carries none", "retained", "@my-feature/operation:x", "only replaced-by carries one"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := check(rec(tc.disp, tc.replacedBy))
+			if len(got.Problems) == 0 {
+				t.Fatal("a disposition that contradicts the contract must be reported")
+			}
+			joined := strings.Join(got.Problems, "\n")
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("the finding must say what contradicts; got %q", joined)
+			}
+		})
+	}
+
+	// And a coherent one produces a claim rather than a problem.
+	ok := check(rec("retained", ""))
+	if len(ok.Problems) != 0 {
+		t.Errorf("a coherent disposition must not be reported; got %v", ok.Problems)
+	}
+	claims := ok.ByLineage["check-readiness"]
+	if len(claims) != 1 || !strings.Contains(claims[0].Claim, "still supports it") {
+		t.Errorf("the claim must state the disposition's meaning; got %+v", claims)
+	}
+	if claims[0].BeforeFingerprint == "" || claims[0].AfterFingerprint == "" {
+		t.Errorf("a retained consequence must bind the entry as it was AND as it stands; got %+v",
+			claims[0])
+	}
+}
+
+// The claim Stage 2 exists to make true: an entry the promise justified cannot
+// simply vanish. Scope derived after the splice cannot see a removed entry, so
+// without the pre-splice capture this disappearance would be invisible.
+func TestStage2_UnaccountedDisappearanceRefuses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-quiet.md", `---
+amendment: quiet
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: Check Readiness
+      goal: See if the cluster is ready.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+---
+
+## Change
+Reword, and quietly drop an operation without saying so.
+
+## Why
+To prove the accounting notices.
+
+## Acceptance
+- Nothing.
+`)
+	// Capture BEFORE, then remove y without declaring any consequence.
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("an entry the promise justified disappeared with no declared consequence, and " +
+			"that is exactly what this accounting exists to catch")
+	}
+	if !strings.Contains(err.Error(), "@my-feature/operation:y") {
+		t.Errorf("the refusal must name the entry that vanished; got %v", err)
+	}
+}
+
+// A consequence must be about something the promise actually justified. Without
+// the pre-splice inventory, any plausible absent ref could be declared removed
+// and the record would be evidence only that somebody claimed a consequence.
+func TestStage2_ConsequenceOverAnUnjustifiedEntryRefuses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	before, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range before[0].Unlisted {
+		if e.Ref == "@my-feature/operation:never-existed" {
+			t.Fatal("fixture: the invented ref must not be attributed")
+		}
+	}
+
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{{
+			Intent: "check-readiness", Mode: parser.IntentRevise,
+			Version: &parser.IntentVersion{Title: "T", Goal: "g", Persona: "Admin"},
+		}},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1, PreservesUnlisted: true,
+			Exceptions: []parser.ScopeException{{
+				Intent: "check-readiness", Ref: "@my-feature/operation:never-existed",
+				Disposition: "removed",
+			}},
+		},
+	}
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, before, nil)
+	var found bool
+	for _, p := range got.Problems {
+		if strings.Contains(p, "did not justify it before this change") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a consequence over an entry the promise never justified must refuse; got %v",
+			got.Problems)
+	}
+}
+
+// Consequences belong to a lineage. One exception on lineage A must not satisfy
+// lineage B's obligation, and B's receipt must not carry A's fate.
+func TestStage2_ConsequencesAreOwnedPerLineage(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	// Both promises own an operation.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: s\n    kind: query\n    summary: does s\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := deriveLineageScope(featureDir, "my-feature",
+		[]string{"check-readiness", "survives"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 2 {
+		t.Fatalf("fixture: expected both lineages attributed; got %+v", before)
+	}
+
+	// Both narrowed, but only one carries a consequence.
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{
+			{Intent: "check-readiness", Mode: parser.IntentNarrow,
+				Version: &parser.IntentVersion{Title: "T", Goal: "g", Persona: "Admin"}},
+			{Intent: "survives", Mode: parser.IntentNarrow,
+				Version: &parser.IntentVersion{Title: "S", Goal: "g", Persona: "Admin"}},
+		},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1, PreservesUnlisted: true,
+			Exceptions: []parser.ScopeException{{
+				Intent: "check-readiness", Ref: "@my-feature/operation:x", Disposition: "retained",
+			}},
+		},
+	}
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, before,
+		map[string]bool{"check-readiness": true, "survives": true})
+
+	var named bool
+	for _, p := range got.Problems {
+		if strings.Contains(p, "survives") && strings.Contains(p, "no consequence for it") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("a narrowed lineage with no consequence of its own must be named — one "+
+			"exception elsewhere in the record does not cover it; got %v", got.Problems)
+	}
+	if len(got.ByLineage["survives"]) != 0 {
+		t.Error("a lineage's claims must not include another lineage's fate")
+	}
+}
+
+// EXISTENCE and ATTRIBUTION are different questions, and conflating them makes
+// `removed` a lie in a specific way: an entry the splice RE-SOURCED to another
+// promise has left this lineage's population while remaining in the contract.
+// Attribution-based existence calls that "gone"; it is not gone, it moved.
+func TestStage2_ReSourcedEntryIsNotRemoved(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+
+	// Before: y is justified by check-readiness.
+	before, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attributed bool
+	for _, e := range before[0].Unlisted {
+		if e.Ref == "@my-feature/operation:y" {
+			attributed = true
+		}
+	}
+	if !attributed {
+		t.Fatalf("fixture: y must start attributed to check-readiness; got %+v", before[0])
+	}
+
+	// The splice re-sources y to the other promise. It is out of this
+	// lineage's population and still very much in the contract.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range after[0].Unlisted {
+		if e.Ref == "@my-feature/operation:y" {
+			t.Fatal("fixture: y must have left this lineage's population, or the test proves nothing")
+		}
+	}
+
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{{
+			Intent: "check-readiness", Mode: parser.IntentNarrow,
+			Version: &parser.IntentVersion{Title: "T", Goal: "g", Persona: "Admin"},
+		}},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1, PreservesUnlisted: true,
+			Exceptions: []parser.ScopeException{{
+				Intent: "check-readiness", Ref: "@my-feature/operation:y", Disposition: "removed",
+			}},
+		},
+	}
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil)
+	var caught bool
+	for _, p := range got.Problems {
+		if strings.Contains(p, "still in the contract") {
+			caught = true
+		}
+	}
+	if !caught {
+		t.Errorf("declaring a re-sourced entry `removed` must refuse — it exists, and existence "+
+			"is a question about the contract rather than about this promise's population; "+
+			"got %v", got.Problems)
+	}
+}
+
+// A capture is evidence about the exact record it was taken for. A sequence is
+// not identity: amendments are append-only, but a violation or replacement of
+// NNN-slug.md keeps the sequence while changing the lineages and the meaning.
+func TestStage2_CaptureIsBoundToTheExactRecord(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	path := filepath.Join(featureDir, "amendments", "001-channel-choice.md")
+
+	// Precondition: with the capture intact, the ceremony proceeds.
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("fixture: the unmodified record must preflight cleanly: %v", err)
+	}
+
+	// The record is replaced after capture, keeping its sequence.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(body, []byte("\nAppended after capture.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, "", false)
+	_, err = runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a capture must not be consumed as evidence for bytes it was not taken from")
+	}
+	if !strings.Contains(err.Error(), "changed after its scope was captured") {
+		t.Errorf("the refusal must say the record moved under its capture; got %v", err)
+	}
+}
+
+// One contract entry may name several source intents. A shared entry that
+// disappears owes a consequence under EACH promise that justified it, so
+// keying duplicates on the ref alone would make completeness unsatisfiable.
+func TestStage2_SharedEntryOwesAConsequencePerLineage(t *testing.T) {
+	a := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{
+			{Intent: "a", Mode: parser.IntentNarrow, Version: &parser.IntentVersion{Title: "A", Goal: "g", Persona: "p"}},
+			{Intent: "b", Mode: parser.IntentNarrow, Version: &parser.IntentVersion{Title: "B", Goal: "g", Persona: "p"}},
+		},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1, PreservesUnlisted: true,
+			Exceptions: []parser.ScopeException{
+				{Intent: "a", Ref: "@f/operation:shared", Disposition: "removed"},
+				{Intent: "b", Ref: "@f/operation:shared", Disposition: "removed"},
+			},
+		},
+	}
+	if problems := a.ValidateScopeImpact(); len(problems) != 0 {
+		t.Errorf("one entry may owe a consequence under each promise that justified it; got %v",
+			problems)
+	}
+
+	// But twice under the SAME lineage is still one entry with two fates.
+	a.ScopeImpact.Exceptions[1].Intent = "a"
+	problems := a.ValidateScopeImpact()
+	if len(problems) == 0 {
+		t.Fatal("the same entry dispositioned twice under one lineage must refuse")
+	}
+	if !strings.Contains(strings.Join(problems, "\n"), "one fate per lineage") {
+		t.Errorf("the finding must say why; got %v", problems)
+	}
+}
+
+// `retained` claims THIS promise still supports the entry. Existing somewhere
+// is not the same thing: an entry re-sourced elsewhere still exists while no
+// longer being supported here.
+func TestStage2_RetainedRequiresContinuedAttribution(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+
+	before, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var was bool
+	for _, e := range before[0].Unlisted {
+		if e.Ref == "@my-feature/operation:y" {
+			was = true
+		}
+	}
+	if !was {
+		t.Fatalf("fixture: y must start attributed here; got %+v", before[0])
+	}
+
+	// The splice re-sources y away. It exists; this promise no longer supports it.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := parser.Amendment{
+		AmendsIntents: []parser.IntentAmendment{{
+			Intent: "check-readiness", Mode: parser.IntentNarrow,
+			Version: &parser.IntentVersion{Title: "T", Goal: "g", Persona: "Admin"},
+		}},
+		ScopeImpact: &parser.ScopeImpact{
+			Version: 1, PreservesUnlisted: true,
+			Exceptions: []parser.ScopeException{{
+				Intent: "check-readiness", Ref: "@my-feature/operation:y", Disposition: "retained",
+			}},
+		},
+	}
+	got := checkScopeConsequences(cfg, "my-feature", rec, before, after, nil)
+	var caught bool
+	for _, p := range got.Problems {
+		if strings.Contains(p, "no longer justified by that promise") {
+			caught = true
+		}
+	}
+	if !caught {
+		t.Errorf("`retained` claims this promise still supports the entry, and it no longer "+
+			"does; got %v", got.Problems)
+	}
+}
+
+// A replacement is a subject the human approved, so the ceremony must show it
+// and the receipt must bind it.
+// replacedByAmendment narrows check-readiness and declares that y's work is
+// taken over by x. Written as a fixture because three tests need the same
+// record: the applying run, the stored receipt, and the mutation at the lock.
+const replacedByAmendment = `---
+amendment: replaced
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: narrow
+    version:
+      title: Check Cluster Readiness Only
+      goal: See if the cluster is ready. Node readiness folds into the cluster check.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions:
+    - intent: check-readiness
+      ref: "@my-feature/operation:y"
+      disposition: replaced-by
+      replaced_by: "@my-feature/operation:z"
+---
+
+## Change
+Node readiness is no longer its own operation; z reports it.
+
+## Why
+Two operations answered one question.
+
+## Acceptance
+- z reports node readiness.
+`
+
+// setupReplacement lays down the narrowing, captures the pre-splice inventory,
+// and then performs the splice that removes y. The order matters and is the
+// real one: capture first, mutate second.
+//
+// The replacement z is sourced from a DIFFERENT promise on purpose. That is the
+// ordinary shape of a narrowing — work does not usually vanish, it moves to
+// whatever already owns that ground — and it is the case the lineage scope
+// cannot see: z is not attributed to check-readiness, so it is outside the
+// scope digest entirely. Only the whole-contract index reaches it, and only the
+// consequence digest notices when it changes.
+func setupReplacement(t *testing.T, dir string) (*config.Context, string) {
+	t.Helper()
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-replaced.md", replacedByAmendment)
+	// z exists before the change; the narrowing moves work onto it, it does not
+	// conjure it. Written before the capture so the inventory sees the real
+	// starting contract.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n"+
+			"  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: z\n    kind: query\n    summary: reports cluster readiness\n    source: \"@my-feature/survives\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte(replacedCapabilities("reports cluster and node readiness")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, featureDir
+}
+
+// replacedCapabilities is the post-splice contract: y is gone, and z — which
+// belongs to another promise — carries the work, with the given summary.
+func replacedCapabilities(zSummary string) string {
+	return "operations:\n" +
+		"  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n" +
+		"  - id: z\n    kind: query\n    summary: " + zSummary + "\n    source: \"@my-feature/survives\"\n"
+}
+
+// replacementRecord returns the parsed amendment the capture belongs to.
+func replacementRecord(t *testing.T, featureDir string) parser.Amendment {
+	t.Helper()
+	all, err := parser.LoadFeatureAmendments(featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range all {
+		if a.Seq == 1 {
+			return a
+		}
+	}
+	t.Fatal("amendment 1 not found")
+	return parser.Amendment{}
+}
+
+// The end-to-end witness for replacement identity: the ceremony names the
+// replacement, the confirmed run stores it, and the stored receipt binds it by
+// fingerprint. A helper-level check of checkScopeConsequences cannot say any of
+// this — it never runs the command, never confirms, and never reads back what
+// was written, so the claim "shown and stored" would rest on the one layer that
+// was tested rather than on the path a user actually takes.
+func TestStage2_ReplacementIsShownStoredAndBoundEndToEnd(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := setupReplacement(t, dir)
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("a coherent replacement must be applicable: %v", err)
+	}
+	if !strings.Contains(prose, "@my-feature/operation:z") {
+		t.Errorf("the ceremony must name the canonical replacement — the human is approving THAT "+
+			"entry taking the work over, not the bare fact that something did; got:\n%s", prose)
+	}
+
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed replacement: %v", err)
+	}
+
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	if bl.LastAppliedAmendment != 1 {
+		t.Fatalf("marker = %d, want 1", bl.LastAppliedAmendment)
+	}
+	ev := bl.TransitionReceipts["001-replaced.md"].Payload.Evolution
+	if len(ev) != 1 || len(ev[0].Consequences) != 1 {
+		t.Fatalf("the receipt must record the consequence; got %+v", ev)
+	}
+	c := ev[0].Consequences[0]
+	if c.Ref != "@my-feature/operation:y" || c.Disposition != "replaced-by" {
+		t.Errorf("stored consequence subject = %+v", c)
+	}
+	if c.AfterRef != "@my-feature/operation:z" {
+		t.Errorf("the stored receipt must name the replacement; got %q", c.AfterRef)
+	}
+	if len(c.AfterFingerprint) != 64 || c.AfterFingerprint == c.BeforeFingerprint {
+		t.Errorf("the replacement must be bound by its own fingerprint, distinct from what it "+
+			"replaced; before=%q after=%q", c.BeforeFingerprint, c.AfterFingerprint)
+	}
+	if _, err := observeAppliedAuthority(cfg, "my-feature"); err != nil {
+		t.Errorf("the capsule must stay readable after a consequence-bearing write: %v", err)
+	}
+}
+
+// The replacement is not attributed to the narrowed promise — it belongs to
+// another one — so the lineage scope does not contain it and the scope digest
+// is blind to it by construction. The population is unchanged and the ref is
+// unchanged. What moved is what the replacement MEANS — and that is exactly the approval the human gave: they
+// agreed that THIS entry takes the retired work over. The consequence digest is
+// the only thing standing between that approval and a different entry wearing
+// its address.
+func TestStage2_ReplacementMutatedBeforeTheLockRefuses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupReplacement(t, dir)
+	pf := evolvePreflight(t, cfg)
+
+	blBefore, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := filepath.Join(featureDir, "capabilities.yaml")
+	// Precondition: the run reaches the lock with the approved state intact.
+	// Without this the test could pass by refusing for some earlier reason.
+	armApplyAmendment(t, pf.Digest, false)
+	reached := false
+	authorityLockAttemptHook = func(string) { reached = true }
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("the unmutated run must apply, or the mutation below proves nothing: %v", err)
+	}
+	authorityLockAttemptHook = nil
+	if !reached {
+		t.Fatal("the run never reached the authority lock")
+	}
+
+	// Now the real subject: same fixture, mutated at the lock boundary.
+	dir2 := setupTestDir(t)
+	cfg2, featureDir2 := setupReplacement(t, dir2)
+	pf2 := evolvePreflight(t, cfg2)
+	caps = filepath.Join(featureDir2, "capabilities.yaml")
+	blBefore, err = os.ReadFile(baselinePath(cfg2, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	authorityLockAttemptHook = func(string) {
+		once.Do(func() {
+			// The ref survives; the promise the entry makes does not.
+			_ = os.WriteFile(caps,
+				[]byte(replacedCapabilities("reports cluster readiness only, not node readiness")), 0o644)
+		})
+	}
+	t.Cleanup(func() { authorityLockAttemptHook = nil })
+
+	armApplyAmendment(t, pf2.Digest, false)
+	_, err = runApplyAmendment_(t, cfg2, "@my-feature")
+	if err == nil {
+		t.Fatal("a replacement whose content changed after approval must refuse: the human " +
+			"approved an entry, not an address")
+	}
+	if !strings.Contains(err.Error(), "changed between approval and write") {
+		t.Errorf("the refusal must identify the consequence check, not merely be non-nil; got: %v", err)
+	}
+	blAfter, err := os.ReadFile(baselinePath(cfg2, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blBefore) != string(blAfter) {
+		t.Error("the baseline was written for a replacement that had changed")
+	}
+	bl := readFeatureBaseline(t, baselinePath(cfg2, "my-feature"))
+	if bl.LastAppliedAmendment != 0 {
+		t.Errorf("marker advanced to %d on a refused write", bl.LastAppliedAmendment)
+	}
+}
+
+// The capture is evidence, and evidence is checked before it is used. Matching
+// filename, hash and sequence prove WHICH record the capture belongs to; they
+// say nothing about whether the payload beside that metadata is intact. A
+// partially written journal that drops a lineage would otherwise have
+// completeness iterate only what survived — quietly comparing against a smaller
+// population than the one that existed, which for `revise` (no per-lineage
+// "must declare something" fallback) means the prior population is simply gone.
+func TestStage2_MalformedCaptureRefusesBeforeConsequences(t *testing.T) {
+	cases := []struct {
+		name    string
+		break_  func(j *refineJournal)
+		wantErr string
+	}{
+		{"omitted lineage", func(j *refineJournal) {
+			j.ScopeBefore = nil
+		}, "no entry for"},
+		{"duplicated lineage", func(j *refineJournal) {
+			j.ScopeBefore = append(j.ScopeBefore, j.ScopeBefore[0])
+		}, "twice"},
+		{"foreign lineage", func(j *refineJournal) {
+			j.ScopeBefore[0].Lineage = "not-a-lineage-this-record-changes"
+		}, "does not change"},
+		{"duplicated ref", func(j *refineJournal) {
+			j.ScopeBefore[0].Unlisted = append(j.ScopeBefore[0].Unlisted, j.ScopeBefore[0].Unlisted[0])
+		}, "twice under"},
+		{"empty fingerprint", func(j *refineJournal) {
+			j.ScopeBefore[0].Unlisted[0].Fingerprint = ""
+		}, "no usable fingerprint"},
+		{"non-canonical ref", func(j *refineJournal) {
+			j.ScopeBefore[0].Unlisted[0].Ref = "operation:y"
+		}, "canonical contract reference"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			cfg, featureDir := setupReplacement(t, dir)
+			rec := replacementRecord(t, featureDir)
+
+			j, err := loadRefineJournal(cfg, "my-feature")
+			if err != nil || j == nil {
+				t.Fatalf("load journal: %v", err)
+			}
+			// Precondition: the capture is well-formed and usable BEFORE the
+			// break, so the refusal below is attributable to the break alone.
+			if err := scopeCaptureMatches(j, rec, []string{"check-readiness"}); err != nil {
+				t.Fatalf("the fixture capture must be valid to begin with: %v", err)
+			}
+			if len(j.ScopeBefore) == 0 || len(j.ScopeBefore[0].Unlisted) == 0 {
+				t.Fatalf("the fixture must actually carry a captured population; got %+v", j.ScopeBefore)
+			}
+			tc.break_(j)
+			// The metadata is deliberately left untouched: filename, hash,
+			// sequence and lineage list all still match. Only the payload is
+			// damaged, which is precisely the case metadata cannot catch.
+			err = scopeCaptureMatches(j, rec, []string{"check-readiness"})
+			if err == nil {
+				t.Fatal("a malformed capture must be refused before anything relies on it")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("the refusal must identify what is wrong with the evidence; want %q, got: %v",
+					tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// The digest recorded with the capture is not signed authenticity and is not
+// claimed as such. It detects the partial write and the after-the-fact edit —
+// which is what a journal on disk is actually exposed to.
+func TestStage2_CaptureDigestDetectsAnAlteredInventory(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupReplacement(t, dir)
+	rec := replacementRecord(t, featureDir)
+	j, err := loadRefineJournal(cfg, "my-feature")
+	if err != nil || j == nil {
+		t.Fatalf("load journal: %v", err)
+	}
+	if j.ScopeBeforeDigest == "" {
+		t.Fatal("the capture must record a digest, or there is nothing to verify against")
+	}
+	// A fingerprint swapped for another valid-looking one: structurally fine,
+	// so only the digest can see it.
+	j.ScopeBefore[0].Unlisted[0].Fingerprint = strings.Repeat("a", 64)
+	if err := scopeCaptureMatches(j, rec, []string{"check-readiness"}); err == nil {
+		t.Fatal("an altered inventory must be refused")
+	} else if !strings.Contains(err.Error(), "does not match the digest") {
+		t.Errorf("the refusal must name the digest as what failed; got: %v", err)
+	}
+
+	j2, err := loadRefineJournal(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	j2.ScopeBeforeDigest = ""
+	if err := scopeCaptureMatches(j2, rec, []string{"check-readiness"}); err == nil {
+		t.Fatal("a capture with no digest must be refused rather than trusted — stripping the " +
+			"check is the cheapest way to defeat it")
+	}
+}
+
+// --- The replacement ref space ---
+
+// crossFeatureReplacement lays down the narrowing whose replacement lives in
+// ANOTHER feature. This is not an exotic case: `affects:` has always been
+// cross-feature, `replaced_by` accepts the same grammar, and work that stops
+// being promised here usually moves to whatever already owns that ground —
+// which is frequently somewhere else. Before the resolver, this record was
+// schema-valid and permanently unappliable, and the message told the designer
+// their true statement did not resolve against the contract.
+func crossFeatureReplacement(t *testing.T, dir string) (*config.Context, string) {
+	t.Helper()
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-replaced.md",
+		strings.ReplaceAll(replacedByAmendment, "@my-feature/operation:z", "@other-feature/operation:z"))
+
+	otherDir := cfg.FeaturePath("other-feature")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: z\n    kind: query\n    summary: reports cluster readiness\n    source: \"@other-feature/owns-it\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, featureDir
+}
+
+func TestStage2_ReplacementMayLiveInAnotherFeature(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := crossFeatureReplacement(t, dir)
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("a replacement in another feature is a legal ref and must resolve: %v", err)
+	}
+	if !strings.Contains(prose, "@other-feature/operation:z") {
+		t.Errorf("the ceremony must name the cross-feature replacement; got:\n%s", prose)
+	}
+
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed cross-feature replacement: %v", err)
+	}
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	c := bl.TransitionReceipts["001-replaced.md"].Payload.Evolution[0].Consequences[0]
+	if c.AfterRef != "@other-feature/operation:z" {
+		t.Errorf("the receipt must name the cross-feature replacement; got %q", c.AfterRef)
+	}
+	if !validSHA256(c.AfterFingerprint) {
+		t.Errorf("a cross-feature replacement must be bound by a real digest; got %q",
+			c.AfterFingerprint)
+	}
+}
+
+// The other half of the same contract: the replacement is bound by CONTENT, not
+// by address, wherever it lives. A cross-feature replacement that is resolved
+// but not fingerprinted would be a weaker promise than a local one.
+func TestStage2_CrossFeatureReplacementIsBoundToItsContent(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := crossFeatureReplacement(t, dir)
+	pf := evolvePreflight(t, cfg)
+	otherCaps := filepath.Join(cfg.FeaturePath("other-feature"), "capabilities.yaml")
+	blBefore, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var once sync.Once
+	authorityLockAttemptHook = func(string) {
+		once.Do(func() {
+			_ = os.WriteFile(otherCaps, []byte("operations:\n  - id: z\n    kind: query\n"+
+				"    summary: reports something else entirely\n    source: \"@other-feature/owns-it\"\n"), 0o644)
+		})
+	}
+	t.Cleanup(func() { authorityLockAttemptHook = nil })
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("a cross-feature replacement whose content changed after approval must refuse")
+	} else if !strings.Contains(err.Error(), "changed between approval and write") {
+		t.Errorf("the refusal must identify the consequence check; got: %v", err)
+	}
+	blAfter, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blBefore) != string(blAfter) {
+		t.Error("the baseline was written for a replacement that had changed")
+	}
+}
+
+// A domain entity is root-scoped, and the ref grammar admits it. It resolves
+// against the root model, exactly as `affects:` does.
+func domainReplacement(t *testing.T, dir string) (*config.Context, string) {
+	t.Helper()
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-replaced.md",
+		strings.ReplaceAll(replacedByAmendment, "@my-feature/operation:z", "@my-feature/domain:Cluster"))
+	if err := os.WriteFile(cfg.DomainModelPath(),
+		[]byte("schema_version: 1\nentities:\n  - name: Cluster\n    description: the cluster\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, featureDir
+}
+
+func TestStage2_ReplacementMayBeADomainEntity(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := domainReplacement(t, dir)
+
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("a domain entity is a legal replacement ref and must resolve: %v", err)
+	}
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("confirmed domain replacement: %v", err)
+	}
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	c := bl.TransitionReceipts["001-replaced.md"].Payload.Evolution[0].Consequences[0]
+	if c.AfterRef != "@my-feature/domain:Cluster" || !validSHA256(c.AfterFingerprint) {
+		t.Errorf("the domain replacement must be named and bound; got %+v", c)
+	}
+}
+
+// The domain half of the same content-binding rule. The fingerprint comes from
+// the raw entity node, not the parsed struct, for the reason it does everywhere
+// else here: the schema has not modelled every field an entity carries, and an
+// edit confined to an unmodelled one is exactly the change an approval token
+// must not miss.
+func TestStage2_DomainReplacementIsBoundToItsContent(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := domainReplacement(t, dir)
+	pf := evolvePreflight(t, cfg)
+	blBefore, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var once sync.Once
+	authorityLockAttemptHook = func(string) {
+		once.Do(func() {
+			// `notes` is not in the parsed entity struct today. A fingerprint
+			// over the parsed value would see nothing here.
+			_ = os.WriteFile(cfg.DomainModelPath(),
+				[]byte("schema_version: 1\nentities:\n  - name: Cluster\n    description: the cluster\n    notes: and it no longer covers node readiness\n"), 0o644)
+		})
+	}
+	t.Cleanup(func() { authorityLockAttemptHook = nil })
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("a domain replacement whose content changed after approval must refuse")
+	} else if !strings.Contains(err.Error(), "changed between approval and write") {
+		t.Errorf("the refusal must identify the consequence check; got: %v", err)
+	}
+	blAfter, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blBefore) != string(blAfter) {
+		t.Error("the baseline was written for a replacement that had changed")
+	}
+}
+
+// Two ways the root model can stop being a usable subject, kept apart because
+// they fail at different readers and a single assertion would hide one of them.
+//
+//   - A duplicated name is caught by the fingerprint reader itself: "Cluster"
+//     then has two possible meanings and the approval cannot say which it bound.
+//   - An entry the raw reader cannot key at all — no `name` — cannot be
+//     identified, so no reference can name it.
+//
+// Both refusals come from the fingerprint reader. The parsed/raw count check
+// downstream of it has no reachable failure mode given that strictness; it is
+// kept as a consistency assertion, not claimed as a tested guard.
+func TestStage2_UnusableDomainModelRefusesResolution(t *testing.T) {
+	cases := []struct {
+		name    string
+		model   string
+		wantErr string
+	}{
+		{"duplicated entity", "schema_version: 1\nentities:\n  - name: Cluster\n    description: one\n" +
+			"  - name: Cluster\n    description: another\n", "appears more than once"},
+		{"unkeyable entry", "schema_version: 1\nentities:\n  - name: Cluster\n    description: one\n" +
+			"  - description: nameless\n", "has no name"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			cfg, _ := domainReplacement(t, dir)
+			// Precondition: this fixture resolves before the model is broken.
+			armApplyAmendment(t, "", false)
+			if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+				t.Fatalf("the fixture must resolve to begin with: %v", err)
+			}
+			if err := os.WriteFile(cfg.DomainModelPath(), []byte(tc.model), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			armApplyAmendment(t, "", false)
+			_, err := runApplyAmendment_(t, cfg, "@my-feature")
+			if err == nil {
+				t.Fatal("an unusable domain model must refuse rather than resolve against a guess")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("want %q in the refusal; got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// Absence and failure are different answers, and only one of them is the
+// designer's fault. An unreadable target artifact must say so; reporting it as
+// "does not resolve against the contract" sends someone to fix a reference that
+// was correct.
+func TestStage2_UnreachableReplacementIsNotReportedAsAbsent(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := crossFeatureReplacement(t, dir)
+	otherCaps := filepath.Join(cfg.FeaturePath("other-feature"), "capabilities.yaml")
+	if err := os.WriteFile(otherCaps, []byte("operations:\n  - id: [unclosed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("an unreadable replacement target must fail closed")
+	}
+	if strings.Contains(err.Error(), "does not resolve against the contract") {
+		t.Errorf("an unreadable artifact was reported as a missing reference; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("the refusal must say the artifact could not be read; got: %v", err)
+	}
+}
+
+// A ref naming a feature that has no spec directory is a genuinely bad
+// reference, and must say THAT rather than blaming the contract's contents.
+func TestStage2_ReplacementInAnUnknownFeatureNamesTheFeature(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := crossFeatureReplacement(t, dir)
+	if err := os.RemoveAll(cfg.FeaturePath("other-feature")); err != nil {
+		t.Fatal(err)
+	}
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a replacement in a feature that does not exist must refuse")
+	}
+	if !strings.Contains(err.Error(), "other-feature") {
+		t.Errorf("the refusal must name the unknown feature; got: %v", err)
+	}
+}
+
+// The directory probe makes the same absence-versus-failure distinction the
+// resolver makes above it. A feature dir that is a file, or one that cannot be
+// read at all, is not a missing feature.
+func TestStage2_UnreadableFeatureDirIsNotAMissingFeature(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, _ := crossFeatureReplacement(t, dir)
+	other := cfg.FeaturePath("other-feature")
+	// Precondition: it resolves while the directory is a directory.
+	armApplyAmendment(t, "", false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("the fixture must resolve to begin with: %v", err)
+	}
+
+	if err := os.RemoveAll(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("a feature path that is not a directory must refuse")
+	}
+	if strings.Contains(err.Error(), "has no spec directory") {
+		t.Errorf("a path that exists was reported as a missing feature; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("the refusal must say what it actually found; got: %v", err)
+	}
+}
+
+// A digest is not a length. Sixty-four `z` characters are exactly as long as a
+// SHA-256 and carry none of its meaning, and the comment at this boundary
+// claimed to require a valid one.
+func TestStage2_CaptureFingerprintMustBeRealHex(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg, featureDir := setupReplacement(t, dir)
+	rec := replacementRecord(t, featureDir)
+	j, err := loadRefineJournal(cfg, "my-feature")
+	if err != nil || j == nil {
+		t.Fatalf("load journal: %v", err)
+	}
+	if err := scopeCaptureMatches(j, rec, []string{"check-readiness"}); err != nil {
+		t.Fatalf("the fixture capture must be valid to begin with: %v", err)
+	}
+
+	j.ScopeBefore[0].Unlisted[0].Fingerprint = strings.Repeat("z", 64)
+	// Recompute the outer digest so it AGREES with the tampered inventory.
+	// Otherwise the digest check would refuse first and this test would prove
+	// nothing about the fingerprint rule it names.
+	j.ScopeBeforeDigest = scopeInventoryDigest(j.ScopeBefore)
+
+	err = scopeCaptureMatches(j, rec, []string{"check-readiness"})
+	if err == nil {
+		t.Fatal("a 64-character non-hex fingerprint must be refused — length is not validity")
+	}
+	if !strings.Contains(err.Error(), "no usable fingerprint") {
+		t.Errorf("the refusal must name the fingerprint; got: %v", err)
 	}
 }

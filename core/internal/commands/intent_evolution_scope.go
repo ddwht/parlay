@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
 )
 
@@ -178,6 +179,36 @@ type lineageScope struct {
 
 // deriveLineageScope enumerates every contract entry attributed to each lineage
 // and splits it by whether this amendment's affects: names it.
+// contractEntry is one entry anywhere in the feature's contract, with the
+// promises that justify it.
+type contractEntry struct {
+	Ref         string
+	Fingerprint string
+	Sources     string
+}
+
+// deriveContractIndex enumerates the WHOLE contract, not one lineage's slice.
+//
+// Existence is a question about the contract; attribution is a question about a
+// promise. An entry the splice re-sourced elsewhere has left a lineage's
+// population and is still very much present, so anything asking "does this
+// still exist" must read this rather than a scope.
+func deriveContractIndex(featDir, slug string) (map[string]contractEntry, error) {
+	entries, err := enumerateContractEntries(featDir, slug)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]contractEntry, len(entries))
+	for _, e := range entries {
+		if _, dup := out[e.Ref]; dup {
+			return nil, fmt.Errorf("deriving the entries attributed to this promise: %s appears "+
+				"more than once, so the population the approval covers is ambiguous", e.Ref)
+		}
+		out[e.Ref] = e
+	}
+	return out, nil
+}
+
 func deriveLineageScope(featDir, slug string, lineages []string, affects []string) ([]lineageScope, error) {
 	named := map[string]bool{}
 	for _, raw := range affects {
@@ -186,110 +217,16 @@ func deriveLineageScope(featDir, slug string, lineages []string, affects []strin
 		}
 	}
 
-	// FAIL CLOSED. An earlier version skipped an artifact it could not parse,
-	// so an unreadable file holding only unlisted attributed entries produced
-	// an "exact population" that was neither exact nor the population — and the
-	// human approved a closure assertion over a list with a hole in it.
-	//
-	// Absence and malformation are different: a feature legitimately has no
-	// surface or no infrastructure, but a file that exists and will not parse
-	// is an unknown, and an unknown here is unapprovable.
-	type entry struct {
-		kind, name, source string
-		fingerprint        string
-	}
-	var entries []entry
-
-	unreadable := func(path string, err error) error {
-		return fmt.Errorf("deriving the entries attributed to this promise: %s cannot be read "+
-			"(%v), so the population the approval covers is unknown", path, err)
-	}
-
-	capsPath := filepath.Join(featDir, "capabilities.yaml")
-	present, err := strictArtifactPresence(capsPath)
+	entries, err := enumerateContractEntries(featDir, slug)
 	if err != nil {
 		return nil, err
-	}
-	if present {
-		caps, perr := parser.ParseCapabilities(capsPath)
-		if perr != nil {
-			return nil, unreadable(capsPath, perr)
-		}
-		raw, rerr := resolvedEntryFingerprints(capsPath, "operations", "id")
-		if rerr != nil {
-			return nil, unreadable(capsPath, rerr)
-		}
-		if len(caps.Operations) != len(raw) {
-			return nil, unreadable(capsPath, fmt.Errorf("%d parsed operation(s) but %d raw "+
-				"entr(y/ies) — the subject cannot be derived from a document the parser and the "+
-				"reader disagree about", len(caps.Operations), len(raw)))
-		}
-		for _, op := range caps.Operations {
-			fp, ok := raw[op.ID]
-			if !ok {
-				return nil, unreadable(capsPath, fmt.Errorf("operation %q has no raw node", op.ID))
-			}
-			entries = append(entries, entry{"operation", op.ID, op.Source, fp})
-		}
-	}
-
-	surfacePath := filepath.Join(featDir, "surface.yaml")
-	present, err = strictArtifactPresence(surfacePath)
-	if err != nil {
-		return nil, err
-	}
-	if present {
-		frags, perr := parser.ParseSurfaceFile(surfacePath)
-		if perr != nil {
-			return nil, unreadable(surfacePath, perr)
-		}
-		raw, rerr := resolvedEntryFingerprints(surfacePath, "fragments", "name")
-		if rerr != nil {
-			return nil, unreadable(surfacePath, rerr)
-		}
-		if len(frags) != len(raw) {
-			return nil, unreadable(surfacePath, fmt.Errorf("%d parsed fragment(s) but %d raw "+
-				"entr(y/ies)", len(frags), len(raw)))
-		}
-		for _, f := range frags {
-			fp, ok := raw[f.Name]
-			if !ok {
-				return nil, unreadable(surfacePath, fmt.Errorf("fragment %q has no raw node", f.Name))
-			}
-			entries = append(entries, entry{"surface", parser.Slugify(f.Name), f.Source, fp})
-		}
-	}
-
-	infraPath := filepath.Join(featDir, "infrastructure.md")
-	present, err = strictArtifactPresence(infraPath)
-	if err != nil {
-		return nil, err
-	}
-	if present {
-		_, _, frags, perr := readFragments(infraPath)
-		if perr != nil {
-			return nil, unreadable(infraPath, perr)
-		}
-		for _, f := range frags {
-			// Heading AND body, explicitly. Today `body` is the verbatim block
-			// INCLUDING the heading line, so the heading is already covered —
-			// naming it here is belt-and-braces against that changing, not a
-			// fix for a live gap. Said plainly rather than implying this
-			// closed a hole it did not.
-			fp, ferr := entryFingerprint(struct{ Heading, Body string }{f.heading, f.body})
-			if ferr != nil {
-				return nil, ferr
-			}
-			entries = append(entries, entry{"infrastructure", parser.Slugify(f.heading),
-				infraFragmentSource(f.body), fp})
-		}
 	}
 
 	// A duplicate ref anywhere makes "the exact population" ambiguous, whatever
 	// produced it.
 	seenRef := map[string]bool{}
 	for _, e := range entries {
-		ref := fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name)
+		ref := e.Ref
 		if seenRef[ref] {
 			return nil, fmt.Errorf("deriving the entries attributed to this promise: %s appears "+
 				"more than once, so the population the approval covers is ambiguous", ref)
@@ -303,10 +240,10 @@ func deriveLineageScope(featDir, slug string, lineages []string, affects []strin
 	for _, lineage := range sorted {
 		sc := lineageScope{Lineage: lineage}
 		for _, e := range entries {
-			if e.source == "" || !sourceNamesIntent(e.source, slug, lineage) {
+			if e.Sources == "" || !sourceNamesIntent(e.Sources, slug, lineage) {
 				continue
 			}
-			se := scopedEntry{Ref: fmt.Sprintf("@%s/%s:%s", slug, e.kind, e.name), Fingerprint: e.fingerprint}
+			se := scopedEntry{Ref: e.Ref, Fingerprint: e.Fingerprint}
 			if named[se.Ref] {
 				sc.Named = append(sc.Named, se)
 			} else {
@@ -387,4 +324,260 @@ func diffVersions(before, after parser.Intent) []fieldDelta {
 		}
 	}
 	return out
+}
+func enumerateContractEntries(featDir, slug string) ([]contractEntry, error) {
+
+	// enumerateContractEntries reads every contract entry the feature declares.
+	// FAIL CLOSED. An earlier version skipped an artifact it could not parse,
+	// so an unreadable file holding only unlisted attributed entries produced
+	// an "exact population" that was neither exact nor the population — and the
+	// human approved a closure assertion over a list with a hole in it.
+	//
+	// Absence and malformation are different: a feature legitimately has no
+	// surface or no infrastructure, but a file that exists and will not parse
+	// is an unknown, and an unknown here is unapprovable.
+	var entries []contractEntry
+
+	unreadable := func(path string, err error) error {
+		return fmt.Errorf("deriving the entries attributed to this promise: %s cannot be read "+
+			"(%v), so the population the approval covers is unknown", path, err)
+	}
+
+	capsPath := filepath.Join(featDir, "capabilities.yaml")
+	present, err := strictArtifactPresence(capsPath)
+	if err != nil {
+		return nil, err
+	}
+	if present {
+		caps, perr := parser.ParseCapabilities(capsPath)
+		if perr != nil {
+			return nil, unreadable(capsPath, perr)
+		}
+		raw, rerr := resolvedEntryFingerprints(capsPath, "operations", "id")
+		if rerr != nil {
+			return nil, unreadable(capsPath, rerr)
+		}
+		if len(caps.Operations) != len(raw) {
+			return nil, unreadable(capsPath, fmt.Errorf("%d parsed operation(s) but %d raw "+
+				"entr(y/ies) — the subject cannot be derived from a document the parser and the "+
+				"reader disagree about", len(caps.Operations), len(raw)))
+		}
+		for _, op := range caps.Operations {
+			fp, ok := raw[op.ID]
+			if !ok {
+				return nil, unreadable(capsPath, fmt.Errorf("operation %q has no raw node", op.ID))
+			}
+			entries = append(entries, contractEntry{Ref: fmt.Sprintf("@%s/operation:%s", slug, op.ID), Fingerprint: fp, Sources: op.Source})
+		}
+	}
+
+	surfacePath := filepath.Join(featDir, "surface.yaml")
+	present, err = strictArtifactPresence(surfacePath)
+	if err != nil {
+		return nil, err
+	}
+	if present {
+		frags, perr := parser.ParseSurfaceFile(surfacePath)
+		if perr != nil {
+			return nil, unreadable(surfacePath, perr)
+		}
+		raw, rerr := resolvedEntryFingerprints(surfacePath, "fragments", "name")
+		if rerr != nil {
+			return nil, unreadable(surfacePath, rerr)
+		}
+		if len(frags) != len(raw) {
+			return nil, unreadable(surfacePath, fmt.Errorf("%d parsed fragment(s) but %d raw "+
+				"entr(y/ies)", len(frags), len(raw)))
+		}
+		for _, f := range frags {
+			fp, ok := raw[f.Name]
+			if !ok {
+				return nil, unreadable(surfacePath, fmt.Errorf("fragment %q has no raw node", f.Name))
+			}
+			entries = append(entries, contractEntry{Ref: fmt.Sprintf("@%s/surface:%s", slug, parser.Slugify(f.Name)), Fingerprint: fp, Sources: f.Source})
+		}
+	}
+
+	infraPath := filepath.Join(featDir, "infrastructure.md")
+	present, err = strictArtifactPresence(infraPath)
+	if err != nil {
+		return nil, err
+	}
+	if present {
+		_, _, frags, perr := readFragments(infraPath)
+		if perr != nil {
+			return nil, unreadable(infraPath, perr)
+		}
+		for _, f := range frags {
+			// Heading AND body, explicitly. Today `body` is the verbatim block
+			// INCLUDING the heading line, so the heading is already covered —
+			// naming it here is belt-and-braces against that changing, not a
+			// fix for a live gap. Said plainly rather than implying this
+			// closed a hole it did not.
+			fp, ferr := entryFingerprint(struct{ Heading, Body string }{f.heading, f.body})
+			if ferr != nil {
+				return nil, ferr
+			}
+			entries = append(entries, contractEntry{
+				Ref:         fmt.Sprintf("@%s/infrastructure:%s", slug, parser.Slugify(f.heading)),
+				Fingerprint: fp, Sources: infraFragmentSource(f.body)})
+		}
+	}
+
+	return entries, nil
+}
+
+// --- Contract resolution across the whole ref grammar ---
+
+// contractResolver resolves a canonical contract ref — any feature, any kind,
+// including root-scoped domain entities — to the entry it names and that
+// entry's exact semantic fingerprint.
+//
+// The scope grammar is deliberately cross-feature. `affects:` has always been
+// able to name another feature's operation or a domain entity, and
+// `replaced_by` accepts the same grammar because it is the same grammar.
+// Resolving it against ONE feature's index made every legal cross-feature or
+// domain replacement look nonexistent: a designer writing a true statement was
+// told it does not resolve against the contract, which is both wrong and
+// unactionable. There were two honest options — resolve the whole grammar, or
+// reject in the schema the part the applier cannot honour. Accepting syntax
+// that can never be satisfied was the one option not available.
+//
+// Cross-feature replacement is also the ORDINARY shape of a narrowing. Work
+// that stops being promised here rarely evaporates; it moves to whatever
+// already owns that ground, and that owner is frequently in another feature.
+//
+// Fail closed throughout: a target artifact that exists and will not parse is
+// an error, never a miss. "Does not resolve" must mean the entry is absent, not
+// that the reader gave up.
+type contractResolver struct {
+	cfg     *config.Context
+	feature map[string]map[string]contractEntry
+	domain  map[string]string
+	domainL bool
+}
+
+func newContractResolver(cfg *config.Context) *contractResolver {
+	return &contractResolver{cfg: cfg, feature: map[string]map[string]contractEntry{}}
+}
+
+// resolve returns the entry a canonical ref names. The bool distinguishes
+// absence from failure; both callers must keep them apart, because an
+// unreadable artifact is not evidence that a replacement is missing.
+func (r *contractResolver) resolve(canonicalRef string) (contractEntry, bool, error) {
+	ref, err := parser.ParseAmendmentRef(canonicalRef)
+	if err != nil {
+		return contractEntry{}, false, fmt.Errorf("%s is not a contract reference: %w",
+			canonicalRef, err)
+	}
+	if ref.Kind == "domain" {
+		fps, derr := r.domainEntities()
+		if derr != nil {
+			return contractEntry{}, false, derr
+		}
+		fp, ok := fps[ref.Name]
+		if !ok {
+			return contractEntry{}, false, nil
+		}
+		return contractEntry{Ref: canonicalAmendmentRef(ref), Fingerprint: fp}, true, nil
+	}
+	idx, ok := r.feature[ref.Feature]
+	if !ok {
+		featDir := r.cfg.FeaturePath(ref.Feature)
+		// The same absence-versus-failure split the resolver enforces one layer
+		// up, applied at the directory probe. Folding every stat error into "no
+		// spec directory" is fail-closed but tells a designer their reference
+		// names a feature that does not exist, when what actually happened is
+		// that the probe could not read it. Lstat, so a dangling symlink is a
+		// thing that cannot be read rather than a thing that is not there.
+		st, serr := os.Lstat(featDir)
+		switch {
+		case serr != nil && os.IsNotExist(serr):
+			return contractEntry{}, false, fmt.Errorf(
+				"%s names feature %q, which has no spec directory, so the reference cannot be "+
+					"resolved", canonicalRef, ref.Feature)
+		case serr != nil:
+			// Defence in depth, not a pinned guard: with Lstat the only other
+			// reachable error is an unsearchable parent, and spec/intents is
+			// the parent of the asking feature too, so this feature's own
+			// derivation fails first and reports that instead. It stays
+			// because folding an unknown into "no such feature" is the wrong
+			// answer whenever it does become reachable.
+			return contractEntry{}, false, fmt.Errorf(
+				"%s names feature %q, whose spec directory cannot be read (%v), so whether the "+
+					"reference resolves is unknown", canonicalRef, ref.Feature, serr)
+		case !st.IsDir():
+			return contractEntry{}, false, fmt.Errorf(
+				"%s names feature %q, but %s is not a directory, so the reference cannot be "+
+					"resolved", canonicalRef, ref.Feature, featDir)
+		}
+		built, berr := deriveContractIndex(featDir, ref.Feature)
+		if berr != nil {
+			return contractEntry{}, false, berr
+		}
+		r.feature[ref.Feature] = built
+		idx = built
+	}
+	e, found := idx[canonicalAmendmentRef(ref)]
+	return e, found, nil
+}
+
+// domainEntities fingerprints the root domain model's entities.
+//
+// The model is root-scoped: the ref's feature part records who is asking, and
+// the entity resolves against the active root — the same rule resolveAmendmentRef
+// applies to `affects:`. The fingerprint comes from the raw node for the same
+// reason it does everywhere else here: a parsed struct silently drops the fields
+// the schema has not modelled yet, and an edit confined to one of those is
+// exactly the change an approval token must not miss.
+func (r *contractResolver) domainEntities() (map[string]string, error) {
+	if r.domainL {
+		return r.domain, nil
+	}
+	path := r.cfg.DomainModelPath()
+	present, err := strictArtifactPresence(path)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf("this record names a domain entity, but the root has no domain "+
+			"model at %s, so the reference cannot be resolved", path)
+	}
+	raw, rerr := resolvedEntryFingerprints(path, "entities", "name")
+	if rerr != nil {
+		return nil, fmt.Errorf("deriving the domain entities: %s cannot be read (%v), so the "+
+			"reference cannot be resolved", path, rerr)
+	}
+	// Parsed from the SAME BYTES, deliberately not through LoadDomainModel:
+	// that caches the artifact on the context, so at the commit recheck it can
+	// hand back the model as it was before a lock-boundary edit while the raw
+	// reader above sees the edited file. An agreement check between a stale
+	// read and a fresh one is not an agreement check.
+	data, derr := os.ReadFile(path)
+	if derr != nil {
+		return nil, fmt.Errorf("deriving the domain entities: %s cannot be read (%v)", path, derr)
+	}
+	var dm config.DomainModelArtifact
+	if uerr := yaml.Unmarshal(data, &dm); uerr != nil {
+		return nil, fmt.Errorf("deriving the domain entities: %s cannot be parsed (%v)", path, uerr)
+	}
+	// The parser and the raw reader must agree about the document, for the same
+	// reason the capability and surface readers must. Note this is belt and
+	// braces rather than a load-bearing guard: resolvedEntryFingerprints
+	// already refuses a duplicated or unkeyable entry, so there is no reachable
+	// document that reaches here disagreeing. It stays as a consistency
+	// assertion against a future loosening of that reader, and is not counted
+	// among the tested guards.
+	if len(dm.Entities) != len(raw) {
+		return nil, fmt.Errorf("deriving the domain entities: %d parsed but %d raw — the subject "+
+			"cannot be derived from a document the parser and the reader disagree about",
+			len(dm.Entities), len(raw))
+	}
+	for _, e := range dm.Entities {
+		if _, ok := raw[e.Name]; !ok {
+			return nil, fmt.Errorf("deriving the domain entities: %q has no raw node", e.Name)
+		}
+	}
+	r.domain, r.domainL = raw, true
+	return r.domain, nil
 }

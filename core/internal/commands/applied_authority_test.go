@@ -91,6 +91,16 @@ func writeRefineJournal(t *testing.T, cfg *config.Context, slug string, amendmen
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Capture the pre-splice inventory exactly as the real journal command
+	// does when it stamps amendment-written, so a fixture is not a weaker
+	// artefact than the thing it stands in for.
+	if err := captureScopeBefore(cfg, slug, &j, amendment); err != nil {
+		t.Fatal(err)
+	}
+	data, err = yaml.Marshal(&j)
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := refineJournalPath(cfg, slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)

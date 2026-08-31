@@ -186,6 +186,33 @@ type refineJournal struct {
 	// Completed lists the completed step names, in order. The vocabulary is
 	// closed — see refineJournalSteps.
 	Completed []string `yaml:"completed" json:"completed"`
+
+	// ScopeBefore is the contract entries attributed to each lineage this
+	// run's amendment changes, captured BEFORE the splice mutates anything.
+	//
+	// Without it there is no evidence of the prior subject population at all.
+	// Scope derived after the splice cannot see a removed entry, so a
+	// disposition naming any plausible absent ref would pass — the record
+	// would be evidence that somebody claimed a consequence, never that the
+	// promise ever justified the thing they claimed it about.
+	ScopeBefore []lineageScope `yaml:"scope-before,omitempty" json:"scope_before,omitempty"`
+	// ScopeBeforeAmendment, ScopeBeforeFile and ScopeBeforeHash identify the
+	// EXACT record the inventory is evidence about.
+	//
+	// A sequence alone is not identity. Amendments are append-only, but an
+	// append-only violation or an outright replacement of NNN-slug.md keeps
+	// the sequence while changing the lineages and the meaning — and the
+	// ceremony would then treat the old capture as evidence for the new bytes.
+	// The amendment hash in the later approval payload does not repair the
+	// provenance of an earlier capture; only the capture carrying its own
+	// binding does.
+	ScopeBeforeAmendment int      `yaml:"scope-before-amendment,omitempty" json:"scope_before_amendment,omitempty"`
+	ScopeBeforeFile      string   `yaml:"scope-before-file,omitempty" json:"scope_before_file,omitempty"`
+	ScopeBeforeHash      string   `yaml:"scope-before-hash,omitempty" json:"scope_before_hash,omitempty"`
+	ScopeBeforeLineages  []string `yaml:"scope-before-lineages,omitempty" json:"scope_before_lineages,omitempty"`
+	// ScopeBeforeDigest is a canonical hash of the captured inventory, so a
+	// partially written or altered capture is detectable rather than trusted.
+	ScopeBeforeDigest string `yaml:"scope-before-digest,omitempty" json:"scope_before_digest,omitempty"`
 }
 
 // refineJournalSteps is the closed vocabulary of journal step names, in

@@ -111,10 +111,31 @@ func TestCheckApplied_DriftIsNotClean(t *testing.T) {
 	}
 }
 
+// inFlightAmendment is a plain splice record: it changes a contract entry and
+// evolves no promise text, so a journal step over it needs no scope capture.
+const inFlightAmendment = `---
+amendment: widen-timeout
+date: 2026-08-13
+trigger: "the timeout was too tight"
+affects:
+  - "@my-feature/capabilities:CheckReady"
+---
+
+## Change
+The timeout widens.
+
+## Acceptance
+- It is wider.
+`
+
 func TestCheckApplied_ReportsInFlightRun(t *testing.T) {
 	dir := setupTestDir(t)
 	featureDir := setupLedgerFeature(t, dir)
 	saveLedgerBaseline(t, featureDir, nil)
+	// The step being stamped asserts the amendment was written, so the fixture
+	// has to have written it. Stamping it for a sequence with no record on disk
+	// is the contradiction the capture now refuses.
+	writeAmendment(t, featureDir, "002-widen-timeout.md", inFlightAmendment)
 
 	stampRefineJournal(t, "my-feature", "--ask", "widen the timeout", "--step", "amendment-written", "--amendment", "2")
 
@@ -153,7 +174,8 @@ func stampRefineJournal(t *testing.T, feature string, flags ...string) string {
 
 func TestRefineJournal_StampResumeAndClear(t *testing.T) {
 	dir := setupTestDir(t)
-	setupLedgerFeature(t, dir)
+	featureDir := setupLedgerFeature(t, dir)
+	writeAmendment(t, featureDir, "001-widen-timeout.md", inFlightAmendment)
 
 	stampRefineJournal(t, "my-feature", "--step", "amendment-written", "--amendment", "1")
 	stampRefineJournal(t, "my-feature", "--step", "splice-applied")
@@ -222,4 +244,64 @@ func TestRefineJournal_ClearIsIdempotent(t *testing.T) {
 
 	stampRefineJournal(t, "my-feature", "--clear")
 	stampRefineJournal(t, "my-feature", "--clear")
+}
+
+// Stamping amendment-written for a sequence with no record is a contradiction:
+// the step asserts the file exists. The old behaviour treated the absence as
+// "nothing to capture yet" and stamped anyway, so the run walked into the splice
+// with no prior inventory and only discovered it at apply time — by which point
+// the artifacts had already been rewritten and the state needed to recover the
+// capture was gone. Fail at the step, while recovery is still free.
+func TestRefineJournal_MissingAmendmentDoesNotStampTheStep(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := setupLedgerFeature(t, dir)
+	cfg := testContext(t)
+
+	// Precondition: the same call succeeds once the record exists, so the
+	// refusal below is about the absence and not about the fixture.
+	writeAmendment(t, featureDir, "001-widen-timeout.md", inFlightAmendment)
+	stampRefineJournal(t, "my-feature", "--step", "amendment-written", "--amendment", "1")
+	before, err := os.ReadFile(refineJournalPath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = stampRefineJournalErr(t, "my-feature", "--step", "amendment-written", "--amendment", "7")
+	if err == nil {
+		t.Fatal("stamping amendment-written for a sequence with no amendment must be a hard error")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("the refusal must name the missing record; got: %v", err)
+	}
+
+	after, err := os.ReadFile(refineJournalPath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("a refused stamp must leave the journal untouched; the run would otherwise resume "+
+			"from a step it never completed.\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	j, err := loadRefineJournal(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Amendment != 1 {
+		t.Errorf("the journal's amendment moved to %d on a refused stamp", j.Amendment)
+	}
+}
+
+// stampRefineJournalErr is stampRefineJournal without the t.Fatal, for the
+// cases where the refusal IS the subject.
+func stampRefineJournalErr(t *testing.T, feature string, flags ...string) error {
+	t.Helper()
+	resetFlagsAfterTest(t, refineJournalCmd.Flags())
+	if err := refineJournalCmd.Flags().Parse(flags); err != nil {
+		t.Fatalf("parse journal flags: %v", err)
+	}
+	cmd := testCommandWithContext(t, testContext(t))
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	return runRefineJournal(cmd, []string{feature})
 }
