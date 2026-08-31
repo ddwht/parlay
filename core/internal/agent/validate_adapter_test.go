@@ -81,6 +81,12 @@ func TestValidateAdapter_RulesFireIndividually(t *testing.T) {
 			validPresentation("vue", "  packages:\n    utils: \"\"\n"), "adapter-packages-invalid"},
 		{"bad design-system source", "vue.adapter.yaml",
 			validPresentation("vue", "design-system:\n  color:\n    source: vibes\n"), "adapter-design-system-source-unknown"},
+		{"figma design-system source retired", "vue.adapter.yaml",
+			// `source: figma` was a VALID value until the design-spec surface
+			// retirement (amendment design-spec-surface-retired, 2026-08-31);
+			// this pins that the formerly-legal value is now rejected, not
+			// merely that arbitrary junk is.
+			validPresentation("vue", "design-system:\n  color:\n    source: figma\n"), "adapter-design-system-source-unknown"},
 		{"mount strategy without placeholder", "vue.adapter.yaml",
 			validPresentation("vue", "mount-strategies:\n  route:\n    detection: \"<Route\"\n    template: \"no placeholder\"\n    description: d\n"),
 			"adapter-mount-strategy-invalid"},

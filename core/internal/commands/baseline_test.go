@@ -398,3 +398,42 @@ routes:
 		t.Errorf("v1 routes hash = %q, want %q — the fallback must not change v1 hashing", sections["routes"], want)
 	}
 }
+
+// The design-spec surface was retired (amendment design-spec-surface-retired,
+// 2026-08-31): the Baseline struct no longer carries design-spec-fragments /
+// design-spec-shared fields. Baselines written BEFORE the retirement may still
+// contain them on disk; yaml decoding must ignore the removed keys and drift
+// detection must not report spurious dirtiness because of them. This pins the
+// amendment's decode-safety promise, since every former design-spec test was
+// deleted with the feature.
+func TestBaseline_LegacyDesignSpecFieldsDecodeSafely(t *testing.T) {
+	setupTestDir(t)
+	cfg := testContext(t)
+	slug := "legacy-design-spec"
+	writeFeatureFiles(t, slug, "# Feature\n\n## An intent\n\n**Goal**: g\n**Persona**: p\n", "", "")
+
+	// Write a real baseline first, then splice the retired keys into it so
+	// everything else (hashes, schema version) is genuinely current.
+	baseline, err := buildBaseline(cfg, slug)
+	if err != nil {
+		t.Fatalf("buildBaseline: %v", err)
+	}
+	writeBaseline(t, slug, *baseline)
+	blPath := baselinePath(cfg, slug)
+	data, err := os.ReadFile(blPath)
+	if err != nil {
+		t.Fatalf("read baseline: %v", err)
+	}
+	legacy := string(data) + "design-spec-fragments:\n  hero: abc123\ndesign-spec-shared: def456\n"
+	if err := os.WriteFile(blPath, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy baseline: %v", err)
+	}
+
+	out, err := detectDrift(cfg, slug, cfg.FeaturePath(slug))
+	if err != nil {
+		t.Fatalf("detectDrift must decode a baseline carrying retired design-spec keys: %v", err)
+	}
+	if out.HasDrift {
+		t.Errorf("no source changed; retired design-spec keys must not surface as drift: %+v", out)
+	}
+}

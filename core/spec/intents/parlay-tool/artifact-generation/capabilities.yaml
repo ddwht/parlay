@@ -9,13 +9,6 @@ operations:
     notes: |
       Migrated from domain-model.operations: generate-surface
 
-  - id: unknown.generate-surface-from-figma
-    kind: unknown
-    subject:
-      entity: Surface
-    notes: |
-      Migrated from domain-model.operations: generate-surface-from-figma
-
   - id: unknown.view-page
     kind: unknown
     subject:
