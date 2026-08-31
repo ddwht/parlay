@@ -381,57 +381,95 @@ func manifestDigest(manifestPath string) (string, error) {
 	return "sha256:" + sum, nil
 }
 
-// archiveCoversLiveContents requires the archive to already name every
-// file still standing in the root's live directory.
+// archivePreservesLiveContents requires every byte still standing in
+// the root's directory to be provably preserved in the archive.
 //
-// This is the check that makes an archive evidence of THIS root rather
-// than evidence of something. A resumed run whose remaining work
-// includes removing the contents has, by construction, not removed them
-// yet — so the copy it is about to delete them in favour of must be a
-// copy of exactly what is there. A manifest that is empty, or that
-// describes some other tree, fails immediately; and a manifest that
-// passes has to have been produced by walking this directory, which is
-// what a genuine archive is.
+// This is the invariant a retirement can actually keep, and it is worth
+// being exact about why it is this one. Every artifact in the chain —
+// the journal, the manifest, the record, the digest — is writable by
+// whoever runs the tool, so no comparison among them can establish that
+// they came from a genuine run. Consistency is checkable; AUTHENTICITY
+// is not, absent a trust anchor outside the repository. What IS
+// checkable is the property that actually matters before a delete: that
+// nothing about to be destroyed is being lost.
 //
-// Coverage rather than equality is deliberate: hashing the live tree
-// again would refuse a resume because someone opened a file, and the
-// question here is provenance, not freshness.
-func archiveCoversLiveContents(childDir string, members []ManifestMember) error {
-	covered := make(map[string]bool, len(members))
+// So while the removal step is outstanding, every live file is hashed
+// and required to equal the hash the manifest records for that same
+// path. Combined with verifyArchivedMembers — which establishes that the
+// ARCHIVED bytes hash to those same values — the chain is
+// live == manifest == archived, and the deletion proceeds only over
+// content that demonstrably exists in the preserved copy. Comparing
+// filenames alone would not do it: an archive holding the right paths
+// and the wrong bytes would authorize destroying the real ones.
+//
+// A mismatch refuses, and that includes the honest case of a file
+// legitimately edited while the retirement was interrupted. Refusing is
+// the correct answer there, not an inconvenience to work around: the
+// archive is stale, the edit is not in it, and completing the run would
+// destroy the newer bytes. The remedy is to start the retirement again
+// so the archive is taken from what is actually there, and the refusal
+// says so.
+func archivePreservesLiveContents(childDir string, members []ManifestMember) error {
+	archived := make(map[string]string, len(members))
 	for _, m := range members {
-		covered[m.Path] = true
+		archived[m.Path] = m.SHA256
 	}
 	resolvedRoot, err := filepath.EvalSymlinks(childDir)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", childDir, err)
 	}
-	var uncovered []string
+	var unpreserved []string
+	note := func(rel, why string) error {
+		unpreserved = append(unpreserved, rel+" ("+why+")")
+		if len(unpreserved) > 4 {
+			return fs.SkipAll
+		}
+		return nil
+	}
 	walkErr := filepath.WalkDir(resolvedRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
-		if d.IsDir() && d.Type()&fs.ModeSymlink == 0 {
+		isLink := d.Type()&fs.ModeSymlink != 0
+		if d.IsDir() && !isLink {
 			return nil
 		}
 		rel, relErr := filepath.Rel(resolvedRoot, path)
 		if relErr != nil {
 			return relErr
 		}
-		if !covered[filepath.ToSlash(rel)] {
-			uncovered = append(uncovered, filepath.ToSlash(rel))
-			if len(uncovered) > 4 {
-				return fs.SkipAll
+		relSlash := filepath.ToSlash(rel)
+		want, named := archived[relSlash]
+		if !named {
+			return note(relSlash, "not named by the archive at all")
+		}
+		var got string
+		if isLink {
+			target, linkErr := os.Readlink(path)
+			if linkErr != nil {
+				// Unreadable is not preserved-and-verified.
+				return note(relSlash, "cannot be read: "+linkErr.Error())
 			}
+			got = hashBytes([]byte(target))
+		} else {
+			sum, hashErr := archiveHashFile(path)
+			if hashErr != nil {
+				return note(relSlash, "cannot be read: "+hashErr.Error())
+			}
+			got = sum
+		}
+		if got != want {
+			return note(relSlash, "holds different bytes from the archived copy")
 		}
 		return nil
 	})
 	if walkErr != nil {
 		return walkErr
 	}
-	if len(uncovered) > 0 {
-		sort.Strings(uncovered)
-		return fmt.Errorf("the archive does not name %s, which the root's directory still holds — a retirement removes the contents only in favour of a copy of exactly those contents, so an archive that does not cover them is not this root's archive",
-			strings.Join(uncovered, ", "))
+	if len(unpreserved) > 0 {
+		sort.Strings(unpreserved)
+		return fmt.Errorf("the archive does not preserve %s — a retirement destroys the root's contents only once every one of them is provably in the preserved copy, so this run is refused; if the archive is simply out of date, remove it and its journal and run the retirement again against what is actually there",
+			strings.Join(unpreserved, ", "))
 	}
 	return nil
 }

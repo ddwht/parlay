@@ -115,19 +115,43 @@ func retirementJournalPath(parentPath, rootName string) string {
 // removed when none remain.
 var journalStepOrder = []string{journalStepWriteRecord, journalStepDeregisterRoot}
 
-// authenticateJournal decides whether a file found in the journal
-// location is a journal this operation wrote, or merely a file with the
-// right extension.
+// authenticateJournal establishes what can be established about a file
+// found in the journal location before a resumed run acts on it.
 //
-// The distinction matters because a journal is an INSTRUCTION TO
-// DELETE. A resumed run reads a root name and a relative path out of it
-// and removes both the directory and the registration they name, with
-// no preflight, no sweep and no disposition record — every check a fresh
-// run performs was performed by the run that wrote the journal. So the
-// file has to be shown to be that run's, and not something dropped into
-// .parlay/retired/ that borrows its authority.
+// Be exact about what that is, because the obvious framing is wrong.
+// A journal is an INSTRUCTION TO DELETE: a resumed run reads a root name
+// and a relative path out of it and removes both the directory and the
+// registration they name, with no preflight, no sweep and no disposition
+// record, since the run that wrote the journal performed all of those.
+// It is tempting to call the checks below "authentication" in the sense
+// of proving the file's origin. They are not, and cannot be. The
+// journal, the manifest, the retirement record and the digest are all
+// writable by whoever runs this tool; a party who can forge one can
+// forge the set, consistently. Establishing origin needs a trust anchor
+// outside the repository — a signature, a key, an append-only log —
+// and this operation has none. Any claim of provenance here would be a
+// claim the code cannot keep.
 //
-// What is checked, each of which a forged file fails:
+// What these checks DO deliver, which is the part that matters:
+//
+//   - CONSISTENCY. Corruption, partial writes, stale artifacts and
+//     honest operator mistakes are caught, loudly, before anything is
+//     destroyed. This is the common case by an enormous margin.
+//   - INTEGRITY, which is the real safety property. Nothing is deleted
+//     unless it is provably present in the archive — see
+//     authenticateJournalProgress, where every live byte must hash to
+//     what the manifest records and the archived bytes must hash to the
+//     same. A forged chain that satisfies this has, by construction,
+//     preserved the content it is about to remove.
+//
+// Authorization is separate and is not the journal's to give: a resumed
+// run passes the same human confirmation a fresh one does (see
+// resumeRetirement), so the residual case — a chain forged by someone
+// with write access — reduces to a person being asked, at a terminal,
+// to confirm destroying bytes that are verifiably archived and
+// recoverable.
+//
+// What is checked, each of which an inconsistent file fails:
 //
 //   - The decode is strict. An unknown key is refused rather than
 //     dropped, so a file whose real content sits under keys this shape
@@ -143,14 +167,12 @@ var journalStepOrder = []string{journalStepWriteRecord, journalStepDeregisterRoo
 //     nothing after the terminal step.
 //   - The archive the journal is the tail of actually exists at the
 //     canonical destination for that name, with a manifest that reads
-//     back and verifies. A journal exists only after the archive was
-//     promoted, so one without an archive is describing a state this
-//     operation never produces — and it is exactly the shape a forgery
-//     takes, since writing a file is easy and producing a verified
-//     archive is not.
+//     back and verifies, naming at least one member, and holding
+//     archived bytes that hash to what it records.
 //
 // Any failure is loud. Refusing is the safe answer: the cost is a
-// person reading a message, against a deletion nobody authorized.
+// person reading a message, against a deletion that may destroy
+// something no copy holds.
 func authenticateJournal(parentPath, fileStem string, j *RetirementJournal) error {
 	where := retirementJournalPath(parentPath, fileStem)
 	if err := validateRootName(j.Root); err != nil {
@@ -220,16 +242,20 @@ func authenticateJournal(parentPath, fileStem string, j *RetirementJournal) erro
 //
 // The outstanding list is a claim about progress: every step NOT in it
 // is a step the journal asserts is finished. Each finished step left
-// something behind, and each unfinished one has not yet removed
-// something — so the two can be compared, and a journal whose claimed
-// progress contradicts the state it sits in was not written by the run
-// it describes.
+// something behind, and each unfinished one has not yet had its effect
+// — so the two can be compared, and a journal whose claimed progress
+// contradicts the state it sits in is refused.
 //
-// This is the layer that survives a well-formed forgery. An attacker
-// can write a manifest, hash it, record that digest in a journal and
-// make every earlier check pass; what they cannot do without actually
-// archiving the root is produce an archive that already accounts for
-// every file still standing in it.
+// The second half of this function carries the operation's real safety
+// property, and it is a property about CONTENT rather than about
+// origin. While the removal step is outstanding the contents are still
+// there, so they are hashed against the manifest: the run may destroy
+// them only once every one of them is provably in the preserved copy.
+// A forged chain does not defeat that — it either preserves the bytes,
+// in which case the deletion is recoverable from the archive, or it
+// does not, in which case this refuses. That is the honest guarantee,
+// and it is stronger than a provenance claim this trust model cannot
+// support.
 func authenticateJournalProgress(parentPath, where string, j *RetirementJournal, dest string, manifest *ArchiveManifest) error {
 	outstanding := map[string]bool{}
 	for _, step := range j.Outstanding {
@@ -262,7 +288,7 @@ func authenticateJournalProgress(parentPath, where string, j *RetirementJournal,
 	if outstanding[journalStepDeregisterRoot] {
 		childDir := filepath.Join(parentPath, filepath.FromSlash(j.RelativePath))
 		if _, err := os.Lstat(childDir); err == nil {
-			if err := archiveCoversLiveContents(childDir, manifest.Members); err != nil {
+			if err := archivePreservesLiveContents(childDir, manifest.Members); err != nil {
 				return fmt.Errorf("retirement journal %s would remove %s on the authority of the archive at %s, but %w",
 					where, childDir, dest, err)
 			}

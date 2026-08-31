@@ -12,6 +12,7 @@ package commands
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -749,8 +750,8 @@ func TestJournal_AWellFormedForgeryCannotRetireALiveRoot(t *testing.T) {
 	if err == nil {
 		t.Fatal("a well-formed forged archive and journal must not be able to delete and deregister a live root")
 	}
-	if !strings.Contains(err.Error(), "does not name") {
-		t.Errorf("the refusal must name what the archive fails to account for; got: %v", err)
+	if !strings.Contains(err.Error(), "does not preserve") {
+		t.Errorf("the refusal must name what the archive fails to preserve; got: %v", err)
 	}
 	assertTreeUnchanged(t, before, treeSnapshot(t, lib.Path))
 	if !rootRegistered(t, parent, "lib") {
@@ -864,7 +865,7 @@ func TestJournal_ProvenanceLayersEachRefuseOnTheirOwn(t *testing.T) {
 			want: "describe different retirements",
 		},
 		{
-			name: "archive-does-not-account-for-the-contents-it-would-replace",
+			name: "archive-does-not-preserve-a-file-the-root-still-holds",
 			tamper: func(t *testing.T, parent string) {
 				// A file appears in the root after the archive was made.
 				// The retirement would delete it in favour of a copy
@@ -874,7 +875,20 @@ func TestJournal_ProvenanceLayersEachRefuseOnTheirOwn(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			want: "does not name",
+			want: "not named by the archive at all",
+		},
+		{
+			name: "a-live-file-edited-during-the-interruption-is-not-in-the-archive",
+			tamper: func(t *testing.T, parent string) {
+				// The honest case, and it refuses for the same reason:
+				// the archive is stale, the newer bytes are not in it,
+				// and completing the run would destroy them.
+				if err := os.WriteFile(filepath.Join(parent, "old", "internal", "alpha.go"),
+					[]byte("package alpha // edited while the run was interrupted\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "holds different bytes from the archived copy",
 		},
 	}
 
@@ -923,4 +937,222 @@ func TestJournal_AGenuineJournalCarriesItsManifestDigest(t *testing.T) {
 	if shrunk.ManifestDigest != want {
 		t.Error("the digest must survive a completed step")
 	}
+}
+
+// --- Suite 8 (continued): what the chain can and cannot establish ------
+//
+// Every artifact in the chain — journal, manifest, record, digest — is
+// writable by whoever runs this tool. A party who can forge one can
+// forge the set, consistently, so no comparison among them establishes
+// origin; that needs a trust anchor outside the repository, and there
+// is none. These cases pin what IS true instead, which is the property
+// that actually protects the operator: nothing is destroyed unless it
+// is provably preserved, and every destructive run — resumed as much as
+// fresh — passes a person.
+
+// forgedChainAt builds a complete, mutually consistent chain against an
+// existing root: an archive whose contents hash to its manifest, a
+// retirement record naming the root, and a journal carrying the true
+// manifest digest and a valid step tail. bodies decides what the
+// archived copy actually holds — which is the whole question.
+func forgedChainAt(t *testing.T, parent, rootName, relPath string, bodies map[string]string) {
+	t.Helper()
+	digest := forgedArchive(t, parent, rootName, relPath, bodies)
+	writeJournalRaw(t, parent, rootName+journalFileSuffix,
+		"root: "+rootName+"\nrelative-path: "+relPath+
+			"\noutstanding:\n    - deregister-root\nmanifest-digest: "+digest+"\n")
+}
+
+// liveContents reads every file under a root, so a forgery can be built
+// with exactly the right paths — the case a filename-only check misses.
+func liveContents(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		out[filepath.ToSlash(rel)] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestJournal_ForgedChainWithTheRightPathsAndWrongBytesCannotDelete is
+// the decisive case, and the one a filename-only comparison lets
+// through. The forged archive names EVERY path the live root holds —
+// so coverage by name is complete — and holds different bytes under
+// each, with the manifest, its self-covering hash, the digest, the
+// record and the journal all recomputed to match. Nothing in the chain
+// is inconsistent.
+//
+// It is refused anyway, because the check that matters is not whether
+// the archive looks right but whether the bytes about to be destroyed
+// are in it.
+func TestJournal_ForgedChainWithTheRightPathsAndWrongBytesCannotDelete(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	lib := addRetirementChild(t, parent, "lib", "lib", "helper")
+	if err := os.WriteFile(filepath.Join(lib.Path, "important.go"),
+		[]byte("package lib // the real bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	interactiveTTY(t)
+
+	// Same paths, different bytes, everything else recomputed.
+	bodies := map[string]string{}
+	for rel := range liveContents(t, lib.Path) {
+		bodies[rel] = "forged stand-in for " + rel + "\n"
+	}
+	forgedChainAt(t, parent, "lib", "lib", bodies)
+
+	before := treeSnapshot(t, lib.Path)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"lib"})
+	if err == nil {
+		t.Fatal("an archive holding the right paths and the wrong bytes must not authorize destroying the real ones")
+	}
+	if !strings.Contains(err.Error(), "holds different bytes from the archived copy") {
+		t.Errorf("the refusal must say the live bytes are not the archived ones; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, lib.Path))
+	if !rootRegistered(t, parent, "lib") {
+		t.Error("the live root must still be registered")
+	}
+}
+
+// TestJournal_AByteIdenticalForgedChainPassesAndIsHarmless states the
+// residual plainly rather than pretending it away. A chain forged by
+// someone with write access, whose archive holds the root's actual
+// bytes, DOES satisfy every check — because it has, by construction,
+// preserved everything it proposes to remove. That is not a hole in the
+// integrity property; it is the integrity property holding.
+//
+// What stands between such a chain and a deletion is the next test: a
+// person is asked.
+func TestJournal_AByteIdenticalForgedChainPassesAndIsHarmless(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	lib := addRetirementChild(t, parent, "lib", "lib", "helper")
+	if err := os.WriteFile(filepath.Join(lib.Path, "important.go"),
+		[]byte("package lib // the real bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	interactiveTTY(t)
+
+	live := liveContents(t, lib.Path)
+	forgedChainAt(t, parent, "lib", "lib", live)
+
+	// Authentication passes: nothing is inconsistent, and nothing that
+	// would be destroyed is unpreserved.
+	j, err := FindRetirementJournal(parent, "lib")
+	if err != nil {
+		t.Fatalf("a chain whose archive holds the root's actual bytes satisfies every check: %v", err)
+	}
+	if j == nil {
+		t.Fatal("the journal should have been found")
+	}
+
+	// Confirmed by a person, the run completes — and every byte it
+	// destroyed is readable in the archive, which is what makes the
+	// residual harmless rather than merely accepted.
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"lib"}); err != nil {
+		t.Fatalf("the confirmed resume should complete: %v", err)
+	}
+	preserved := filepath.Join(retirementDestination(parent, "lib"), "contents")
+	for rel, want := range live {
+		got, readErr := os.ReadFile(filepath.Join(preserved, filepath.FromSlash(rel)))
+		if readErr != nil || string(got) != want {
+			t.Errorf("every destroyed byte must be recoverable from the archive: %s (%v)", rel, readErr)
+		}
+	}
+}
+
+// --- Resume passes the same person a fresh execution does -------------
+//
+// The residual above reduces to "a human explicitly confirms destroying
+// bytes that are verifiably archived" only if the resume path really
+// does ask. These pin that it does, on the same terms as a fresh run.
+
+func TestJournal_ResumeRefusesWithNobodyToAuthorizeIt(t *testing.T) {
+	for _, mode := range []string{"non-interactive", "no-terminal"} {
+		t.Run(mode, func(t *testing.T) {
+			parent := interruptedRetirement(t)
+			switch mode {
+			case "non-interactive":
+				retireRootNonInteractive = true
+			case "no-terminal":
+				no := false
+				retireRootTTYOverride = &no
+			}
+			before := treeSnapshot(t, parent)
+			// Stdin says yes. A run that merely failed to get an answer
+			// would proceed on it; a run that refuses because there is
+			// nobody to ask must not ask at all.
+			cmd, out := retireCmd(t, parent, "y\n")
+			err := runRetireRoot(cmd, []string{"old"})
+			if err == nil {
+				t.Fatal("a resume with nobody to authorize it must refuse — resuming is executing, and a destructive execution has no safe default")
+			}
+			if !strings.Contains(err.Error(), "no person to ask") &&
+				!strings.Contains(err.Error(), "without a person to authorize") {
+				t.Errorf("the refusal must say the absence of a person is the reason; got: %v", err)
+			}
+			if strings.Contains(out.String(), "Resume and complete the outstanding steps?") {
+				t.Errorf("a headless run must refuse rather than ask a question nobody can answer; got:\n%s", out.String())
+			}
+			assertTreeUnchanged(t, before, treeSnapshot(t, parent))
+			if !rootRegistered(t, parent, "old") {
+				t.Error("a refused resume must change nothing")
+			}
+		})
+	}
+}
+
+func TestJournal_ResumeRequiresAnExplicitYes(t *testing.T) {
+	for _, answer := range []string{"n\n", "\n", "no\n", "maybe\n"} {
+		t.Run(strings.TrimSpace(answer), func(t *testing.T) {
+			parent := interruptedRetirement(t)
+			before := treeSnapshot(t, parent)
+			cmd, out := retireCmd(t, parent, answer)
+			err := runRetireRoot(cmd, []string{"old"})
+			if err == nil {
+				t.Fatal("a resume that was not explicitly confirmed must not proceed")
+			}
+			if !strings.Contains(out.String(), "Resume and complete the outstanding steps?") {
+				t.Errorf("the resume must ask before it acts; got:\n%s", out.String())
+			}
+			assertTreeUnchanged(t, before, treeSnapshot(t, parent))
+			if !rootRegistered(t, parent, "old") {
+				t.Error("an unconfirmed resume must change nothing")
+			}
+		})
+	}
+}
+
+func TestJournal_ResumePreviewCommitsToNothing(t *testing.T) {
+	parent := interruptedRetirement(t)
+	retireRootPreview = true
+	before := treeSnapshot(t, parent)
+	cmd, out := retireCmd(t, parent, "")
+	if err := runRetireRoot(cmd, []string{"old"}); err != nil {
+		t.Fatalf("previewing a part-finished run must be available unattended: %v", err)
+	}
+	if !strings.Contains(out.String(), "Outstanding, in order:") {
+		t.Errorf("the preview must report what remains; got:\n%s", out.String())
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
 }

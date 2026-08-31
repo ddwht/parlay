@@ -1579,38 +1579,105 @@ suites:
             - verify: state
               target: project-state
               expected: "nothing is deleted or deregistered"
-        - name: an archive must account for the contents it would replace
+        - name: live contents are compared by content, not by name, before they are destroyed
           criterion:
             ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
-            text: "While the root's contents are still in place, the archive must already name every file they hold, so an archive that is not this root's cannot authorize deleting it."
+            text: "While the root's contents are still in place, every live file must hash to the value the manifest records for it, so the run destroys contents only once every one of them is provably in the preserved copy; comparing names alone is not sufficient and is not what happens."
           exercises: [retirement-journal]
           observes: [retirement-journal, archive-manifest, project-state]
           steps:
             - action: render
               target: retirement-journal
-              value: "retire-root <name> where the root's directory holds a file the archive's manifest does not name"
-            - verify: error
-              target: retirement-journal
-              expected: "refused, naming what the archive fails to account for"
+              value: "retire-root <name> against a part-finished retirement whose root still holds its contents"
+            - verify: state
+              target: archive-manifest
+              expected: "every live file is hashed and compared against the manifest's recorded hash for the same path"
             - verify: state
               target: project-state
-              expected: "the root's directory is intact"
-        - name: a well-formed forgery cannot retire a live root
+              expected: "the contents are destroyed only once every one of them matches"
+        - name: a live file whose bytes differ from the archived copy refuses the run
           criterion:
             ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
-            text: "A well-formed forged archive and journal — consistent contents, a verifying manifest, a correct digest and a well-ordered step tail — cannot delete or deregister a live root."
+            text: "A live file holding different bytes from its archived copy refuses the run, including when the difference is an honest edit made while the run was interrupted, and the refusal says the archive is stale and the retirement should be run again from what is there."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> after a file in the root was edited while the run was interrupted"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming the file and saying the archive is stale and the retirement should be run again"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a live file the archive does not name refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A live file the archive does not name at all refuses the run."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> after a file appeared in the root that the archive never held"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming the file the archive does not hold"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a forged chain with the right paths and the wrong bytes is refused
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A forged chain naming every live path but holding different bytes — with the manifest, its digest, the record and the journal all recomputed to agree — is refused, because what is checked is the content that would be destroyed rather than the shape of the artifacts."
           exercises: [retirement-journal]
           observes: [retirement-journal, registration-state, project-state]
           steps:
             - action: render
               target: retirement-journal
-              value: "retire-root <live-root> against a hand-built archive whose contents hash to its manifest, whose manifest covers its own list, whose record names the root, and whose journal records the true manifest digest and a valid step tail"
+              value: "retire-root <live-root> against a hand-built chain naming every path the live root holds, with different bytes under each and every artifact recomputed to agree"
             - verify: error
               target: retirement-journal
-              expected: "refused, because the archive does not account for the live root's contents"
+              expected: "refused, saying the live bytes are not the archived ones"
             - verify: state
               target: registration-state
               expected: "the live root is byte-identical and still registered"
+        - name: a byte-identical forged chain passes, and is harmless on those terms
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A forged chain whose archive holds the root's actual bytes satisfies every check, and is harmless on those terms: it has preserved what it proposes to remove, the removal still passes a person, and every destroyed byte is readable in the archive afterwards. Authenticity is not established by any of this and is not claimed."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-contents]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <live-root> against a hand-built chain whose archive holds the root's actual bytes, confirmed by a person"
+            - verify: state
+              target: retirement-journal
+              expected: "the checks pass and the run completes"
+            - verify: file-content
+              target: archive-contents
+              expected: "every byte the run destroyed is readable in the archive afterwards"
+        - name: a resumed run passes the same authorization a fresh execution does
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A resumed run passes the same authorization a fresh execution does: unattended it refuses without asking, and attended it proceeds only on an explicit confirmation; a preview of a part-finished run remains available unattended and commits to nothing."
+          exercises: [retire-root-authorization]
+          observes: [retirement-journal, retire-root-authorization, project-state]
+          steps:
+            - action: render
+              target: retire-root-authorization
+              value: "retire-root <name> against a part-finished retirement, unattended and with --non-interactive"
+            - verify: error
+              target: retire-root-authorization
+              expected: "refused without asking a question nobody can answer"
+            - action: render
+              target: retire-root-authorization
+              value: "the same run attended, answering anything other than yes"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered, and a preview leaves the project byte-identical"
     # ===========================================================================
     # Suite 9 — Retirement authorization, preview and unattended runs
     # ===========================================================================

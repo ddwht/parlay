@@ -554,40 +554,66 @@ cross-cutting:
       a legitimate target.
 
 
-      SHAPE IS NOT PROVENANCE, and (e) above is weaker than it looks on
-      its own: ReadManifest verifies a self-covering hash over the
-      member list, which a list invented from nothing satisfies
-      perfectly. Three further checks make the archive evidence of THIS
-      root rather than evidence of something. (i) Re-hash the archived
-      members: verifyArchivedMembers reads every member the manifest
-      names out of <dest>/contents and requires the recorded hash —
-      extracted from verifyStagedArchive so the promote path and the
-      authentication path run the identical comparison — and refuse a
-      manifest naming NO members, since a root preserves at least its
-      own .parlay configuration and an empty verifying list is the
-      cheapest forgery available. (ii) Bind the journal to the archive:
-      RetirementJournal gains a manifest-digest field, the sha256 of the
-      manifest FILE's bytes (distinct from the manifest's own hash over
-      its list, which travels with the list and so is recomputed by
-      anyone who rewrites it), recorded when the journal is written and
-      required to equal the on-disk digest at authentication; a journal
-      with no digest, or a different one, is refused. (iii) Cross-check
-      claimed progress against the filesystem
-      (authenticateJournalProgress): the outstanding list asserts what
-      has already happened, so a step claimed finished must have left
-      its evidence — a finished write-record requires a
-      retirement-record.yaml beside the archive naming the same root and
-      relative path — and a step not yet taken must not yet have had its
-      effect: while deregister-root is outstanding the contents have not
-      been removed, so archiveCoversLiveContents requires the manifest
-      to already name every file the root's directory still holds.
-      (iii) is the layer that survives a determined forgery, because
-      someone who can write files can produce a consistent archive, hash
-      it and record that digest — but cannot account for a live root's
-      contents without having genuinely archived it. Coverage rather
-      than re-hashing the live tree is deliberate: the question is
-      provenance, not freshness, and hashing would refuse a resume
-      because someone opened a file.
+      WHAT THESE CHECKS ESTABLISH, STATED HONESTLY. They do not
+      establish provenance and must not be described as doing so. The
+      journal, the manifest, the retirement record and the digest are
+      all files writable by whoever runs the tool; a party who can forge
+      one can forge the set consistently, and no comparison among them
+      distinguishes a genuine artifact from a well-made forgery. That
+      needs a trust anchor outside the repository — a signature, a key,
+      an append-only log the forger cannot reach — and this operation
+      has none. Authenticity is OUT OF SCOPE; encode the residual rather
+      than a claim the code cannot keep. What is delivered is three
+      properties.
+
+
+      CONSISTENCY. The checks above, plus: verifyArchivedMembers reads
+      every member the manifest names out of <dest>/contents and
+      requires the recorded hash (extracted from verifyStagedArchive so
+      the promote path and the resume path run the identical
+      comparison); a manifest naming NO members is refused, since a root
+      preserves at least its own .parlay configuration; the journal
+      carries manifest-digest, the sha256 of the manifest FILE's bytes,
+      recorded at creation and required to equal the on-disk digest
+      (distinct from the manifest's own hash over its list, which
+      travels with the list and is recomputed by anyone who rewrites
+      it); and authenticateJournalProgress requires every step the
+      journal claims finished to have left its evidence — a finished
+      write-record means a retirement-record.yaml beside the archive
+      naming the same root and relative path. None of this proves
+      origin. All of it catches corruption, partial writes, stale
+      artifacts and honest operator mistakes, which is what actually
+      goes wrong.
+
+
+      INTEGRITY — the real safety property, and the one worth
+      implementing fully: nothing is destroyed unless it is provably
+      preserved. While deregister-root is outstanding the contents are
+      still in place, so archivePreservesLiveContents hashes every live
+      file and requires EQUALITY with the manifest's recorded hash for
+      that same path — not merely that the path is named. Combined with
+      verifyArchivedMembers the chain is live == manifest == archived,
+      so the deletion proceeds only over bytes that demonstrably exist
+      in the preserved copy. A filename-only comparison is insufficient
+      and must not be written: an archive holding the right paths and
+      the wrong bytes would authorize destroying the real ones. A
+      mismatch REFUSES, including the honest case of a file edited while
+      the run was interrupted — the archive is stale, the newer bytes
+      are not in it, and finishing would destroy them — and the refusal
+      names the file and says to run the retirement again from what is
+      actually there. Refusal is the correct outcome for a stale
+      archive, not a case to engineer around.
+
+
+      AUTHORIZATION, which is not the journal's to give. resumeRetirement
+      passes the same gate a fresh execution does: unattended
+      (--non-interactive or no TTY) it refuses WITHOUT asking, and
+      attended it proceeds only on an explicit y/yes; --preview of a
+      part-finished run stays available unattended and commits to
+      nothing. This is what reduces the residual — a chain forged by
+      someone who already has repository write access — to a person
+      being asked, at a terminal, to confirm destroying bytes that are
+      verifiably archived and readable from the archive afterwards.
     introduces:
       - "RemoveRootFromIndex(idx *config.RootsIndex, name string) (*config.RootsIndex, error) in internal/config/roots_index.go"
       - "RetirementJournal type + LoadRetirementJournal/WriteRetirementJournal — ordered outstanding-step record"
@@ -598,7 +624,7 @@ cross-cutting:
       - "RetirementJournal.ManifestDigest — the manifest file's digest, recorded at journal creation, binding one journal to one archive"
       - "verifyArchivedMembers(contentsDir string, members []ManifestMember) error — the member re-hashing shared by archive promotion and journal authentication"
       - "manifestDigest(manifestPath string) (string, error) — hash of the manifest FILE, distinct from its self-covering member-list hash"
-      - "archiveCoversLiveContents(childDir string, members []ManifestMember) error — the archive must already name every file the live root still holds"
+      - "archivePreservesLiveContents(childDir string, members []ManifestMember) error — every live file must HASH-EQUAL its archived member, so a deletion proceeds only over bytes provably present in the preserved copy"
       - "authenticateJournalProgress(...) error — claimed progress cross-checked against the evidence on disk"
       - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
     caching: none
