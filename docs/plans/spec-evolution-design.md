@@ -389,6 +389,22 @@ amendments, 4 supersessions, 0 combined. A product evolving features rather than
 deleting them lives in `revise` and `extend`, which this repo has never had to
 express. Do not read the zero as reassurance.
 
+## Working note: what counts as evidence
+
+Carried from the applied-authority remediation's ground rule 6, and extended by
+what this stage cost:
+
+- A regression is evidence only when its fixture demonstrably reaches the guard,
+  and when it asserts the IDENTITY of that guard rather than that something
+  failed.
+- **A mutation result is evidence only after the mutant BUILDS and the observed
+  failure identifies the intended invariant.** A mutation that does not compile
+  produces no failing tests and reads as a passing guard; a mutation aimed at
+  the wrong mechanism reads as a dead guard when the real binding sits
+  elsewhere. Both happened here.
+
+Choosing the mutation is as easy to get wrong as choosing the assertion.
+
 ## What this actually is
 
 Not merely a complete verb set. A complete **transition contract**:

@@ -917,7 +917,7 @@ func (r TransitionReceipt) validateAgainstCapsule(key, slug string, baseline Bas
 		return fmt.Errorf("receipt was written under canonicalisation %q, which this build does "+
 			"not recognise", r.Payload.Scheme)
 	}
-	if r.Payload.Mode != transitionModeWithdrawAndSplice {
+	if !knownTransitionMode(r.Payload.Mode) {
 		return fmt.Errorf("receipt records transition mode %q, which this build does not "+
 			"recognise", r.Payload.Mode)
 	}
@@ -941,4 +941,15 @@ func (r TransitionReceipt) validateAgainstCapsule(key, slug string, baseline Bas
 			"records %s for that record", r.Payload.AmendmentHash, stored)
 	}
 	return nil
+}
+
+// knownTransitionMode is the closed set of ceremonies that may have written a
+// receipt. A mode this build does not recognise is unreadable authority, not a
+// mode to trust.
+func knownTransitionMode(m string) bool {
+	switch m {
+	case transitionModeWithdrawAndSplice, transitionModeEvolve:
+		return true
+	}
+	return false
 }

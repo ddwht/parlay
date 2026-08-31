@@ -104,6 +104,27 @@ type IntentAmendment struct {
 	Version *IntentVersion `yaml:"version"`
 }
 
+// AttestationFor returns the plain-language claim a human is being asked to
+// make for a mode.
+//
+// Recorded in the approval payload verbatim, because the receipt must say what
+// was asserted rather than merely that something was. Phrased as a first-person
+// claim, never as a result the tool checked: neither statement is verifiable
+// from prose, and the ceremony must not imply otherwise.
+func AttestationFor(m IntentMode) string {
+	switch m {
+	case IntentExtend:
+		return "I confirm the new version adds to this promise and removes or weakens none of it."
+	case IntentRevise:
+		return "I approve this before/after replacement and the stated downstream scope impact."
+	case IntentNarrow:
+		return "I approve this narrowing and the dispositions of every entry that loses support."
+	case IntentRetire:
+		return "I approve ending this promise, with nothing taking it over."
+	}
+	return ""
+}
+
 // IntentTransition is the normalised view a consumer reads, merging the
 // authored `amends_intents:` with the legacy `supersedes_intents:` spelling so
 // no consumer has to know there were ever two fields.
@@ -236,4 +257,72 @@ func (v *IntentVersion) problems(lineage string) []string {
 				"omitted to default to P1", lineage, p))
 	}
 	return out
+}
+
+// ScopeImpact is the author's declaration about what a transition does to the
+// contract entries attributed to the lineages it changes.
+//
+// Exception-plus-closure, not enumeration. The declaration says "every entry
+// attributed to these lineages that I have not listed remains semantically
+// supported by the new promise", and then lists only the entries whose
+// relationship changes. Enumerating the whole attributed population was the
+// pain the old vocabulary imposed; enumerating only the exceptions is not that
+// pain under a new name.
+//
+// Declared rather than inferred from the mode. Inferring it would mean the
+// ceremony manufacturing a preservation claim the amendment itself never made,
+// and the whole point of this field is that a human made it.
+type ScopeImpact struct {
+	// Version is the declaration's shape version, so a later shape cannot be
+	// read as this one.
+	Version int `yaml:"version"`
+	// PreservesUnlisted is the closure assertion. It is the human's, and no
+	// check anywhere establishes it: an entry whose lineage is alive and
+	// resolving can still have lost the support of a revised promise, and that
+	// mismatch hides behind a valid edge.
+	PreservesUnlisted bool `yaml:"preserves_unlisted"`
+	// Exceptions name the entries whose relationship changes.
+	Exceptions []ScopeException `yaml:"exceptions"`
+}
+
+// ScopeException is one entry the closure assertion does NOT cover.
+type ScopeException struct {
+	Ref         string `yaml:"ref"`
+	Disposition string `yaml:"disposition"`
+}
+
+// ScopeDispositions is the closed set an exception may declare.
+var ScopeDispositions = map[string]bool{
+	"retained": true, "revised": true, "removed": true, "replaced-by": true,
+}
+
+// ValidateScopeImpact checks the declaration's shape.
+func (a *Amendment) ValidateScopeImpact() []string {
+	si := a.ScopeImpact
+	if si == nil {
+		return nil
+	}
+	var problems []string
+	if si.Version != 1 {
+		problems = append(problems, fmt.Sprintf(
+			"scope_impact declares version %d; this build understands version 1", si.Version))
+	}
+	if !si.PreservesUnlisted {
+		problems = append(problems,
+			"scope_impact does not assert preserves_unlisted — the declaration is a closure over "+
+				"the entries it does not list, so without that assertion it states nothing about "+
+				"them and the transition cannot be approved against an inventory")
+	}
+	for _, ex := range si.Exceptions {
+		if strings.TrimSpace(ex.Ref) == "" {
+			problems = append(problems, "a scope_impact exception names no ref")
+			continue
+		}
+		if !ScopeDispositions[ex.Disposition] {
+			problems = append(problems, fmt.Sprintf(
+				"scope_impact exception %q declares disposition %q; the set is closed: retained, "+
+					"revised, removed, replaced-by", ex.Ref, ex.Disposition))
+		}
+	}
+	return problems
 }

@@ -1070,41 +1070,18 @@ func TestS0_GovernanceDoesNotClobberNonAuthorityContent(t *testing.T) {
 	}
 }
 
-// A vocabulary that lands with no applier must be INERT, not opportunistically
-// applied by whichever path happens to accept its other fields. This is the
-// WP4 mistake in reverse: there, a path existed that no guidance named; here, a
-// record shape exists that no ceremony owns.
-func TestStage1_EvolutionRecordsAreInertUntilTheirApplierExists(t *testing.T) {
+// The save still creates no authority for an evolution record — that has not
+// changed and must not. What changed in 1b is that apply-amendment now owns the
+// ceremony, so the refusal routes there instead of saying nothing can apply it.
+func TestStage1_SaveStillCreatesNoAuthorityForEvolutionRecords(t *testing.T) {
 	dir := setupTestDir(t)
 	cfg := testContext(t)
 	featureDir, sourceRoot, sourceFile := ledgerFeatureWithSource(t, dir)
 	ledgerAt1(t, cfg, featureDir)
-
-	writeAmendment(t, featureDir, "002-channel-choice.md", `---
-amendment: channel-choice
-date: 2026-09-01
-amends_intents:
-  - intent: check-readiness
-    mode: revise
-    goal: See if the cluster or any of its nodes is ready.
-    verify:
-      - Readiness is reported for the cluster and each node.
-affects: ["@my-feature/operation:x"]
----
-
-## Change
-The readiness promise now covers nodes as well as the cluster.
-
-## Why
-It was too narrow.
-
-## Acceptance
-- Node readiness is reported.
-`)
+	writeAmendment(t, featureDir, "002-channel-choice.md", evolveAmendment)
 	writeRefineJournal(t, cfg, "my-feature", 2)
-
-	// The save refuses, naming the reason.
 	writeEmittedManifest(t, cfg, sourceFile)
+
 	_, stderr, err := runProjectSave(t, cfg, sourceRoot)
 	if err == nil {
 		t.Fatal("a save must not apply an evolution record")
@@ -1116,26 +1093,862 @@ It was too narrow.
 	saveBuildStatePartial = false
 	saveBuildStateEmitted = ""
 
-	// apply-amendment refuses too, and says the ceremony does not exist yet
-	// rather than routing it somewhere.
-	armApplyAmendment(t, "", false)
-	_, err = runApplyAmendment_(t, cfg, "@my-feature")
-	if err == nil {
-		t.Fatal("apply-amendment must not apply an evolution record")
-	}
-	if !strings.Contains(err.Error(), "no applier exists") {
-		t.Errorf("the refusal must say the ceremony does not exist yet; got %v", err)
-	}
-
-	// apply-governance refuses as well.
 	applyGovernanceConfirmed = true
 	t.Cleanup(func() { applyGovernanceConfirmed = false })
 	if _, err := runApplyGovernance_(t, cfg, "@my-feature"); err == nil {
 		t.Error("apply-governance must not apply an evolution record")
 	}
 
-	// Nothing moved.
 	if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 1 {
-		t.Errorf("an inert record was applied; marker = %d", bl.LastAppliedAmendment)
+		t.Errorf("a record only apply-amendment may apply was applied elsewhere; marker = %d",
+			bl.LastAppliedAmendment)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Stage 1b — the evolve ceremony.
+// ---------------------------------------------------------------------
+
+const evolveAmendment = `---
+amendment: channel-choice
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: Check Readiness Of Cluster Or Node
+      goal: See if the cluster or any of its nodes is ready.
+      persona: Admin
+      verify:
+        - Readiness is reported for the cluster and each node.
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+affects: ["@my-feature/operation:x"]
+---
+
+## Change
+
+Readiness now covers nodes as well as the cluster.
+
+## Why
+
+The promise was too narrow.
+
+## Acceptance
+
+- Node readiness is reported.
+`
+
+// evolvingFeature: a built feature whose founding promise owns two live
+// operations, one of which this record declares it changes.
+func evolvingFeature(t *testing.T, dir string) string {
+	t.Helper()
+	cfg := testContext(t)
+	featureDir := setupLedgerFeature(t, dir)
+	intents, err := os.ReadFile(filepath.Join(featureDir, "intents.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intents = append(intents, []byte("\n## Survives\n\n**Goal**: Something that stays.\n**Persona**: Admin\n")...)
+	if err := os.WriteFile(filepath.Join(featureDir, "intents.md"), intents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-channel-choice.md", evolveAmendment)
+	saveLedgerBaseline(t, featureDir, func(b *Baseline) {
+		b.LastAppliedAmendment = 0
+		b.Sources.Amendments = map[string]string{}
+	})
+	writeRefineJournal(t, cfg, "my-feature", 1)
+	return featureDir
+}
+
+func evolvePreflight(t *testing.T, cfg *config.Context) applyAmendmentPreflight {
+	t.Helper()
+	armApplyAmendment(t, "", true)
+	out, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("evolve preflight: %v\n%s", err, out)
+	}
+	var pf applyAmendmentPreflight
+	if err := json.Unmarshal([]byte(out), &pf); err != nil {
+		t.Fatalf("preflight is not JSON: %v\n%s", err, out)
+	}
+	return pf
+}
+
+// The ceremony answers three questions, not one: what changed, what claim the
+// human is making, and which downstream entries that claim covers.
+func TestStage1b_CeremonyShowsDeltaAttestationAndScope(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	evolvingFeature(t, dir)
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	// What changed — field-aware, so a cleared field is visible.
+	for _, want := range []string{"goal", "before:", "after:", "See if the cluster is ready"} {
+		if !strings.Contains(prose, want) {
+			t.Errorf("the delta must show %q; got:\n%s", want, prose)
+		}
+	}
+	// What claim.
+	if !strings.Contains(prose, "You are asserting") || !strings.Contains(prose, "before/after replacement") {
+		t.Errorf("the ceremony must state the claim the human is making; got:\n%s", prose)
+	}
+	if !strings.Contains(prose, "Nothing checks those two claims") {
+		t.Error("the ceremony must not imply the mode was verified")
+	}
+	// Which subjects — both attributed entries, partitioned.
+	if !strings.Contains(prose, "@my-feature/operation:x   [this record declares it changed]") {
+		t.Errorf("the declared entry must be shown as declared; got:\n%s", prose)
+	}
+	if !strings.Contains(prose, "@my-feature/operation:y   [not declared changed]") {
+		t.Errorf("the undeclared attributed entry must be shown, since it is what the closure "+
+			"assertion is about; got:\n%s", prose)
+	}
+}
+
+// A confirmed run applies, and the receipt records the whole subject.
+func TestStage1b_ConfirmedEvolveAppliesAndReceiptsTheSubject(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	evolvingFeature(t, dir)
+	pf := evolvePreflight(t, cfg)
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("a correctly confirmed evolution must apply: %v", err)
+	}
+
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	if bl.LastAppliedAmendment != 1 {
+		t.Errorf("marker = %d, want 1", bl.LastAppliedAmendment)
+	}
+	r := bl.TransitionReceipts["001-channel-choice.md"]
+	if r.Payload.Mode != transitionModeEvolve {
+		t.Errorf("receipt mode = %q", r.Payload.Mode)
+	}
+	if len(r.Payload.Evolution) != 1 {
+		t.Fatalf("the receipt must record the subject; got %+v", r.Payload.Evolution)
+	}
+	ev := r.Payload.Evolution[0]
+	if ev.Attestation == "" {
+		t.Error("the receipt must record the claim that was made, not merely that one was")
+	}
+	if !ev.PreservesUnlisted {
+		t.Error("the closure declaration must be recorded")
+	}
+	if len(ev.Scope.Unlisted) != 1 || ev.Scope.Unlisted[0].Ref != "@my-feature/operation:y" {
+		t.Errorf("the receipt must record the exact population the claim covered; got %+v", ev.Scope)
+	}
+	if ev.Scope.Unlisted[0].Fingerprint == "" {
+		t.Error("the receipt must record what each entry MEANT, not only its address — the human " +
+			"asserted continued support of a specific promise, not of a ref")
+	}
+
+	// And the promise now reads differently.
+	res, err := resolveActiveIntents(cfg, "my-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range res.Active {
+		if in.Slug == "check-readiness" && !strings.Contains(in.Goal, "any of its nodes") {
+			t.Errorf("the revised promise is not in force; goal = %q", in.Goal)
+		}
+	}
+}
+
+// The stage boundary. A revision that declares an entry loses support, and
+// every narrow or retire, waits for the accounting that collects those
+// consequences — approving a loss nobody gathered would be the bypass in a new
+// verb.
+func TestStage1b_UnsupportedTransitionsRefuseByReason(t *testing.T) {
+	cases := []struct{ name, frontmatter, want string }{
+		{
+			name: "revise declaring an exception",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: T
+      goal: A narrower promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions:
+    - ref: "@my-feature/operation:y"
+      disposition: removed
+`,
+			want: "scope exception",
+		},
+		{
+			name: "narrow",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: narrow
+    version:
+      title: T
+      goal: A narrower promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+`,
+			want: "no applier yet",
+		},
+		{
+			name: "retire",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: retire
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+`,
+			want: "no applier yet",
+		},
+		{
+			name: "no scope declaration at all",
+			frontmatter: `amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: T
+      goal: A reworded promise.
+      persona: Admin
+`,
+			want: "declares no scope_impact",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			cfg := testContext(t)
+			featureDir := evolvingFeature(t, dir)
+			if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+				t.Fatal(err)
+			}
+			writeAmendment(t, featureDir, "001-unsupported.md",
+				"---\namendment: unsupported\ndate: 2026-09-01\n"+tc.frontmatter+
+					"---\n\n## Change\nSomething.\n\n## Why\nBecause.\n\n## Acceptance\n- Done.\n")
+
+			armApplyAmendment(t, "", false)
+			out, err := runApplyAmendment_(t, cfg, "@my-feature")
+			if err == nil {
+				t.Fatal("this transition has no applier and must refuse")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the refusal must say why; got %v", err)
+			}
+			if strings.Contains(out, "You are asserting") {
+				t.Error("no attestation may be requested for a transition that cannot be applied")
+			}
+			if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 0 {
+				t.Error("a refused transition advanced the marker")
+			}
+		})
+	}
+}
+
+// A record touching several lineages is all-or-nothing: one unsupported
+// transition refuses the whole thing, because a partly applied record leaves a
+// state no reader can classify.
+func TestStage1b_MultipleLineagesAreAllOrNothing(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	if err := os.Remove(filepath.Join(featureDir, "amendments", "001-channel-choice.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeAmendment(t, featureDir, "001-mixed.md", `---
+amendment: mixed
+date: 2026-09-01
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: T
+      goal: A reworded promise.
+      persona: Admin
+  - intent: survives
+    mode: narrow
+    version:
+      title: S
+      goal: A narrower promise.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+---
+
+## Change
+Two lineages, one of them unsupported.
+
+## Why
+To prove it is all or nothing.
+
+## Acceptance
+- Refused.
+`)
+	armApplyAmendment(t, "", false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("one unsupported transition must refuse the whole record")
+	}
+	if !strings.Contains(err.Error(), "survives") {
+		t.Errorf("the refusal must name the lineage it cannot apply; got %v", err)
+	}
+	if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 0 {
+		t.Error("a partly applicable record was partly applied")
+	}
+}
+
+// The approval is bound to the exact attributed population. Attribution comes
+// from mutable contract artifacts, so the capsule comparison says nothing about
+// it: without this binding, a contract edit between preflight and confirmation
+// changes the subject the claim was about while leaving the token valid.
+func TestStage1b_TokenIsBoundToTheAttributedPopulation(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	pf := evolvePreflight(t, cfg)
+
+	// A third entry becomes attributed to the same promise after approval.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: z\n    kind: query\n    summary: does z\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	armApplyAmendment(t, pf.Digest, false)
+	_, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err == nil {
+		t.Fatal("an approval must not survive a change to the population it covered")
+	}
+	if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 0 {
+		t.Error("the marker advanced despite the subject having changed")
+	}
+}
+
+// A sequential revision uses the PREVIOUSLY APPLIED version as its before, not
+// the founding text — approving a delta from a version nobody is running would
+// describe a change that is not the one being made.
+func TestStage1b_SequentialRevisionDiffsFromTheAppliedVersion(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+
+	// Apply the first revision.
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("first revision: %v", err)
+	}
+
+	// A second one on top.
+	writeAmendment(t, featureDir, "002-again.md", `---
+amendment: again
+date: 2026-09-02
+amends_intents:
+  - intent: check-readiness
+    mode: revise
+    version:
+      title: Check Readiness Everywhere
+      goal: See if anything in the fleet is ready.
+      persona: Admin
+scope_impact:
+  version: 1
+  preserves_unlisted: true
+  exceptions: []
+---
+
+## Change
+Broader still.
+
+## Why
+Fleet-wide now.
+
+## Acceptance
+- Fleet readiness is reported.
+`)
+	writeRefineJournal(t, cfg, "my-feature", 2)
+
+	armApplyAmendment(t, "", false)
+	prose, err := runApplyAmendment_(t, cfg, "@my-feature")
+	if err != nil {
+		t.Fatalf("second preflight: %v", err)
+	}
+	if !strings.Contains(prose, "any of its nodes") {
+		t.Errorf("the before must be the APPLIED version, not the founding text; got:\n%s", prose)
+	}
+	if strings.Contains(prose, "before: See if the cluster is ready.") {
+		t.Error("the delta was taken from the founding text, describing a change nobody is making")
+	}
+}
+
+// A receipt must survive its own storage round-trip. This is the regression for
+// a real defect: the digest was minted over an in-memory payload while
+// validation recomputed it from the decoded one, and YAML decodes an omitted
+// list as empty rather than nil — so a freshly written receipt failed its own
+// validation and made the feature's authority unreadable.
+func TestStage1b_ReceiptSurvivesItsOwnStorageRoundTrip(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	evolvingFeature(t, dir)
+	pf := evolvePreflight(t, cfg)
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// The authority must remain readable — this is what broke.
+	if _, err := observeAppliedAuthority(cfg, "my-feature"); err != nil {
+		t.Fatalf("a freshly written receipt made the capsule unreadable: %v", err)
+	}
+	bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature"))
+	const key = "001-channel-choice.md"
+	if err := bl.TransitionReceipts[key].Validate(key); err != nil {
+		t.Errorf("a freshly written receipt must validate against itself: %v", err)
+	}
+}
+
+// The approval is about what each entry MEANS, not where it lives. An edit that
+// rewrites an operation while keeping its id and source produces the same ref
+// and a different promise — my own counterexample, now pinned.
+//
+// The clean fixture's subject is asserted FIRST, so the refusal cannot be
+// coming from an earlier guard.
+func TestStage1b_TokenIsBoundToEntrySemanticsNotJustRefs(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+
+	// Precondition: the clean fixture derives the exact expected subject.
+	scopes, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"},
+		[]string{"@my-feature/operation:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scopes) != 1 || len(scopes[0].Unlisted) != 1 ||
+		scopes[0].Unlisted[0].Ref != "@my-feature/operation:y" {
+		t.Fatalf("fixture: expected @my-feature/operation:y as the unlisted subject; got %+v", scopes)
+	}
+
+	pf := evolvePreflight(t, cfg)
+
+	// Exactly one mutation: y's acceptance criteria change — its id and source
+	// do not. A field the PARSER understands, deliberately: the fingerprint is
+	// taken over the parsed entry, so it cannot see a key the parser drops.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: does y\n    source: \"@my-feature/check-readiness\"\n"+
+			"    verify:\n      - It now promises something it did not promise before.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"},
+		[]string{"@my-feature/operation:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after[0].Unlisted[0].Ref != "@my-feature/operation:y" {
+		t.Fatal("fixture: the ref must be unchanged, or this tests ref binding rather than semantics")
+	}
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("an approval must not survive a change to what an attributed entry promises, " +
+			"even when its address is identical")
+	}
+	if bl := readFeatureBaseline(t, baselinePath(cfg, "my-feature")); bl.LastAppliedAmendment != 0 {
+		t.Error("the marker advanced despite the subject having changed")
+	}
+}
+
+// Deriving the population must FAIL CLOSED. An artifact that exists and will
+// not parse is an unknown, and an unknown cannot be approved — an earlier
+// version skipped it, so a file holding only unlisted attributed entries could
+// produce an "exact population" with a hole in it.
+func TestStage1b_UnreadableArtifactRefusesTheScopeDerivation(t *testing.T) {
+	cases := []struct{ name, file, corrupt string }{
+		{"capabilities", "capabilities.yaml", "operations: [ this is not: valid yaml\n"},
+		{"surface", "surface.yaml", "fragments: [ broken\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			featureDir := evolvingFeature(t, dir)
+
+			// Precondition: clean, the derivation names the concrete subject.
+			clean, err := deriveLineageScope(featureDir, "my-feature",
+				[]string{"check-readiness"}, nil)
+			if err != nil {
+				t.Fatalf("fixture: the clean derivation must succeed: %v", err)
+			}
+			if len(clean) != 1 || len(clean[0].Unlisted) < 1 {
+				t.Fatalf("fixture: expected attributed entries; got %+v", clean)
+			}
+
+			// Exactly one mutation.
+			if err := os.WriteFile(filepath.Join(featureDir, tc.file), []byte(tc.corrupt), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err = deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+			if err == nil {
+				t.Fatal("an artifact that exists and will not parse must refuse, not be skipped")
+			}
+			if !strings.Contains(err.Error(), "attributed to this promise") {
+				t.Errorf("the refusal must identify it as the scope read rather than any error; "+
+					"got %v", err)
+			}
+		})
+	}
+}
+
+// The amendment itself can change between approval and the lock. Without a
+// strict rehash inside it, the capsule would be written with the CURRENT bytes
+// while the receipt kept the approved hash — surfacing only later as an
+// unreadable capsule.
+func TestStage1b_AmendmentChangedBeforeTheLockRefuses(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+	pf := evolvePreflight(t, cfg)
+
+	path := filepath.Join(featureDir, "amendments", "001-channel-choice.md")
+	blBefore, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mutate the record exactly at the lock boundary, deterministically.
+	var once sync.Once
+	authorityLockAttemptHook = func(slug string) {
+		once.Do(func() {
+			body, rerr := os.ReadFile(path)
+			if rerr != nil {
+				t.Error(rerr)
+				return
+			}
+			_ = os.WriteFile(path, append(body, []byte("\nQuietly appended after approval.\n")...), 0o644)
+		})
+	}
+	t.Cleanup(func() { authorityLockAttemptHook = nil })
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("a record edited between approval and the lock must refuse")
+	}
+	blAfter, err := os.ReadFile(baselinePath(cfg, "my-feature"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blBefore) != string(blAfter) {
+		t.Error("the baseline was written for a record that had changed")
+	}
+	if _, err := observeAppliedAuthority(cfg, "my-feature"); err != nil {
+		t.Errorf("the capsule must remain readable after the refusal: %v", err)
+	}
+}
+
+// The acceptance test for the raw-entry subject: `summary` is real semantic
+// contract text that today's artifacts carry, and the parser drops it. An
+// earlier fingerprint over the PARSED entry left an edit confined to it
+// invisible — a live approval-token bypass, not a future limitation.
+func TestStage1b_TokenIsBoundToUnmodelledEntryText(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := testContext(t)
+	featureDir := evolvingFeature(t, dir)
+
+	clean, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"},
+		[]string{"@my-feature/operation:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clean) != 1 || len(clean[0].Unlisted) != 1 ||
+		clean[0].Unlisted[0].Ref != "@my-feature/operation:y" {
+		t.Fatalf("fixture: expected @my-feature/operation:y as the unlisted subject; got %+v", clean)
+	}
+	pf := evolvePreflight(t, cfg)
+
+	// EXACTLY one mutation, to a key the parser does not model at all.
+	if err := os.WriteFile(filepath.Join(featureDir, "capabilities.yaml"),
+		[]byte("operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n"+
+			"  - id: y\n    kind: query\n    summary: now promises something entirely different\n    source: \"@my-feature/check-readiness\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"},
+		[]string{"@my-feature/operation:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after[0].Unlisted[0].Ref != clean[0].Unlisted[0].Ref {
+		t.Fatal("fixture: the ref must be unchanged, or this tests ref binding")
+	}
+	if after[0].Unlisted[0].Fingerprint == clean[0].Unlisted[0].Fingerprint {
+		t.Fatal("the fingerprint did not move for a change to real contract text — the subject " +
+			"is still bound to what the parser happens to model")
+	}
+
+	armApplyAmendment(t, pf.Digest, false)
+	if _, err := runApplyAmendment_(t, cfg, "@my-feature"); err == nil {
+		t.Fatal("an approval must not survive a change to an entry's meaning, including text " +
+			"the parser does not model")
+	}
+}
+
+// Infrastructure has its own parsing and fingerprint path, so it needs its own
+// witnesses rather than riding on the capabilities table.
+func TestStage1b_InfrastructureScopeIsBoundAndFailsClosed(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := evolvingFeature(t, dir)
+	infra := filepath.Join(featureDir, "infrastructure.md")
+	body := "# Infra\n\n## Readiness probe boundary\n\n**Affects**: the probe\n" +
+		"**Behavior**: it probes.\n**Source**: @my-feature/check-readiness\n"
+	if err := os.WriteFile(infra, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Precondition: the clean fixture yields a concrete infrastructure subject.
+	clean, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ref, fp string
+	for _, e := range clean[0].Unlisted {
+		if strings.Contains(e.Ref, "/infrastructure:") {
+			ref, fp = e.Ref, e.Fingerprint
+		}
+	}
+	if ref == "" {
+		t.Fatalf("fixture: expected an attributed infrastructure entry; got %+v", clean[0])
+	}
+
+	// A heading change that slugifies to the SAME ref must still move the
+	// fingerprint, or the entry's human-facing identity would be bound only by
+	// its address. This holds today because the fragment body is the verbatim
+	// block including its heading line; the test guards against that changing,
+	// and does NOT witness a hole that ever existed.
+	renamed := strings.Replace(body, "## Readiness probe boundary", "## Readiness  probe  boundary", 1)
+	if err := os.WriteFile(infra, []byte(renamed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range after[0].Unlisted {
+		if e.Ref == ref && e.Fingerprint == fp {
+			t.Error("a changed heading that slugifies to the same ref left the fingerprint " +
+				"unmoved — the entry's identity is bound only by its address")
+		}
+	}
+
+	// And an unreadable infrastructure artifact refuses rather than being
+	// skipped. err == nil is FATAL here: an earlier version only checked the
+	// message when an error happened to occur, so a fixture the derivation
+	// accepted would have passed silently.
+	if err := os.Remove(infra); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(infra, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err == nil {
+		t.Fatal("an infrastructure artifact that exists and cannot be read must refuse, not be " +
+			"skipped — a population with a hole in it is not the population")
+	}
+	if !strings.Contains(err.Error(), "attributed to this promise") {
+		t.Errorf("the refusal must identify the scope read; got %v", err)
+	}
+}
+
+// Absence and unreadability are different. A dangling symlink reads as ENOENT
+// through Stat while being plainly present in the directory.
+func TestStage1b_DanglingArtifactIsNotAbsence(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := evolvingFeature(t, dir)
+	caps := filepath.Join(featureDir, "capabilities.yaml")
+	if err := os.Remove(caps); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "nothing-here.yaml"), caps); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+
+	_, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err == nil {
+		t.Fatal("a dangling artifact is an unknown subject, not an absent one")
+	}
+	if !strings.Contains(err.Error(), "attributed to this promise") {
+		t.Errorf("the refusal must identify the scope read; got %v", err)
+	}
+}
+
+// A YAML item can inherit meaning from an anchor defined OUTSIDE it. Hashing
+// the item node verbatim binds `<<: *defaults` — the alias name — while leaving
+// the anchor target unbound, so changing the target changes what the entry
+// promises and leaves the fingerprint identical.
+func TestStage1b_AliasedEntryMeaningIsBound(t *testing.T) {
+	dir := setupTestDir(t)
+	featureDir := evolvingFeature(t, dir)
+	caps := filepath.Join(featureDir, "capabilities.yaml")
+
+	withDefaults := func(shared string) string {
+		return "defaults: &d\n  kind: query\n  summary: " + shared + "\n" +
+			"operations:\n  - id: x\n    kind: command\n    summary: does x\n    source: \"@my-feature/check-readiness\"\n" +
+			"  - id: y\n    <<: *d\n    source: \"@my-feature/check-readiness\"\n"
+	}
+	if err := os.WriteFile(caps, []byte(withDefaults("shared original text")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Precondition: the parsed entry really does inherit through the merge, or
+	// the test never reaches the dependency it claims to pin.
+	parsed, err := parser.ParseCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inherited bool
+	for _, op := range parsed.Operations {
+		if op.ID == "y" && op.Kind == "query" {
+			inherited = true
+		}
+	}
+	if !inherited {
+		t.Fatal("fixture: operation y must inherit kind through the merge key")
+	}
+
+	before, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fpOf := func(scopes []lineageScope, ref string) string {
+		for _, e := range scopes[0].Unlisted {
+			if e.Ref == ref {
+				return e.Fingerprint
+			}
+		}
+		return ""
+	}
+	was := fpOf(before, "@my-feature/operation:y")
+	if was == "" {
+		t.Fatalf("fixture: expected y in the population; got %+v", before[0])
+	}
+
+	// EXACTLY one mutation, to the anchor target rather than to the item.
+	if err := os.WriteFile(caps, []byte(withDefaults("shared text, quite different now")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fpOf(after, "@my-feature/operation:y") == was {
+		t.Error("changing an anchor the entry merges from left its fingerprint unmoved — the " +
+			"subject binds the alias name rather than the meaning it resolves to")
+	}
+}
+
+// An ambiguous population is not a population. The derivation refuses rather
+// than letting a last-writer-wins map decide which entry a ref names.
+func TestStage1b_AmbiguousEntriesRefuseDerivation(t *testing.T) {
+	cases := []struct{ name, file, body, want string }{
+		{
+			name: "duplicate operation id",
+			file: "capabilities.yaml",
+			body: "operations:\n  - id: y\n    kind: query\n    source: \"@my-feature/check-readiness\"\n" +
+				"  - id: y\n    kind: command\n    source: \"@my-feature/check-readiness\"\n",
+			want: "appears more than once",
+		},
+		{
+			name: "duplicate surface fragment name",
+			file: "surface.yaml",
+			body: "fragments:\n  - name: Thing List\n    source: \"@my-feature/check-readiness\"\n" +
+				"  - name: Thing List\n    source: \"@my-feature/check-readiness\"\n",
+			want: "appears more than once",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := setupTestDir(t)
+			featureDir := evolvingFeature(t, dir)
+
+			// Precondition: clean, the derivation succeeds and names a subject.
+			clean, err := deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+			if err != nil || len(clean[0].Unlisted) == 0 {
+				t.Fatalf("fixture: the clean derivation must yield a subject; %v %+v", err, clean)
+			}
+
+			if err := os.WriteFile(filepath.Join(featureDir, tc.file), []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err = deriveLineageScope(featureDir, "my-feature", []string{"check-readiness"}, nil)
+			if err == nil {
+				t.Fatal("an ambiguous population must refuse rather than resolve by last writer")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the refusal must say what is ambiguous; got %v", err)
+			}
+			if !strings.Contains(err.Error(), "attributed to this promise") &&
+				!strings.Contains(err.Error(), "cannot be read") {
+				t.Errorf("the refusal must identify the scope read; got %v", err)
+			}
+		})
+	}
+}
+
+// The shape guards inside resolvedEntryFingerprints, tested where they are reachable.
+//
+// End to end the parser refuses a non-sequence `operations` before this runs,
+// so asserting it through deriveLineageScope would witness the parser rather
+// than this guard. It stays as defence in depth for a document the parser might
+// one day accept, and is pinned here rather than pretended to be pinned there.
+func TestStage1b_RawEntryNodesRefusesAmbiguousShapes(t *testing.T) {
+	cases := []struct{ name, body, want string }{
+		{"not a sequence", "operations:\n  id: y\n", "is not a sequence"},
+		{"entry with no id", "operations:\n  - kind: query\n", "has no id"},
+		{"duplicate id", "operations:\n  - id: y\n  - id: y\n", "appears more than once"},
+		{"root is not a mapping", "- id: y\n", "not a mapping at its root"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "capabilities.yaml")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := resolvedEntryFingerprints(path, "operations", "id")
+			if err == nil {
+				t.Fatal("an ambiguous or unenumerable document must refuse")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the error must say what is wrong; got %v", err)
+			}
+		})
+	}
+
+	// And a well-formed document enumerates cleanly.
+	path := filepath.Join(t.TempDir(), "capabilities.yaml")
+	if err := os.WriteFile(path, []byte("operations:\n  - id: a\n  - id: b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolvedEntryFingerprints(path, "operations", "id")
+	if err != nil || len(got) != 2 || got["a"] == got["b"] {
+		t.Errorf("a well-formed document must enumerate distinctly; got %v %v", got, err)
 	}
 }

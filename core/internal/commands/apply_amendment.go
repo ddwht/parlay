@@ -43,7 +43,16 @@ import (
 // mode, because the mode set will grow and the public surface should not have
 // to be renamed when it does.
 
-const transitionModeWithdrawAndSplice = "withdraw-and-splice"
+const (
+	transitionModeWithdrawAndSplice = "withdraw-and-splice"
+	// transitionModeEvolve applies an intent transition that keeps the lineage
+	// alive. Only the preservation form is supported: extend, or a revise
+	// whose scope declaration lists no exception. A revision that declares an
+	// entry loses support, and every narrow or retire, waits for the stage
+	// that wires the orphan accounting — approving a loss whose consequences
+	// the ledger never collected would be the bypass in a new spelling.
+	transitionModeEvolve = "evolve"
+)
 
 var (
 	applyAmendmentConfirm string
@@ -158,9 +167,7 @@ func runApplyAmendment(cmd *cobra.Command, args []string) error {
 			"`parlay internal apply-governance @%s --confirm`, which is the ceremony that owns it",
 			amendmentIdentity(record), slug)
 	case classIntentEvolution:
-		return fmt.Errorf("%s carries an amends_intents: transition, and no applier exists for "+
-			"the evolution vocabulary yet. It is readable and inert; nothing will apply it until "+
-			"its ceremony is built", amendmentIdentity(record))
+		return runEvolveTransition(cmd, cfg, slug, featDir, record, pending, prior)
 	case classSplice:
 		return fmt.Errorf("%s changes contract entries and withdraws no promise, so it is an "+
 			"ordinary refinement — it is applied by /parlay-refine's re-baseline, not here",
@@ -332,6 +339,8 @@ type transitionPayload struct {
 	Withdraws     []withdrawnPromise   `yaml:"withdraws" json:"withdraws"`
 	Affects       []string             `yaml:"affects" json:"affects"`
 	Prior         priorCapsuleSnapshot `yaml:"prior" json:"prior"`
+	// Evolution is present only for transitionModeEvolve.
+	Evolution []*evolutionSubject `yaml:"evolution,omitempty" json:"evolution,omitempty"`
 	// SpliceProof is the NORMALISED splice-proof proposition, not a hash of
 	// the journal file. The human approves a promise withdrawal, not the
 	// whitespace or resume metadata of an ephemeral workflow record — and the
@@ -366,17 +375,69 @@ func buildTransitionPayload(slug string, record parser.Amendment, withdraws []wi
 	}, nil
 }
 
+// evolutionSubject is everything a human is approving when a promise changes
+// without dying.
+//
+// Three propositions, not one: that this promise now reads differently, that
+// the declared mode is semantically honest, and that the transition does not
+// silently invalidate downstream entries outside its declared scope. Text alone
+// answers only the first.
+type evolutionSubject struct {
+	Lineage string `yaml:"lineage" json:"lineage"`
+	Mode    string `yaml:"mode" json:"mode"`
+	// Before is the promise as the APPLIED ledger currently leaves it, not the
+	// founding text — a lineage may already have been revised, and approving a
+	// delta from a version nobody is running would describe a change that is
+	// not the one being made.
+	Before parser.Intent `yaml:"before" json:"before"`
+	After  parser.Intent `yaml:"after" json:"after"`
+	Delta  []fieldDelta  `yaml:"delta" json:"delta"`
+	// Attestation is the claim the human is making, recorded verbatim. The
+	// tool cannot verify it from prose and the receipt must say what was
+	// asserted rather than merely that something was.
+	Attestation string `yaml:"attestation" json:"attestation"`
+	// Scope is the exact attributed population, partitioned.
+	Scope lineageScope `yaml:"scope" json:"scope"`
+	// PreservesUnlisted is the author's closure declaration.
+	PreservesUnlisted bool `yaml:"preserves-unlisted" json:"preserves_unlisted"`
+}
+
 // transitionDigest is the full SHA-256 of the canonical payload. Not truncated:
 // there is no usability gain worth making an authority token weaker, or worth
 // having to explain the exception.
+//
+// The payload is round-tripped through the STORAGE encoding before hashing, so
+// a digest minted in memory and one recomputed from a stored receipt are taken
+// over the same shape by construction. Without that, YAML's nil-becomes-empty
+// on decode made a freshly written receipt fail its own validation — and doing
+// it structurally rather than normalising each slice by hand keeps that true
+// when a field is added later.
 func transitionDigest(p transitionPayload) (string, error) {
+	canonical, err := canonicalTransitionPayload(p)
+	if err != nil {
+		return "", err
+	}
 	// encoding/json sorts map keys, so this is canonical for a fixed struct.
-	data, err := json.Marshal(p)
+	data, err := json.Marshal(canonical)
 	if err != nil {
 		return "", fmt.Errorf("canonicalise the approval payload: %w", err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// canonicalTransitionPayload returns the payload as it will read back from the
+// receipt it is stored in.
+func canonicalTransitionPayload(p transitionPayload) (transitionPayload, error) {
+	encoded, err := yaml.Marshal(&p)
+	if err != nil {
+		return transitionPayload{}, fmt.Errorf("canonicalise the approval payload: %w", err)
+	}
+	var out transitionPayload
+	if err := yaml.Unmarshal(encoded, &out); err != nil {
+		return transitionPayload{}, fmt.Errorf("canonicalise the approval payload: %w", err)
+	}
+	return out, nil
 }
 
 // advanceThroughTransition commits the capsule advance and the receipt in one

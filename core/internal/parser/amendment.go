@@ -62,6 +62,11 @@ type Amendment struct {
 	// Consumers read IntentTransitions(), which normalises the two.
 	AmendsIntents []IntentAmendment `yaml:"amends_intents"`
 
+	// ScopeImpact is the author's closure declaration over the contract
+	// entries attributed to the lineages this record changes. See
+	// intent_transition.go.
+	ScopeImpact *ScopeImpact `yaml:"scope_impact"`
+
 	// RetiresFeature marks this as the feature's terminal record: it closes
 	// the feature rather than changing it. Declared rather than inferred from
 	// an amendment that happens to name every live intent — that shape is

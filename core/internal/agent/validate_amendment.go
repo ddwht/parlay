@@ -27,6 +27,9 @@ func ValidateAmendment(mode ValidationMode, path string, content []byte) []Valid
 		return []ValidationOutcome{NewOutcome(mode, "amendment-not-parseable", err.Error())}
 	}
 
+	for _, problem := range a.ValidateScopeImpact() {
+		outcomes = append(outcomes, NewOutcome(mode, "amendment-scope-impact-malformed", problem))
+	}
 	for _, problem := range a.ValidateIntentTransitions() {
 		outcomes = append(outcomes, NewOutcome(mode, "amendment-intent-transition-malformed", problem))
 	}

@@ -106,3 +106,34 @@ func TestRefineAsksTheRightOutputlessQuestionForEachCase(t *testing.T) {
 		t.Error("the guidance must forbid asking the plan-based question when no plan exists")
 	}
 }
+
+// A ceremony no workflow names is a capability that does not exist in practice.
+// Same rule that caught the output-less path shipping as flags nobody invoked.
+func TestRefineNamesTheEvolveCeremony(t *testing.T) {
+	body := refineSkillBody(t)
+	if !strings.Contains(body, "amends_intents") {
+		t.Fatal("refine guidance never mentions the evolution vocabulary")
+	}
+	idx := strings.Index(body, "CHANGES a founding promise without ending it")
+	if idx < 0 {
+		t.Fatal("refine has no guidance for a transition that keeps the lineage alive")
+	}
+	section := body[idx:]
+	for _, want := range []string{
+		"apply-amendment",
+		"scope_impact",
+		"get an explicit yes",
+		"Nothing checks either claim",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("the evolve guidance must state %q", want)
+		}
+	}
+	if !strings.Contains(section, "Do not add it yourself") {
+		t.Error("the guidance must forbid the agent inventing the author's scope claim — " +
+			"manufacturing it means approving a claim nobody made")
+	}
+	if !strings.Contains(section, "refused for now") {
+		t.Error("the guidance must say which modes have no applier yet")
+	}
+}

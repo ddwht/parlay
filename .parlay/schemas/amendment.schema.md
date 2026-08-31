@@ -244,11 +244,81 @@ Pending transitions are reported **by mode**. An unapplied revision is not a
 pending retirement, and saying so would tell an operator a promise is about to
 be withdrawn when it is about to be reworded.
 
-**No applier yet.** The vocabulary is readable and **inert**. No command
-applies an `amends_intents:` record; every path refuses it by name rather than
-routing it somewhere that would apply it on the strength of its other fields. A
-vocabulary that ships without its ceremony must be inert, not opportunistically
-applicable.
+### Applying an intent transition
+
+`parlay internal apply-amendment @<feature>` owns the ceremony. No save applies
+one — a save records build evidence and approves nothing.
+
+The approval covers **three** propositions, not one:
+
+1. this exact promise now reads differently;
+2. the declared mode is semantically honest;
+3. the transition does not silently invalidate downstream entries outside its
+   declared scope.
+
+So the preflight prints a **field-aware delta** between the promise currently in
+force — the applied version, never the founding text, since a lineage may
+already have been revised — and the version this record would put in force, with
+cleared fields shown explicitly. Then the **attestation** the author is being
+asked to make, in plain language and phrased as their claim rather than as a
+result the tool checked. Then the **exact contract entries attributed to that
+lineage**, partitioned into those this record's `affects:` names and those it
+does not.
+
+The third is what makes this more than side-by-side text. A revision can stop
+supporting an entry while the lineage stays alive and resolving, so the entry is
+never referentially orphaned and no structural check can see the loss.
+
+**`scope_impact:` is required and is the author's.** `version: 1`,
+`preserves_unlisted: true`, and an `exceptions:` list. The closure assertion —
+that every attributed entry the record does not list remains supported by the
+new promise — is a human claim nothing establishes. It is declared rather than
+inferred from the mode, because inferring it would mean the ceremony
+manufacturing a preservation claim the amendment never made.
+
+The digest binds the promise text, the exact attributed population **with a
+semantic fingerprint per entry**, its partition, the scope declaration, the
+attestation, the tested-journal proposition and the complete prior capsule.
+
+A ref alone is not the subject: the human is asserting continued support of what
+each entry *promises*, so an edit that rewrites an operation's acceptance
+criteria while keeping its id and source produces the same address and a
+different promise. The fingerprint is taken over the entry's **resolved generic
+form** — each entry decoded so unknown fields survive and aliases and merges are
+expanded, then canonically re-encoded and hashed. Not the parsed struct, which
+drops keys the parser does not model; and not the literal YAML node, which binds
+an alias name while leaving its anchor target unbound. It is —
+narrower than a whole-file hash, which would invalidate approvals over unrelated
+entries and formatting, and unlike a fingerprint over the *parsed* struct it
+covers keys the parser does not model. That distinction is not theoretical:
+`summary` is semantic contract text that today's artifacts carry and the parser
+drops, so a parsed fingerprint left an edit confined to it invisible.
+
+Aliases and merge keys are **expanded** before fingerprinting. Hashing an entry's
+node verbatim would bind `<<: *defaults` — the alias name — while leaving the
+anchor target unbound, so changing that target would change what the entry
+promises and leave the fingerprint identical.
+
+The derivation also refuses to manufacture an ambiguous subject: a duplicate
+operation id or fragment name, a non-sequence entry list, an entry with no
+identity, or a disagreement between what the parser found and what the reader
+enumerated all refuse rather than resolving by last-writer-wins.
+
+Because attribution comes from mutable contract artifacts, the population and
+the amendment's own bytes are re-derived and rehashed under the lock immediately
+before the write. Deriving the population **fails closed**: an artifact that
+exists and will not parse is an unknown, and an approval cannot be given over a
+population with a hole in it. Presence is probed with `Lstat`, so only genuine
+absence counts as absent — a dangling artifact is something that cannot be read,
+not something that is not there.
+
+**Supported today: the preservation form only.** `extend`, and a `revise` whose
+`exceptions:` list is empty. A revision declaring an exception, and every
+`narrow` and `retire`, is refused — those take support away from contract
+entries, and the accounting that collects those consequences is not built.
+A record touching several lineages is all-or-nothing: one unsupported
+transition refuses the whole record, because a partly applied one leaves a state
+no reader can classify.
 
 ### Applying a combined record
 

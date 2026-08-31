@@ -631,6 +631,43 @@ report — which mode ran is part of what was blessed.
    combined one carrying both `affects:` and `supersedes_intents:`, stays
    refused on this path however empty the manifest is.
 
+   **If this refinement CHANGES a founding promise without ending it.** An
+   amendment carrying `amends_intents:` with mode `extend` or `revise` changes
+   what the feature promises, and no save may apply it — a save records build
+   evidence and approves nothing. Apply it with:
+
+   ```
+   parlay internal apply-amendment @{feature}
+   ```
+
+   Run it with no `--confirm` first. It prints three things, and the user needs
+   all three:
+
+   - the **field-by-field delta** between the promise in force and the new one,
+     with cleared fields shown explicitly (a version is a complete snapshot, so
+     an omitted field is removed, not kept);
+   - the **claim they are being asked to make** — that an `extend` takes nothing
+     away, or that they approve this replacement and its scope impact;
+   - the **contract entries attributed to that promise**, split into the ones
+     this record declares it changes and the ones it does not.
+
+   The second and third are the point. Nothing checks either claim: the tool can
+   see that a lineage still resolves, and cannot see whether a revised promise
+   still entails an entry attributed to it. **Show the user the whole list and
+   get an explicit yes**, then re-run with `--confirm <digest>`. The digest binds
+   the approval to the promise text, the attributed population, the scope
+   declaration and the applied authority, so a yes given for one state cannot be
+   carried to another.
+
+   The amendment must declare `scope_impact:` with `version: 1` and
+   `preserves_unlisted: true`. Do not add it yourself to make the command
+   proceed — it is the author's claim that every attributed entry it does not
+   list still holds, and inventing it means approving a claim nobody made.
+
+   **`narrow` and `retire` are refused for now**, as is any `revise` declaring a
+   scope exception. Those take support away from contract entries, and the
+   accounting that collects those consequences is not built yet.
+
    **If this refinement withdraws a founding promise.** An amendment carrying
    both `affects:` and `supersedes_intents:` has a splice to record AND promises
    to withdraw, and neither half may be applied without the other. That is the
