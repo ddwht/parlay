@@ -18,8 +18,10 @@ import (
 	"github.com/ddwht/parlay/core/internal/domainmodel"
 )
 
-// domainValidator is the ValidatorFunc the domain-model write path runs:
-// Core's domain-model rules, called in-process, in authoring mode.
+// domainValidator is the ValidatorFunc reserved for the domain-model write
+// path: Core's domain-model rules, called in-process, in authoring mode.
+// TODAY its only callers are the one-engine parity tests — no production
+// write is gated on it yet; the Phase-3 save gate will be its first.
 //
 // This function is the whole of what used to be a subprocess. The browser
 // editor once reached these rules by locating a `parlay` binary and running
@@ -32,12 +34,13 @@ import (
 // and Diff, so the reverse edge would close a cycle. domainmodel declares what
 // it needs (domainmodel.ValidatorFunc); this layer knows agent satisfies it.
 //
-// Authoring mode is load-bearing, not a default: it is the mode the save
-// gate validates in, so the gate and `parlay validate` agree on severity.
-// Note domain-operations-unsupported is an ERROR in both modes (the field was
-// removed in v0.3); what lets a legacy model carrying an unchanged operations
-// block still be saved is the monotonic non-worsening gate, not a severity
-// downgrade.
+// Authoring mode is load-bearing, not a default: it is the mode the future
+// save gate is specified to validate in, so the gate and `parlay validate`
+// will agree on severity. Note domain-operations-unsupported is an ERROR in
+// both modes (the field was removed in v0.3); the contract the Phase-3 gate
+// must implement is that an UNCHANGED legacy operations block is grandfathered
+// by the monotonic non-worsening comparison, not by a severity downgrade —
+// nothing enforces that yet, because no production writer calls this seam.
 //
 // domainmodel.StdinLabel is passed for the same reason the CLI's --json mode uses
 // "<stdin>": a draft in memory has no path, and anchoring both entry points on

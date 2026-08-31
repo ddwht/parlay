@@ -18,17 +18,20 @@
 //
 //	direct  agent.ValidateDomainModelStructuredMode on the fixture bytes
 //	seam    domainmodel.Validate through the domainValidator ValidatorFunc,
-//	        which is the path the write gate uses
+//	        the path reserved for the future write gate
 //	cli     `parlay validate --type domain-model --json` reading the bytes
 //	        from stdin
 //
 // What it guards is not the rules — one engine cannot disagree with itself —
-// but the three wrappers around it. The seam leg decodes the fixture into a
-// Model and lets domainmodel re-serialize it, so a round-trip that perturbs
-// the document (a dropped operations block, a re-typed scalar, a lost field)
-// shows up as a finding that one leg reports and another does not. The CLI leg
-// covers the label and the JSON projection. A mismatch means a wrapper changed
-// the model or the finding on the way through.
+// but the wrappers around it, WITHIN THE LIMITS OF WHAT DIAGNOSTICS SHOW: the
+// legs compare (code, path, severity) sets, so a round-trip perturbation is
+// caught only when it changes some finding (a dropped operations block, a
+// re-typed scalar). A lost VALID field leaves every diagnostic set empty and
+// is invisible to this comparison — that property is witnessed separately by
+// TestDomainParity_RoundTripPreservesValidFields below, which asserts the
+// typed decode+serialize round-trip reproduces the clean fixture's content.
+// The CLI leg covers the label and the JSON projection. A mismatch means a
+// wrapper changed the model or the finding on the way through.
 //
 // It replaces a two-leg version whose second leg was an HTTP endpoint in the
 // browser editor. The editor is gone; the witness is not, because deleting a
@@ -41,6 +44,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -240,5 +244,72 @@ func TestValidatesWithNoBinary(t *testing.T) {
 	got := seamFindings(t, []byte("entities:\n  - name: Order\n    fields:\n      - name: id\n        type: uuid\n        required: true\n"))
 	if !slices.ContainsFunc(got, func(k string) bool { return strings.HasPrefix(k, "missing-schema-version@") }) {
 		t.Fatalf("want missing-schema-version from the real validator with no binary on PATH, got %v", got)
+	}
+}
+
+// TestDomainParity_RoundTripPreservesValidFields witnesses the property the
+// diagnostic comparison above cannot: a VALID field survives the typed
+// decode+serialize round-trip. Diagnostics stay empty whether or not a valid
+// field is lost, so preservation has to be asserted on the content itself. A
+// richer clean fixture exercises every field the wire model carries — enum
+// with label and tone, ref with target, enum-typed field with its companion
+// key, a relationship with a field.relationship back-reference, and the
+// required flag in both states.
+func TestDomainParity_RoundTripPreservesValidFields(t *testing.T) {
+	fixture := `schema_version: 1
+enums:
+  - name: OrderStatus
+    values:
+      - value: open
+        label: Open
+        tone: info
+      - value: closed
+entities:
+  - name: Customer
+    fields:
+      - name: id
+        type: uuid
+        required: true
+  - name: Order
+    fields:
+      - name: id
+        type: uuid
+        required: true
+      - name: customer
+        type: ref
+        target: Customer
+        relationship: order-customers
+        required: true
+      - name: status
+        type: OrderStatus
+        enum: OrderStatus
+        required: false
+relationships:
+  - name: order-customers
+    from: Order
+    to: Customer
+    cardinality: many-to-one
+`
+	var first domainmodel.Model
+	if err := yaml.Unmarshal([]byte(fixture), &first); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	out, err := domainmodel.Serialize(first)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	var second domainmodel.Model
+	if err := yaml.Unmarshal(out, &second); err != nil {
+		t.Fatalf("re-decode: %v", err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Errorf("round-trip changed the model:\nfirst:  %+v\nsecond: %+v\nserialized:\n%s", first, second, out)
+	}
+	// And the serialized form still holds every distinctive scalar the
+	// fixture set, so a symmetric loss (dropped by both decodes) is caught.
+	for _, want := range []string{"label: Open", "tone: info", "target: Customer", "relationship: order-customers", "enum: OrderStatus", "cardinality: many-to-one", "required: false"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("serialized model lost %q:\n%s", want, out)
+		}
 	}
 }

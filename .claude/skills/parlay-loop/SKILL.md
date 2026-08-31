@@ -276,7 +276,7 @@ Running inline means loading the phase modules the subagent would have loaded �
 
     > **Accept this contribution into the project domain model?** — Accept / Edit the contribution file / Leave it proposed.
 
-    - **Accept** — run `parlay internal domain-impact @{feature-ref} --apply`. The merge is additive and goes through the same validated, atomic write path as any other accepted contribution. Then run `parlay internal check-drift @{feature-ref}` and report it: the domain model is shared, so accepting dirties every feature that reads it, not only this one.
+    - **Accept** — run `parlay internal domain-impact @{feature-ref} --apply`. The merge is additive and goes through the same concurrency-checked (etag compare-and-swap), atomic write path as any other accepted contribution. Then run `parlay internal check-drift @{feature-ref}` and report it: the domain model is shared, so accepting dirties every feature that reads it, not only this one.
     - **Edit the contribution file** — edit `spec/intents/{feature}/domain-model.yaml` directly, then re-run `parlay internal domain-impact @{feature-ref}` and re-present, because the answer may have changed.
     - **Leave it proposed** — nothing is written. The contribution stays on disk, and other features referencing its entities report `capabilities-entity-pending` rather than failing. This is a valid answer, not a deferral to nag about.
 

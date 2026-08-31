@@ -1,5 +1,4 @@
 // parlay-section: cross-cutting
-// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-domain-model
 // parlay-extends: parlay-tool/create-domain-model/cli-command-rename-source-file
 
 package commands

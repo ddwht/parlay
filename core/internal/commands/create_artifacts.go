@@ -1,6 +1,5 @@
 // parlay-feature: artifact-decision
 // parlay-component: ArtifactDecisionPrompt
-// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
 
 package commands
 

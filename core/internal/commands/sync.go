@@ -1,5 +1,3 @@
-// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
-
 package commands
 
 // Generated from buildfile component: coverage-report

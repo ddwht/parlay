@@ -37,10 +37,10 @@ const WholeModelPath = "<domain-model>"
 
 // Finding is one validation finding as this package surfaces it. It is a
 // verbatim projection of a Core finding: the closed error Code, the element
-// path (Field) anchoring it, the Core-emitted Severity (domain-operations-
-// deprecated is the sole warning; every other code is an error), and the
-// human Message plus the actionable Fix. Nothing here invents, renames, or
-// reclassifies a finding.
+// path (Field) anchoring it, the Core-emitted Severity exactly as the rule
+// table resolves it (note domain-operations-unsupported is an ERROR in both
+// modes — the field was removed in v0.3), and the human Message plus the
+// actionable Fix. Nothing here invents, renames, or reclassifies a finding.
 type Finding struct {
 	Field    string `json:"field"`
 	Code     string `json:"code"`
@@ -126,9 +126,9 @@ func Validate(ctx context.Context, validate ValidatorFunc, model Model) ([]Findi
 	return findings, nil
 }
 
-// HasErrorFinding reports whether any finding in the set is error-severity —
-// the save-gate predicate. Warnings (domain-operations-deprecated) never make
-// this true, alone or alongside errors.
+// HasErrorFinding reports whether any finding in the set is error-severity.
+// Warning-severity findings never make this true, alone or alongside errors.
+// (No caller gates a production write on this yet; the Phase-3 gate will.)
 func HasErrorFinding(findings []Finding) bool {
 	for _, f := range findings {
 		if f.IsError() {

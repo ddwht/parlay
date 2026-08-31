@@ -302,8 +302,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // It emits the structured per-violation finding list as a bare JSON array,
 // reusing the agent.ValidationError finding shape (code, message, context,
 // fix, severity) — no parallel finding schema. Findings are resolved in
-// authoring mode, so domain-operations-deprecated surfaces at warning
-// severity (the editor's context). A clean model prints "[]".
+// authoring mode. (Historical note: authoring mode once downgraded
+// domain-operations-deprecated to a warning for the editor; that code is gone
+// — the emitted code is domain-operations-unsupported, an error in both
+// modes, and the editor no longer exists.) A clean model prints "[]".
 //
 // The exit code agrees with the findings, on the same rule as the generic
 // outputValidate path: blocking findings exit 1, warnings alone exit 0. This
@@ -318,13 +320,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // This is safe for the callers that exist. Both deployed consumers —
 // create-domain-model step 7 and load-domain-model steps 3 and 8 — read the
 // findings array and stop on a non-empty one; neither inspects exit status,
-// so neither changes behaviour. The editor does not shell out at all: it
-// calls agent.ValidateDomainModelStructuredMode in process (see
-// domain_validator.go), so no in-tree consumer regresses.
+// so neither changes behaviour. (The retired editor called the validator in
+// process via the domain_validator.go seam rather than shelling out, so it
+// never depended on this path either.)
 //
-// Warnings still exit 0, which is what keeps the authoring context usable:
-// domain-operations-deprecated resolves at warning severity here, and a
-// deprecation is not a reason to fail the caller.
+// Warnings still exit 0, which is what keeps the authoring context usable: a
+// warning-severity finding is guidance, not a reason to fail the caller.
 //
 // The output is unchanged either way — still the bare finding array, still
 // "[]" for a clean model, still valid JSON on a read failure. A caller that

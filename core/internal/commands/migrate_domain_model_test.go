@@ -222,3 +222,19 @@ func TestRunMigrateDomainModel_ReportsDomainModelFilesElsewhere(t *testing.T) {
 		t.Errorf("expected greenfield 'nothing to migrate' still reported, got: %s", out)
 	}
 }
+
+// The --dry-run flag was declared for years and never read; amendment
+// 001-dry-run-flag-removed-as-never-implemented retired it. This pins the
+// acceptance: the flag is now an unknown-flag error, and --force still
+// resolves.
+func TestMigrateDomainModel_DryRunIsGoneAndForceRemains(t *testing.T) {
+	if f := migrateDomainModelCmd.Flags().Lookup("dry-run"); f != nil {
+		t.Fatalf("--dry-run must not be registered; found %+v", f)
+	}
+	if err := migrateDomainModelCmd.Flags().Set("dry-run", "true"); err == nil {
+		t.Fatal("setting --dry-run must fail as an unknown flag")
+	}
+	if f := migrateDomainModelCmd.Flags().Lookup("force"); f == nil {
+		t.Fatal("--force must still be registered")
+	}
+}

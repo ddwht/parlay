@@ -357,7 +357,7 @@ func TestParseMarker_BlockCommentDoesNotOverreach(t *testing.T) {
 // verifiable, silently clobberable on the next generation.
 func TestExtendsAloneIdentifiesAGeneratedFile(t *testing.T) {
 	const src = `// parlay-feature: studio-support
-// parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts
+// parlay-extends: demo-group/demo-feature/hook-dispatch-example
 // parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 
 package commands
@@ -374,7 +374,7 @@ package commands
 	}
 	// Stored verbatim: the live shapes differ in arity, and a parser that
 	// split them into feature+component would drop what it could not fit.
-	if m.Extends[0] != "studio-support/studio-cli-hooks/hook-dispatch-trio-create-artifacts" {
+	if m.Extends[0] != "demo-group/demo-feature/hook-dispatch-example" {
 		t.Errorf("Extends[0] = %q, want the value as written", m.Extends[0])
 	}
 }
