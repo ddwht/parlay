@@ -255,6 +255,38 @@ suites:
             - verify: file-exists
               target: project-state
               expected: "the content outside the project is intact"
+        - name: the record, the journal and the registration are written through the rooted handle
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The retirement record, the journal and the rewritten root registration are written through that same handle: a location swapped for a route out of the project refuses the write rather than landing outside, and nothing is created outside the project by the attempt."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose retired-roots location, and then whose .parlay directory, is replaced with a link out of the project immediately before each of the record write, the journal write and the registration rewrite"
+            - verify: error
+              target: retirement-journal
+              expected: "each write is refused rather than following the link"
+            - verify: state
+              target: project-state
+              expected: "nothing is created outside the project"
+        - name: the journal removal is rooted on the same terms
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:retirement-target-and-destination-preconditions"
+            text: "The removal of the journal is rooted on the same terms, so a swapped location cannot make the run delete a file the project does not own."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose retired-roots location is replaced with a link to a directory holding a same-named file, immediately before the journal removal"
+            - verify: error
+              target: retirement-journal
+              expected: "the removal is refused"
+            - verify: file-exists
+              target: project-state
+              expected: "the file outside the project is still there"
     # ===========================================================================
     # Suite 2 — Feature disposition preflight
     # ===========================================================================
@@ -1473,7 +1505,7 @@ suites:
         - name: a journal this operation wrote authenticates and resumes
           criterion:
             ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
-            text: "A journal this operation actually wrote authenticates and resumes."
+            text: "A journal this operation actually wrote authenticates and resumes, and the digest it records survives a completed step."
           exercises: [retirement-journal]
           observes: [retirement-journal, registration-state]
           steps:
@@ -1486,6 +1518,99 @@ suites:
             - verify: state
               target: registration-state
               expected: "the registration no longer names the root"
+        - name: a journal must name its archive by the manifest file's digest
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A journal recording no manifest digest, or a digest other than the one the archive's manifest file carries, is refused — a manifest rewritten consistently under a journal no longer matches it."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal recording no digest, and again with the manifest rewritten consistently beneath a genuine journal"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, the second naming the two digests that disagree"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: archived members are re-hashed against the manifest before the journal is acted on
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "The archived members are re-read and re-hashed against the manifest before the journal is acted on, so archived bytes that changed while the manifest did not are caught."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with an archived member's bytes altered and its manifest left untouched"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, stating the archive does not hold what its manifest describes"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: a manifest naming no members is not a root's archive
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A manifest naming no members is refused as not being a root's archive."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> against an archive whose manifest verifies and names nothing"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, since a root preserves at least its own configuration"
+        - name: a step claimed finished must have left its evidence
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A step the journal claims finished must have left its evidence: a finished record step requires a retirement record beside the archive naming the same root and the same path."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> with a journal claiming the record step finished while no record stands, and again with a record describing another retirement"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused as claimed progress the archive does not show"
+            - verify: state
+              target: project-state
+              expected: "nothing is deleted or deregistered"
+        - name: an archive must account for the contents it would replace
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "While the root's contents are still in place, the archive must already name every file they hold, so an archive that is not this root's cannot authorize deleting it."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-manifest, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <name> where the root's directory holds a file the archive's manifest does not name"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, naming what the archive fails to account for"
+            - verify: state
+              target: project-state
+              expected: "the root's directory is intact"
+        - name: a well-formed forgery cannot retire a live root
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "A well-formed forged archive and journal — consistent contents, a verifying manifest, a correct digest and a well-ordered step tail — cannot delete or deregister a live root."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, registration-state, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "retire-root <live-root> against a hand-built archive whose contents hash to its manifest, whose manifest covers its own list, whose record names the root, and whose journal records the true manifest digest and a valid step tail"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, because the archive does not account for the live root's contents"
+            - verify: state
+              target: registration-state
+              expected: "the live root is byte-identical and still registered"
     # ===========================================================================
     # Suite 9 — Retirement authorization, preview and unattended runs
     # ===========================================================================

@@ -275,6 +275,14 @@ func retirementStagingRel(rootName string) string {
 	return filepath.Join(retiredRootsRel(), ".staging-"+rootName)
 }
 
+func retirementJournalRel(rootName string) string {
+	return filepath.Join(retiredRootsRel(), rootName+journalFileSuffix)
+}
+
+func retirementRecordRel(rootName string) string {
+	return filepath.Join(retirementDestinationRel(rootName), retirementRecordFile)
+}
+
 // mutateUnderParent runs fn against a handle rooted at the project root.
 //
 // This is the answer to the gap a lexical containment check leaves open.
@@ -337,12 +345,27 @@ type retirementRecord struct {
 	Features         []Disposition `yaml:"feature-dispositions"`
 }
 
-func writeRetirementRecord(destination string, record *retirementRecord) error {
+// retirementRecordFile is the record's name inside the destination.
+const retirementRecordFile = "retirement-record.yaml"
+
+// writeRetirementRecord writes the record through a handle rooted at the
+// project, like every other step of the retirement that changes the
+// filesystem. Nothing about a write makes it safer than a delete here:
+// .parlay/retired, or the destination directory itself, can be replaced
+// with a link out of the project between one step and the next, and a
+// path-based write would then create a file somewhere the project does
+// not own.
+func writeRetirementRecord(parentPath, rootName string, record *retirementRecord) error {
+	if err := validateRootName(rootName); err != nil {
+		return fmt.Errorf("write retirement record: %w", err)
+	}
 	data, err := yaml.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal retirement record: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(destination, "retirement-record.yaml"), data, 0o644); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.WriteFile(retirementRecordRel(rootName), data, 0o644)
+	}); err != nil {
 		return fmt.Errorf("write retirement record: %w", err)
 	}
 	return nil
@@ -617,10 +640,19 @@ func executeRetirement(cmd *cobra.Command, parentPath string, idx *config.RootsI
 		return fmt.Errorf("promote archive to %s: %w", dest, err)
 	}
 
+	// The journal names the archive it belongs to. Computed from the
+	// promoted manifest, so the value recorded is the one a resumed run
+	// will re-derive from the same file.
+	digest, err := manifestDigest(filepath.Join(dest, "manifest.yaml"))
+	if err != nil {
+		_ = removeUnderParent(parentPath, destRel)
+		return err
+	}
 	journal := &RetirementJournal{
-		Root:         target.Name,
-		RelativePath: filepath.ToSlash(target.RelativePath),
-		Outstanding:  []string{journalStepWriteRecord, journalStepDeregisterRoot},
+		Root:           target.Name,
+		RelativePath:   filepath.ToSlash(target.RelativePath),
+		Outstanding:    []string{journalStepWriteRecord, journalStepDeregisterRoot},
+		ManifestDigest: digest,
 	}
 	if err := retirementEvent("write-journal"); err != nil {
 		// The journal is what makes the destination resumable; without

@@ -139,7 +139,18 @@ cross-cutting:
       so there is no interval to exploit. This covers the staging
       cleanup, the retired-roots directory removal, the promote rename,
       the destination rollback and the removal of the retired root's
-      directory. The archive copy itself writes into a staging directory
+      directory. It also covers every WRITE the run performs, which is
+      the same problem wearing different clothes: the retirement record
+      (writeRetirementRecord), the journal (WriteRetirementJournal), the
+      journal's removal, and the rewritten root registration all land in
+      locations a concurrent swap can redirect, and a path-based write
+      would then create the file outside the project while leaving the
+      real location without it — the half-retired state reached by
+      another route. For the registration this means config.SaveRootsIndex
+      itself writes through an os.Root handle opened on the parent, at
+      the fixed two-component relative path .parlay/roots.yaml, rather
+      than through the joined path; every caller benefits and none can
+      opt out. The archive copy itself writes into a staging directory
       the same run created, under an already-validated single-component
       name.
     introduces:
@@ -148,6 +159,9 @@ cross-cutting:
       - "resolveContainedChildDir(parentPath, relPath string) (string, error) — EvalSymlinks + strict-descendant containment of a registered path, fail-closed; called at resolution and again on every journal-driven removal"
       - "validateRootName(name string) error — closed slug shape for a registered root NAME, which is a path component of the staging directory, the archive destination and the journal file"
       - "mutateUnderParent / removeUnderParent — every destructive step performed through an os.Root handle rooted at the project, closing the interval between a containment judgment and the act it authorizes"
+      - "retirementJournalRel / retirementRecordRel — project-relative locations for the rooted writes, alongside the existing destination and staging forms"
+      - "writeRetirementRecord(parentPath, rootName string, record *retirementRecord) error — rooted record write, keyed by validated root name rather than by an absolute destination"
+      - "config.SaveRootsIndex writing through an os.Root handle on the parent at .parlay/roots.yaml (internal/config/roots_index.go)"
       - "checkRetirementDestination(parentPath, rootName string) error — destination-absence precondition"
     caching: none
     backward-compatible: true
@@ -538,6 +552,42 @@ cross-cutting:
       authentication failure refuse the whole run — including one aimed
       at a different root — rather than skipping the file on the way to
       a legitimate target.
+
+
+      SHAPE IS NOT PROVENANCE, and (e) above is weaker than it looks on
+      its own: ReadManifest verifies a self-covering hash over the
+      member list, which a list invented from nothing satisfies
+      perfectly. Three further checks make the archive evidence of THIS
+      root rather than evidence of something. (i) Re-hash the archived
+      members: verifyArchivedMembers reads every member the manifest
+      names out of <dest>/contents and requires the recorded hash —
+      extracted from verifyStagedArchive so the promote path and the
+      authentication path run the identical comparison — and refuse a
+      manifest naming NO members, since a root preserves at least its
+      own .parlay configuration and an empty verifying list is the
+      cheapest forgery available. (ii) Bind the journal to the archive:
+      RetirementJournal gains a manifest-digest field, the sha256 of the
+      manifest FILE's bytes (distinct from the manifest's own hash over
+      its list, which travels with the list and so is recomputed by
+      anyone who rewrites it), recorded when the journal is written and
+      required to equal the on-disk digest at authentication; a journal
+      with no digest, or a different one, is refused. (iii) Cross-check
+      claimed progress against the filesystem
+      (authenticateJournalProgress): the outstanding list asserts what
+      has already happened, so a step claimed finished must have left
+      its evidence — a finished write-record requires a
+      retirement-record.yaml beside the archive naming the same root and
+      relative path — and a step not yet taken must not yet have had its
+      effect: while deregister-root is outstanding the contents have not
+      been removed, so archiveCoversLiveContents requires the manifest
+      to already name every file the root's directory still holds.
+      (iii) is the layer that survives a determined forgery, because
+      someone who can write files can produce a consistent archive, hash
+      it and record that digest — but cannot account for a live root's
+      contents without having genuinely archived it. Coverage rather
+      than re-hashing the live tree is deliberate: the question is
+      provenance, not freshness, and hashing would refuse a resume
+      because someone opened a file.
     introduces:
       - "RemoveRootFromIndex(idx *config.RootsIndex, name string) (*config.RootsIndex, error) in internal/config/roots_index.go"
       - "RetirementJournal type + LoadRetirementJournal/WriteRetirementJournal — ordered outstanding-step record"
@@ -545,6 +595,11 @@ cross-cutting:
       - "authenticateJournal(parentPath, fileStem string, j *RetirementJournal) error — filename/root binding, slug and containment checks, and the verified-archive requirement that stops a hand-written journal from retiring a live root"
       - "validateJournalSteps(where string, outstanding []string) error — the outstanding list must be a non-empty suffix of the canonical step order"
       - "journalStepOrder — the canonical step order the outstanding list is checked against"
+      - "RetirementJournal.ManifestDigest — the manifest file's digest, recorded at journal creation, binding one journal to one archive"
+      - "verifyArchivedMembers(contentsDir string, members []ManifestMember) error — the member re-hashing shared by archive promotion and journal authentication"
+      - "manifestDigest(manifestPath string) (string, error) — hash of the manifest FILE, distinct from its self-covering member-list hash"
+      - "archiveCoversLiveContents(childDir string, members []ManifestMember) error — the archive must already name every file the live root still holds"
+      - "authenticateJournalProgress(...) error — claimed progress cross-checked against the evidence on disk"
       - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
     caching: none
     backward-compatible: true

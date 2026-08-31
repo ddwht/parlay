@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ddwht/parlay/core/internal/config"
 )
 
@@ -652,4 +654,273 @@ func TestJournal_AGenuineJournalStillAuthenticatesAndResumes(t *testing.T) {
 		t.Fatalf("a journal this operation actually wrote must authenticate and resume: %v", err)
 	}
 	assertRetirementComplete(t, parent, "old")
+}
+
+// --- Suite 8 (continued): provenance, not just plausibility ------------
+//
+// Shape checks establish that a journal is well formed. They do not
+// establish that it and the archive beside it came from a run that
+// actually archived this root — and a manifest's self-covering hash
+// proves only that its own member list is internally consistent, which
+// a list invented from nothing satisfies perfectly. These cases pin the
+// three layers that turn plausibility into provenance: the archived
+// bytes are re-hashed, the journal names its archive by digest, and the
+// progress the journal claims is cross-checked against the filesystem.
+
+// forgedArchive builds a destination that passes every shape check:
+// contents that exist, a manifest whose members hash correctly and
+// whose self-covering hash verifies, and a retirement record naming the
+// root. It returns the digest of the manifest it wrote, so a forged
+// journal can name it correctly too.
+func forgedArchive(t *testing.T, parent, rootName, relPath string, members map[string]string) string {
+	t.Helper()
+	dest := retirementDestination(parent, rootName)
+	contents := filepath.Join(dest, "contents")
+	if err := os.MkdirAll(contents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := &ArchiveManifest{}
+	for rel, body := range members {
+		path := filepath.Join(contents, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		manifest.Members = append(manifest.Members, ManifestMember{Path: rel, SHA256: hashBytes([]byte(body))})
+	}
+	manifestPath := filepath.Join(dest, "manifest.yaml")
+	if err := WriteManifest(manifest, manifestPath); err != nil {
+		t.Fatal(err)
+	}
+	// The record a journal claiming a finished write-record step needs.
+	record := &retirementRecord{
+		Root:         rootName,
+		RelativePath: relPath,
+		RetiredAt:    "2026-01-01T00:00:00Z",
+		Archive:      "contents/",
+		Manifest:     "manifest.yaml",
+		Dispositions: "dispositions.yaml",
+	}
+	data, err := yaml.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, retirementRecordFile), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := manifestDigest(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+// TestJournal_AWellFormedForgeryCannotRetireALiveRoot is the decisive
+// case. Nothing here is malformed: the archive's contents exist and
+// hash to what its manifest says, the manifest covers its own member
+// list, a retirement record sits beside it naming the same root, and
+// the journal is a slug-valid, correctly-filed, correctly-ordered tail
+// that names the manifest by its true digest. Every shape check passes.
+//
+// What the forgery cannot do — without genuinely archiving the root,
+// which is the thing a retirement is — is account for the files the
+// live root still holds. The retirement is about to delete those files
+// in favour of this copy, so the copy has to be a copy of them.
+func TestJournal_AWellFormedForgeryCannotRetireALiveRoot(t *testing.T) {
+	parent, _ := archiveFixture(t)
+	lib := addRetirementChild(t, parent, "lib", "lib", "helper")
+	if err := os.WriteFile(filepath.Join(lib.Path, "important.go"), []byte("package lib\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	interactiveTTY(t)
+
+	// A complete, self-consistent archive — of something that is not lib.
+	digest := forgedArchive(t, parent, "lib", "lib", map[string]string{
+		"README.md": "plausible\n",
+	})
+	writeJournalRaw(t, parent, "lib"+journalFileSuffix,
+		"root: lib\nrelative-path: lib\noutstanding:\n    - deregister-root\nmanifest-digest: "+digest+"\n")
+
+	before := treeSnapshot(t, lib.Path)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"lib"})
+	if err == nil {
+		t.Fatal("a well-formed forged archive and journal must not be able to delete and deregister a live root")
+	}
+	if !strings.Contains(err.Error(), "does not name") {
+		t.Errorf("the refusal must name what the archive fails to account for; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, lib.Path))
+	if !rootRegistered(t, parent, "lib") {
+		t.Error("the live root must still be registered")
+	}
+}
+
+func TestJournal_AnEmptyManifestIsNotAnArchive(t *testing.T) {
+	// The cheapest forgery of all: a self-covering hash over an empty
+	// member list verifies perfectly, and describes nothing.
+	parent, _ := archiveFixture(t)
+	lib := addRetirementChild(t, parent, "lib", "lib", "helper")
+	interactiveTTY(t)
+
+	digest := forgedArchive(t, parent, "lib", "lib", nil)
+	writeJournalRaw(t, parent, "lib"+journalFileSuffix,
+		"root: lib\nrelative-path: lib\noutstanding:\n    - deregister-root\nmanifest-digest: "+digest+"\n")
+
+	before := treeSnapshot(t, lib.Path)
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"lib"})
+	if err == nil || !strings.Contains(err.Error(), "names no members") {
+		t.Fatalf("a manifest naming nothing must be refused as not being that root's archive; got: %v", err)
+	}
+	assertTreeUnchanged(t, before, treeSnapshot(t, lib.Path))
+	if !rootRegistered(t, parent, "lib") {
+		t.Error("the live root must still be registered")
+	}
+}
+
+func TestJournal_ProvenanceLayersEachRefuseOnTheirOwn(t *testing.T) {
+	// Each layer, exercised from a genuine part-finished retirement so
+	// the tamper is the only thing wrong.
+	cases := []struct {
+		name   string
+		tamper func(t *testing.T, parent string)
+		want   string
+	}{
+		{
+			name: "journal-records-no-manifest-digest",
+			tamper: func(t *testing.T, parent string) {
+				writeJournalRaw(t, parent, "old"+journalFileSuffix,
+					"root: old\nrelative-path: old\noutstanding:\n    - write-record\n    - deregister-root\n")
+			},
+			want: "records no manifest digest",
+		},
+		{
+			name: "manifest-rewritten-consistently-under-the-journal",
+			tamper: func(t *testing.T, parent string) {
+				// Self-consistent, and not the manifest the journal was
+				// written beside: the member list re-covers itself.
+				dest := retirementDestination(parent, "old")
+				m, err := ReadManifest(filepath.Join(dest, "manifest.yaml"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				m.Members = m.Members[:len(m.Members)-1]
+				if err := WriteManifest(m, filepath.Join(dest, "manifest.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "not from the same run",
+		},
+		{
+			name: "archived-bytes-do-not-match-the-manifest",
+			tamper: func(t *testing.T, parent string) {
+				// The manifest is untouched, so its digest still matches
+				// the journal; only the archived file changed. Nothing
+				// but re-hashing the members catches this.
+				corrupt := filepath.Join(retirementDestination(parent, "old"), "contents", "internal", "alpha.go")
+				if err := os.WriteFile(corrupt, []byte("package tampered\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "does not hold what its manifest describes",
+		},
+		{
+			name: "claims-the-record-step-finished-with-no-record",
+			tamper: func(t *testing.T, parent string) {
+				j, err := LoadRetirementJournal(parent, "old")
+				if err != nil {
+					t.Fatal(err)
+				}
+				j.Outstanding = []string{journalStepDeregisterRoot}
+				if err := WriteRetirementJournal(parent, j); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "claims progress the archive does not show",
+		},
+		{
+			name: "record-beside-the-archive-describes-another-retirement",
+			tamper: func(t *testing.T, parent string) {
+				j, err := LoadRetirementJournal(parent, "old")
+				if err != nil {
+					t.Fatal(err)
+				}
+				j.Outstanding = []string{journalStepDeregisterRoot}
+				if err := WriteRetirementJournal(parent, j); err != nil {
+					t.Fatal(err)
+				}
+				dest := retirementDestination(parent, "old")
+				data, err := yaml.Marshal(&retirementRecord{Root: "old", RelativePath: "somewhere-else"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dest, retirementRecordFile), data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "describe different retirements",
+		},
+		{
+			name: "archive-does-not-account-for-the-contents-it-would-replace",
+			tamper: func(t *testing.T, parent string) {
+				// A file appears in the root after the archive was made.
+				// The retirement would delete it in favour of a copy
+				// that never held it.
+				if err := os.WriteFile(filepath.Join(parent, "old", "unarchived.go"),
+					[]byte("package old\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "does not name",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := interruptedRetirement(t)
+			tc.tamper(t, parent)
+			cmd, _ := retireCmd(t, parent, "y\n")
+			assertNothingResumed(t, parent, runRetireRoot(cmd, []string{"old"}), tc.want)
+		})
+	}
+}
+
+func TestJournal_AGenuineJournalCarriesItsManifestDigest(t *testing.T) {
+	parent := interruptedRetirement(t)
+	j, err := LoadRetirementJournal(parent, "old")
+	if err != nil || j == nil {
+		t.Fatalf("the genuine journal must authenticate: %v", err)
+	}
+	if j.ManifestDigest == "" {
+		t.Fatal("every journal this operation writes must name the archive it belongs to")
+	}
+	want, err := manifestDigest(filepath.Join(retirementDestination(parent, "old"), "manifest.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.ManifestDigest != want {
+		t.Errorf("the recorded digest must be the one a resumed run re-derives: got %s, want %s", j.ManifestDigest, want)
+	}
+	// And the digest survives a completed step, so a journal shrunk
+	// mid-run still names its archive. The step is completed the way the
+	// run completes it — record first, then shrink — because the
+	// progress cross-check requires exactly that correspondence.
+	if err := writeRetirementRecord(parent, "old", &retirementRecord{
+		Root: "old", RelativePath: "old", Archive: "contents/", Manifest: "manifest.yaml",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := completeJournalStep(parent, j); err != nil {
+		t.Fatal(err)
+	}
+	shrunk, err := LoadRetirementJournal(parent, "old")
+	if err != nil {
+		t.Fatalf("the shrunk journal must still authenticate: %v", err)
+	}
+	if shrunk.ManifestDigest != want {
+		t.Error("the digest must survive a completed step")
+	}
 }

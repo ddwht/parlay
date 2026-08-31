@@ -863,3 +863,144 @@ func TestRetireRoot_RootedDeletionRefusesAPathLeavingTheProject(t *testing.T) {
 		t.Errorf("the content outside the project must survive: %v", err)
 	}
 }
+
+// --- Suite 1 (continued): every destructive step, not only the delete ---
+//
+// A write is not safer than a delete here. .parlay/retired, the
+// destination directory and .parlay itself can each be replaced with a
+// link out of the project between one step of a retirement and the
+// next, and a path-based write would then put the record, the journal
+// or the rewritten registration somewhere the project does not own —
+// leaving the real location without it, which is the half-retired state
+// the ordering exists to prevent. So these go through the rooted handle
+// too, and this family proves it at each one.
+
+// swapForOutwardSymlink replaces dir with a symlink to a location
+// outside the project, standing in for a concurrent attacker.
+func swapForOutwardSymlink(t *testing.T, dir, outside string) {
+	t.Helper()
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// outsideDecoy is a directory outside the project, pre-shaped so that a
+// path-based write redirected into it would succeed — the test then
+// proves the write did not happen rather than that it merely failed for
+// want of a parent directory.
+func outsideDecoy(t *testing.T, subdirs ...string) string {
+	t.Helper()
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sub := range subdirs {
+		if err := os.MkdirAll(filepath.Join(outside, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return outside
+}
+
+func TestRetireRoot_SwapDuringDestructiveWritesCannotLandOutsideTheProject(t *testing.T) {
+	cases := []struct {
+		name string
+		// boundary is the hook event fired immediately before the write
+		// under test.
+		boundary string
+		// swapped is the directory replaced with an outward link.
+		swapped func(parent string) string
+		// subdirs shapes the decoy so a redirected write would land.
+		subdirs []string
+		// escaped is the path, relative to the outside directory, that a
+		// redirected write would have created.
+		escaped string
+	}{
+		{
+			name:     "retirement-record",
+			boundary: "write-record",
+			swapped:  func(parent string) string { return retiredRootsDir(parent) },
+			subdirs:  []string{"old"},
+			escaped:  filepath.Join("old", retirementRecordFile),
+		},
+		{
+			name:     "journal",
+			boundary: "write-journal",
+			swapped:  func(parent string) string { return retiredRootsDir(parent) },
+			escaped:  "old" + journalFileSuffix,
+		},
+		{
+			name:     "roots-index",
+			boundary: "deregister-index",
+			swapped:  func(parent string) string { return filepath.Join(parent, config.ParlayDir) },
+			escaped:  config.RootsIndexFile,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent, _ := archiveFixture(t)
+			retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+			interactiveTTY(t)
+			outside := outsideDecoy(t, tc.subdirs...)
+
+			// The seam fires immediately before the write under test —
+			// the same interval a check-then-write sequence leaves open.
+			retirementHook = func(event string) error {
+				if event == tc.boundary {
+					swapForOutwardSymlink(t, tc.swapped(parent), outside)
+				}
+				return nil
+			}
+
+			cmd, _ := retireCmd(t, parent, "y\n")
+			if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+				t.Fatalf("a %s write whose location was swapped for a route out of the project must fail, not follow it", tc.name)
+			}
+			if _, err := os.Stat(filepath.Join(outside, tc.escaped)); err == nil {
+				t.Errorf("the %s must not be written outside the project at %s", tc.name, filepath.Join(outside, tc.escaped))
+			}
+			entries, err := os.ReadDir(outside)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				if e.Name() != "old" {
+					t.Errorf("nothing may be created outside the project; found %s", e.Name())
+				}
+			}
+		})
+	}
+}
+
+func TestRetireRoot_JournalRemovalCannotBeRedirectedOutOfTheProject(t *testing.T) {
+	// The last step of the run, and the only one whose failure is
+	// recoverable by re-running — which is no reason for it to be able
+	// to delete a file outside the project.
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	outside := outsideDecoy(t)
+	victim := filepath.Join(outside, "old"+journalFileSuffix)
+	if err := os.WriteFile(victim, []byte("not the project's\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	retirementHook = func(event string) error {
+		if event == "remove-journal" {
+			swapForOutwardSymlink(t, retiredRootsDir(parent), outside)
+		}
+		return nil
+	}
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	if err := runRetireRoot(cmd, []string{"old"}); err == nil {
+		t.Fatal("a journal removal whose location was swapped for a route out of the project must fail")
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("a file outside the project must not be deleted by the journal removal: %v", err)
+	}
+}

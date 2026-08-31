@@ -77,6 +77,17 @@ type RetirementJournal struct {
 	// Outstanding lists the steps not yet completed, in execution order.
 	// Closed vocabulary: write-record, deregister-root.
 	Outstanding []string `yaml:"outstanding"`
+	// ManifestDigest is the hash of the archive manifest FILE as it
+	// stood when this journal was written. It binds the journal to one
+	// specific archive.
+	//
+	// Without it the two artifacts only have to be individually
+	// plausible: a manifest verifies its own member list, and a journal
+	// verifies its own shape, and nothing says they came from the same
+	// run. Recording the digest here means a manifest that has been
+	// rewritten — however consistently — no longer matches the journal
+	// that authorizes acting on it.
+	ManifestDigest string `yaml:"manifest-digest"`
 }
 
 // retiredRootsDir is the parent-level directory holding every retired
@@ -162,9 +173,100 @@ func authenticateJournal(parentPath, fileStem string, j *RetirementJournal) erro
 		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but no archive stands at %s — a journal is written only after the archive is complete, so one without an archive records a state this operation never produces and is refused rather than resumed",
 			where, j.Root, dest)
 	}
-	if _, err := ReadManifest(filepath.Join(dest, "manifest.yaml")); err != nil {
+	manifestPath := filepath.Join(dest, "manifest.yaml")
+	manifest, err := ReadManifest(manifestPath)
+	if err != nil {
 		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but the archive at %s has no manifest that reads back and verifies (%v) — the run this journal would resume deletes the root's directory, and it does that only against a preserved copy that can be shown to be whole",
 			where, j.Root, dest, err)
+	}
+	// A manifest naming nothing is not an archive of a root. Every root
+	// carries at least its own .parlay configuration, so an empty member
+	// list describes a state this operation cannot produce — and it is
+	// the cheapest possible forgery, since a self-covering hash over an
+	// empty list verifies perfectly.
+	if len(manifest.Members) == 0 {
+		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but the manifest at %s names no members — a root preserves at least its own configuration, so a manifest naming nothing is not that root's archive",
+			where, j.Root, manifestPath)
+	}
+	// The journal names the archive it belongs to, by the digest of the
+	// manifest file as it stood when the journal was written. This is
+	// what makes the two artifacts one record instead of two plausible
+	// ones: a rewritten manifest re-covers its own member list, and only
+	// a value recorded somewhere else notices.
+	if strings.TrimSpace(j.ManifestDigest) == "" {
+		return fmt.Errorf("retirement journal %s records no manifest digest — every journal this operation writes names the archive it belongs to, and one that names none cannot be shown to belong to the archive at %s",
+			where, dest)
+	}
+	digest, err := manifestDigest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("retirement journal %s: %w", where, err)
+	}
+	if digest != j.ManifestDigest {
+		return fmt.Errorf("retirement journal %s records manifest digest %s but the manifest at %s digests to %s — the journal and the archive are not from the same run, and a journal is authority to delete only over the archive it was written beside",
+			where, j.ManifestDigest, manifestPath, digest)
+	}
+	// The manifest describes files; establish that those files are
+	// there and hash to what it says, rather than trusting a list that
+	// verifies only against itself.
+	if err := verifyArchivedMembers(filepath.Join(dest, "contents"), manifest.Members); err != nil {
+		return fmt.Errorf("retirement journal %s claims a part-finished retirement of %q, but its archive does not hold what its manifest describes: %w",
+			where, j.Root, err)
+	}
+	return authenticateJournalProgress(parentPath, where, j, dest, manifest)
+}
+
+// authenticateJournalProgress cross-checks what the journal says has
+// already happened against what the filesystem shows.
+//
+// The outstanding list is a claim about progress: every step NOT in it
+// is a step the journal asserts is finished. Each finished step left
+// something behind, and each unfinished one has not yet removed
+// something — so the two can be compared, and a journal whose claimed
+// progress contradicts the state it sits in was not written by the run
+// it describes.
+//
+// This is the layer that survives a well-formed forgery. An attacker
+// can write a manifest, hash it, record that digest in a journal and
+// make every earlier check pass; what they cannot do without actually
+// archiving the root is produce an archive that already accounts for
+// every file still standing in it.
+func authenticateJournalProgress(parentPath, where string, j *RetirementJournal, dest string, manifest *ArchiveManifest) error {
+	outstanding := map[string]bool{}
+	for _, step := range j.Outstanding {
+		outstanding[step] = true
+	}
+
+	// write-record claimed finished: the record it writes must be there,
+	// and must name this same retirement.
+	if !outstanding[journalStepWriteRecord] {
+		recordPath := filepath.Join(dest, retirementRecordFile)
+		data, err := os.ReadFile(recordPath)
+		if err != nil {
+			return fmt.Errorf("retirement journal %s says the record step is finished, but no record stands at %s (%v) — a journal that claims progress the archive does not show was not written by the run it describes",
+				where, recordPath, err)
+		}
+		var record retirementRecord
+		if err := yaml.Unmarshal(data, &record); err != nil {
+			return fmt.Errorf("retirement journal %s says the record step is finished, but the record at %s does not parse: %v", where, recordPath, err)
+		}
+		if record.Root != j.Root || filepath.ToSlash(filepath.Clean(record.RelativePath)) != filepath.ToSlash(filepath.Clean(j.RelativePath)) {
+			return fmt.Errorf("retirement journal %s records %q at %q, but the retirement record beside its archive records %q at %q — the journal and the record describe different retirements",
+				where, j.Root, j.RelativePath, record.Root, record.RelativePath)
+		}
+	}
+
+	// deregister-root still outstanding: the contents have not been
+	// removed yet, so whatever is still there must already be in the
+	// archive. This is the one check a forger cannot satisfy without
+	// having genuinely archived the root.
+	if outstanding[journalStepDeregisterRoot] {
+		childDir := filepath.Join(parentPath, filepath.FromSlash(j.RelativePath))
+		if _, err := os.Lstat(childDir); err == nil {
+			if err := archiveCoversLiveContents(childDir, manifest.Members); err != nil {
+				return fmt.Errorf("retirement journal %s would remove %s on the authority of the archive at %s, but %w",
+					where, childDir, dest, err)
+			}
+		}
 	}
 	return nil
 }
@@ -302,14 +404,24 @@ func FindRetirementJournal(parentPath, name string) (*RetirementJournal, error) 
 	return nil, nil
 }
 
-// WriteRetirementJournal persists the journal for the named root.
+// WriteRetirementJournal persists the journal for the named root,
+// through a handle rooted at the project. The journal is the record a
+// later run acts on destructively, so where it lands matters as much as
+// what it says: a path-based write would follow a .parlay/retired
+// replaced with a link out of the project, and leave the real location
+// with no journal at all — the half-retired state the whole ordering
+// exists to prevent.
 func WriteRetirementJournal(parentPath string, j *RetirementJournal) error {
+	if err := validateRootName(j.Root); err != nil {
+		return fmt.Errorf("write retirement journal: %w", err)
+	}
 	data, err := yaml.Marshal(j)
 	if err != nil {
 		return fmt.Errorf("marshal retirement journal: %w", err)
 	}
-	path := retirementJournalPath(parentPath, j.Root)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+		return root.WriteFile(retirementJournalRel(j.Root), data, 0o644)
+	}); err != nil {
 		return fmt.Errorf("write retirement journal: %w", err)
 	}
 	return nil
@@ -362,7 +474,7 @@ func executeJournal(parentPath string, idx *config.RootsIndex, j *RetirementJour
 			if err := retirementEvent("write-record"); err != nil {
 				return err
 			}
-			if err := writeRetirementRecord(retirementDestination(parentPath, j.Root), record); err != nil {
+			if err := writeRetirementRecord(parentPath, j.Root, record); err != nil {
 				return err
 			}
 			if err := completeJournalStep(parentPath, j); err != nil {
@@ -408,7 +520,9 @@ func executeJournal(parentPath string, idx *config.RootsIndex, j *RetirementJour
 			if err := retirementEvent("remove-journal"); err != nil {
 				return err
 			}
-			if err := os.Remove(retirementJournalPath(parentPath, j.Root)); err != nil && !os.IsNotExist(err) {
+			if err := mutateUnderParent(parentPath, func(root *os.Root) error {
+				return root.Remove(retirementJournalRel(j.Root))
+			}); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("remove retirement journal: %w", err)
 			}
 			j.Outstanding = nil

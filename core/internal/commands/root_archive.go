@@ -316,26 +316,122 @@ func verifyStagedArchive(contentsDir string, members []memberEntry) error {
 	if err := retirementEvent("verify-archive"); err != nil {
 		return err
 	}
+	listed := make([]ManifestMember, 0, len(members))
 	for _, m := range members {
-		staged := filepath.Join(contentsDir, filepath.FromSlash(m.RelPath))
+		listed = append(listed, ManifestMember{Path: m.RelPath, SHA256: m.SHA256})
+	}
+	return verifyArchivedMembers(contentsDir, listed)
+}
+
+// verifyArchivedMembers re-reads every member the manifest names from
+// the directory holding the archived copy and requires its bytes to
+// hash to the recorded value.
+//
+// It is used at two moments, for the same reason each time. Before an
+// archive is promoted, it establishes that the copy matches the
+// manifest written beside it. Before a resumed run acts on an archive
+// it did not make, it establishes the same thing again — because the
+// manifest's self-covering hash proves only that the LIST is internally
+// consistent, which a list invented from nothing satisfies perfectly.
+// Hashing the members is what makes the manifest a statement about
+// files rather than about itself.
+func verifyArchivedMembers(contentsDir string, members []ManifestMember) error {
+	for _, m := range members {
+		archived := filepath.Join(contentsDir, filepath.FromSlash(m.Path))
+		info, err := os.Lstat(archived)
+		if err != nil {
+			return fmt.Errorf("verify archived member %s: %w", m.Path, err)
+		}
 		var got string
-		if m.IsSymlink {
-			target, err := os.Readlink(staged)
+		if info.Mode()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(archived)
 			if err != nil {
-				return fmt.Errorf("verify archived symlink %s: %w", m.RelPath, err)
+				return fmt.Errorf("verify archived symlink %s: %w", m.Path, err)
 			}
 			got = hashBytes([]byte(target))
 		} else {
-			sum, err := archiveHashFile(staged)
+			sum, err := archiveHashFile(archived)
 			if err != nil {
-				return fmt.Errorf("verify archived member %s: %w", m.RelPath, err)
+				return fmt.Errorf("verify archived member %s: %w", m.Path, err)
 			}
 			got = sum
 		}
 		if got != m.SHA256 {
 			return fmt.Errorf("verify archived member %s: the preserved bytes hash to %s but the manifest records %s — the archive does not match what it claims to preserve, so nothing is retired",
-				m.RelPath, got, m.SHA256)
+				m.Path, got, m.SHA256)
 		}
+	}
+	return nil
+}
+
+// manifestDigest is the hash of the manifest FILE's bytes — distinct
+// from the manifest's own self-covering hash over its member list.
+//
+// The self-covering hash travels with the list, so rewriting the list
+// and recomputing the hash leaves a manifest that still verifies. This
+// digest is recorded somewhere else (in the journal, when the journal
+// is written), which is what lets a later run notice that the manifest
+// it is reading is not the manifest the run that wrote the journal
+// produced.
+func manifestDigest(manifestPath string) (string, error) {
+	sum, err := archiveHashFile(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("digest archive manifest %s: %w", manifestPath, err)
+	}
+	return "sha256:" + sum, nil
+}
+
+// archiveCoversLiveContents requires the archive to already name every
+// file still standing in the root's live directory.
+//
+// This is the check that makes an archive evidence of THIS root rather
+// than evidence of something. A resumed run whose remaining work
+// includes removing the contents has, by construction, not removed them
+// yet — so the copy it is about to delete them in favour of must be a
+// copy of exactly what is there. A manifest that is empty, or that
+// describes some other tree, fails immediately; and a manifest that
+// passes has to have been produced by walking this directory, which is
+// what a genuine archive is.
+//
+// Coverage rather than equality is deliberate: hashing the live tree
+// again would refuse a resume because someone opened a file, and the
+// question here is provenance, not freshness.
+func archiveCoversLiveContents(childDir string, members []ManifestMember) error {
+	covered := make(map[string]bool, len(members))
+	for _, m := range members {
+		covered[m.Path] = true
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(childDir)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", childDir, err)
+	}
+	var uncovered []string
+	walkErr := filepath.WalkDir(resolvedRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if d.IsDir() && d.Type()&fs.ModeSymlink == 0 {
+			return nil
+		}
+		rel, relErr := filepath.Rel(resolvedRoot, path)
+		if relErr != nil {
+			return relErr
+		}
+		if !covered[filepath.ToSlash(rel)] {
+			uncovered = append(uncovered, filepath.ToSlash(rel))
+			if len(uncovered) > 4 {
+				return fs.SkipAll
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return walkErr
+	}
+	if len(uncovered) > 0 {
+		sort.Strings(uncovered)
+		return fmt.Errorf("the archive does not name %s, which the root's directory still holds — a retirement removes the contents only in favour of a copy of exactly those contents, so an archive that does not cover them is not this root's archive",
+			strings.Join(uncovered, ", "))
 	}
 	return nil
 }
