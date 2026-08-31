@@ -1156,3 +1156,153 @@ func TestJournal_ResumePreviewCommitsToNothing(t *testing.T) {
 	}
 	assertTreeUnchanged(t, before, treeSnapshot(t, parent))
 }
+
+// --- The window between authorization and the delete -------------------
+//
+// Checking that the archive preserves the contents at ADMISSION
+// establishes that it was complete then. Between then and the removal
+// sits a confirmation prompt, which waits on a person — an unbounded
+// interval, during which an editor, a build or another terminal can
+// write into the directory about to be destroyed. Content that appears
+// in that window is in no archive, so the check runs again at the
+// destructive boundary itself, and these pin that it does.
+
+// mutateAtRemoval installs a hook that changes the retiring root at the
+// remove-contents boundary — after authorization, immediately before
+// the deletion — standing in for anything that writes while a person is
+// deciding.
+func mutateAtRemoval(t *testing.T, change func() error) {
+	t.Helper()
+	retirementHook = func(event string) error {
+		if event == "remove-contents" {
+			return change()
+		}
+		return nil
+	}
+}
+
+func TestRetireRoot_ContentChangedAfterAuthorizationIsNotDestroyed(t *testing.T) {
+	cases := []struct {
+		name string
+		// change is applied in the window; victim is the file whose
+		// survival proves nothing unpreserved was destroyed.
+		change func(t *testing.T, childDir string) func() error
+		victim string
+		want   string
+	}{
+		{
+			name: "a-file-edited-in-the-window",
+			change: func(t *testing.T, childDir string) func() error {
+				return func() error {
+					return os.WriteFile(filepath.Join(childDir, "internal", "alpha.go"),
+						[]byte("package alpha // saved while the prompt was waiting\n"), 0o644)
+				}
+			},
+			victim: filepath.Join("internal", "alpha.go"),
+			want:   "holds different bytes from the archived copy",
+		},
+		{
+			name: "a-file-created-in-the-window",
+			change: func(t *testing.T, childDir string) func() error {
+				return func() error {
+					return os.WriteFile(filepath.Join(childDir, "internal", "late.go"),
+						[]byte("package alpha // written while the prompt was waiting\n"), 0o644)
+				}
+			},
+			victim: filepath.Join("internal", "late.go"),
+			want:   "not named by the archive at all",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent, child := archiveFixture(t)
+			retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+			interactiveTTY(t)
+			mutateAtRemoval(t, tc.change(t, child.Path))
+
+			cmd, _ := retireCmd(t, parent, "y\n")
+			err := runRetireRoot(cmd, []string{"old"})
+			if err == nil {
+				t.Fatal("content that appeared after the archive was taken must not be destroyed by the run that did not preserve it")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the refusal must say why the content is not preserved (want %q); got: %v", tc.want, err)
+			}
+			if !strings.Contains(err.Error(), "run the retirement again") {
+				t.Errorf("the refusal must point at the remedy for a stale archive; got: %v", err)
+			}
+			// Nothing removed: the directory and the file are both there.
+			if _, statErr := os.Stat(filepath.Join(child.Path, tc.victim)); statErr != nil {
+				t.Errorf("the unpreserved file must survive: %v", statErr)
+			}
+			if !childDirPresent(parent) {
+				t.Error("the root's directory must not have been removed")
+			}
+			if !rootRegistered(t, parent, "old") {
+				t.Error("the root must still be registered")
+			}
+		})
+	}
+}
+
+func TestJournal_ResumedRunAlsoRechecksAtTheDestructiveBoundary(t *testing.T) {
+	// The window exists on the resume path too — its confirmation prompt
+	// waits on a person exactly as a fresh run's does, and its archive is
+	// older still.
+	parent := interruptedRetirement(t)
+	mutateAtRemoval(t, func() error {
+		return os.WriteFile(filepath.Join(parent, "old", "internal", "late.go"),
+			[]byte("package alpha // written while the resume prompt was waiting\n"), 0o644)
+	})
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("a resumed run must re-check preservation at the removal, not only when its journal was admitted")
+	}
+	if !strings.Contains(err.Error(), "not named by the archive at all") {
+		t.Errorf("the refusal must name the unpreserved file; got: %v", err)
+	}
+	if !childDirPresent(parent) {
+		t.Error("nothing may be removed when the check refuses")
+	}
+	if !rootRegistered(t, parent, "old") {
+		t.Error("the root must still be registered")
+	}
+}
+
+func TestJournal_ArchiveTamperedInTheWindowAlsoRefuses(t *testing.T) {
+	// The archived half of the comparison can move in the same window,
+	// and half a chain proves nothing — so both halves are re-run.
+	parent, _ := archiveFixture(t)
+	retireRootDispositions = writeDispositionsFile(t, deliveredDispositions("alpha"))
+	interactiveTTY(t)
+	mutateAtRemoval(t, func() error {
+		return os.WriteFile(
+			filepath.Join(retirementDestination(parent, "old"), "contents", "internal", "alpha.go"),
+			[]byte("package tampered\n"), 0o644)
+	})
+
+	cmd, _ := retireCmd(t, parent, "y\n")
+	err := runRetireRoot(cmd, []string{"old"})
+	if err == nil {
+		t.Fatal("an archive altered between authorization and the removal must abort the removal")
+	}
+	if !strings.Contains(err.Error(), "does not match what it claims to preserve") {
+		t.Errorf("the refusal must say the archive no longer matches its manifest; got: %v", err)
+	}
+	if !childDirPresent(parent) {
+		t.Error("nothing may be removed when the archive no longer verifies")
+	}
+}
+
+func TestRetireRoot_AnUnchangedRootStillCompletesThroughTheBoundaryCheck(t *testing.T) {
+	// The re-check is a gate, not a wall: a run nobody disturbed passes
+	// it and completes.
+	parent, _ := archiveFixture(t)
+	if err := runAuthorizedRetirement(t, parent); err != nil {
+		t.Fatalf("an undisturbed retirement must still complete: %v", err)
+	}
+	assertRetirementComplete(t, parent, "old")
+}

@@ -487,6 +487,39 @@ func completeJournalStep(parentPath string, j *RetirementJournal) error {
 	return WriteRetirementJournal(parentPath, j)
 }
 
+// assertContentsPreserved re-establishes live == manifest == archived
+// at the destructive boundary itself.
+//
+// Every other check in this operation is an admission check: it decides
+// whether a run may proceed. This one decides whether THIS DELETION may
+// happen, and it is deliberately the last thing between the decision and
+// the act. The distinction is not academic — between admitting a run and
+// removing its contents sits a confirmation prompt, which waits on a
+// human, which is an unbounded interval in which the directory can
+// change.
+//
+// It runs on every path that reaches the removal, fresh run and resume
+// alike, because the window exists on both: a fresh run authenticates
+// nothing but still asks for confirmation after its archive was taken.
+//
+// Both halves are re-run. The archived side may have been altered in the
+// same window as the live side, and half a chain proves nothing.
+func assertContentsPreserved(parentPath, rootName, childDir string) error {
+	dest := retirementDestination(parentPath, rootName)
+	manifest, err := ReadManifest(filepath.Join(dest, "manifest.yaml"))
+	if err != nil {
+		return fmt.Errorf("refusing to remove %s: its archive's manifest at %s no longer reads back and verifies (%w) — nothing is destroyed on the authority of an archive that cannot be shown to be whole",
+			childDir, dest, err)
+	}
+	if err := verifyArchivedMembers(filepath.Join(dest, "contents"), manifest.Members); err != nil {
+		return fmt.Errorf("refusing to remove %s: %w", childDir, err)
+	}
+	if err := archivePreservesLiveContents(childDir, manifest.Members); err != nil {
+		return fmt.Errorf("refusing to remove %s: %w", childDir, err)
+	}
+	return nil
+}
+
 // executeJournal runs the outstanding steps of a retirement, in order.
 // Completed steps are never repeated — their preconditions were
 // consumed (the destination exists, the contents have moved) — which is
@@ -519,6 +552,22 @@ func executeJournal(parentPath string, idx *config.RootsIndex, j *RetirementJour
 			}
 			if _, err := os.Lstat(childDir); err == nil {
 				if err := retirementEvent("remove-contents"); err != nil {
+					return err
+				}
+				// The preservation check runs HERE, immediately before
+				// the removal, and not only when the journal was
+				// admitted.
+				//
+				// Admission happens before the operator is asked to
+				// confirm, and a person takes as long as a person takes.
+				// A file written or edited in that interval — by an
+				// editor left open, a build, another terminal — was
+				// never in the archive, and destroying it would break
+				// the one promise this operation makes. Checking at
+				// admission establishes that the archive WAS complete;
+				// checking here establishes that it IS complete, at the
+				// only moment that decides anything.
+				if err := assertContentsPreserved(parentPath, j.Root, childDir); err != nil {
 					return err
 				}
 				// Through a handle rooted at the project, not through

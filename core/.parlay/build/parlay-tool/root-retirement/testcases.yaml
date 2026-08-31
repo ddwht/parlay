@@ -1678,6 +1678,54 @@ suites:
             - verify: state
               target: project-state
               expected: "nothing is deleted or deregistered, and a preview leaves the project byte-identical"
+        - name: the preservation comparison runs again at the removal itself
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "That comparison is performed again immediately before the removal itself, on every path that reaches it, and not only when the run was admitted — a file written or edited while the confirmation was waiting is content no archive holds."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, mutation-order, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a fresh run and a resumed run, each reaching the removal step"
+            - verify: state
+              target: mutation-order
+              expected: "the full live-against-manifest and archived-against-manifest comparison runs immediately before the removal on both paths"
+            - verify: state
+              target: project-state
+              expected: "the removal proceeds only when it passes"
+        - name: content appearing between authorization and the removal refuses the run
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "Content that appears or changes between authorization and the removal refuses the run, naming the file and the stale-archive remedy, and nothing is removed or deregistered."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement in which a file is edited, and one in which a file is created, in the window between the confirmation and the removal"
+            - verify: error
+              target: retirement-journal
+              expected: "each is refused, naming the file and saying to run the retirement again from what is there"
+            - verify: file-exists
+              target: project-state
+              expected: "the unpreserved file is intact, the root's directory is still in place and the root is still registered"
+        - name: an archive altered in that same window aborts the removal
+          criterion:
+            ref: "@parlay-tool/root-retirement/infrastructure:mutation-order-rollback-resumable-journal"
+            text: "The archived half is re-verified at that same boundary, so an archive altered while the confirmation was waiting aborts the removal too."
+          exercises: [retirement-journal]
+          observes: [retirement-journal, archive-contents, project-state]
+          steps:
+            - action: render
+              target: retirement-journal
+              value: "a retirement whose archived copy is altered in the window between the confirmation and the removal"
+            - verify: error
+              target: retirement-journal
+              expected: "refused, saying the archive no longer matches what it claims to preserve"
+            - verify: state
+              target: project-state
+              expected: "the root's directory is still in place"
     # ===========================================================================
     # Suite 9 — Retirement authorization, preview and unattended runs
     # ===========================================================================

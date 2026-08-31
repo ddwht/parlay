@@ -605,6 +605,25 @@ cross-cutting:
       archive, not a case to engineer around.
 
 
+      RUN THAT COMPARISON AT THE DESTRUCTIVE BOUNDARY, not only at
+      admission. Admission decides whether a run may proceed and happens
+      BEFORE the operator is asked to confirm; the prompt then waits on
+      a human, which is an unbounded interval in which an open editor, a
+      build or another terminal can write into the contents about to be
+      destroyed. Anything appearing then is in no archive. So
+      assertContentsPreserved re-reads the manifest and re-runs BOTH
+      halves — verifyArchivedMembers over <dest>/contents and
+      archivePreservesLiveContents over the live directory, including
+      its no-unnamed-paths refusal — inside the deregister-root step,
+      after the remove-contents event fires and immediately before
+      removeUnderParent, on every path that reaches the removal (fresh
+      run and resume alike; the fresh path has the same prompt-shaped
+      window). Both halves, because the archived side can move in the
+      same window as the live side and half a chain proves nothing. A
+      refusal there aborts with the stale-archive guidance and removes
+      nothing.
+
+
       AUTHORIZATION, which is not the journal's to give. resumeRetirement
       passes the same gate a fresh execution does: unattended
       (--non-interactive or no TTY) it refuses WITHOUT asking, and
@@ -625,6 +644,7 @@ cross-cutting:
       - "verifyArchivedMembers(contentsDir string, members []ManifestMember) error — the member re-hashing shared by archive promotion and journal authentication"
       - "manifestDigest(manifestPath string) (string, error) — hash of the manifest FILE, distinct from its self-covering member-list hash"
       - "archivePreservesLiveContents(childDir string, members []ManifestMember) error — every live file must HASH-EQUAL its archived member, so a deletion proceeds only over bytes provably present in the preserved copy"
+      - "assertContentsPreserved(parentPath, rootName, childDir string) error — the same comparison re-run inside the deregister-root step immediately before the removal, closing the window the confirmation prompt opens"
       - "authenticateJournalProgress(...) error — claimed progress cross-checked against the evidence on disk"
       - "resume path in runRetireRoot: journal-first detection, completed-step skip, idempotent terminal step, same-root re-entry refusal"
     caching: none
