@@ -424,8 +424,39 @@ func TestBaseline_LegacyDesignSpecFieldsDecodeSafely(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read baseline: %v", err)
 	}
-	legacy := string(data) + "design-spec-fragments:\n  hero: abc123\ndesign-spec-shared: def456\n"
-	if err := os.WriteFile(blPath, []byte(legacy), 0o644); err != nil {
+	// The retired fields were members of HashedSources, serialized UNDER
+	// sources: — the legacy wire shape. Splice them there, not at the top
+	// level, via a generic-map round-trip so the nesting is exact
+	// regardless of indent conventions.
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("decode baseline: %v", err)
+	}
+	sources, ok := doc["sources"].(map[string]any)
+	if !ok {
+		t.Fatalf("baseline has no sources: map; got %T", doc["sources"])
+	}
+	sources["design-spec-fragments"] = map[string]any{"hero": "abc123"}
+	sources["design-spec-shared"] = "def456"
+	legacy, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal legacy baseline: %v", err)
+	}
+	// Prove the fixture really carries the historical nested shape before
+	// exercising the decoder on it.
+	var check struct {
+		Sources map[string]any `yaml:"sources"`
+	}
+	if err := yaml.Unmarshal(legacy, &check); err != nil {
+		t.Fatalf("re-decode fixture: %v", err)
+	}
+	if _, ok := check.Sources["design-spec-fragments"]; !ok {
+		t.Fatal("fixture does not nest design-spec-fragments under sources:")
+	}
+	if _, ok := check.Sources["design-spec-shared"]; !ok {
+		t.Fatal("fixture does not nest design-spec-shared under sources:")
+	}
+	if err := os.WriteFile(blPath, legacy, 0o644); err != nil {
 		t.Fatalf("write legacy baseline: %v", err)
 	}
 
