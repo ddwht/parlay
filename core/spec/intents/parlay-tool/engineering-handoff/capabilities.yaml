@@ -1,0 +1,10 @@
+schema_version: 1
+feature: parlay-tool/engineering-handoff
+
+operations:
+  - id: unknown.generate-enggspec
+    kind: unknown
+    subject:
+      entity: EngineeringSpec
+    notes: |
+      Migrated from domain-model.operations: generate-enggspec

@@ -1,0 +1,17 @@
+schema_version: 1
+feature: parlay-tool/authoring
+
+operations:
+  - id: unknown.add-feature
+    kind: unknown
+    subject:
+      entity: Feature
+    notes: |
+      Migrated from domain-model.operations: add-feature
+
+  - id: unknown.scaffold-dialogs
+    kind: unknown
+    subject:
+      entity: Dialog
+    notes: |
+      Migrated from domain-model.operations: scaffold-dialogs

@@ -1,0 +1,10 @@
+schema_version: 1
+feature: parlay-tool/project-setup
+
+operations:
+  - id: unknown.bootstrap-project
+    kind: unknown
+    subject:
+      entity: Project
+    notes: |
+      Migrated from domain-model.operations: bootstrap-project

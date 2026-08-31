@@ -1,0 +1,31 @@
+schema_version: 1
+feature: parlay-tool/artifact-generation
+
+operations:
+  - id: unknown.generate-surface
+    kind: unknown
+    subject:
+      entity: Surface
+    notes: |
+      Migrated from domain-model.operations: generate-surface
+
+  - id: unknown.generate-surface-from-figma
+    kind: unknown
+    subject:
+      entity: Surface
+    notes: |
+      Migrated from domain-model.operations: generate-surface-from-figma
+
+  - id: unknown.view-page
+    kind: unknown
+    subject:
+      entity: Page
+    notes: |
+      Migrated from domain-model.operations: view-page
+
+  - id: unknown.lock-page
+    kind: unknown
+    subject:
+      entity: PageManifest
+    notes: |
+      Migrated from domain-model.operations: lock-page

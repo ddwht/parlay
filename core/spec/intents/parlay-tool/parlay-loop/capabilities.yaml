@@ -1,0 +1,17 @@
+schema_version: 1
+feature: parlay-tool/parlay-loop
+
+operations:
+  - id: unknown.build-feature
+    kind: unknown
+    subject:
+      entity: Buildfile
+    notes: |
+      Migrated from domain-model.operations: build-feature
+
+  - id: unknown.sync-coverage
+    kind: unknown
+    subject:
+      entity: CoverageReport
+    notes: |
+      Migrated from domain-model.operations: sync-coverage
