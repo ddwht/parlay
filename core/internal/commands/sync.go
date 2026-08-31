@@ -1,5 +1,4 @@
 // parlay-extends: studio-support/studio-cli-hooks/hook-dispatch-trio-sync
-// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
 
 package commands
 
@@ -22,13 +21,6 @@ var syncCmdImpl = &cobra.Command{
 	Short: "Check intent-dialog coverage",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSync,
-}
-
-func init() {
-	// parlay-extends: studio-support/studio-cli-hooks/no-studio-flag-trio-commands
-	// --no-editor: skip the open-editor prompt at the end. Also binds the
-	// deprecated --no-studio spelling.
-	registerNoEditorFlags(syncCmdImpl)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {

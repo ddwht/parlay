@@ -2,22 +2,12 @@ version: 2
 
 project_name: parlay
 
-# The UI build runs before the Go build, because the Go build embeds its output.
-#
-# This is the fix for P9-2, whose cause was this file. internal/editor/ui pulls
-# dist/ in with //go:embed, and only dist/.gitkeep is tracked — the bundle is
-# generated. With no npm step here, every release built a binary that embedded an
-# empty directory and answered every UI route with the studio-ui-bundle-not-built
-# 503. The symptom was fixed at the time; this is the cause.
-#
-# `npm ci` rather than `npm install`: it installs exactly package-lock.json and
-# fails when the lock and manifest disagree, so a release cannot quietly resolve a
-# different dependency tree than the one that was tested.
+# The npm hooks that used to run here built the browser editor's Vite bundle,
+# which the Go build embedded. Both the bundle and the editor are gone, so a
+# release is a Go build and nothing else.
 before:
   hooks:
     - go mod tidy
-    - npm ci --prefix internal/editor/ui
-    - npm run build --prefix internal/editor/ui
 
 builds:
   - main: ./core/cmd/parlay

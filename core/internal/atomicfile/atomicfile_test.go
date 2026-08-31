@@ -1,10 +1,9 @@
-// parlay-feature: studio-foundation/studio-deployer
+// parlay-feature: parlay-tool/atomic-file-writes
 // parlay-section: cross-cutting
 // parlay-extends: studio-foundation/studio-deployer/cross-cutting/manifest-based-ownership-atomic-writes-idempotency
 // parlay-artifact: test
 
-// Salvaged from internal/editor/deployer/atomic_write_test.go along with the
-// primitive it covers. TestNoDirectWritePrimitives is generalized: it used to
+// Salvaged from the editor tree's deployer along with the primitive it covers. TestNoDirectWritePrimitives is generalized: it used to
 // scan one package, and now scans every package that deploys files, since the
 // guarantee is about parlay's deployment paths rather than about one deployer.
 
@@ -20,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/testsupport"
+	"github.com/ddwht/parlay/core/internal/testsupport"
 )
 
 func TestWriteAtomicCreatesFileAndParentDirs(t *testing.T) {

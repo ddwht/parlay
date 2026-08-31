@@ -1,4 +1,4 @@
-// parlay-feature: domain-model-editor/feature-contributions
+// parlay-feature: parlay-tool/domain-document-api
 // parlay-component: domain-impact
 // parlay-artifact: test
 

@@ -259,10 +259,10 @@ var active = &Recorder{}
 // Enabled reports whether the mode should run, given the project config's
 // value and the environment.
 //
-// The env var overrides the config in BOTH directions, a deliberate
-// divergence from the no_editor precedent (where flag and config OR
-// together). This is a diagnostic mode: "on for this one run" and "off for
-// this one run" are equally wanted, and an OR merge expresses only the
+// The env var overrides the config in BOTH directions, deliberately. This is
+// a diagnostic mode: "on for this one run" and "off for this one run" are
+// equally wanted, and an OR merge — the shape the retired editor opt-out used,
+// where flag and config only ever combined toward "off" — expresses only the
 // first.
 func Enabled(configValue bool, env func(string) string) bool {
 	raw, set := "", false

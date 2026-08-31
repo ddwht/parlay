@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # Includes a common fallback for environments where Go is installed under $HOME/go/bin.
 GO ?= $(shell command -v go 2>/dev/null || echo $$HOME/go/bin/go)
 
-.PHONY: build build-noui ui test test-go test-ui vet sync-skills verify-skills
+.PHONY: build test test-go vet sync-skills verify-skills
 
 # Version stamping. Without this `make build` produced a binary reporting
 # "dev (commit none)" — goreleaser injected these at release time and nothing
@@ -24,33 +24,6 @@ VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-# The UI bundle. internal/editor/ui embeds dist/ via //go:embed, and only
-# dist/.gitkeep is tracked — the built assets are generated and minified. So a
-# fresh checkout has an empty dist/, and a `parlay` built from it answers every
-# UI route with the documented 503.
-#
-# That is not hypothetical: it is what shipped. Neither .goreleaser.yaml nor the
-# Homebrew formula had a UI step, so every released binary embedded an empty
-# directory. `build` depends on the bundle now, which is what stops the omission
-# from being possible rather than merely documented.
-UI_DIR    := internal/editor/ui
-UI_BUNDLE := $(UI_DIR)/dist/index.html
-UI_SRC    := $(shell find $(UI_DIR)/src -type f 2>/dev/null) \
-             $(UI_DIR)/index.html $(UI_DIR)/vite.config.ts $(UI_DIR)/package-lock.json
-
-# Build the UI bundle. Run this after editing anything under $(UI_DIR)/src.
-# `build` picks it up automatically when sources are newer than the bundle, so
-# calling this directly is only needed to force a rebuild.
-ui:
-	cd $(UI_DIR) && npm ci && npm run build
-
-# The bundle is a real file target, so make rebuilds it when UI sources change
-# and skips it when they have not. An .md-style phony dependency would either
-# re-run npm on every `make build` or never re-run it after a source edit; the
-# second is worse, because the binary would embed a stale bundle silently.
-$(UI_BUNDLE): $(UI_SRC)
-	cd $(UI_DIR) && npm ci && npm run build
-
 # Build the parlay binary from current source.
 # CGO is disabled: parlay has no cgo dependencies, so a pure-Go build is
 # faster and works in environments without a C toolchain.
@@ -61,38 +34,17 @@ $(UI_BUNDLE): $(UI_SRC)
 # .goreleaser.yaml has built only ./core/cmd/parlay since v0.2.0, so the notice
 # shipped to nobody and existed only in local builds. Removed along with the
 # stub and the PATH probe that looked for it.
-build: $(UI_BUNDLE)
+build:
 	CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o parlay ./core/cmd/parlay
 
-# The lean build: no UI, and therefore no Node toolchain required. Everything
-# except `parlay domain-edit`'s browser surface is identical; that route answers
-# the documented studio-ui-bundle-not-built 503.
-build-noui:
-	CGO_ENABLED=0 $(GO) build -tags noui -ldflags "$(LDFLAGS)" -o parlay ./core/cmd/parlay
+# Run the test suite. One module and one language: the vitest half went with
+# the browser editor, so `test` and `test-go` are the same run and both names
+# are kept only so existing invocations of either keep working. CGO stays off
+# to match `build`.
+test: test-go
 
-# Run the test suite. One module since Stage 1 absorbed studio/, so `./...`
-# reaches everything; the second `go test` from studio/'s own directory that
-# used to be here would now re-run a subset of the same packages. CGO stays
-# off to match `build`.
-test: test-go test-ui
-
-# Go tests. One module since Stage 1 absorbed studio/, so `./...` reaches
-# everything; the second `go test` from studio/'s own directory that used to be
-# here would now re-run a subset of the same packages.
 test-go:
 	CGO_ENABLED=0 $(GO) test ./...
-
-# UI tests. These existed and passed and NOTHING RAN THEM — not `make test`,
-# not CI — so three UI defects shipped that a green vitest run would have
-# caught, including a Done control that never ended the session and a null
-# collection that rendered a blank page. A test suite nobody runs is
-# documentation.
-#
-# Skipped, with a warning rather than silently, when node_modules is absent:
-# a contributor working only on the Go side should not be forced through an
-# npm ci, but they should know what did not run.
-test-ui:
-	@if [ -d "$(UI_DIR)/node_modules" ]; then 		cd $(UI_DIR) && npm test -- --run; 	else 		echo "[WARN] skipping UI tests: $(UI_DIR)/node_modules is absent (run 'make ui' or 'cd $(UI_DIR) && npm ci')"; 	fi
 
 # Vet the module. Same one-module reasoning as `test`.
 vet:

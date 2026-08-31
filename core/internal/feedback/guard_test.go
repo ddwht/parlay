@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ddwht/parlay/internal/testsupport"
+	"github.com/ddwht/parlay/core/internal/testsupport"
 )
 
 // TestFeedbackPayloadsCarryNoFreeText is the structural half of the

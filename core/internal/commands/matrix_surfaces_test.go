@@ -146,10 +146,11 @@ func (s surface) appliesTo(fixture string) bool {
 //   - build-feature, generate-code, create-artifacts and the other pipeline
 //     commands: they produce artifacts rather than verdicts. They fail, but
 //     on their own work, not on a judgement about the project.
-//   - the editor's POST /validate and its save gate: they live in
-//     internal/editor and cannot be reached from this package. They are the
-//     largest known gap in this matrix. The save gate's dropped `code` field
-//     (R4-23) is invisible here for exactly that reason.
+//   - the domain-model write path's validation gate: it is a library call in
+//     core/internal/domainmodel rather than a command, so it has no verdict
+//     surface to put in this matrix. It gets one when `parlay domain put`
+//     exists. (The editor's POST /validate that used to sit here went with the
+//     editor.)
 //   - init, upgrade, sync, add-feature, move-feature: mutations, not checks.
 //   - repair --dry-run and migrate-ledger --dry-run: they report a plan
 //     rather than a verdict, and running them needs a build tree in a
