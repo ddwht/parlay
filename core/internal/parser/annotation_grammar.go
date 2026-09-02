@@ -177,6 +177,23 @@ func parseAnnotationEntry(path, host string, raw rawEntry) (*AnnotationEntry, []
 	return &entry, nil
 }
 
+// ValidAnnotationHandle reports whether a string is a whole handle.
+//
+// Exported because a handle written by the TOOL — `annotations reply --by` —
+// is interpolated straight into a comment, so it is an injection surface. A
+// handle with whitespace or a newline is not a handle, and one with a slash is
+// a ref rather than an annotation (looksLikeAnnotation), which would make the
+// tool write a line its own scanner then ignores.
+func ValidAnnotationHandle(s string) error {
+	if s == "" {
+		return fmt.Errorf("a handle cannot be empty")
+	}
+	if leadingHandle(s) != s {
+		return fmt.Errorf("%q is not a handle: letters, digits, and _ . - only", s)
+	}
+	return nil
+}
+
 // leadingHandle returns the run of handle characters at the start of s.
 func leadingHandle(s string) string {
 	for i := 0; i < len(s); i++ {

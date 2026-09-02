@@ -457,6 +457,7 @@ func init() {
 	rootCmd.AddCommand(activateCmd)
 	rootCmd.AddCommand(noteCmd)
 	rootCmd.AddCommand(backlogCmd)
+	rootCmd.AddCommand(annotationsCmd)
 	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(repairCmd)
 	rootCmd.AddCommand(gateAllCmd)

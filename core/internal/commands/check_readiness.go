@@ -86,7 +86,11 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 	case "create-surface":
 		output.Issues = checkCreateSurfaceReadiness(featurePath)
 	case "build-feature":
-		output.Issues = checkBuildFeatureReadiness(cfg, featurePath, slug)
+		// Review threads come FIRST, before drift. A reviewer who has just
+		// annotated a signed file would otherwise meet stale-buildfile at the
+		// top and go looking for an edit nobody made; their own comment is the
+		// cause and should be the first line they read.
+		output.Issues = append(annotationReadinessIssues(cfg, slug), checkBuildFeatureReadiness(cfg, featurePath, slug)...)
 	case "dialogs":
 		// Readiness to author dialogs is exactly readiness to author a
 		// surface minus the "you have no dialogs yet" warning, which is

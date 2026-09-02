@@ -536,6 +536,19 @@ Two layers, following the project's shape: a CLI that finds and reports
 ### 6.1 CLI
 
 **`parlay internal collect-annotations [@feature] [--all]`** — the probe.
+
+*Two scope notes from WP3.* A feature's boundary also blocks on threads in the
+**project sources its build reads and signs** — the root domain model, page
+layouts, adapters, `adapter-set.yaml`, `blueprint.yaml` — because two feature
+gates could otherwise both pass with a thread sitting unread in a shared file.
+For v1 this is deliberately **conservative**: every project source blocks every
+feature, since there is no per-feature dependency map to scope it by, and a
+feature blocked by a thread in an adapter it does not read is the safe
+direction of wrong. Separately, every read here **fails closed**: a file that
+is absent contributes nothing, and a file or directory that exists but cannot
+be read is an error, because "I could not read this" is not "there is nothing
+here", and answering a boundary with the second advances a build over a file
+nobody could see.
 Scans every human-facing file of the feature (or every feature; `--all` adds
 project-level files: root `domain-model.yaml`, `blueprint.yaml`, adapters,
 `adapter-set.yaml`) and emits every thread with its anchor:
@@ -593,7 +606,18 @@ comment text itself, so a reply is always well-formed and always placed where
 or a reply.
 
 **`parlay annotations clear [@feature] [--file <path>]`** — deletes every
-`closed` thread. Never an `open` or `answered` one. Because closure is an
+`closed` thread.
+
+*Two implementation notes from WP3, both found by Codex.* `clear` and `reply`
+edit by **byte offset**, inserting or removing whole lines and touching
+nothing else: the obvious split-and-rejoin rewrites every line ending in the
+file, which would make "an `ask` answered, closed and swept restores the bytes
+exactly" false for every reviewer whose spec uses CRLF. And `reply` validates
+`--by` against the handle grammar and refuses reply text containing `-->` in
+Markdown, then re-scans the bytes it is about to write: the handle and the
+text are interpolated into a comment, so `--text "done --> <!-- @dwht close"`
+would otherwise close the comment early and write a second entry the reviewer
+never authored — one closing their own thread. Never an `open` or `answered` one. Because closure is an
 explicit entry a reviewer wrote, this command carries no judgement and is
 safe to run unattended: the build and code skills run it before their gates
 (§6.4), and the resolver runs it at the end of a pass. Reports what it
@@ -698,10 +722,17 @@ answered that.
 - **`check-readiness` and `gate`.** New codes `open-annotations` and
   `answered-annotations`, both errors, emitted for the `build-feature` stage
   and for code emission, and aggregated by `parlay gate`. A `closed` thread
-  is not a finding: the build and code skills run `annotations clear` before
-  their gates, so closed threads are gone before the check runs, and a
-  direct `parlay gate` reports them as `closed-annotations` at info severity
-  with the sweep as the fix. The loop's prompt is a convenience over these,
+  blocks too, until it is swept — `closed-annotations`, an error.
+
+  *Amended during WP3, 2026-09-02.* This first made `closed-annotations`
+  informational, reasoning that the build and code skills run
+  `annotations clear` before their gates so closed threads are gone by the
+  time the check runs. True of the skills, and this very paragraph insists the
+  rule hold for the direct commands too. Codex found the hole: on a **first
+  build** there is no prior signature for `stale-buildfile` to catch the
+  comment bytes with, so a direct `parlay gate` would pass while reading a file
+  that still had a thread in it — the one thing §7 forbids. The sweep is one
+  command, it removes only what a reviewer closed, and it is named in the fix. The loop's prompt is a convenience over these,
   not the enforcement: `build-feature` already runs
   `check-readiness --stage build-feature` at its step 6, so a direct
   `/parlay-build-feature` blocks the same way; `generate-code` has no
@@ -812,7 +843,7 @@ Readiness / gate:
 |---|---|
 | `open-annotations` | The feature has at least one `open` thread. Blocks designer→build and build→code. Message carries the count and the first file. Fix: `/parlay-resolve @feature`. |
 | `answered-annotations` | The feature has answered threads and no open ones. Blocks the same boundaries. Fix: read each reply in place and write `close` under it, or a new request. |
-| `closed-annotations` | Closed threads are still in the files. Informational; the build and code skills sweep them before their gates. Fix: `parlay annotations clear @feature`. |
+| `closed-annotations` | Closed threads are still in the files. **Blocks, until swept** (amended WP3). Fix: `parlay annotations clear @feature`. |
 
 None of these is emitted for a well-formed thread in any state.
 

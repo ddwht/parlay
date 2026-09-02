@@ -274,17 +274,33 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown type %q — supported: %s", validateType, validateTypeList())
 	}
 
+	// Findings accumulate rather than short-circuit. "Beside" has to mean
+	// beside: a schema error that returned early would hide a malformed
+	// annotation, and a malformed annotation that returned early would hide
+	// every deep buildfile finding — so a reviewer would fix one thing, re-run,
+	// and be told about the next, one round trip at a time.
+	var findings []agent.ValidationError
+
 	if err := validator(path, content); err != nil {
-		return outputValidate(cmd, path, []agent.ValidationError{{
+		findings = append(findings, agent.ValidationError{
 			Code:    "schema-validation-failed",
 			Message: err.Error(),
 			Context: path,
 			Fix:     "fix the structural issues reported above",
-		}})
+		})
 	}
 
-	// Deep validation for buildfiles
-	if validateDeep && validateType == "buildfile" {
+	// A malformed review comment is reported beside the file's own findings.
+	// A WELL-FORMED one is not a finding of any severity: a review in progress
+	// is a healthy state, and validate is not the place that blocks on it.
+	findings = append(findings, annotationValidationErrors(path, content)...)
+
+	// Deep validation for buildfiles, and only over a file that parsed: a deep
+	// pass reads a structure the schema check just said is not there. An
+	// annotation finding does not gate it — a comment has no bearing on
+	// whether the buildfile's vocabulary is sound.
+	schemaFailed := len(findings) > 0 && findings[0].Code == "schema-validation-failed"
+	if validateDeep && validateType == "buildfile" && !schemaFailed {
 		adapterPath := validateAdapter
 		if adapterPath == "" {
 			// Auto-discover the adapter from the buildfile's own adapter:
@@ -297,13 +313,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 				adapterPath = autoDiscoverAdapter(cfg, path)
 			}
 		}
-		errors := agent.ValidateBuildfileDeepStructured(path, adapterPath)
-		if len(errors) > 0 {
-			return outputValidate(cmd, path, errors)
-		}
+		findings = append(findings, agent.ValidateBuildfileDeepStructured(path, adapterPath)...)
 	}
 
-	return outputValidate(cmd, path, nil)
+	return outputValidate(cmd, path, findings)
 }
 
 // runValidateDomainModelJSON implements `validate --type domain-model --json`.

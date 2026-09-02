@@ -61,6 +61,7 @@ func registerInternalCommands() {
 		reachability(scanGeneratedCmd, ClassProbe),
 		reachability(verifyGeneratedCmd, ClassProbe),
 		reachability(collectQuestionsCmd, ClassProbe),
+		reachability(collectAnnotationsCmd, ClassProbe),
 		reachability(checkCompositionCmd, ClassProbe),
 		reachability(checkAmendmentsCmd, ClassProbe),
 		reachability(activeSpecCmd, ClassProbe),

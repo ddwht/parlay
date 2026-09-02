@@ -96,6 +96,7 @@ const (
 	claimTestcasesReady    = "testcases-readiness"
 	claimGeneratedState    = "generated-state"
 	claimRetiredOutput     = "retired-contribution"
+	claimReviewThreads     = "review-threads"
 )
 
 // Branch IDs name the INDEPENDENT refusal paths a claim owns.
@@ -131,6 +132,9 @@ const (
 	branchRetiredEmitted      = "retired-emitted"
 	branchRetiredShared       = "retired-shared-path"
 	branchRetiredUnaccounted  = "retired-unaccounted"
+	branchOpenThread          = "open-thread"
+	branchAnsweredThread      = "answered-thread"
+	branchMalformedThread     = "malformed-thread"
 )
 
 // boundaryClaims is the registry every stage is assembled from.
@@ -144,6 +148,17 @@ var boundaryClaims = []boundaryClaim{
 		Stages: []string{gateStageBuild}, Blocking: true,
 		Branches: []string{branchPropagation},
 		Check:    claimReadinessCheck,
+	},
+	{
+		// §7's answer to whole-file hashing: no build and no emission reads a
+		// file with a thread in it. Registered for BOTH boundaries and
+		// blocking in every thread state, because an answered thread is a
+		// reply the reviewer has not read, and advancing over it builds on a
+		// review that is not finished. Closed threads are swept, not blocked.
+		ID: claimReviewThreads, What: "no file the build reads is still under review",
+		Stages: []string{gateStageBuild, gateStageCode}, Blocking: true,
+		Branches: []string{branchOpenThread, branchAnsweredThread, branchMalformedThread},
+		Check:    claimReviewThreadsCheck,
 	},
 	{
 		ID: claimLedgerState, What: "frozen-document integrity and the unapplied amendment tail",
@@ -262,6 +277,22 @@ func claimReadinessCheck(cfg *config.Context, slug, featurePath string) claimRes
 		case "warning":
 			r.Warnings = append(r.Warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
 		}
+	}
+	return r
+}
+
+func claimReviewThreadsCheck(cfg *config.Context, slug, featurePath string) claimResult {
+	var r claimResult
+	for _, iss := range annotationReadinessIssues(cfg, slug) {
+		if iss.Severity == "error" {
+			r.Blockers = append(r.Blockers, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
+			continue
+		}
+		// The gate's vocabulary is two-level, so info collapses into warning.
+		// closed-annotations is the case that needs it: it never blocks on its
+		// own account, but its BYTES are what stale the buildfile until the
+		// sweep runs, so a direct `parlay gate` has to name the sweep.
+		r.Warnings = append(r.Warnings, gateBlocker{Code: iss.Code, Message: iss.Message, Fix: iss.Fix})
 	}
 	return r
 }

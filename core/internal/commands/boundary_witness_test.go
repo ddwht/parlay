@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 )
 
 // boundaryWitness proves one claim can actually hold a boundary shut.
@@ -253,6 +254,14 @@ func TestBoundaryClaims_EveryBlockingBranchHasAWitness(t *testing.T) {
 		{claimRetiredOutput, branchRetiredUnaccounted}: "TestBoundaryWitness_RetiredContributionUnaccounted",
 		{claimRetiredOutput, branchSubjectUnreadable}:  "TestBoundaryWitness_RetiredContributionUnreadable",
 		{claimRetiredOutput, branchSubjectMissing}:     "TestBoundaryWitness_RetiredContributionBuildfileMissing",
+
+		// Review threads. Standalone rather than table rows because the
+		// mutation is "write a comment into a founding document", and the
+		// point of each is which STATE blocks — the table's one-code shape
+		// cannot say that an answered thread blocks as hard as an open one.
+		{claimReviewThreads, branchOpenThread}:      "TestBoundaryWitness_OpenReviewThread",
+		{claimReviewThreads, branchAnsweredThread}:  "TestBoundaryWitness_AnsweredReviewThread",
+		{claimReviewThreads, branchMalformedThread}: "TestBoundaryWitness_MalformedReviewThread",
 	}
 
 	witnessed := map[key]bool{}
@@ -1100,5 +1109,160 @@ func TestBoundaryWitness_RetiredContributionBuildfileMissing(t *testing.T) {
 	}
 	if !gateHasCode(out.Blockers, "retired-contribution-subject-missing") {
 		t.Fatalf("a lost buildfile with retired fragments must not read as a clean retirement check; blockers=%+v", out.Blockers)
+	}
+}
+
+// Witness: claimReviewThreads / branchOpenThread.
+//
+// §7's rule, at the boundary it exists for: no build and no emission reads a
+// file with a thread in it. The mutation is the smallest real one — a reviewer
+// writes a comment into a founding document — and it must block even though
+// the founding hash does NOT move, which is the whole point of WP0.
+func TestBoundaryWitness_OpenReviewThread(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	clean, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean.Passed {
+		t.Fatalf("the control must pass, or the mutation proves nothing: %+v", clean.Blockers)
+	}
+
+	annotateGradedIntents(t, cfg, "<!-- @dwht: this promise is too narrow -->\n")
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, openAnnotationsCode) {
+		t.Fatalf("an open review thread must block the code boundary; blockers=%+v", out.Blockers)
+	}
+
+	// And the property that makes annotating a frozen document safe at all:
+	// the comment is not an integrity violation, because the parsers cannot
+	// see it and the freeze hashes what they parse.
+	for _, b := range out.Blockers {
+		if b.Code == "ledger-integrity" || strings.Contains(b.Message, "changed after freeze") {
+			t.Errorf("a comment in a frozen founding document must not read as an edit: %+v", b)
+		}
+	}
+}
+
+// Witness: claimReviewThreads / branchAnsweredThread.
+//
+// An answered thread blocks exactly as hard as an open one. It is a reply the
+// reviewer has not read, and advancing over it builds on a review that is not
+// finished — decision D, forced by axis C.
+func TestBoundaryWitness_AnsweredReviewThread(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	annotateGradedIntents(t, cfg,
+		"<!-- @dwht: this promise is too narrow -->\n<!-- @claude done: widened in amendment 001-scope -->\n")
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, answeredAnnotationsCode) {
+		t.Fatalf("an answered review thread must block the code boundary; blockers=%+v", out.Blockers)
+	}
+}
+
+// Witness: claimReviewThreads / branchMalformedThread.
+//
+// A malformed annotation is not a thread and cannot be counted, but it is
+// someone trying to say something, and the boundary is where they find out it
+// did not land.
+func TestBoundaryWitness_MalformedReviewThread(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	annotateGradedIntents(t, cfg, "<!-- @dwht maybe: not sure -->\n")
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, parser.AnnotationWordUnknown) {
+		t.Fatalf("a malformed annotation must block rather than be skipped; blockers=%+v", out.Blockers)
+	}
+}
+
+// A closed thread BLOCKS until it is swept, and the sweep restores the file
+// byte-for-byte. This is the whole of §7 in one test.
+//
+// The design first called closed-annotations informational, on the reasoning
+// that the skills sweep before their gates. Codex found the hole: on a first
+// build there is no prior signature for stale-buildfile to catch the comment
+// bytes with, so a direct gate would pass while reading a file that still has
+// a thread in it. Blocking until swept is what makes "no build reads a file
+// with a thread in it" true of the direct commands and not only the loop.
+func TestClosedReviewThreadBlocksUntilSwept(t *testing.T) {
+	dir := setupTestDir(t)
+	cfg := writeCleanCodeBoundary(t, dir)
+	approveGradedCriteria(t, cfg)
+
+	path := filepath.Join(cfg.FeaturePath("graded"), "intents.md")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	annotateGradedIntents(t, cfg,
+		"<!-- @dwht ask: why is this narrow? -->\n<!-- @claude answer: the wider case is a separate intent -->\n<!-- @dwht close -->\n")
+
+	out, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gateHasCode(out.Blockers, closedAnnotationsCode) {
+		t.Fatalf("a closed thread must block until swept; blockers=%+v", out.Blockers)
+	}
+	for _, code := range []string{openAnnotationsCode, answeredAnnotationsCode} {
+		if gateHasCode(out.Blockers, code) {
+			t.Errorf("a closed thread raised %s, which is a different claim; blockers=%+v", code, out.Blockers)
+		}
+	}
+
+	// The sweep, then the property it buys: an ask answered, closed and swept
+	// restores the bytes exactly, so there is no drift to rebuild for.
+	if _, err := clearClosedThreads(path); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("the sweep did not restore the file:\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+
+	swept, err := computeGate(cfg, "graded", gateStageCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !swept.Passed {
+		t.Fatalf("after the sweep the boundary must pass again: %+v", swept.Blockers)
+	}
+}
+
+// annotateGradedIntents appends an annotation under the last line of the
+// fixture's intents.md — the position a reviewer writes in.
+func annotateGradedIntents(t *testing.T, cfg *config.Context, annotation string) {
+	t.Helper()
+	path := filepath.Join(cfg.FeaturePath("graded"), "intents.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.TrimRight(string(content), "\n") + "\n" + annotation
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
