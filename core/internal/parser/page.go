@@ -19,7 +19,6 @@
 package parser
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -159,7 +158,10 @@ func parsePageContent(path string, content []byte) (*Page, error) {
 	// form keeps working; the markdown scan only fills fields left empty.
 	parseMarkdownBody(body, &page)
 
-	layoutYAML, found := extractLayoutSection(body)
+	layoutYAML, found, err := extractLayoutSection(body)
+	if err != nil {
+		return nil, fmt.Errorf("page %s: %w", path, err)
+	}
 	if !found {
 		// No layout section present — Layout stays nil.
 		return &page, nil
@@ -189,17 +191,23 @@ func parseMarkdownBody(body []byte, page *Page) {
 		}
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(string(body)))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	inLayout := false
+	lines := pageLines(body)
+	// The layout section is located ONCE, by the locator every reader of a
+	// page shares (pageLayoutSpan). This scan used to decide for itself where
+	// the layout began and ended, on rules that differed from the loader's and
+	// from the annotation scanner's.
+	layout, hasLayout := pageLayoutSpan(lines)
+
 	// HTML comments are invisible here as they are in every other Markdown
 	// parser (comments.go) — a commented-out region must not become a real
-	// region. The `## Layout` block is exempt: its body is fenced YAML owned
-	// by extractLayoutSection, where `<!--` is not a comment opener but
-	// whatever the YAML says it is.
+	// region. The layout block is exempt: its body is fenced YAML, where
+	// `<!--` is not a comment opener but whatever the YAML says it is.
 	var comments mdComments
-	for scanner.Scan() {
-		line := strings.TrimRight(scanner.Text(), "\r")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimRight(lines[i], "\r")
+		// The whole section, not just the fenced body: trailing prose under
+		// `## Layout` belongs to the layout section and is not a page region.
+		inLayout := hasLayout && i >= layout.heading && i < layout.sectionEnd
 		if !inLayout {
 			rest, ok := comments.visible(line)
 			if !ok {
@@ -210,24 +218,20 @@ func parseMarkdownBody(body []byte, page *Page) {
 		trimmed := strings.TrimSpace(line)
 
 		switch {
+		case inLayout:
+			// The heading and the fenced YAML both belong to the layout, not
+			// to us: a region named "Layout" carrying no fragments would be
+			// invented from the heading alone.
+			flush()
+			continue
 		case strings.HasPrefix(trimmed, "## "):
 			flush()
-			name := strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
-			if strings.EqualFold(name, "Layout") {
-				inLayout = true
-				continue
-			}
-			inLayout = false
-			current = &PageRegion{Name: name}
+			current = &PageRegion{Name: strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))}
 		case strings.HasPrefix(trimmed, "# "):
 			flush()
-			inLayout = false
 			if page.Name == "" {
 				page.Name = strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
 			}
-		case inLayout:
-			// Belongs to the fenced YAML block, not to us.
-			continue
 		case strings.HasPrefix(trimmed, "> "):
 			if page.Description == "" {
 				page.Description = strings.TrimSpace(strings.TrimPrefix(trimmed, "> "))
@@ -299,66 +303,129 @@ func splitFrontmatter(content []byte) ([]byte, []byte, error) {
 	return []byte(fm), []byte(body), nil
 }
 
-// extractLayoutSection walks the body's top-level `## ` headings and
-// returns the fenced YAML body of the section whose heading is exactly
-// "Layout". Position among siblings is irrelevant — the loader matches
-// by heading, not by position. Returns (nil, false) when no `## Layout`
-// section exists.
-func extractLayoutSection(body []byte) ([]byte, bool) {
-	scanner := bufio.NewScanner(strings.NewReader(string(body)))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+// pageLayout is where a page's `## Layout` section is, and how well-formed it
+// is. The three states are kept apart on purpose: "no Layout section",
+// "Layout section with no fenced block", and "Layout section whose fence is
+// never closed" are different mistakes, and only the first is not one.
+type pageLayout struct {
+	heading    int // line of the `## Layout` heading
+	sectionEnd int // one past the section's last line
+	bodyStart  int // first line inside the fence, -1 when there is no fence
+	bodyEnd    int // one past the last line inside the fence
+	closed     bool
+}
 
-	inLayout := false
-	inFence := false
-	var collected []string
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
+func (l pageLayout) fenced() bool { return l.bodyStart >= 0 }
 
-		// A new top-level heading ends any prior section.
-		if strings.HasPrefix(line, "## ") {
-			if inLayout {
-				// We exited the layout section without ever closing the
-				// fence — return what we collected anyway; YAML decode
-				// will fail loudly.
-				break
-			}
-			if trimmed == "## Layout" {
-				inLayout = true
-				inFence = false
-				continue
+// pageLayoutSpan locates a page's `## Layout` section. The bool reports only
+// whether the heading exists; the struct says whether what follows it is
+// usable.
+//
+// ONE locator, shared by everything that reads a page. There were three, and
+// they disagreed: `extractLayoutSection` accepted only an exact unindented
+// `## Layout` with a backtick fence closed by any line starting with three
+// backticks, `parseMarkdownBody` matched the heading case-insensitively on the
+// trimmed line, and the annotation scanner applied CommonMark's fence rules.
+// So a `~~~` fence, a `## layout`, an indented heading or a four-backtick
+// opener each put the same bytes in a different category for each reader — and
+// the annotation scanner could offer a resolver an actionable request inside
+// bytes the page loader never consumed as YAML. That is the one thing the
+// design forbids outright: the same bytes must not be content to one reader
+// and a request to another.
+//
+// The rules are the permissive ones, because the strict version was the
+// outlier — `parseMarkdownBody` was already case-insensitive — and because a
+// tilde-fenced layout previously decoded to nothing at all, silently dropping
+// a layout its author had written.
+func pageLayoutSpan(lines []string) (pageLayout, bool) {
+	out := pageLayout{heading: -1, bodyStart: -1, bodyEnd: -1, sectionEnd: len(lines)}
+
+	// One pass, tracking fences throughout. A heading inside a fenced block is
+	// not a heading — an indented `# ...` in a YAML example would otherwise end
+	// the section it is inside and make its own fence look unterminated.
+	fence := ""
+	for i, line := range lines {
+		if fence != "" {
+			if closesFence(line, fence) {
+				if out.heading >= 0 && out.bodyStart >= 0 && !out.closed {
+					out.bodyEnd = i
+					out.closed = true
+					out.sectionEnd = len(lines)
+					// Keep scanning: the section runs to the next heading.
+				}
+				fence = ""
 			}
 			continue
 		}
-
-		if !inLayout {
-			continue
-		}
-
-		if !inFence {
-			// Look for the opening ``` or ```yaml fence.
-			if strings.HasPrefix(trimmed, "```") {
-				inFence = true
+		if marker, isFence := opensFence(line); isFence {
+			fence = marker
+			if out.heading >= 0 && out.bodyStart < 0 {
+				out.bodyStart = i + 1
+				out.bodyEnd = len(lines)
 			}
 			continue
 		}
-
-		// Inside the fence — collect until the closing ```.
-		if strings.HasPrefix(trimmed, "```") {
-			// End of the fenced block; we have everything we need.
-			return []byte(strings.Join(collected, "\n")), true
+		level, title, isHeading := markdownHeading(line)
+		if !isHeading || level > 2 {
+			continue
 		}
-		collected = append(collected, line)
+		if out.heading >= 0 {
+			out.sectionEnd = i
+			break
+		}
+		if level == 2 && strings.EqualFold(title, "Layout") {
+			out.heading = i
+		}
 	}
-	if inLayout && inFence {
-		// Reached EOF while still inside the fence; return what we have.
-		return []byte(strings.Join(collected, "\n")), true
+
+	if out.heading < 0 {
+		return out, false
 	}
-	if inLayout {
-		// Heading present but no fenced YAML body found.
-		return []byte{}, true
+	if out.bodyStart >= 0 && !out.closed {
+		out.bodyEnd = out.sectionEnd
 	}
-	return nil, false
+	if out.bodyEnd > out.sectionEnd {
+		out.bodyEnd = out.sectionEnd
+	}
+	return out, true
+}
+
+// extractLayoutSection returns the fenced YAML body of the `## Layout`
+// section, whether the section exists, and an error when it exists but is not
+// usable.
+//
+// The error is the point. A `## Layout` heading with no fence under it used to
+// yield an empty body that decodeLayout then refused for missing required
+// fields — accidentally, but it refused. Answering "no layout section" for
+// that shape would silently reclassify a malformed layout as an ordinary page
+// region named "Layout": a page that means something other than its author
+// wrote. An unterminated fence is the same class of mistake, and leaving it to
+// the YAML decoder catches it only when the collected text also happens to be
+// invalid YAML — which is exactly when the mistake is hardest to see.
+func extractLayoutSection(body []byte) ([]byte, bool, error) {
+	lines := pageLines(body)
+	loc, ok := pageLayoutSpan(lines)
+	if !ok {
+		return nil, false, nil
+	}
+	if !loc.fenced() {
+		return nil, true, fmt.Errorf("the `## Layout` section has no fenced YAML block")
+	}
+	if !loc.closed {
+		return nil, true, fmt.Errorf("the `## Layout` fence is never closed")
+	}
+	return []byte(strings.Join(lines[loc.bodyStart:loc.bodyEnd], "\n")), true, nil
+}
+
+// pageLines splits a page body the way every reader of it must, so that a line
+// index means the same thing to all of them.
+func pageLines(body []byte) []string {
+	text := strings.ReplaceAll(string(body), "\r\n", "\n")
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
 }
 
 // decodeLayout decodes the YAML body of a `## Layout` section into a

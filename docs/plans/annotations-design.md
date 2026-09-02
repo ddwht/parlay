@@ -451,7 +451,7 @@ can supply, plus a **ref** when the file is one parlay understands:
 | `infrastructure.md` | as above | `@feature/infrastructure:<heading-slug>` + field |
 | `domain-model.yaml` | as above | `@feature/domain:<entity>` (or the root model's) |
 | `amendments/NNN-slug.md` | as above | `@feature/amendment:<slug>` + section |
-| `*.page.md` | as above | page name + region / layout node id — **not** feature-qualified (WP2): `affects:` has no `page` kind, so `@<feature>/page:<name>` would be shaped like an amendment target no amendment could name. A page is project-owned, multi-feature, and scanned once at project level rather than per feature. |
+| `*.page.md` | as above | page name + region, or `node:<id>` inside the `## Layout` fence — **not** feature-qualified (WP2): `affects:` has no `page` kind, so `@<feature>/page:<name>` would be shaped like an amendment target no amendment could name. A page is project-owned, multi-feature, and scanned once at project level rather than per feature. The layout fence is the ONE fenced block the scanner reads into (WP4): it is YAML the page loader decodes with `yaml.v3`, which drops `#` comments, so an annotation there is invisible to the parser exactly as everywhere else. A `yaml` fence in any other Markdown file stays inert, or every document that shows the syntax would carry live annotations. |
 
 The ref column reuses the `affects:` vocabulary (`operation | surface |
 infrastructure | domain`) so that a resolution which becomes an amendment can
@@ -538,9 +538,13 @@ Two layers, following the project's shape: a CLI that finds and reports
 **`parlay internal collect-annotations [@feature] [--all]`** — the probe.
 
 *Two scope notes from WP3.* A feature's boundary also blocks on threads in the
-**project sources its build reads and signs** — the root domain model, page
-layouts, adapters, `adapter-set.yaml`, `blueprint.yaml` — because two feature
-gates could otherwise both pass with a thread sitting unread in a shared file.
+**project sources its build reads or otherwise depends on** — the root domain
+model, page manifests, adapters, `adapter-set.yaml`, `blueprint.yaml` —
+because two feature gates could otherwise both pass with a thread sitting
+unread in a shared file. Not all of them are *signed*: `source-signatures`
+covers the domain model, the layout and the selected presentation adapter,
+while `adapter-set.yaml` and `blueprint.yaml` are depended on without being
+signature fields, so "reads and signs" would have overclaimed.
 For v1 this is deliberately **conservative**: every project source blocks every
 feature, since there is no per-feature dependency map to scope it by, and a
 feature blocked by a thread in an adapter it does not read is the safe

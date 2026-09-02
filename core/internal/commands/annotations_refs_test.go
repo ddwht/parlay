@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -298,5 +299,59 @@ operations:
 	ref, _, _ = refFor(t, "task-list", "spec/intents/task-list/capabilities.yaml", yml)
 	if ref != "@task-list/operation:task.create" {
 		t.Errorf("ref = %q — a trailing comment must not become part of the id", ref)
+	}
+}
+
+// §4.4 promises "page name + region / layout node id". The region half is the
+// Markdown body; the node half is inside the `## Layout` fence, which is YAML
+// and which the page loader decodes with yaml.v3 — so a `#` comment there is
+// invisible to the parser and available to the scanner.
+func TestPageLayoutNodeRef(t *testing.T) {
+	const content = "# Board\n\n## Header\n\n1. @task-list/header\n\n## Layout\n\n```yaml\n" +
+		"componentVocabulary: clarity@17\n" +
+		"schema_version: 1\n" +
+		"nodes:\n" +
+		"  - id: root\n" +
+		"    type: stack\n" +
+		"    direction: vertical\n" +
+		"    # @dwht: this should be horizontal on wide viewports\n" +
+		"  - id: sidebar\n" +
+		"    type: panel\n" +
+		"```\n"
+
+	scan := parser.ScanAnnotations("spec/pages/board.page.md", []byte(content))
+	if len(scan.Findings) != 0 {
+		t.Fatalf("findings = %+v", scan.Findings)
+	}
+	if len(scan.Threads) != 1 {
+		t.Fatalf("threads = %d, want 1: %+v", len(scan.Threads), scan.Threads)
+	}
+	resolveAnnotationRefs("task-list", "spec/pages/board.page.md", []byte(content), scan.Threads)
+	anchor := scan.Threads[0].Anchor
+	if anchor.Ref != "page:board" {
+		t.Errorf("ref = %q", anchor.Ref)
+	}
+	if anchor.Field != "node:root" {
+		t.Errorf("field = %q, want node:root — the node, not the region", anchor.Field)
+	}
+	if !strings.Contains(anchor.Text, "direction: vertical") {
+		t.Errorf("anchor text = %q", anchor.Text)
+	}
+	if strings.Contains(anchor.Text, "sidebar") {
+		t.Errorf("the anchor claimed the next node: %q", anchor.Text)
+	}
+}
+
+// The layout fence is the ONE fenced block the scanner reads into. A yaml
+// fence anywhere else is an example — reading it would make this design's own
+// schema document carry live annotations.
+func TestOnlyThePageLayoutFenceIsScanned(t *testing.T) {
+	const doc = "# Annotation Schema\n\n## Host forms\n\n```yaml\nverify:\n  - criterion A\n  # @dwht: an example, not a request\n```\n"
+	for _, path := range []string{"annotation.schema.md", "infrastructure.md", "spec/pages/board.page.md"} {
+		scan := parser.ScanAnnotations(path, []byte(doc))
+		if len(scan.Threads) != 0 || len(scan.Findings) != 0 {
+			t.Errorf("%s: threads = %+v, findings = %+v — no `## Layout` heading, so nothing here is a page layout",
+				path, scan.Threads, scan.Findings)
+		}
 	}
 }

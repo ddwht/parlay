@@ -897,3 +897,84 @@ func TestStructuralLinesFiltersInlineComments(t *testing.T) {
 		t.Errorf("yaml line 1 = %q — a trailing comment must not become part of the id", yml[1])
 	}
 }
+
+// One locator, or the same bytes are content to one reader and an actionable
+// request to the other. Each row below is a shape where the three old
+// locators disagreed: a tilde fence, a lower-case heading, an indented
+// heading, and a four-backtick opener that a three-backtick line must not
+// close.
+//
+// The assertion is not "the scanner finds it" or "the parser reads it" — it is
+// that they AGREE, whatever the answer.
+func TestPageLayoutLocatorAgreesWithThePageParser(t *testing.T) {
+	fence := "```"
+	tests := []struct {
+		name    string
+		body    string
+		wantOne bool
+	}{
+		{
+			name:    "backtick fence",
+			body:    "## Layout\n\n" + fence + "yaml\nnodes:\n  - id: root\n    # @dwht: wrong\n" + fence + "\n",
+			wantOne: true,
+		},
+		{
+			name:    "tilde fence",
+			body:    "## Layout\n\n~~~yaml\nnodes:\n  - id: root\n    # @dwht: wrong\n~~~\n",
+			wantOne: true,
+		},
+		{
+			name:    "lower-case heading",
+			body:    "## layout\n\n" + fence + "yaml\nnodes:\n  - id: root\n    # @dwht: wrong\n" + fence + "\n",
+			wantOne: true,
+		},
+		{
+			name:    "indented heading",
+			body:    "  ## Layout\n\n" + fence + "yaml\nnodes:\n  - id: root\n    # @dwht: wrong\n" + fence + "\n",
+			wantOne: true,
+		},
+		{
+			name:    "a three-backtick line does not close a four-backtick fence",
+			body:    "## Layout\n\n````yaml\nnodes:\n  - id: root\n" + fence + "\n    # @dwht: wrong\n````\n",
+			wantOne: true,
+		},
+		{
+			name:    "no layout section at all",
+			body:    "## Header\n\n" + fence + "yaml\nnodes:\n  - id: root\n    # @dwht: an example\n" + fence + "\n",
+			wantOne: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := "# Board\n\n" + tt.body
+
+			// What the page loader consumes as YAML. An error here means the
+			// loader refuses the page outright, which is neither "sees a
+			// layout" nor "sees none" — the agreement rows below are all
+			// well-formed, and the malformed shapes are tested through
+			// ParsePageFile in page_test.go.
+			_, present, err := extractLayoutSection([]byte(content))
+			if err != nil {
+				t.Fatalf("unexpected layout error: %v", err)
+			}
+			parserSees := present
+
+			// What the scanner treats as a layout region.
+			scan := ScanAnnotations("board.page.md", []byte(content))
+			scannerFound := len(scan.Threads) == 1
+
+			if parserSees != tt.wantOne {
+				t.Errorf("the page parser found a layout = %v, want %v", parserSees, tt.wantOne)
+			}
+			if scannerFound != tt.wantOne {
+				t.Errorf("the scanner found %d threads, want %v",
+					len(scan.Threads), tt.wantOne)
+			}
+			if parserSees != scannerFound {
+				t.Fatalf("the two readers disagree: parser=%v scanner=%v — the same bytes are YAML to one and not the other",
+					parserSees, scannerFound)
+			}
+		})
+	}
+}

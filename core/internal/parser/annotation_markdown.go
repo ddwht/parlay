@@ -205,7 +205,10 @@ func analyseMarkdown(lines []string, bodyStart, fmEnd int) *mdBody {
 		b.info[i].present = true
 		b.info[i].indent = len(line) - len(strings.TrimLeft(line, " \t"))
 
-		if level, title, isHeading := markdownHeading(visible); isHeading {
+		// A heading inside a fenced block is not a heading. Without this the
+		// heading stack — and so every anchor's heading path — could be
+		// rewritten by an example in a code block.
+		if level, title, isHeading := markdownHeading(visible); isHeading && !b.info[i].code {
 			for len(levels) > 0 && levels[len(levels)-1] >= level {
 				levels = levels[:len(levels)-1]
 				headings = headings[:len(headings)-1]
@@ -282,8 +285,16 @@ func analyseMarkdown(lines []string, bodyStart, fmEnd int) *mdBody {
 }
 
 // markdownHeading reports an ATX heading's level and title.
+//
+// At most three spaces of indentation, as CommonMark requires. Trimming any
+// amount made `    # @dwht: wrong` — an annotation indented inside a fenced
+// YAML block — read as a level-1 heading, which ended the enclosing page's
+// `## Layout` section three lines early and made its fence look unterminated.
 func markdownHeading(line string) (int, string, bool) {
 	trimmed := strings.TrimLeft(line, " ")
+	if len(line)-len(trimmed) > 3 {
+		return 0, "", false
+	}
 	level := 0
 	for level < len(trimmed) && trimmed[level] == '#' {
 		level++

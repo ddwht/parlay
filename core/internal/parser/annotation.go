@@ -211,6 +211,21 @@ func ScanAnnotations(path string, content []byte) AnnotationScan {
 		threads, tf := assembleThreads(path, AnnotationHostMarkdown, lines, entries)
 		scan.Findings = append(scan.Findings, tf...)
 		anchorMarkdownThreads(path, body, threads, &scan)
+
+		// A page's `## Layout` fence is YAML, and the page loader decodes it
+		// with yaml.v3, which drops `#` comments — so an annotation there is
+		// invisible to the parser exactly as everywhere else, and §4.4's
+		// promise of a layout NODE id is reachable. It is the one fenced block
+		// the scanner reads into, and only in a `*.page.md`: a yaml fence
+		// anywhere else is an example, and reading it would make every schema
+		// document that shows the syntax carry live annotations.
+		if region := pageLayoutRegion(path, lines); region != nil {
+			entries, findings := lexYAMLAnnotations(path, *region)
+			scan.Findings = append(scan.Findings, findings...)
+			threads, tf := assembleThreads(path, AnnotationHostYAML, lines, entries)
+			scan.Findings = append(scan.Findings, tf...)
+			anchorYAMLThreads(path, *region, threads, &scan)
+		}
 	}
 
 	sortAnnotationsByLine(&scan)
@@ -443,4 +458,37 @@ func bodyStartAfter(fmEnd int) int {
 		return fmEnd + 1
 	}
 	return 0
+}
+
+// pageLayoutRegion returns the fenced YAML body of a `*.page.md`'s `## Layout`
+// section, as a YAML region with absolute line numbers, or nil.
+//
+// It asks pageLayoutSpan — the SAME locator ParsePageFile uses — rather than
+// finding the fence itself. A second approximation here would let a `~~~`
+// fence or a `## layout` heading be a layout to one reader and ordinary
+// Markdown to the other, so the scanner could hand a resolver an actionable
+// request inside bytes the page loader never consumed as YAML. Two readers
+// disagreeing about where a comment begins is the one thing this design
+// forbids outright.
+//
+// Scoped to page manifests: every other fenced block in every other Markdown
+// file stays inert, which is what lets this design's own documents quote the
+// annotation syntax without carrying live annotations.
+func pageLayoutRegion(path string, lines []string) *yamlRegion {
+	if !strings.HasSuffix(strings.ToLower(filepath.Base(path)), ".page.md") {
+		return nil
+	}
+	fmEnd := frontmatterEnd(lines)
+	offset := bodyStartAfter(fmEnd)
+	loc, ok := pageLayoutSpan(lines[offset:])
+	// Only a CLOSED fence. An unterminated one is a page the loader now
+	// refuses, and a request living in bytes no parser consumes is the shape
+	// this whole rule exists to prevent.
+	if !ok || !loc.fenced() || !loc.closed || loc.bodyStart >= loc.bodyEnd {
+		return nil
+	}
+	return &yamlRegion{
+		lines: lines[offset+loc.bodyStart : offset+loc.bodyEnd],
+		start: offset + loc.bodyStart,
+	}
 }

@@ -56,7 +56,7 @@ func resolveAnnotationRefs(feature, path string, content []byte, threads []parse
 		case base == "domain-model.yaml":
 			resolveYAMLEntryRef(feature, "domain", "entities", "name", lines, anchor)
 		case strings.HasSuffix(base, ".page.md"):
-			resolvePageRef(base, anchor)
+			resolvePageRef(base, lines, anchor)
 		case isAmendmentPath(path):
 			resolveAmendmentAnnotationRef(feature, base, anchor)
 		}
@@ -120,11 +120,64 @@ func resolveInfrastructureRef(feature string, lines []string, anchor *parser.Ann
 // domain and has no page kind, so `@<feature>/page:<name>` would be shaped
 // like an amendment target that no amendment could ever name. A page manifest
 // is project-owned, multi-feature, and not ledgered.
-func resolvePageRef(base string, anchor *parser.AnnotationAnchor) {
+func resolvePageRef(base string, lines []string, anchor *parser.AnnotationAnchor) {
 	anchor.Ref = "page:" + strings.TrimSuffix(base, ".page.md")
+	if anchor.YAMLPath != "" {
+		// Inside the `## Layout` fence: the identity is the node, not the
+		// region heading, which is what §4.4 promises and what a reviewer
+		// commenting on one node out of a dozen actually needs.
+		if id := layoutNodeIDAt(lines, anchor.Span[0]-1); id != "" {
+			anchor.Field = "node:" + id
+			return
+		}
+		anchor.Field = anchor.YAMLPath
+		return
+	}
 	if region := headingAtLevel(anchor, 2); region != "" {
 		anchor.Field = region
 	}
+}
+
+// layoutNodeIDAt names the layout node an anchored line belongs to: the
+// nearest enclosing sequence item's `id:`.
+//
+// Resolved to the id rather than left as a YAML path for the same reason a
+// surface fragment resolves to its name — `nodes[0].children[1]` stops meaning
+// anything the moment a node is inserted above it, and a thread outlives the
+// edit that answers it.
+func layoutNodeIDAt(lines []string, at int) string {
+	if at < 0 || at >= len(lines) {
+		return ""
+	}
+	indent := indentWidth(lines[at])
+	for i := at; i >= 0; i-- {
+		rest, isItem := strings.CutPrefix(strings.TrimSpace(lines[i]), "- ")
+		if !isItem || indentWidth(lines[i]) > indent {
+			continue
+		}
+		itemIndent := indentWidth(lines[i])
+		if id, ok := keyValue(rest, "id"); ok {
+			return id
+		}
+		for j := i + 1; j < len(lines); j++ {
+			trimmed := strings.TrimSpace(lines[j])
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			if indentWidth(lines[j]) <= itemIndent {
+				break
+			}
+			if id, ok := keyValue(trimmed, "id"); ok {
+				return id
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+func indentWidth(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " "))
 }
 
 func resolveAmendmentAnnotationRef(feature, base string, anchor *parser.AnnotationAnchor) {

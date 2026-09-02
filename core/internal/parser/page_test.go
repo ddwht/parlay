@@ -366,3 +366,90 @@ func collectIDs(nodes []LayoutNode) []string {
 	}
 	return out
 }
+
+// A `## Layout` section that is not usable must be REFUSED, not reclassified.
+//
+// Before the shared locator, a heading with no fence yielded an empty body
+// that decodeLayout then rejected for missing required fields — accidentally,
+// but it rejected. Answering "no layout section" instead would turn a
+// malformed layout into an ordinary page region named "Layout": a page that
+// means something other than its author wrote.
+//
+// The unterminated case was never really covered: leaving it to the YAML
+// decoder catches it only when the collected text also happens to be invalid
+// YAML, which is exactly when the mistake is hardest to see. Both are tested
+// through ParsePageFile, because that is what every caller uses.
+func TestPageRefusesAnUnusableLayoutSection(t *testing.T) {
+	fence := "```"
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name:    "a Layout heading with no fenced block",
+			content: "# Board\n\n## Layout\n\nThe layout is still being designed.\n",
+			wantErr: "no fenced YAML block",
+		},
+		{
+			name: "a fence that is never closed, whose contents are valid YAML",
+			content: "# Board\n\n## Layout\n\n" + fence + "yaml\n" +
+				"componentVocabulary: clarity@17\nschema_version: 1\nnodes:\n  - id: root\n    type: stack\n",
+			wantErr: "never closed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "board.page.md")
+			if err := os.WriteFile(path, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			page, err := ParsePageFile(path)
+			if err == nil {
+				t.Fatalf("the page was accepted; layout = %+v, regions = %+v", page.Layout, page.Regions)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("err = %v, want it to name %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// A page with frontmatter: the thread's line numbers and the anchor's span are
+// the FILE's, not the body's. Everything a reviewer opens the file to find is
+// addressed by absolute line.
+func TestPageLayoutAnnotationUsesAbsoluteLineNumbers(t *testing.T) {
+	fence := "```"
+	content := "---\nname: Board\nowner: design\n---\n\n# Board\n\n## Layout\n\n" + fence + "yaml\n" +
+		"componentVocabulary: clarity@17\nschema_version: 1\nnodes:\n  - id: root\n    type: stack\n" +
+		"    # @dwht: should be horizontal on wide viewports\n" + fence + "\n"
+
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	wantAnnotation := 0
+	for i, l := range lines {
+		if strings.Contains(l, "@dwht") {
+			wantAnnotation = i + 1
+		}
+	}
+
+	scan := ScanAnnotations("board.page.md", []byte(content))
+	if len(scan.Findings) != 0 {
+		t.Fatalf("findings = %+v", scan.Findings)
+	}
+	if len(scan.Threads) != 1 {
+		t.Fatalf("threads = %+v", scan.Threads)
+	}
+	thread := scan.Threads[0]
+	if thread.Line != wantAnnotation {
+		t.Errorf("thread line = %d, want the file's line %d", thread.Line, wantAnnotation)
+	}
+	// The anchored unit is the `type: stack` pair on the line above it.
+	if got, want := thread.Anchor.Span, [2]int{wantAnnotation - 1, wantAnnotation - 1}; got != want {
+		t.Errorf("span = %v, want %v", got, want)
+	}
+	if got := strings.TrimSpace(thread.Anchor.Text); got != "type: stack" {
+		t.Errorf("anchor text = %q", got)
+	}
+}

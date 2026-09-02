@@ -43,11 +43,14 @@ const (
 func annotationReadinessIssues(cfg *config.Context, slug string) []readinessIssue {
 	scans, err := collectFeatureAnnotations(cfg, slug)
 	if err == nil {
-		// Project sources count too. The buildfile's hard gate signs the root
-		// domain model, the layout and the adapter alongside the feature's own
-		// files, so a thread in any of them is a thread in something this
-		// build reads — and two feature gates could both pass while one sat
-		// unread in a shared file.
+		// Project sources count too: two feature gates could otherwise both
+		// pass with a thread sitting unread in a shared file.
+		//
+		// "Reads or otherwise depends on", not "reads and signs". The hard
+		// gate's source-signatures cover the root domain model, the layout and
+		// the SELECTED presentation adapter; adapter-set.yaml and
+		// blueprint.yaml are depended on without being signature fields at
+		// all, so signing is not what unites this set.
 		//
 		// CONSERVATIVE for v1: every project source blocks every feature,
 		// because there is no per-feature dependency map to scope it by. A
