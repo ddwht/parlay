@@ -198,7 +198,16 @@ func ParseAmendmentBytes(path string, content []byte) (*Amendment, error) {
 
 	section := ""
 	var change, why []string
+	// The body is Markdown and follows the package rule (comments.go): a
+	// commented-out `## Acceptance` bullet is not acceptance criteria, and an
+	// annotation written into an unapplied record is not part of its prose.
+	var comments mdComments
 	for _, line := range strings.Split(body, "\n") {
+		rest, ok := comments.visible(line)
+		if !ok {
+			continue
+		}
+		line = rest
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "## ") {
 			section = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")))

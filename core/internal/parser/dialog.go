@@ -37,9 +37,21 @@ func ParseDialogsFile(path string) ([]Dialog, error) {
 	var dialogs []Dialog
 	var current *Dialog
 
+	// A comment line matched no prefix and so was ignored, which looked like
+	// comment handling and was not: a continuation line inside `<!-- ... -->`
+	// beginning `User:` parsed as a real turn, and one beginning `- ` was read
+	// as content. comments.go resolves the state before any rule below.
+	var comments mdComments
+
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		rest, ok := comments.visible(line)
+		if !ok {
+			continue
+		}
+		line = rest
 
 		// Dialog title
 		if strings.HasPrefix(line, "### ") && !strings.HasPrefix(line, "#### ") {

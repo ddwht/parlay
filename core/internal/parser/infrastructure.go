@@ -45,9 +45,20 @@ func ParseInfrastructureFile(path string) ([]InfraFragment, error) {
 	var current *InfraFragment
 	var currentList *[]string
 
+	// Same rule as every other Markdown parser here — see comments.go. A
+	// commented-out fragment must not become a real one, and an annotation
+	// written next to an invariant must not be read as an invariant.
+	var comments mdComments
+
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		rest, ok := comments.visible(line)
+		if !ok {
+			continue
+		}
+		line = rest
 
 		if strings.HasPrefix(line, "## ") {
 			if current != nil {

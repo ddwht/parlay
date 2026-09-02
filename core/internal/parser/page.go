@@ -192,8 +192,21 @@ func parseMarkdownBody(body []byte, page *Page) {
 	scanner := bufio.NewScanner(strings.NewReader(string(body)))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	inLayout := false
+	// HTML comments are invisible here as they are in every other Markdown
+	// parser (comments.go) — a commented-out region must not become a real
+	// region. The `## Layout` block is exempt: its body is fenced YAML owned
+	// by extractLayoutSection, where `<!--` is not a comment opener but
+	// whatever the YAML says it is.
+	var comments mdComments
 	for scanner.Scan() {
 		line := strings.TrimRight(scanner.Text(), "\r")
+		if !inLayout {
+			rest, ok := comments.visible(line)
+			if !ok {
+				continue
+			}
+			line = rest
+		}
 		trimmed := strings.TrimSpace(line)
 
 		switch {
