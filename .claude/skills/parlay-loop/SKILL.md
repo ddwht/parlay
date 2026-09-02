@@ -111,7 +111,7 @@ options:
     detail: "Starts a fresh subagent; this context clears."
   - id: stay
     label: "Stay and revise"
-    detail: "Return to the artifacts phase."
+    detail: "Return to the artifacts phase. Any review comments in the files are resolved first."
   - id: exit
     label: "Exit"
     detail: "Everything on disk is preserved."
@@ -264,8 +264,37 @@ Running inline means loading the phase modules the subagent would have loaded �
     - AskUserQuestion with at least **Proceed**, **Stay and revise**, **Exit**.
     - Name the just-completed phase and the phase about to begin.
     - At phase-group boundaries, say that the next phase starts in a fresh context.
-    - On "Stay" — resume the subagent with `stay`; let the user iterate. Re-run gap analysis on request.
+    - On "Stay" — resume the subagent with `stay`; let the user iterate. Re-run gap analysis on request. **If the feature has open threads, the resumed phase runs `/parlay-resolve @{feature}` steps 1–3 before anything else** — the designer chose Stay *because* they annotated, so resolving what they wrote is the work, not a preamble to it.
     - On "Exit" — end the loop with the user-exit summary (step 12).
+
+    **Review threads at the boundary.** Before asking, run
+    `parlay annotations clear @{feature}` — it removes only what the reviewer
+    already closed — and then
+    `parlay internal collect-annotations @{feature}`. Carry the counts into
+    `context:` beside the gap analysis.
+
+    This is the natural review loop the annotations design was built for: the
+    driver shows the boundary, the designer annotates the artifacts **in the
+    files**, chooses Stay, and the resumed phase resolves them. So:
+
+    - **Open threads**: the boundary is blocked, not merely discouraged. Say
+      how many and where the first one is, and that the phase will resolve
+      them. There is no shortcut here — `check-readiness` and `gate` refuse
+      the same way, so advancing past them is not something the prompt could
+      grant anyway.
+    - **Answered threads and no open ones**: add a fourth option —
+      **Review answered threads**. Walk them one at a time the way
+      `parlay backlog` walks items: show the anchored text, the request and
+      the reply, and ask *close* or *keep*. Close writes the entry through
+      `parlay annotations reply … --kind close`; keep leaves it answered and
+      the reviewer writes their follow-up request in the file. Then sweep and
+      re-present the boundary.
+    - **Neither**: say nothing about annotations. A boundary that reports
+      "0 threads" every time teaches people to skip the line that matters.
+
+    You never write `close` on the reviewer's behalf without them choosing it
+    in that walk. A reply nobody has read is indistinguishable from one they
+    accept.
 
 11. **Pause for a domain-model review** (at the artifacts boundary, when the artifacts phase wrote `domain-model`):
 
@@ -273,7 +302,7 @@ Running inline means loading the phase modules the subagent would have loaded �
 
     Add one more option to the phase-boundary question of step 10, alongside Proceed / Stay / Exit:
 
-    > **Review and edit the domain model before building?** — Opens nothing — edit the YAML directly. The build phase reads this model, so edits made now are picked up; edits made after are not.
+    > **Review and edit the domain model before building?** — Opens nothing — edit the YAML directly, or write a review comment under the line you mean (`# @you: …`) and let the resolver act on it. The build phase reads this model, so edits made now are picked up; edits made after are not.
 
     On accept:
     - Name the file: `<activeRoot>/domain-model.yaml`. The user edits it by hand, in whatever editor they already use. Wait for them to say they are done — do not advance while an edit is in progress; the whole point is that the build phase reads the model afterwards.

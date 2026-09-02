@@ -535,7 +535,18 @@ Two layers, following the project's shape: a CLI that finds and reports
 
 ### 6.1 CLI
 
-**`parlay internal collect-annotations [@feature] [--all]`** — the probe.
+**`parlay internal collect-annotations [@feature]`** — the probe.
+
+*Amended during WP5, 2026-09-02.* There is no `--all`. The flag existed while
+project-level files were extra scope a caller opted into; §7's boundary rule
+makes a thread in one of them block **every** feature, so an opt-in would mean
+the default answer is the wrong one. They are always scanned, and — the part
+that took a second review to get right — **exactly once**. A named feature's
+answer folds them in, because that answer must be the boundary's answer; the
+all-features walk reports each feature's own threads under `features[]` and the
+project's once at the top level. Folding them into both, as the first attempt
+did, reported one shared thread N times, inflated the totals, and handed a
+resolver working without a feature argument the same request over and over.
 
 *Two scope notes from WP3.* A feature's boundary also blocks on threads in the
 **project sources its build reads or otherwise depends on** — the root domain
@@ -553,9 +564,10 @@ is absent contributes nothing, and a file or directory that exists but cannot
 be read is an error, because "I could not read this" is not "there is nothing
 here", and answering a boundary with the second advances a build over a file
 nobody could see.
-Scans every human-facing file of the feature (or every feature; `--all` adds
-project-level files: root `domain-model.yaml`, `blueprint.yaml`, adapters,
-`adapter-set.yaml`) and emits every thread with its anchor:
+Scans every human-facing file of the feature — and the project-level files
+(root `domain-model.yaml`, `blueprint.yaml`, page manifests, adapters,
+`adapter-set.yaml`) that its build reads or depends on — and emits every thread
+with its anchor:
 
 ```json
 {

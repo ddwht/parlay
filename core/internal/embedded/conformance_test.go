@@ -601,6 +601,15 @@ func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
 		// diagnostic into a triage session the designer did not ask for
 		// is how a diagnostic stops being run.
 		"backlog": true,
+		// resolve is typed by a person for the same reason refine is: they
+		// have just read a file, written comments in it, and want them acted
+		// on. Nothing else can decide that moment has arrived — the loop's
+		// Stay path and doctor's survey both route INTO this skill, but a
+		// review that happened outside a pipeline run has no driver to notice
+		// it. Folding it into refine would be wrong for an unbuilt feature,
+		// where there is no amendment; folding it into doctor would make a
+		// diagnostic start rewriting spec text.
+		"resolve": true,
 	}
 
 	got := map[string]bool{}

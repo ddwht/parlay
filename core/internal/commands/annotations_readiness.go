@@ -41,25 +41,7 @@ const (
 // and go looking for a phantom edit. Their own comment is the cause, and it
 // should be the first thing they read.
 func annotationReadinessIssues(cfg *config.Context, slug string) []readinessIssue {
-	scans, err := collectFeatureAnnotations(cfg, slug)
-	if err == nil {
-		// Project sources count too: two feature gates could otherwise both
-		// pass with a thread sitting unread in a shared file.
-		//
-		// "Reads or otherwise depends on", not "reads and signs". The hard
-		// gate's source-signatures cover the root domain model, the layout and
-		// the SELECTED presentation adapter; adapter-set.yaml and
-		// blueprint.yaml are depended on without being signature fields at
-		// all, so signing is not what unites this set.
-		//
-		// CONSERVATIVE for v1: every project source blocks every feature,
-		// because there is no per-feature dependency map to scope it by. A
-		// feature that genuinely does not read a given adapter is blocked by a
-		// thread in it, which is the safe direction of wrong.
-		var project []annotationFileScan
-		project, err = collectProjectAnnotations(cfg)
-		scans = append(scans, project...)
-	}
+	scans, err := collectForBoundary(cfg, slug)
 	if err != nil {
 		// Fail closed. "Cannot tell whether this feature is under review" is
 		// not "it is not under review": the second answer would advance a

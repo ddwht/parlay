@@ -61,6 +61,34 @@ type annotationCounts struct {
 
 func (c annotationCounts) total() int { return c.Open + c.Answered + c.Closed }
 
+// collectForBoundary is what every consumer of a FEATURE's threads must call:
+// the feature's own files, plus the project sources its build reads or depends
+// on.
+//
+// One function, because the alternative was a live bug. The boundary gate
+// included the project scans and the probe, the listing and the sweep did not,
+// so a thread in the root domain model blocked a feature's build and told the
+// reviewer to run `/parlay-resolve @feature` — which reported nothing to
+// review, and whose sweep left the closed thread in place. An advertised fix
+// that cannot work is worse than no fix named at all.
+//
+// The same project thread is reported for every feature. That is not
+// duplication to be optimised away: it IS the conservative scope the gate
+// already takes, and a reviewer who sees a shared thread from whichever
+// feature they happen to be working on is better served than one who has to
+// know it lives somewhere else.
+func collectForBoundary(cfg *config.Context, slug string) ([]annotationFileScan, error) {
+	scans, err := collectFeatureAnnotations(cfg, slug)
+	if err != nil {
+		return nil, err
+	}
+	project, err := collectProjectAnnotations(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return append(scans, project...), nil
+}
+
 // collectFeatureAnnotations scans one feature's human-facing files.
 func collectFeatureAnnotations(cfg *config.Context, slug string) ([]annotationFileScan, error) {
 	featureDir := cfg.FeaturePath(slug)

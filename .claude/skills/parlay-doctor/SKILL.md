@@ -46,6 +46,14 @@ Gather state before proposing anything. None of these mutate:
   failures — report them, do not treat them as repairs.
 - `parlay internal check-coverage @{feature}` — intent/dialog coverage, chain gaps, drift
 - `parlay internal collect-questions @{feature}` — unresolved `Questions:` blocks
+- `parlay internal collect-annotations @{feature}` — review comments people
+  wrote in the files, and the malformed ones that never landed. Read the
+  `findings` before the counts: a broken sigil is somebody who tried to say
+  something and does not know it failed. The fix for threads is
+  `/parlay-resolve @{feature}`; the fix for a finding is to show the reviewer
+  the line and its code, never to guess what they meant. `errors` is the third
+  thing to read — a feature that could not be scanned is not a feature with
+  nothing to review.
 - `parlay internal check-drift @{feature}` — sources changed since the last build
 - `parlay internal check-amendments @{feature}` — amendment ledger health and
   the declared dirty set

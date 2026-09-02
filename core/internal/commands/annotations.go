@@ -155,11 +155,17 @@ func printThread(w interface{ Write([]byte) (int, error) }, scan annotationFileS
 		}
 	}
 
-	frozen := ""
+	tags := ""
 	if scan.Frozen {
-		frozen = "  (frozen)"
+		tags += "  (frozen)"
 	}
-	fmt.Fprintf(w, "%s:%d  %s%s\n", thread.File, thread.Line, thread.State, frozen)
+	if scan.Feature == "" {
+		// A project source: shared, and blocking every feature until it is
+		// resolved. Saying so is what stops a reviewer wondering why a thread
+		// they did not write is holding up their feature.
+		tags += "  (project)"
+	}
+	fmt.Fprintf(w, "%s:%d  %s%s\n", thread.File, thread.Line, thread.State, tags)
 	fmt.Fprintf(w, "  %s  [lines %d-%d]\n", identity, anchor.Span[0], anchor.Span[1])
 	fmt.Fprintf(w, "  | %s\n", firstAnchorLine(anchor.Text))
 	if anchor.Phrase != nil {
@@ -184,7 +190,7 @@ func firstAnchorLine(text string) string {
 
 func annotationScansFor(cfg *config.Context, args []string) ([]annotationFileScan, error) {
 	if len(args) == 1 {
-		return collectFeatureAnnotations(cfg, parser.FeatureSlug(args[0]))
+		return collectForBoundary(cfg, parser.FeatureSlug(args[0]))
 	}
 	features, err := cfg.AllFeatures()
 	if err != nil {
@@ -192,6 +198,9 @@ func annotationScansFor(cfg *config.Context, args []string) ([]annotationFileSca
 	}
 	var out []annotationFileScan
 	for _, slug := range features {
+		// The per-feature collector, not collectForBoundary: across a whole
+		// project the project sources are the same files every time, and
+		// listing them once per feature would report one thread N times.
 		scans, err := collectFeatureAnnotations(cfg, slug)
 		if err != nil {
 			// A feature nobody can read must not report as a feature with
@@ -201,10 +210,9 @@ func annotationScansFor(cfg *config.Context, args []string) ([]annotationFileSca
 		out = append(out, scans...)
 	}
 
-	// Project sources, ONCE. They belong to no feature, so without this a
-	// closed thread in the root domain model could only be swept by naming its
-	// path with --file — a trap, since nothing would have told the reviewer it
-	// was there.
+	// Project sources, once. Without them a closed thread in the root domain
+	// model could only be swept by naming its path with --file — a trap, since
+	// nothing would have told the reviewer it was there.
 	project, err := collectProjectAnnotations(cfg)
 	if err != nil {
 		return nil, err

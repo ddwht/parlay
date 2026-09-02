@@ -76,9 +76,24 @@ Generate buildfile.yaml and testcases.yaml for a feature using the configured fr
 
    **Authority ordering — where the founding docs and the contract artifacts disagree, the artifacts win.** The founding documents (`intents.md`, `dialogs.md`) are narrative context — they record why the feature exists and how it was conceived. The contract artifacts (`surface.yaml`, `capabilities.yaml`, `infrastructure.md`, `domain-model.yaml`) are current truth — they have absorbed every applied amendment, which the founding documents are frozen against. Where they disagree, the artifacts win. Do not carry an intent- or dialog-level detail into the buildfile when the contract artifacts contradict it. (This is the same reason the testcases step below reads criteria from `verify:` and never from intents — an intent bullet is history and may predate an amendment the contract has already absorbed; stating the rule here, at ingestion, is what keeps a pre-amendment detail from entering the buildfile in the first place.)
 
-6. **Check readiness** — Run: `parlay internal check-readiness @{feature} --stage build-feature`
+6. **Check readiness** — First run `parlay annotations clear @{feature}`, then
+   `parlay internal check-readiness @{feature} --stage build-feature`
+   - The sweep removes the review threads a reviewer explicitly closed and
+     nothing else, which is why it runs unattended here. It goes FIRST so that
+     `closed-annotations` is gone before the check, leaving only threads that
+     genuinely still need somebody.
    - This returns JSON with errors (blocking) and warnings (non-blocking)
    - If any errors are reported, present them to the user with the suggested fixes and stop — do not proceed to generation
+   - `open-annotations` and `answered-annotations` are among them, and they are
+     reported before the drift findings on purpose: a designer who has just
+     annotated a signed file would otherwise meet `stale-buildfile` first and
+     go looking for an edit nobody made. Their own comment is the cause. The
+     fix for the first is `/parlay-resolve @{feature}`; for the second it is to
+     read each reply in place and write `close` under it. **No build reads a
+     file with a thread in it** — a build is what happens after review.
+   - A readiness error saying the review threads could not be READ is the same
+     refusal, and for the same reason: a feature nobody could scan is not a
+     feature with nothing to review.
    - If only warnings are reported (e.g., open questions), inform the user and ask whether to proceed
 
 7. **Compute the diff** — Run: `parlay internal diff @{feature}` to find out what changed since the last build.

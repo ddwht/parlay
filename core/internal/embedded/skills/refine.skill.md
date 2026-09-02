@@ -28,6 +28,16 @@ nothing that resolves one. That asymmetry is the problem being fixed.
 - `<prose>` (required): the change, in your own words. One argument, one
   change. "Move the status filter above the table." "The approval step should
   notify the requester too."
+
+  **Or a thread ref** — `<file>:<line>` naming a review comment somebody wrote
+  in a spec file. Read it with `parlay annotations list @{feature}`, take the
+  request's text as the prose and the resolved anchor as the target, and record
+  the provenance in the amendment's `trigger:` as
+  `annotation by <handle> on <ref>`. Everything after step 1 is unchanged: a
+  request written in a file is still one change, and it earns no shortcut
+  through any gate below. Reply to the thread with
+  `parlay annotations reply … --kind done` naming the amendment when you are
+  finished — the reviewer reads the outcome where they raised it.
 - `feature` (optional): `{feature}` or `@{initiative}/{feature}`. Omitted, it
   is resolved from the prose and the project; ambiguity is raised, not guessed.
 

@@ -17,8 +17,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var collectAnnotationsAll bool
-
 var collectAnnotationsCmd = &cobra.Command{
 	Use:   "collect-annotations [@feature]",
 	Short: "Collect anchored review comments and their threads (JSON output for agent consumption)",
@@ -26,10 +24,10 @@ var collectAnnotationsCmd = &cobra.Command{
 	RunE:  runCollectAnnotations,
 }
 
-func init() {
-	collectAnnotationsCmd.Flags().BoolVar(&collectAnnotationsAll, "all", false,
-		"also scan project-level files (root domain model, blueprint, adapters, adapter-set)")
-}
+// There is no `--all`. The flag existed when project-level files were extra
+// scope a caller opted into; a thread in one of them now blocks EVERY feature's
+// boundary, so making them opt-in would mean the default answer is the wrong
+// one. They are always scanned, and always exactly once.
 
 type annotationsOutput struct {
 	Feature  string                     `json:"feature,omitempty"`
@@ -49,7 +47,10 @@ func runCollectAnnotations(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(args) == 1 {
-		out, err := annotationsForFeature(cfg, parser.FeatureSlug(args[0]))
+		// A named feature's answer is the BOUNDARY's answer: its own files
+		// plus the project sources its build reads, because those are what
+		// gate it.
+		out, err := annotationsForFeature(cfg, parser.FeatureSlug(args[0]), true)
 		if err != nil {
 			return err
 		}
@@ -60,9 +61,14 @@ func runCollectAnnotations(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("cannot enumerate features: %w", err)
 	}
+	// Across the whole project the project sources are the same files every
+	// time, so each feature reports only its OWN and they are added once at the
+	// top level. Folding them into every feature would report one shared thread
+	// N times, inflate the totals, and hand a resolver working without a
+	// feature argument the same request over and over.
 	all := annotationsOutput{Threads: []parser.AnnotationThread{}, Findings: []parser.AnnotationFinding{}}
 	for _, slug := range features {
-		out, err := annotationsForFeature(cfg, slug)
+		out, err := annotationsForFeature(cfg, slug, false)
 		if err != nil {
 			// collect-questions omits a feature it cannot read; this probe
 			// must not. Its answer gates a build boundary, so a feature that
@@ -80,26 +86,36 @@ func runCollectAnnotations(cmd *cobra.Command, args []string) error {
 		all.Counts.Closed += out.Counts.Closed
 	}
 
-	if collectAnnotationsAll {
-		project, err := collectProjectAnnotations(cfg)
-		if err != nil {
-			return err
-		}
-		for _, scan := range project {
-			all.Threads = append(all.Threads, scan.Threads...)
-			all.Findings = append(all.Findings, scan.Findings...)
-		}
-		counts := countAnnotations(project)
-		all.Counts.Open += counts.Open
-		all.Counts.Answered += counts.Answered
-		all.Counts.Closed += counts.Closed
+	// The project's own threads, at the top level, exactly once. `features[]`
+	// is per-feature; `threads[]` beside it is what belongs to no feature and
+	// blocks all of them.
+	project, err := collectProjectAnnotations(cfg)
+	if err != nil {
+		return err
 	}
+	refuseAnnotationsInAppliedRecords(project)
+	for _, scan := range project {
+		all.Threads = append(all.Threads, scan.Threads...)
+		all.Findings = append(all.Findings, scan.Findings...)
+	}
+	counts := countAnnotations(project)
+	all.Counts.Open += counts.Open
+	all.Counts.Answered += counts.Answered
+	all.Counts.Closed += counts.Closed
 
 	return printJSON(cmd, all)
 }
 
-func annotationsForFeature(cfg *config.Context, slug string) (*annotationsOutput, error) {
-	scans, err := collectFeatureAnnotations(cfg, slug)
+// annotationsForFeature reports one feature's threads. includeProject decides
+// whether the project sources that gate it are folded in: true for a named
+// feature, whose answer must be the boundary's answer, and false inside the
+// all-features walk, which adds them once at the top level instead.
+func annotationsForFeature(cfg *config.Context, slug string, includeProject bool) (*annotationsOutput, error) {
+	collect := collectFeatureAnnotations
+	if includeProject {
+		collect = collectForBoundary
+	}
+	scans, err := collect(cfg, slug)
 	if err != nil {
 		return nil, err
 	}

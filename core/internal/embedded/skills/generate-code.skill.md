@@ -63,7 +63,7 @@ Single-feature invocations remain valid for tooling that wants to drive one feat
 
 ## Non-interactive, CI-safe by construction
 
-Codegen has **no TTY-conditional code paths and no interactive prompts** in any path. The skill reads the buildfile, runs the freshness gate (see step 11.6), runs the layout-validation precheck (see step 11.7), and emits framework code via an AI agent — but the agent has no decisions left to make at codegen time. Wiring inference, disambiguation, and layout validation all live upstream (in build-feature and the layout-creation flow) and have already produced their verdicts before codegen runs.
+Codegen has **no TTY-conditional code paths and no interactive prompts** in any path. The skill reads the buildfile, runs the review-thread gate (see step 11.5.7), runs the freshness gate (see step 11.6), runs the layout-validation precheck (see step 11.7), and emits framework code via an AI agent — but the agent has no decisions left to make at codegen time. Wiring inference, disambiguation, and layout validation all live upstream (in build-feature and the layout-creation flow) and have already produced their verdicts before codegen runs.
 
 Concretely:
 
@@ -209,6 +209,43 @@ Concretely:
    You emit only the features step 4 scoped, but you order them within the project-wide schedule — a scoped run may sit in a later wave than a feature it never touches, and the modifies/creates rule still holds because the producing file is already on disk from the run that created it.
 
    In single-feature invocations the topological order is trivial — there is one node and no edges; the order is the identity. In project-pass mode with N features and a DAG of dependencies, emission walks the features in topological order; the strict-target rule (step 14.7) still applies AT EMISSION TIME for each feature — by the time a modifying feature runs, the topological order guarantees the file is on disk.
+
+11.5.7. **Review-thread gate** (per feature, before emission) — For every feature whose buildfile is loaded:
+
+   1. Run `parlay annotations clear @{feature}`. It removes the threads a
+      reviewer explicitly closed and nothing else, which is what makes it safe
+      to run unattended here.
+   2. Run `parlay internal collect-annotations @{feature}`.
+   3. **On any remaining thread, in any state, refuse to run for that feature**
+      and surface the count and the first file:
+
+      ```
+      open-annotations at <feature>: <n> review thread(s) still open, first at <file>:<line>. To fix: run /parlay-resolve <feature>, then re-run codegen.
+      ```
+
+      (`answered-annotations` when the remaining threads are all answered — the
+      fix there is to read each reply in place and write `close` under it.)
+   4. **On any annotation finding, refuse the same way.** A malformed
+      annotation is somebody trying to say something whose comment did not
+      land; emitting over it publishes code from a spec nobody finished
+      reviewing.
+   5. **On a non-empty `errors` array, refuse.** That array names features
+      whose files could not be scanned. "I could not look" is not "there is
+      nothing there", and treating it as the second is how emission proceeds
+      over the one file nobody could read. Surface the entry verbatim and
+      stop.
+
+   Mechanical, like the gate below it: no AI invocation, no prompts, no
+   auto-resolution. Codegen does not run the resolver for you.
+
+   **Why this is here and not only in the loop.** No emission reads a file with
+   a thread in it — threads are review state and emission is what happens after
+   review. The loop's boundary prompt is a convenience over that rule, not the
+   rule; a direct `/parlay-generate-code` has to enforce it too, or the whole
+   guarantee is one command away from being bypassed. This is also what keeps
+   every signature below free of comment bytes: because a thread never survives
+   into a build, clearing one can never stale a buildfile for a change in
+   nothing.
 
 11.6. **Buildfile freshness gate** (per feature, before emission) — For every feature whose buildfile is loaded, run the freshness gate **before any emission begins for that feature**:
 
