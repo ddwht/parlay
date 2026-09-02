@@ -162,10 +162,22 @@ The host form is chosen by file extension. A longer example of each:
         # @dwht: also needs Priority — the validator refuses an intent without one
 ```
 
-The sigil is `<!-- @` in Markdown and `# @` in YAML. Neither occurs anywhere in
-the current tree (`core/spec`, `.parlay`, `docs`, the embedded skills and
-schemas), and the trailing `:` after the handle rules out an `@feature` ref
-that happens to open a comment.
+The sigil is `<!-- @` in Markdown and `# @` in YAML.
+
+*Corrected during WP1, 2026-09-02.* The claim that "the trailing `:` after the
+handle rules out an `@feature` ref that happens to open a comment" is false,
+and scanning this repo proved it:
+`core/.parlay/build/parlay-tool/page-layout-field/buildfile.yaml` carries a
+wrapped prose comment opening `# @design-loop/design-loop respectively and
+stay byte-equivalent`, which has no colon anywhere and still reached the
+grammar. The real discriminator is the **slash**: a handle is
+`[A-Za-z0-9_.-]+` and cannot contain one, so `@<something>/` is a ref and the
+line is passed over in silence. Everything else opening with the sigil is a
+candidate, broken ones included — a reviewer who typed the sigil meant
+something. This is the collision Codex's decision-A objection predicted, found
+in the tree rather than in the abstract; it is answered by a one-character
+rule rather than by the namespace, and the namespace remains available if a
+second collision ever appears.
 
 ### 3.2 Multi-line annotations
 
@@ -193,6 +205,12 @@ line at that column that begins with `# @` starts a new annotation instead.
 
 `do` and `ask` are **requests**; `done`, `answer` and `declined` are
 **replies**; `close` is the **terminal** entry, and only a reviewer writes it.
+
+*Clarified during WP1, 2026-09-02.* All six are **writable words**. The kind
+set §8 names was abbreviated — it omitted `close`, which §3.4 plainly requires
+— and `do` has a name in this table, so a reviewer who writes it down means
+what a reviewer who leaves it out means. The closed set is
+`{do, ask, close, done, answer, declined}`.
 A reply is attached to the request it follows, not to the text. Kinds outside
 the set are `annotation-word-unknown`. There is deliberately no
 `ok`/`approved` kind for text that has no thread: approval of criteria
@@ -206,6 +224,22 @@ A reply is placed **immediately after** the request it answers, at the same
 column, in the same host form. A request followed by one or more replies is a
 **thread**. Further requests may follow a reply — the reviewer disagreeing
 with what was done — and the thread continues.
+
+*Amended twice during WP1, 2026-09-02; the second amendment reverses the
+first.* "Immediately after" is **literal**: a thread is a run of consecutive
+entries, with nothing between them, not even a blank line.
+
+The first amendment made blank lines transparent, reasoning from §3.5, where
+they are transparent to an anchor. Codex recommended the opposite and was
+right, for a reason neither of us had at the start: it breaks the reopen path
+this section documents. "Reopen by starting a new thread on the same text"
+means writing a request under a closed thread — and with blank lines
+transparent that request joins the closed thread, becomes
+`annotation-after-close`, and **disappears from the listing** instead of being
+read. A blank line is how a person separates two conversations, so it has to
+separate them here. The cost is that a reply spaced away from its request is
+`annotation-reply-orphaned`, which the reviewer sees and can fix; the benefit
+is that nothing a reviewer writes is silently dropped.
 
 ```markdown
 - Task text must be 200 characters or fewer
@@ -227,7 +261,9 @@ A reply with no request above it is `annotation-reply-orphaned`.
 The reviewer closes a thread by **writing `close`** under it — in the editor,
 or with `parlay annotations reply <file>:<line> --kind close --by <handle>`.
 It may follow a reply (the usual case: read, accept, close) or a request
-directly ("never mind"). Nothing after a `close` is allowed at that column:
+directly ("never mind"), and never nothing: a `close` with no entry above it
+is `annotation-reply-orphaned`, because a thread born closed would be swept on
+the next clear without anything having been asked or answered. Nothing after a `close` is allowed at that column:
 a later entry is `annotation-after-close`, because a closed thread is about to
 be removed and text under it would vanish with it. Reopen by starting a new
 thread on the same text.
@@ -258,8 +294,17 @@ legal — it is the reviewer's file — but it is not what the tool does.
   `annotation-unanchored`.
 - **Column matters in YAML.** The `#` column selects the anchor (§4.2). In
   Markdown the column is ignored except inside nested lists, where the
-  comment's indentation selects the list level exactly as a continuation line
-  would.
+  comment's indentation selects the list level: the innermost enclosing item
+  whose **marker** is at or left of the comment.
+
+  *Amended during WP1, 2026-09-02.* This first said "exactly as a continuation
+  line would", which means the item's CONTENT column — and that made a comment
+  aligned with a nested item's dash select that item's **parent**, the exact
+  opposite of §4.2's YAML rule, where outdenting to a dash widens and aligning
+  with one selects it. Two opposite conventions for the same visual gesture is
+  a defect in the syntax, not a detail of an implementation, so Markdown now
+  reads the way YAML does: **align with the dash you mean.** Codex recommended
+  the same rule independently.
 
 ---
 
@@ -352,6 +397,35 @@ Four YAML shapes need a stated rule, all raised by Codex:
   `annotation-malformed` rather than anchored by a column the parser would
   refuse.
 
+### 4.2.1 Two rules WP1 had to reconcile
+
+*Added during WP1, 2026-09-02; both raised by Codex.*
+
+**The document row and `annotation-unanchored` overlapped.** §4.2 gives "no
+qualifying line above" the meaning *the whole document*; §3.5 says an
+annotation with nothing above it is `annotation-unanchored`. They disagree
+only about the top of a file, and §3.5 wins there — the anchor is always
+above, so a comment at the top of a file is about nothing yet, and a comment
+about the whole document goes at the bottom at column 0. The document row
+keeps the case it was written for: content above, but nothing opening a node
+at or left of the column.
+
+**An anchor's text never contains the thread.** The span names raw lines,
+because a span is for a person opening the file; the TEXT is built from what a
+parser can see there, so comment lines — the thread's own entries included —
+are not in it. Codex called this fatal for `section` and it is: `section`'s
+span runs forward from its heading and therefore covers the annotation itself,
+so a quoted phrase could narrow against words the reviewer wrote in their own
+request, and `annotation-phrase-not-found` would never fire on a phrase that
+existed nowhere but the comment.
+
+**A unit never claims text below the annotation.** The heading row already
+says so ("a comment is never about text it precedes"), but a YAML subtree and
+a Markdown field or list item can each run PAST a comment written in the
+middle of one. Every span is therefore clamped to the line above the request.
+The single exception is the `section` scope word, which §4.1 defines forward
+from its heading on purpose.
+
 ### 4.3 Phrase narrowing
 
 `@dwht "200 characters": too low` anchors to the unit §4.1/4.2 selects and
@@ -377,7 +451,7 @@ can supply, plus a **ref** when the file is one parlay understands:
 | `infrastructure.md` | as above | `@feature/infrastructure:<heading-slug>` + field |
 | `domain-model.yaml` | as above | `@feature/domain:<entity>` (or the root model's) |
 | `amendments/NNN-slug.md` | as above | `@feature/amendment:<slug>` + section |
-| `*.page.md` | as above | page name + region / layout node id |
+| `*.page.md` | as above | page name + region / layout node id — **not** feature-qualified (WP2): `affects:` has no `page` kind, so `@<feature>/page:<name>` would be shaped like an amendment target no amendment could name. A page is project-owned, multi-feature, and scanned once at project level rather than per feature. |
 
 The ref column reuses the `affects:` vocabulary (`operation | surface |
 infrastructure | domain`) so that a resolution which becomes an amendment can
@@ -426,7 +500,20 @@ The rule binds the scanner as tightly as the parsers, and for the same reason
 in reverse: a document that quotes the annotation syntax — this design, the
 schema of §WP4, a dialog about annotations — must not be scanned as carrying
 one. Both directions are the same sentence: **inside code, the sigil is a
-picture of a sigil.**
+picture of a sigil.** One lexer answers it for both readers, so the same bytes
+can never be content to the parser and an actionable request to the resolver.
+
+The inline-code half is a **deliberate approximation**, not CommonMark.
+CommonMark resolves a code span by looking for a matching backtick run
+anywhere in the paragraph; this scanner looks only on the line. Carrying span
+state across lines would be the wrong approximation of that rule rather than a
+closer one: a single stray backtick in prose would swallow every following
+line until the next backtick, hiding real comments from the parsers and real
+annotations from the scanner with no finding to say so. Line-local matching
+fails the other way — a comment marker inside a genuinely wrapped code span is
+read as a comment — and a wrapped span that needs the exemption can be written
+as a fenced block. A false negative on the exemption is recoverable; a silent
+disappearance is not.
 
 The re-trim after stripping is symmetric for the same reason. A line the
 stripper touched is trimmed on both ends, so a trailing space left where an
@@ -709,7 +796,7 @@ New codes, reported by `collect-annotations` in `findings` and by
 | Code | Fires when |
 |---|---|
 | `annotation-malformed` | A comment opens with the sigil (`<!-- @` / `# @`) but does not match the grammar — no colon, a handle with illegal characters, an unterminated quote. |
-| `annotation-word-unknown` | A word between the handle and the colon is neither a kind in `{ask, done, answer, declined}` nor the scope word `section`, or a kind or the scope appears twice. |
+| `annotation-word-unknown` | A word between the handle and the colon is neither a kind in `{do, ask, close, done, answer, declined}` nor the scope word `section`, or a kind or the scope appears twice. |
 | `annotation-in-block-scalar` | The sigil appears inside a YAML block scalar (`\|` or `>`), where it is content. Fix: place it at the key's column after the scalar ends. |
 | `annotation-inline` | The annotation shares a line with content. |
 | `annotation-unanchored` | Nothing above it but the top of the file, blank lines, or other annotations. |

@@ -138,8 +138,19 @@ func nextCommentOpen(line string) (idx, skip int) {
 			run := backtickRun(line, i)
 			end := closingBacktickRun(line, i+run, run)
 			if end < 0 {
-				// No closing run: the backticks are literal, and whatever
-				// follows is ordinary text. Nothing to protect.
+				// No closing run ON THIS LINE: the backticks are literal here.
+				//
+				// CommonMark resolves a code span against the whole paragraph,
+				// so a span really can wrap. This scanner deliberately does
+				// not, because the line-by-line approximation of that rule —
+				// carrying span state across lines — fails in the dangerous
+				// direction: one stray backtick in prose would swallow every
+				// following line until the next backtick, hiding real comments
+				// from the parsers and real annotations from the scanner with
+				// no finding to say so. Line-local spans fail the other way,
+				// on a wrapped code span nobody in this tree writes, and the
+				// worst that happens is a comment marker inside one is read as
+				// a comment.
 				i += run
 				continue
 			}
@@ -199,10 +210,19 @@ func opensFence(line string) (string, bool) {
 }
 
 // closesFence reports whether a line closes a fence opened with marker. The
-// closer must be the same character and at least as long, and carry nothing
-// but whitespace after it.
+// closer must be the same character, at least as long, indented by at most
+// three spaces, and carry nothing but whitespace after it.
+//
+// The indentation limit is not pedantry. TrimSpace here would let a line deep
+// inside a fenced block — `    ```" in an example that shows a fence — close
+// the real one, and everything below it would go back to being read for
+// comments in the middle of what is still code.
 func closesFence(line, marker string) bool {
-	trimmed := strings.TrimSpace(line)
+	trimmed := strings.TrimLeft(line, " ")
+	if len(line)-len(trimmed) > 3 {
+		return false
+	}
+	trimmed = strings.TrimRight(trimmed, " \t")
 	if len(trimmed) < len(marker) {
 		return false
 	}
