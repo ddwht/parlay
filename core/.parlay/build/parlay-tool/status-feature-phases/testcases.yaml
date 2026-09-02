@@ -247,7 +247,7 @@ suites:
             expected: 0
 
   # ---------------------------------------------------------------------
-  # 4. json-envelope — --json flag, schema_version=1, snake_case keys, stdout-only
+  # 4. json-envelope — --json flag, schema_version=2, snake_case keys, stdout-only
   # ---------------------------------------------------------------------
   - name: json envelope shape and keys
     component: json-envelope
@@ -270,7 +270,7 @@ suites:
           - verify: element
             target: children-array
 
-      - name: schema_version is the integer 1 — NOT a string tag
+      - name: schema_version is the integer 2 — NOT a string tag
         description: >-
           Constraint pin from intents/dialogs: schema_version is the integer
           `1`, not `"parlay.status/v1"`. Bumped on breaking changes only;
@@ -281,7 +281,7 @@ suites:
             value: "--json"
           - verify: text
             target: schema-version-field
-            expected: '"schema_version": 1  (integer literal, NOT string)'
+            expected: '"schema_version": 2  (integer literal, NOT string)'
 
       - name: multi-word JSON keys use snake_case
         description: >-
@@ -344,16 +344,16 @@ suites:
             target: root-object
             expected: '"features": []  (empty array, never null) when bare-parent'
 
-      - name: --json | jq .schema_version returns 1
+      - name: --json | jq .schema_version returns 2
         description: >-
-          End-to-end verify: parlay status --json | jq .schema_version → 1.
+          End-to-end verify: parlay status --json | jq .schema_version → 2.
         steps:
           - action: render
             target: json-envelope
             value: "--json"
           - verify: text
             target: schema-version-field
-            expected: '`jq .schema_version` returns 1 (integer)'
+            expected: '`jq .schema_version` returns 2 (integer)'
 
       - name: default invocation — no --json — produces human output byte-for-byte unchanged
         description: >-

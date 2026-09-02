@@ -224,7 +224,7 @@ components:
     description: >-
       Append one new column to the right of every feature identifier in the
       existing tabwriter table — the lowercase phase token, one of
-      intents | dialogs | artifacts | build | done. Bare token, no decoration,
+      planned | intents | dialogs | artifacts | build | done. Bare token, no decoration,
       no brackets, no color. Unconditional in human output. No new layout
       primitive — the existing tabwriter handles right-padding.
 
@@ -331,7 +331,7 @@ components:
       Register a new boolean flag --json (default false) on the existing
       parlay status command. When set, suppress the human tabular output
       entirely and emit a single JSON document on stdout. Envelope shape
-      is fixed: top-level schema_version (integer 1), root (object with
+      is fixed: top-level schema_version (integer 2), root (object with
       path/kind/source/features), and children (always-present array,
       [] for child or standalone roots). Multi-word keys are snake_case.
       Each feature entry has at minimum {id, phase}. Unavailable child
@@ -359,7 +359,7 @@ components:
       - name: schema-version-field
         widget: fmt.Printf
         bind: envelope.schema_version
-        format: '"schema_version": 1'
+        format: '"schema_version": 2'
         visible-when: --json is set
       - name: root-object
         widget: fmt.Printf
@@ -565,6 +565,7 @@ plan:
 source-signatures:
   intents: "sha256:5e72fe738bf036a886c78d891902f4c326606571a7b20799ca9d2a67dbbcdd27"
   dialogs: "sha256:bd9a72aada760d40b45c15f4e2dca84b767c1f8b236570df6fd60d57b7c6a76c"
-  surface: "sha256:730c71f680781cb64f18bc19bd1d22a3a79c04bb31d570917d535c72085440e1"
+  surface: "sha256:391db383c04b533de6b5fdc87ab8b2f2d1e3d5df00954e77ae424fb140bc4bc7"
   infrastructure: "sha256:eaf10e61953116dbe95c57e85114e89c15533cd52127460fbe4091b3efbeed22"
-  adapter-version: "sha256:3630411edf968363f6b8e24b7619d3f57c26e621766d9fa60627b1ba5c2f4188"
+  composition: "sha256:7304c870daa2cc3dcfd11d0d728d383993880b12f4864fba8d0c29f09267faa7"
+  adapter-version: "sha256:da302e2bfa84c7e1165e1829678bafb54ad23cd7087ebfe02e7a9ca8fe44513e"

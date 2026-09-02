@@ -38,13 +38,87 @@ func writeFile(t *testing.T, path string) {
 	}
 }
 
-// writeIntents creates a feature directory and an intents.md inside it.
+// writeIntents creates a feature directory and an intents.md carrying one
+// real, parseable intent. Content, not just presence: the ladder's bottom
+// two rungs read these files, so a touch-style fixture now means
+// PhasePlanned rather than PhaseIntents.
 func writeIntents(t *testing.T, root, slug string) string {
 	t.Helper()
 	dir := filepath.Join(root, "spec", "intents", slug)
-	writeFile(t, filepath.Join(dir, "intents.md"))
+	writeContent(t, filepath.Join(dir, "intents.md"), oneIntent)
 	return dir
 }
+
+// writeScaffoldIntents creates the feature directory with an intents.md
+// that parses to ZERO intents — what `parlay add-feature` actually writes.
+func writeScaffoldIntents(t *testing.T, root, slug string) string {
+	t.Helper()
+	dir := filepath.Join(root, "spec", "intents", slug)
+	writeContent(t, filepath.Join(dir, "intents.md"), scaffoldIntents)
+	return dir
+}
+
+// writeDialogs writes a dialogs.md carrying one real, parseable dialog.
+func writeDialogs(t *testing.T, dir string) {
+	t.Helper()
+	writeContent(t, filepath.Join(dir, "dialogs.md"), oneDialog)
+}
+
+// writeStubDialogs writes the header-only dialogs.md that `add-feature`
+// creates: present on disk, zero parsed dialogs.
+func writeStubDialogs(t *testing.T, dir string) {
+	t.Helper()
+	writeContent(t, filepath.Join(dir, "dialogs.md"), stubDialogs)
+}
+
+func writeContent(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const (
+	oneIntent = `# Widget
+
+---
+
+## Add A Thing
+
+**Goal**: Capture a thing so it can be reviewed later.
+**Persona**: CLI User
+`
+	// Mirrors what add-feature writes: the example intent is commented
+	// out precisely so the file parses as zero intents.
+	scaffoldIntents = `# Widget
+
+<!--
+## Example Intent
+
+**Goal**: something
+**Persona**: someone
+-->
+`
+	oneDialog = `# Widget — Dialogs
+
+---
+
+### Add A Thing
+
+**Trigger**: The user runs the add command.
+
+User: Runs ` + "`widget add \"x\"`" + `
+System: Records it and confirms with the assigned id.
+`
+	stubDialogs = `# Widget — Dialogs
+
+---
+
+`
+)
 
 // ---------------------------------------------------------------------
 // Phase ladder — one fixture per rung.
@@ -65,7 +139,7 @@ func TestComputeFeaturePhase_PlusDialogs(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "with-dialogs")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "with-dialogs")
 	if got != PhaseDialogs {
@@ -77,7 +151,7 @@ func TestComputeFeaturePhase_PlusSurfaceOnly(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "with-surface")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "with-surface")
@@ -92,7 +166,7 @@ func TestComputeFeaturePhase_PlusInfrastructureOnly(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "with-infra")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "infrastructure.md"))
 
 	got := ComputeFeaturePhase(rootCtxAt(root), "with-infra")
@@ -123,7 +197,7 @@ func TestComputeFeaturePhase_AllFourPreTerminal(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "full")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "full", "buildfile.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "full", "testcases.yaml"))
@@ -149,7 +223,7 @@ func TestComputeFeaturePhase_BuildfileWithoutTestcasesIsNotDone(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "halfbuilt")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "surface.md"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "halfbuilt", "buildfile.yaml"))
 
@@ -168,7 +242,7 @@ func TestComputeFeaturePhase_Idempotent(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "idem")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 
 	rc := rootCtxAt(root)
 	first := ComputeFeaturePhase(rc, "idem")
@@ -186,7 +260,7 @@ func TestComputeFeaturePhase_NoSideEffectsAcrossManyCalls(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 	dir := writeIntents(t, root, "looped")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "looped", "buildfile.yaml"))
 	writeFile(t, filepath.Join(root, ".parlay", "build", "looped", "testcases.yaml"))
@@ -205,11 +279,12 @@ func TestComputeFeaturePhase_NoSideEffectsAcrossManyCalls(t *testing.T) {
 }
 
 func TestComputeFeaturePhase_ReturnsOnlyExportedConstants(t *testing.T) {
-	// The contract says: value is always one of the five exported
+	// The contract says: value is always one of the exported
 	// constants. Exhaustively try every reachable on-disk topology
 	// (none, +intents, +dialogs, +surface, +infra, +buildfile, all)
 	// and assert each result is a member of the constant set.
 	allowed := map[FeaturePhase]bool{
+		PhasePlanned:   true,
 		PhaseIntents:   true,
 		PhaseDialogs:   true,
 		PhaseArtifacts: true,
@@ -220,7 +295,7 @@ func TestComputeFeaturePhase_ReturnsOnlyExportedConstants(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// missing feature → still a valid phase (intents is the floor).
+	// missing feature → still a valid phase (planned is the floor).
 	rc := rootCtxAt(root)
 	if got := ComputeFeaturePhase(rc, "missing"); !allowed[got] {
 		t.Fatalf("missing feature returned out-of-set value %q", got)
@@ -230,7 +305,7 @@ func TestComputeFeaturePhase_ReturnsOnlyExportedConstants(t *testing.T) {
 	steps := []func(){
 		func() { writeIntents(t, root, "ladder") },
 		func() {
-			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "dialogs.md"))
+			writeDialogs(t, filepath.Join(root, "spec", "intents", "ladder"))
 		},
 		func() {
 			writeFile(t, filepath.Join(root, "spec", "intents", "ladder", "surface.yaml"))
@@ -286,7 +361,7 @@ func TestComputeFeaturePhase_PerRoot_SameNameTwoRoots(t *testing.T) {
 
 	// studio/widget — full pipeline through a COMPLETE build.
 	dir := writeIntents(t, studio, "widget")
-	writeFile(t, filepath.Join(dir, "dialogs.md"))
+	writeDialogs(t, dir)
 	writeFile(t, filepath.Join(dir, "surface.yaml"))
 	writeFile(t, filepath.Join(studio, ".parlay", "build", "widget", "buildfile.yaml"))
 	writeFile(t, filepath.Join(studio, ".parlay", "build", "widget", "testcases.yaml"))
@@ -344,15 +419,15 @@ func TestComputeFeaturePhase_PerRoot_BuildStateDoesNotLeakAcrossRoots(t *testing
 func TestComputeFeaturePhase_NilContext(t *testing.T) {
 	// Defensive: passing nil shouldn't panic — a missing rootCtx is a
 	// programmer error but the helper should fail closed at the floor.
-	if got := ComputeFeaturePhase(nil, "anything"); got != PhaseIntents {
-		t.Fatalf("nil ctx: want %q, got %q", PhaseIntents, got)
+	if got := ComputeFeaturePhase(nil, "anything"); got != PhasePlanned {
+		t.Fatalf("nil ctx: want %q, got %q", PhasePlanned, got)
 	}
 }
 
 func TestComputeFeaturePhase_EmptySlug(t *testing.T) {
 	root := t.TempDir()
-	if got := ComputeFeaturePhase(rootCtxAt(root), ""); got != PhaseIntents {
-		t.Fatalf("empty slug: want %q, got %q", PhaseIntents, got)
+	if got := ComputeFeaturePhase(rootCtxAt(root), ""); got != PhasePlanned {
+		t.Fatalf("empty slug: want %q, got %q", PhasePlanned, got)
 	}
 }
 
@@ -382,5 +457,138 @@ func TestComputeFeaturePhase_WithoutDeclarationIsAnOrdinaryFeature(t *testing.T)
 
 	if got := ComputeFeaturePhase(rootCtxAt(root), "geometry-engine"); got != PhaseIntents {
 		t.Errorf("want %q, got %q", PhaseIntents, got)
+	}
+}
+
+// ---------------------------------------------------------------------
+// The planned rung — the bug this ladder change exists to fix.
+// ---------------------------------------------------------------------
+
+// The regression guard that matters most: run the REAL add-feature and
+// ask the ladder what it made. Before the content-aware rungs this
+// answered "dialogs" — a folder with two empty founding files claiming
+// authored dialogs — because add-feature writes dialogs.md eagerly and
+// the ladder asked only whether the file existed. Asserting against the
+// real command rather than a hand-built fixture is the point: the bug
+// lived in the disagreement between the two.
+func TestComputeFeaturePhase_FreshlyAddedFeatureIsPlanned(t *testing.T) {
+	setupTestDir(t)
+	if err := os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAddFeature(testCommandWithContext(t, testContext(t)), []string{"fleet", "overview"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ComputeFeaturePhase(testContext(t), "fleet-overview")
+	if got != PhasePlanned {
+		t.Fatalf("a brand-new feature should be %q, got %q", PhasePlanned, got)
+	}
+}
+
+// A scaffolded intents.md parses to zero intents because its example is
+// commented out. That is what makes `planned` detectable at all.
+func TestComputeFeaturePhase_ScaffoldIntentsAreZeroIntents(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeScaffoldIntents(t, root, "scaffolded")
+	writeStubDialogs(t, dir)
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "scaffolded"); got != PhasePlanned {
+		t.Fatalf("scaffold: want %q, got %q", PhasePlanned, got)
+	}
+}
+
+// Presence is not authorship. A real intents.md plus the header-only
+// dialogs.md add-feature writes is an intents-phase feature, not a
+// dialogs-phase one.
+func TestComputeFeaturePhase_StubDialogsDoNotReachDialogsPhase(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeIntents(t, root, "stubbed")
+	writeStubDialogs(t, dir)
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "stubbed"); got != PhaseIntents {
+		t.Fatalf("stub dialogs: want %q, got %q", PhaseIntents, got)
+	}
+}
+
+// An unreadable founding document must not demote the feature. Reporting
+// a feature as emptier than it is, on the evidence of a file the tool
+// could not read, is the one failure this fallback exists to prevent.
+func TestComputeFeaturePhase_UnparseableIntentsDoNotDemote(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := filepath.Join(root, "spec", "intents", "broken")
+	// A heading with no Goal/Persona still parses as an intent; to force
+	// the fallback we need the read itself to fail, so use a directory
+	// where the file should be.
+	if err := os.MkdirAll(filepath.Join(dir, "intents.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "broken"); got == PhasePlanned {
+		t.Fatalf("unreadable intents.md demoted the feature to %q", got)
+	}
+}
+
+// A backend feature legitimately has no dialog turns, and says so in
+// dialogs.md. Once it has artifacts, a buildfile and testcases it is
+// finished — reading dialog CONTENT at the terminal rung would demote it
+// to `build` for having correctly declared that it has none. Drawn from
+// a real feature in this repo (parlay-tool/structured-domain-model-validation),
+// which the first cut of the content-aware ladder demoted.
+func TestComputeFeaturePhase_BuiltBackendFeatureWithNoDialogTurnsIsDone(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeIntents(t, root, "backend")
+	writeContent(t, filepath.Join(dir, "dialogs.md"),
+		"# Backend — Dialogs\n\n_CLI/backend feature — no interactive dialog turns._\n\n---\n")
+	writeFile(t, filepath.Join(dir, "capabilities.yaml"))
+	build := filepath.Join(root, ".parlay", "build", "backend")
+	writeFile(t, filepath.Join(build, "buildfile.yaml"))
+	writeFile(t, filepath.Join(build, "testcases.yaml"))
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "backend"); got != PhaseDone {
+		t.Fatalf("built backend feature with no dialog turns: want %q, got %q", PhaseDone, got)
+	}
+}
+
+// The parse-failure fallback is claimed for BOTH founding documents, so
+// both are pinned. An unreadable dialogs.md promotes an authored-intent
+// feature to the dialogs rung — presence is the conservative answer, and
+// half a rule with a guard is a rule that drifts.
+func TestComputeFeaturePhase_UnparseableDialogsDoNotDemote(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := writeIntents(t, root, "brokendialogs")
+	if err := os.MkdirAll(filepath.Join(dir, "dialogs.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "brokendialogs"); got != PhaseDialogs {
+		t.Fatalf("unreadable dialogs.md: want %q (presence fallback), got %q", PhaseDialogs, got)
+	}
+}
+
+// The terminal rung claims structural integrity of BOTH founding
+// documents. A feature carrying dialogs, an artifact and both build
+// outputs but no intents.md promises nothing, so there is nothing for
+// those build outputs to be the completion of — it must not report done.
+// Status enumeration hides this because features are discovered through
+// intents.md, but an invariant that holds only via the caller's
+// discovery order is not an invariant.
+func TestComputeFeaturePhase_MissingIntentsIsNotDone(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	dir := filepath.Join(root, "spec", "intents", "nointents")
+	writeDialogs(t, dir)
+	writeFile(t, filepath.Join(dir, "capabilities.yaml"))
+	build := filepath.Join(root, ".parlay", "build", "nointents")
+	writeFile(t, filepath.Join(build, "buildfile.yaml"))
+	writeFile(t, filepath.Join(build, "testcases.yaml"))
+
+	if got := ComputeFeaturePhase(rootCtxAt(root), "nointents"); got == PhaseDone {
+		t.Fatalf("feature with no intents.md reported %q", got)
 	}
 }

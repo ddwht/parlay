@@ -46,6 +46,251 @@ sources:
     surface-yaml: 730c71f680781cb6
     domain: 56866a325365609d
     adapter-version: 3630411edf968363
+    amendments:
+        001-planned-phase-and-content-aware-ladder.md: 999080ac78fb7093
 buildfile-sections:
     fixtures: 8d016f69eeb53741
     routes: de34b2608784600c
+last-applied-amendment: 1
+applied-at:
+    001-planned-phase-and-content-aware-ladder.md: "2026-09-01T14:24:40Z"
+transition-receipts:
+    001-planned-phase-and-content-aware-ladder.md:
+        payload:
+            scheme: parlay.transition-approval.v1
+            feature: parlay-tool/status-feature-phases
+            mode: evolve
+            amendment-seq: 1
+            amendment-file: 001-planned-phase-and-content-aware-ladder.md
+            amendment-hash: 999080ac78fb7093
+            withdraws: []
+            affects:
+                - '@parlay-tool/status-feature-phases/surface:machine-readable-json-output-via-json'
+                - '@parlay-tool/status-feature-phases/surface:per-feature-phase-column-in-human-listing'
+            prior:
+                through: 0
+            evolution:
+                - lineage: emit-machine-readable-status-with-json
+                  mode: revise
+                  before:
+                    title: Emit machine-readable status with --json
+                    slug: emit-machine-readable-status-with-json
+                    goal: Let agents consume `parlay status` output programmatically — current human-formatted output is not parseable.
+                    persona: Agent or scripted tooling driving parlay from outside Claude Code.
+                    priority: P1
+                    context: An agent needs to decide which feature to advance next, or wants to surface phase information in a UI. Parsing the human output is brittle and tabwriter-formatted.
+                    action: Add a `--json` flag to `parlay status` that emits a stable JSON object covering the same information as the human output, including the per-feature phase column.
+                    objects:
+                        - status output
+                        - JSON envelope
+                        - feature
+                        - phase
+                        - root
+                        - child root
+                    constraints:
+                        - '`--json` must be additive and opt-in. Default behavior of `parlay status` (human tabular output) must be byte-for-byte unchanged for existing callers, except for the addition of the new phase column to the human listing and the new per-child sections in parent-root invocations.'
+                        - The JSON envelope must include a top-level `schema_version` integer field, starting at `1`. Any breaking change to field names, semantics, or removal bumps this integer. Additive fields (new optional keys) do not bump it. This is the conservative default; if a string-tag scheme like `"parlay.status/v1"` is preferred for ecosystem reasons, raise it back to the parent session before dialogs.
+                        - 'The JSON envelope is hierarchical and mirrors the human output:'
+                        - Each feature entry must include at minimum `id` and `phase`. Use snake_case for multi-word JSON keys.
+                        - The JSON output must be valid JSON on stdout only — no human-readable preamble, no trailing log lines. Errors continue to go to stderr / non-zero exit.
+                        - '`--json` must work identically across parent, child, and bare-parent root topologies. For bare-parent, `root.features` is an empty array (not null) and `children` lists each registered child.'
+                    verify:
+                        - '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
+                        - '`parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.'
+                        - '`parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.'
+                        - '`parlay status --json | jq .schema_version` returns `1`.'
+                        - '`parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.'
+                        - '`parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.'
+                        - '`parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'
+                    questions:
+                        - (none)
+                  after:
+                    title: Emit machine-readable status with --json
+                    slug: emit-machine-readable-status-with-json
+                    goal: Let an agent or script consume `parlay status` output structurally, without parsing a human-formatted listing.
+                    persona: Designer or agent operating on a parlay project.
+                    priority: P0
+                    context: Skills and CI steps need the active root, its features and their phases as data. Screen-scraping a tabwriter listing breaks on every cosmetic change.
+                    action: Add a `--json` flag that suppresses the human listing and writes one JSON document to stdout.
+                    objects:
+                        - status envelope
+                        - schema_version
+                        - root
+                        - children
+                        - feature entry
+                    constraints:
+                        - The JSON envelope must include a top-level `schema_version` integer field. It is `2`. Any breaking change to field names, semantics, or removal bumps this integer. Adding a VALUE to a documented enum is such a change and bumps it; adding a new optional FIELD is not and does not.
+                        - 'Top-level keys: `schema_version`, `root`, `children`.'
+                        - '`--json` suppresses the human listing entirely — one document on stdout, never both, never interleaved.'
+                        - Each feature entry includes at minimum `id` and `phase`. Additional optional fields may be added later without bumping `schema_version`.
+                        - Multi-word JSON keys use snake_case (`schema_version`, not `schemaVersion`).
+                    verify:
+                        - '`parlay status --json | jq .schema_version` returns `2`.'
+                        - '`parlay status --json` from a parent root returns an object with `schema_version: 2`, a `root` object whose `kind` is `parent`, and a `children` array with one entry per registered child root.'
+                        - 'A feature created by `parlay add-feature` and not yet edited appears with `"phase": "planned"`.'
+                    questions: []
+                  delta:
+                    - field: goal
+                      before: Let agents consume `parlay status` output programmatically — current human-formatted output is not parseable.
+                      after: Let an agent or script consume `parlay status` output structurally, without parsing a human-formatted listing.
+                    - field: persona
+                      before: Agent or scripted tooling driving parlay from outside Claude Code.
+                      after: Designer or agent operating on a parlay project.
+                    - field: priority
+                      before: P1
+                      after: P0
+                    - field: context
+                      before: An agent needs to decide which feature to advance next, or wants to surface phase information in a UI. Parsing the human output is brittle and tabwriter-formatted.
+                      after: Skills and CI steps need the active root, its features and their phases as data. Screen-scraping a tabwriter listing breaks on every cosmetic change.
+                    - field: action
+                      before: Add a `--json` flag to `parlay status` that emits a stable JSON object covering the same information as the human output, including the per-feature phase column.
+                      after: Add a `--json` flag that suppresses the human listing and writes one JSON document to stdout.
+                    - field: objects
+                      before: status output; JSON envelope; feature; phase; root; child root
+                      after: status envelope; schema_version; root; children; feature entry
+                    - field: constraints
+                      before: '`--json` must be additive and opt-in. Default behavior of `parlay status` (human tabular output) must be byte-for-byte unchanged for existing callers, except for the addition of the new phase column to the human listing and the new per-child sections in parent-root invocations.; The JSON envelope must include a top-level `schema_version` integer field, starting at `1`. Any breaking change to field names, semantics, or removal bumps this integer. Additive fields (new optional keys) do not bump it. This is the conservative default; if a string-tag scheme like `"parlay.status/v1"` is preferred for ecosystem reasons, raise it back to the parent session before dialogs.; The JSON envelope is hierarchical and mirrors the human output:; Each feature entry must include at minimum `id` and `phase`. Use snake_case for multi-word JSON keys.; The JSON output must be valid JSON on stdout only — no human-readable preamble, no trailing log lines. Errors continue to go to stderr / non-zero exit.; `--json` must work identically across parent, child, and bare-parent root topologies. For bare-parent, `root.features` is an empty array (not null) and `children` lists each registered child.'
+                      after: 'The JSON envelope must include a top-level `schema_version` integer field. It is `2`. Any breaking change to field names, semantics, or removal bumps this integer. Adding a VALUE to a documented enum is such a change and bumps it; adding a new optional FIELD is not and does not.; Top-level keys: `schema_version`, `root`, `children`.; `--json` suppresses the human listing entirely — one document on stdout, never both, never interleaved.; Each feature entry includes at minimum `id` and `phase`. Additional optional fields may be added later without bumping `schema_version`.; Multi-word JSON keys use snake_case (`schema_version`, not `schemaVersion`).'
+                    - field: verify
+                      before: '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.; `parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.; `parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.; `parlay status --json | jq .schema_version` returns `1`.; `parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.; `parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.; `parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'
+                      after: '`parlay status --json | jq .schema_version` returns `2`.; `parlay status --json` from a parent root returns an object with `schema_version: 2`, a `root` object whose `kind` is `parent`, and a `children` array with one entry per registered child root.; A feature created by `parlay add-feature` and not yet edited appears with `"phase": "planned"`.'
+                  attestation: I approve this before/after replacement and the stated downstream scope impact.
+                  scope:
+                    lineage: emit-machine-readable-status-with-json
+                    named:
+                        - ref: '@parlay-tool/status-feature-phases/surface:machine-readable-json-output-via-json'
+                          fingerprint: 5d5aa87d730e93a8b88e41b25969c51fcca606b7c9704861c38785a05b70730f
+                    unlisted:
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:status-command-call-site-phase-column-and-per-root-rendering'
+                          fingerprint: b5c254661de06782ef99214636823b5cd98ae99062a76fa7fe4e29d2a997fd25
+                        - ref: '@parlay-tool/status-feature-phases/surface:exit-code-and-stream-discipline'
+                          fingerprint: 94c61ca2fc017b9701067fc61d96627335ff85d7b180e89b2d5afbd2431fd20a
+                        - ref: '@parlay-tool/status-feature-phases/surface:unavailable-child-root-inline-diagnostic'
+                          fingerprint: 796adf7e67c6cb6bd5d0170f4d4692c85a79e9b38aa84ac49af461631d28b8dc
+                  scope-before:
+                    lineage: emit-machine-readable-status-with-json
+                    named:
+                        - ref: '@parlay-tool/status-feature-phases/surface:machine-readable-json-output-via-json'
+                          fingerprint: 7151ca4b3a1b6d68ff26fbf5695df50483991ad593929687485ea7fa119beb1c
+                    unlisted:
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:status-command-call-site-phase-column-and-per-root-rendering'
+                          fingerprint: b5c254661de06782ef99214636823b5cd98ae99062a76fa7fe4e29d2a997fd25
+                        - ref: '@parlay-tool/status-feature-phases/surface:exit-code-and-stream-discipline'
+                          fingerprint: 94c61ca2fc017b9701067fc61d96627335ff85d7b180e89b2d5afbd2431fd20a
+                        - ref: '@parlay-tool/status-feature-phases/surface:unavailable-child-root-inline-diagnostic'
+                          fingerprint: 796adf7e67c6cb6bd5d0170f4d4692c85a79e9b38aa84ac49af461631d28b8dc
+                  preserves-unlisted: true
+                - lineage: show-pipeline-phase-per-feature-in-status
+                  mode: extend
+                  before:
+                    title: Show pipeline phase per feature in status
+                    slug: show-pipeline-phase-per-feature-in-status
+                    goal: Let a designer or agent see, at a glance, how far each feature has progressed through the parlay pipeline without having to manually inspect each feature folder.
+                    persona: Designer or agent operating on a parlay project.
+                    priority: P0
+                    context: Running `parlay status` (or `/parlay-status`) inside a parlay project. Today it shows the active root and a flat list of feature identifiers; the user has no way to tell which features are still in early authoring versus which already have generated code.
+                    action: Compute a phase value per feature by reusing the file-existence checks already encoded in `core/internal/commands/check_readiness.go`, and add it as a new column in the existing feature listing.
+                    objects:
+                        - feature
+                        - pipeline phase
+                        - intents.md
+                        - dialogs.md
+                        - surface.md
+                        - infrastructure.md
+                        - buildfile.yaml
+                    constraints:
+                        - 'Phase vocabulary, in pipeline order: `intents | dialogs | artifacts | build | done`. Exactly these five values, lowercase, no others. The `code` phase is intentionally excluded — generated code is not tracked as a per-feature pipeline state in this command.'
+                        - 'Phase semantics: the furthest stage whose required on-disk artifact(s) exist for that feature. `done` means all four pre-terminal phases (intents, dialogs, artifacts, build) are complete on disk. The engineering spec under `spec/handoff/<feature>/specification.md` is NOT required for `done`.'
+                        - Reuse the file-existence checks from `core/internal/commands/check_readiness.go` rather than re-implementing path resolution or stage gating. If reuse requires a small refactor (e.g. extracting a helper that returns "what exists" without exit codes), prefer that over duplication.
+                        - The phase column appears in BOTH the human listing and the `--json` output. In the human output it sits to the right of the feature identifier in each per-root section's tabwriter; in JSON it appears as a `phase` field on each feature entry.
+                        - 'The human output is hierarchical when the active root is a parent: parent root header → parent features (with phase column) → for each registered child root, a child header → that child''s features (with phase column). When the active root is a child, only that child''s section is printed. See the "Aggregate status across parent and child roots" intent for the cross-root semantics.'
+                        - Must not error or skip features when an upstream artifact is missing — every listed feature gets exactly one phase value, even if it is still at `intents`.
+                    verify:
+                        - A feature with only `intents.md` reports phase `intents`.
+                        - A feature with `intents.md` and `dialogs.md` reports phase `dialogs`.
+                        - A feature with `intents.md`, `dialogs.md`, and either `surface.md` or `infrastructure.md` (or both) reports phase `artifacts`.
+                        - A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.
+                        - A feature whose intents, dialogs, artifacts, and buildfile all exist on disk reports phase `done`.
+                        - Running `parlay status` against a bare-parent root (no features at parent, only child roots) prints the parent header with zero features, followed by each child root's header and its feature listing with the phase column populated.
+                        - Running `parlay status` against a parent root with both parent-owned features and registered children prints the parent's features (with phase column) first, then each child root section in registration order.
+                    questions:
+                        - (none)
+                  after:
+                    title: Show pipeline phase per feature in status
+                    slug: show-pipeline-phase-per-feature-in-status
+                    goal: Let a designer or agent see, at a glance, how far each feature has progressed through the parlay pipeline without having to manually inspect each feature folder.
+                    persona: Designer or agent operating on a parlay project.
+                    priority: P0
+                    context: Running `parlay status` inside a parlay project. It shows the active root and a list of feature identifiers; without a phase the user cannot tell which features are still in early authoring versus which already have generated code.
+                    action: Compute a phase value per feature and add it as a new column in the existing feature listing.
+                    objects:
+                        - feature
+                        - pipeline phase
+                        - intents.md
+                        - dialogs.md
+                        - surface.yaml
+                        - infrastructure.md
+                        - capabilities.yaml
+                        - buildfile.yaml
+                    constraints:
+                        - 'Phase vocabulary, in pipeline order: `planned | intents | dialogs | artifacts | build | done`. Exactly these six values, lowercase, no others, plus the off-ladder value `hand-authored` for a declared unit, which is not a rung and does not participate in the ordering. The `code` phase is intentionally excluded.'
+                        - '`planned` is a feature that exists but promises nothing yet: its `intents.md` parses to zero intents. Every feature is born here, because `add-feature` writes both founding documents eagerly and the scaffolded `intents.md` is commented out precisely so it parses empty.'
+                        - 'Phase semantics below the artifacts rung are CONTENT-based, not existence-based: `intents` requires at least one parsed intent, `dialogs` at least one parsed dialog. File presence cannot answer this question, because `add-feature` creates both files at feature birth.'
+                        - The terminal rung measures completion evidence — artifacts plus both build outputs — and checks the founding documents for structural presence only. It does not read dialog content and infers nothing from finding none; a backend feature legitimately has no dialog turns, and content validity at that altitude belongs to the build and readiness gates.
+                        - A founding document that cannot be read or parsed is treated as present-and-authored, never as empty. An unreadable file is the weakest possible evidence, and must never be the reason a feature is reported as emptier than it is.
+                        - The phase column appears in BOTH the human listing and the `--json` output.
+                        - 'The human output is hierarchical when the active root is a parent: parent root header, parent features, then each registered child root''s header and features.'
+                        - Must not error or skip features when an upstream artifact is missing — every listed feature gets exactly one phase value, even if it is still at `planned`.
+                    verify:
+                        - A feature created by `parlay add-feature` and not yet edited reports phase `planned`.
+                        - A feature whose `intents.md` carries at least one parsed intent, with only the scaffolded `dialogs.md`, reports phase `intents`.
+                        - A feature with at least one parsed intent and at least one parsed dialog reports phase `dialogs`.
+                        - A feature that additionally has `surface.yaml`, `capabilities.yaml` or `infrastructure.md` reports phase `artifacts`.
+                        - A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.
+                        - A feature with artifacts, a buildfile and testcases reports `done` even when its `dialogs.md` carries zero parsed dialog turns.
+                        - A feature whose `intents.md` cannot be read is not reported as `planned`.
+                    questions: []
+                  delta:
+                    - field: context
+                      before: Running `parlay status` (or `/parlay-status`) inside a parlay project. Today it shows the active root and a flat list of feature identifiers; the user has no way to tell which features are still in early authoring versus which already have generated code.
+                      after: Running `parlay status` inside a parlay project. It shows the active root and a list of feature identifiers; without a phase the user cannot tell which features are still in early authoring versus which already have generated code.
+                    - field: action
+                      before: Compute a phase value per feature by reusing the file-existence checks already encoded in `core/internal/commands/check_readiness.go`, and add it as a new column in the existing feature listing.
+                      after: Compute a phase value per feature and add it as a new column in the existing feature listing.
+                    - field: objects
+                      before: feature; pipeline phase; intents.md; dialogs.md; surface.md; infrastructure.md; buildfile.yaml
+                      after: feature; pipeline phase; intents.md; dialogs.md; surface.yaml; infrastructure.md; capabilities.yaml; buildfile.yaml
+                    - field: constraints
+                      before: 'Phase vocabulary, in pipeline order: `intents | dialogs | artifacts | build | done`. Exactly these five values, lowercase, no others. The `code` phase is intentionally excluded — generated code is not tracked as a per-feature pipeline state in this command.; Phase semantics: the furthest stage whose required on-disk artifact(s) exist for that feature. `done` means all four pre-terminal phases (intents, dialogs, artifacts, build) are complete on disk. The engineering spec under `spec/handoff/<feature>/specification.md` is NOT required for `done`.; Reuse the file-existence checks from `core/internal/commands/check_readiness.go` rather than re-implementing path resolution or stage gating. If reuse requires a small refactor (e.g. extracting a helper that returns "what exists" without exit codes), prefer that over duplication.; The phase column appears in BOTH the human listing and the `--json` output. In the human output it sits to the right of the feature identifier in each per-root section''s tabwriter; in JSON it appears as a `phase` field on each feature entry.; The human output is hierarchical when the active root is a parent: parent root header → parent features (with phase column) → for each registered child root, a child header → that child''s features (with phase column). When the active root is a child, only that child''s section is printed. See the "Aggregate status across parent and child roots" intent for the cross-root semantics.; Must not error or skip features when an upstream artifact is missing — every listed feature gets exactly one phase value, even if it is still at `intents`.'
+                      after: 'Phase vocabulary, in pipeline order: `planned | intents | dialogs | artifacts | build | done`. Exactly these six values, lowercase, no others, plus the off-ladder value `hand-authored` for a declared unit, which is not a rung and does not participate in the ordering. The `code` phase is intentionally excluded.; `planned` is a feature that exists but promises nothing yet: its `intents.md` parses to zero intents. Every feature is born here, because `add-feature` writes both founding documents eagerly and the scaffolded `intents.md` is commented out precisely so it parses empty.; Phase semantics below the artifacts rung are CONTENT-based, not existence-based: `intents` requires at least one parsed intent, `dialogs` at least one parsed dialog. File presence cannot answer this question, because `add-feature` creates both files at feature birth.; The terminal rung measures completion evidence — artifacts plus both build outputs — and checks the founding documents for structural presence only. It does not read dialog content and infers nothing from finding none; a backend feature legitimately has no dialog turns, and content validity at that altitude belongs to the build and readiness gates.; A founding document that cannot be read or parsed is treated as present-and-authored, never as empty. An unreadable file is the weakest possible evidence, and must never be the reason a feature is reported as emptier than it is.; The phase column appears in BOTH the human listing and the `--json` output.; The human output is hierarchical when the active root is a parent: parent root header, parent features, then each registered child root''s header and features.; Must not error or skip features when an upstream artifact is missing — every listed feature gets exactly one phase value, even if it is still at `planned`.'
+                    - field: verify
+                      before: A feature with only `intents.md` reports phase `intents`.; A feature with `intents.md` and `dialogs.md` reports phase `dialogs`.; A feature with `intents.md`, `dialogs.md`, and either `surface.md` or `infrastructure.md` (or both) reports phase `artifacts`.; A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.; A feature whose intents, dialogs, artifacts, and buildfile all exist on disk reports phase `done`.; Running `parlay status` against a bare-parent root (no features at parent, only child roots) prints the parent header with zero features, followed by each child root's header and its feature listing with the phase column populated.; Running `parlay status` against a parent root with both parent-owned features and registered children prints the parent's features (with phase column) first, then each child root section in registration order.
+                      after: A feature created by `parlay add-feature` and not yet edited reports phase `planned`.; A feature whose `intents.md` carries at least one parsed intent, with only the scaffolded `dialogs.md`, reports phase `intents`.; A feature with at least one parsed intent and at least one parsed dialog reports phase `dialogs`.; A feature that additionally has `surface.yaml`, `capabilities.yaml` or `infrastructure.md` reports phase `artifacts`.; A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.; A feature with artifacts, a buildfile and testcases reports `done` even when its `dialogs.md` carries zero parsed dialog turns.; A feature whose `intents.md` cannot be read is not reported as `planned`.
+                  attestation: I confirm the new version adds to this promise and removes or weakens none of it.
+                  scope:
+                    lineage: show-pipeline-phase-per-feature-in-status
+                    named:
+                        - ref: '@parlay-tool/status-feature-phases/surface:per-feature-phase-column-in-human-listing'
+                          fingerprint: 733b456e71e6d8b5e388e7a7104add013c54d56eb9326524244d155897bd97ae
+                    unlisted:
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:shared-computefeaturephase-helper-and-typed-phase-enum'
+                          fingerprint: 4044ce95a6b23f1d24516d8dada1847d8ae56a8de89ae57c5dd2e1d35d1da395
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:status-command-call-site-phase-column-and-per-root-rendering'
+                          fingerprint: b5c254661de06782ef99214636823b5cd98ae99062a76fa7fe4e29d2a997fd25
+                        - ref: '@parlay-tool/status-feature-phases/surface:hierarchical-parent-and-children-listing'
+                          fingerprint: a4603b22a68233fa8d03981e87d51483294316654b72fc8ddd9878141959d907
+                  scope-before:
+                    lineage: show-pipeline-phase-per-feature-in-status
+                    named:
+                        - ref: '@parlay-tool/status-feature-phases/surface:per-feature-phase-column-in-human-listing'
+                          fingerprint: 48caf8688a05cafe8e11a32fc497a15c9745053342ee02cd04cd8a47c600b6a8
+                    unlisted:
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:shared-computefeaturephase-helper-and-typed-phase-enum'
+                          fingerprint: 4044ce95a6b23f1d24516d8dada1847d8ae56a8de89ae57c5dd2e1d35d1da395
+                        - ref: '@parlay-tool/status-feature-phases/infrastructure:status-command-call-site-phase-column-and-per-root-rendering'
+                          fingerprint: b5c254661de06782ef99214636823b5cd98ae99062a76fa7fe4e29d2a997fd25
+                        - ref: '@parlay-tool/status-feature-phases/surface:hierarchical-parent-and-children-listing'
+                          fingerprint: a4603b22a68233fa8d03981e87d51483294316654b72fc8ddd9878141959d907
+                  preserves-unlisted: true
+            splice-proof: refine-journal:parlay-tool/status-feature-phases:1:tested
+        digest: 02ee05666093bfb3407a088e5e852dc7aa912c7889a9fbcd3ed20c7fc643c6f8

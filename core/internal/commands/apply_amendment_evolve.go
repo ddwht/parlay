@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/atomicfile"
 	"github.com/ddwht/parlay/core/internal/config"
 	"github.com/ddwht/parlay/core/internal/parser"
@@ -113,7 +112,7 @@ func runEvolveTransition(cmd *cobra.Command, cfg *config.Context, slug, featDir 
 	// Proof 1 — the splice happened and was tested. Required even when the
 	// record declares no contract change: the journal is what ties this
 	// approval to a completed run.
-	if reasons := proveTailJournal(cfg, slug, pending); len(reasons) > 0 {
+	if reasons := proveTailJournalFor(cfg, slug, pending, selectedAmendment(record)); len(reasons) > 0 {
 		return fmt.Errorf("the work behind %s is not proven:\n  - %s",
 			amendmentIdentity(record), joinLines(reasons))
 	}
@@ -205,8 +204,14 @@ func buildEvolutionSubjects(cfg *config.Context, slug, featDir string, record pa
 		beforeBySlug[in.Slug] = in
 	}
 
-	// AFTER is prospective: exactly this record applied on top.
-	after, err := resolveIntents(cfg, slug, agent.ProspectiveAuthority)
+	// AFTER is prospective for THIS RECORD: the applied ledger plus
+	// exactly the selected amendment, and nothing after it.
+	//
+	// It used to ask ProspectiveAuthority over the whole unapplied tail,
+	// which resolves the newest claim — so with 002 superseding 001,
+	// selecting 001 derived, displayed and receipted 002's promise text.
+	// The comment said "exactly this record" while the code did not.
+	after, err := resolveIntentsThrough(cfg, slug, record.Seq)
 	if err != nil {
 		return nil, fmt.Errorf("resolve the promises this record would put in force: %w", err)
 	}

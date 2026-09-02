@@ -115,6 +115,17 @@ you are changing the schema itself. Do not open one out of caution — the
 digests are derived, so what they state is what the schema states. Load on
 demand either way, and do not keep schema content in memory across commands.
 
+## Capturing Discoveries
+
+When you notice something real that is out of scope for what you are doing — a
+defect, a gap the spec never covered, a shortcut taken knowingly — record it
+rather than mentioning it:
+
+    parlay note --kind gap --title "..." --by <you>
+
+The kind is one of defect, gap, debt or idea. Concrete, evidenced work only. Never speculation, and never a priority nobody
+gave you. A note that fails to write must never fail the work that tried.
+
 ## Interactive Questions
 
 When a skill step says to "ask the user", "present options", or "wait for the user's response", use the AskUserQuestion tool to pause and collect the answer before continuing. Do not output the question as plain text and keep going — the step needs the answer to decide what happens next.

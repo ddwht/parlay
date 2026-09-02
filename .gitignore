@@ -6,3 +6,18 @@
 
 # Advisory lock guarding domain-model.yaml writes (core/internal/domainmodel)
 **/.parlay/domain-model.lock
+
+# Advisory locks taken by the ledger store (core/internal/ledger) and by the
+# authority capsule. Runtime state for one process, never work product.
+**/.parlay/locks/
+**/.parlay/build/**/.authority.lock
+
+# The emitted manifest of a run in progress. Its consumed counterpart
+# (.emitted.consumed) IS tracked — that one is the record of what a completed
+# run wrote; this one is the scratch list of what the current run is writing.
+**/.parlay/build/_project/.emitted
+
+# A refinement's step journal, so an interrupted run can resume. Cleared when
+# the refinement finishes, so a committed one would be a resume cursor pointing
+# at work somebody else already completed.
+**/.parlay/build/**/.refine-journal.yaml

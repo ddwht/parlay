@@ -49,6 +49,26 @@ var ruleSeverityTable = map[string]map[ValidationMode]Severity{
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityWarning,
 	},
+	// AGE and ABSENCE are warnings in both modes, and must be.
+	//
+	// backlog-item-stale says an item has been waiting, not that it is
+	// wrong; a project that deliberately keeps long-lived ideas is not
+	// misusing the backlog, and failing a build over one would make the
+	// backlog a liability rather than a place to record things.
+	//
+	// activity-undeclared says nobody has classified a feature yet. That
+	// is the fact the activity axis exists to make VISIBLE — erroring on
+	// it would mean a project could not build until every feature had
+	// been triaged, which inverts the whole design: the point is that
+	// the pile is surfaced and worked through by a person, at their pace.
+	"backlog-item-stale": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
+	"activity-undeclared": {
+		ModeAuthoring: SeverityWarning,
+		ModeBuild:     SeverityWarning,
+	},
 	"capabilities-not-closed-form": {
 		ModeAuthoring: SeverityWarning,
 		ModeBuild:     SeverityError,

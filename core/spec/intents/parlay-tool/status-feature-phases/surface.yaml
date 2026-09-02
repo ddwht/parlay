@@ -14,11 +14,14 @@ fragments:
       shows: data-table, data-value
       source: '@parlay-tool/status-feature-phases/show-pipeline-phase-per-feature-in-status'
       verify:
-        - A feature with only `intents.md` reports phase `intents`.
-        - A feature with `intents.md` and `dialogs.md` reports phase `dialogs`.
-        - A feature with `intents.md`, `dialogs.md`, and either `surface.md` or `infrastructure.md` (or both) reports phase `artifacts`.
+        - A feature created by `parlay add-feature` and not yet edited reports phase `planned`.
+        - A feature whose `intents.md` carries at least one parsed intent, with only the scaffolded `dialogs.md`, reports phase `intents`.
+        - A feature with at least one parsed intent and at least one parsed dialog reports phase `dialogs`.
+        - A feature that additionally has `surface.yaml`, `capabilities.yaml` or `infrastructure.md` reports phase `artifacts`.
         - A feature that additionally has a buildfile under `.parlay/build/<feature>/buildfile.yaml` reports phase `build`.
-        - A feature whose intents, dialogs, artifacts, and buildfile all exist on disk reports phase `done`.
+        - A feature missing `intents.md` never reports `done`, whatever else exists.
+        - A feature with both founding documents present, artifacts, a buildfile and testcases reports `done` even when its `dialogs.md` carries zero parsed dialog turns.
+        - A founding document that cannot be read does not demote the feature.
         - Running `parlay status` against a bare-parent root (no features at parent, only child roots) prints the parent header with zero features, followed by each child root's header and its feature listing with the phase column populated.
         - Running `parlay status` against a parent root with both parent-owned features and registered children prints the parent's features (with phase column) first, then each child root section in registration order.
     - actions: (none)
@@ -92,10 +95,11 @@ fragments:
       shows: code
       source: '@parlay-tool/status-feature-phases/emit-machine-readable-status-with-json'
       verify:
-        - '`parlay status --json` from a parent root returns an object with `schema_version: 1`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
+        - '`parlay status --json` from a parent root returns an object with `schema_version: 2`, a `root` object whose `kind` is `parent` and whose `features` array reflects parent-owned features (possibly empty), and a `children` array with one entry per registered child root, each containing its own `features` array of `{id, phase}` entries.'
         - '`parlay status --json` from a child root returns an object whose `root.kind` is `child` and whose `children` array is empty; `root.features` lists that child''s features with phase.'
-        - '`parlay status --json | jq ''.children[0].features[0].phase''` returns one of `intents`, `dialogs`, `artifacts`, `build`, `done`.'
-        - '`parlay status --json | jq .schema_version` returns `1`.'
+        - '`parlay status --json | jq ''''.children[0].features[0].phase''''` returns one of `planned`, `intents`, `dialogs`, `artifacts`, `build`, `done`.'
+        - '`parlay status --json | jq .schema_version` returns `2`.'
+        - 'A feature created by `parlay add-feature` and not yet edited appears with `"phase": "planned"`.'
         - '`parlay status` without `--json` produces output identical to today''s command for child/standalone roots, modulo the new phase column; for parent roots it additionally appends per-child sections in registration order.'
         - '`parlay status --json` against a parent root where one child root is unreadable still exits zero and emits that child as a `children[]` entry with an `unavailable` field set.'
         - '`parlay status --json` exits non-zero with stderr-only diagnostics when there is no active parlay root.'

@@ -70,3 +70,50 @@ Leave the filesystem coherent before you stop — a decision is a pause, not a h
 ## Handoff
 
 After the **artifacts** phase completes and the driver confirms, return a summary: feature reference, phases completed, artifacts written, and any gap you flagged that the user chose to advance past. The driver spawns `parlay-build` next, in a fresh context — so state anything the build phase needs that is not on disk.
+
+## Capture what you notice and do not do
+
+## Read the backlog for this feature — ONCE, on entry
+
+Before the intents phase, run:
+
+```
+parlay backlog list --related @{feature} --open --json
+```
+
+**Once, for the whole group.** The chained intents, dialogs and artifacts phases
+do not each repeat it. `--related` rather than `--about` on purpose: it matches
+items that declare they concern this feature AND items captured while somebody
+was working in it, and `about` is optional, so the narrow filter would miss the
+observation made mid-build by an agent who never set one.
+
+Read `items` (the rows) and `counts` (this listing), not `project_totals` (the
+whole project regardless of filter) — reporting the project's number as this
+feature's is the trap those two fields exist to keep apart. If `root_errors` is
+non-empty, say so: a root that could not be read might hold anything.
+
+**Report it, never apply it.** Surface "3 open items name this feature", with
+titles and ids, in your phase-boundary `parlay-decision` `context:` and under
+`backlog_hits:`. The user decides whether any enter scope. Never fold a backlog
+item into the work on your own initiative — that is scope the user did not
+authorize, and cheap capture only stays safe if capture cannot silently become
+commitment.
+
+If the read fails, note it and carry on. A failed read must never fail the
+phase, for the same reason a failed capture must not.
+
+## Capture what you find
+
+You cannot ask anyone anything — so when you find a defect, a gap, or a
+shortcut worth revisiting, record it rather than mentioning it in a transcript
+nobody reads:
+
+```
+parlay note --kind gap --title "..." --by <you> \
+            --feature @{feature} --phase {phase} [--evidence path:line]
+```
+
+`--kind` is one of defect, gap, debt or idea. Concrete, evidenced work only — never speculation, and never a priority nobody
+gave you. If the write fails, say so in your `notes:` and carry on; a failed
+capture must never fail the phase. List every id you captured under `notes:` in
+your `parlay-decision` block so the driver can put them in front of the user.

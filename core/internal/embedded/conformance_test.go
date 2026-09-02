@@ -593,6 +593,14 @@ func TestConformance_CommandSurfaceStaysSmall(t *testing.T) {
 		// loop invokes would not compete with that; only something you can
 		// type instead does.
 		"refine": true,
+		// backlog is a SITTING, not a phase and not a diagnostic. Nothing
+		// invokes it: a person decides to spend twenty minutes deciding
+		// what to do about things that were noticed and not done, and no
+		// driver can decide that for them. It cannot live inside doctor
+		// for the same reason — doctor is about repair, and turning a
+		// diagnostic into a triage session the designer did not ask for
+		// is how a diagnostic stops being run.
+		"backlog": true,
 	}
 
 	got := map[string]bool{}

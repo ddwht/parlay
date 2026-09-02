@@ -87,6 +87,30 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 
 **Correlation is automatic — do not manage it.** Events are tied together by `PARLAY_RUN_ID`, which the loop driver sets once per pipeline run and every CLI call inherits from the environment. The CLI hashes it before writing, so the value never appears in the log. You do not need to read it, pass it, or thread it through; `--run` exists only to override it and is almost never the right thing to reach for.
 
+## Read the backlog for this feature — ON ENTRY, and only when invoked standalone
+
+```
+parlay backlog list --related @{feature} --open --json
+```
+
+**Before any phase work below.** This section sits above the procedure because
+that is when it runs — the contract is that the USER decides whether a hit
+enters scope, and a read performed after you have already written has nothing
+left to decide about. It said so from the bottom of the file once, which
+asserted an order it did not have.
+
+**Only when you were invoked on your own.** Inside a chained designer run the
+phase-group has already done this once for the whole group, and repeating it
+per phase is the cost the scoped read-set exists to remove.
+
+Report what it returns — titles and ids — and let the user decide whether any
+of it enters scope. Never fold a backlog item into the work on your own
+initiative: cheap capture only stays safe if capture cannot silently become
+commitment. Read `counts` for this listing, not `project_totals`, which
+describes the whole project regardless of the filter.
+
+A failed read must never fail the phase.
+
 ## Steps
 
 1. **Read feature files**:
@@ -290,3 +314,30 @@ parlay internal feedback-record --kind <kind> --skill <this-skill> [--phase P] [
 - `no-intents` — intents.md is empty or missing. Tell user to author intents first.
 - `no-dialogs` — dialogs.md doesn't exist. Warn that the decision will be based on intents only (less signal). Ask whether to proceed or scaffold dialogs first.
 - `artifacts-already-exist` — one or more of surface.yaml / capabilities.yaml / infrastructure.md / domain-model.yaml already exists. Ask whether to regenerate (overwrite) the affected ones or skip. **But first re-check the step 1.5 pre-flight:** if this feature has a ledger or a baseline, regenerating is not an overwrite the designer should be offered — it silently reverts every applied amendment, because the fresh artifacts derive from frozen founding docs that never absorbed the ledger. In that state the answer is not regenerate-vs-skip; it is `/parlay-refine`, and step 1.5 has already stopped with the impasse. Only offer regenerate-vs-skip for a feature genuinely still at birth.
+
+## Capturing what you notice and do not do
+
+Mid-phase you will find things: a defect, a gap the spec never covered, a
+shortcut you took knowingly. Record them instead of mentioning them.
+
+```
+parlay note --kind gap --title "..." --by <you> [--feature @{feature}] [--phase {phase}] \
+            [--evidence path:line] [--about @{feature}/operation:x]
+```
+
+**What to capture.** A concrete, evidenced piece of undone work, or an explicit
+later/defer/out-of-scope statement from the user. Never speculation, never a
+generic suggestion, never work already recorded. Every phase boundary reports
+the ids captured during it, so noise is visible rather than silent — an
+over-eager capture is caught at the next confirmation, not three weeks later.
+
+**Never guess a priority.** Pass `--priority` only when a person actually ranked
+it. Absent means untriaged, which is a fact about the record; a guessed rank
+looks like a judgment and is not.
+
+**A failed capture must never fail your phase.** The writer is strict — malformed
+input is refused rather than written as a corrupt record — but that refusal is
+yours to absorb. Report it in `notes:` and carry on.
+
+**Note vs. `decisions:`.** If you wrote it into a file, it is a decision. If you
+walked past it, it is a note.

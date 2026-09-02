@@ -81,6 +81,48 @@ func resolveIntents(cfg *config.Context, slug string, mode agent.IntentAuthority
 	return resolveIntentsFrom(snap.view(), intents, mode), nil
 }
 
+// resolveIntentsThrough answers what would be in force with the applied
+// ledger PLUS the records up to and including seq — and nothing after.
+//
+// This exists because "prospective" and "prospective for THIS record" are
+// different questions, and apply-amendment was asking the first while
+// meaning the second. ProspectiveAuthority resolves the newest claim
+// across the whole unapplied tail, so with 002 superseding 001,
+// `apply-amendment --amendment 001` derived 002's promise text, displayed
+// it for approval, and bound the confirmation digest to it. The receipt
+// then described a record it had not been asked about, and the ledger's
+// own integrity check refused everything afterwards.
+//
+// The selector narrowed the proof and the marker advancement but not the
+// promise derivation, which is the whole of the bug. Truncating the
+// record list is the fix: the authority model is unchanged, and
+// "prospective" still means the same thing — it is simply asked over the
+// tail the caller actually selected.
+func resolveIntentsThrough(cfg *config.Context, slug string, seq int) (agent.IntentResolution, error) {
+	featDir := cfg.FeaturePath(slug)
+
+	intents, err := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
+	if err != nil {
+		return agent.IntentResolution{}, err
+	}
+	snap, err := acquireAppliedLedger(cfg, slug, featDir)
+	if err != nil {
+		return agent.IntentResolution{}, err
+	}
+	// Records at or below seq only. A selected record may not borrow a
+	// later record's text, scope or attestation — not its prose, and not
+	// the population it claims to have accounted for.
+	trimmed := make([]parser.Amendment, 0, len(snap.Records))
+	for _, rec := range snap.Records {
+		if rec.Seq <= seq {
+			trimmed = append(trimmed, rec)
+		}
+	}
+	limited := snap
+	limited.Records = trimmed
+	return resolveIntentsFrom(limited.view(), intents, agent.ProspectiveAuthority), nil
+}
+
 // resolveActiveIntents is what every ordinary consumer calls: the promises in
 // force right now, with the unapplied tail deliberately not counted.
 func resolveActiveIntents(cfg *config.Context, slug string) (agent.IntentResolution, error) {

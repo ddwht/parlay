@@ -681,3 +681,30 @@ Default emission order: persistence → application → transport → presentati
 ### Step ownership (`owns:`)
 
 Each backend target's `targets.<kind>.operations."@f/op:id"` carries an `owns:` list — the steps that layer implements. When emitting a target, implement the steps in its `owns:` list using the adapter's conventions (the persistence target implements `create-one` as `prisma.<entity>.create`; the application target implements `validate-input`/`authorize`/`return-*` via its pipes/guards/return values). For a step owned by a **downstream** target (e.g. the application service orchestrating a persistence-owned `create-one`), do not re-implement it — **call** the downstream layer's output across the authorized `links` edge. The persistence-first emission order guarantees the owned code exists before the orchestrator that calls it. This makes the layer split a pre-decided contract rather than a codegen-time judgment. **Backward-compatible:** if `owns:` is absent (older buildfiles), fall back to emitting each backend layer from the adapter conventions + the plan paths as before.
+
+## Capturing what you notice and do not do
+
+Mid-phase you will find things: a defect, a gap the spec never covered, a
+shortcut you took knowingly. Record them instead of mentioning them.
+
+```
+parlay note --kind gap --title "..." --by <you> [--feature @{feature}] [--phase {phase}] \
+            [--evidence path:line] [--about @{feature}/operation:x]
+```
+
+**What to capture.** A concrete, evidenced piece of undone work, or an explicit
+later/defer/out-of-scope statement from the user. Never speculation, never a
+generic suggestion, never work already recorded. Every phase boundary reports
+the ids captured during it, so noise is visible rather than silent — an
+over-eager capture is caught at the next confirmation, not three weeks later.
+
+**Never guess a priority.** Pass `--priority` only when a person actually ranked
+it. Absent means untriaged, which is a fact about the record; a guessed rank
+looks like a judgment and is not.
+
+**A failed capture must never fail your phase.** The writer is strict — malformed
+input is refused rather than written as a corrupt record — but that refusal is
+yours to absorb. Report it in `notes:` and carry on.
+
+**Note vs. `decisions:`.** If you wrote it into a file, it is a decision. If you
+walked past it, it is a note.

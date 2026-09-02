@@ -123,27 +123,49 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name := strings.Join(args, " ")
-	slug := parser.Slugify(name)
-
 	if err := validateAuthoredFlags(); err != nil {
 		return err
 	}
+	return scaffoldFeature(cmd, cfg, strings.Join(args, " "), initiativeFlag, authoredFlag, false)
+}
 
-	if initiativeFlag != "" {
-		return runAddFeatureWithInitiative(cmd, cfg, name, slug, initiativeFlag)
+// scaffoldFeature is the scaffold with its inputs as ARGUMENTS.
+//
+// The flags stay where cobra needs them and this takes what it needs.
+// The seam exists because promotion calls the scaffold from inside its
+// own locks, and the old shape made it swap `initiativeFlag` and
+// `authoredFlag` around the call — which is only safe for callers whose
+// locks actually contend. Promotion's guards are per item and per
+// target, so two promotions of DIFFERENT items to DIFFERENT targets
+// never contend and would have raced those globals. Passing the values
+// removes the question rather than documenting a precondition.
+// resume RELAXES the already-exists refusal and makes every file write
+// conditional, so a scaffold interrupted mid-sequence can be completed
+// rather than refused. It is not a general-purpose flag: `parlay
+// add-feature` always passes false, because refusing an existing feature
+// is the right answer to a person who typed the name twice. Only
+// promotion passes true, and only while holding a reservation proving
+// the half-built tree is its own — the proposal's repair/retry property
+// is otherwise unimplementable, since a partial scaffold leaves the
+// directory present and every retry would be rejected before the
+// idempotent path could run.
+func scaffoldFeature(cmd *cobra.Command, cfg *config.Context, name, initiative string, authored, resume bool) error {
+	slug := parser.Slugify(name)
+
+	if initiative != "" {
+		return runAddFeatureWithInitiative(cmd, cfg, name, slug, initiative, authored, resume)
 	}
 
 	featurePath := cfg.FeaturePath(slug)
 
-	if _, err := os.Stat(featurePath); err == nil {
+	if _, err := os.Stat(featurePath); err == nil && !resume {
 		return fmt.Errorf("feature %q already exists at %s", slug, featurePath)
 	}
 
 	displayName := toTitleCase(name)
 
 	roots := threeTreeRoots(cfg)
-	if authoredFlag {
+	if authored {
 		roots = unitTreeRoots(cfg)
 	}
 	for _, root := range roots {
@@ -152,7 +174,19 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if authoredFlag {
+	// FAILURE INJECTION SEAM: the window between creating the
+	// directories and writing intents.md. Nil in production. This is a
+	// real failure point — a full disk, a permission change — and it is
+	// the ONLY interruption that leaves a feature directory carrying
+	// nothing to identify it, which is precisely why the reservation
+	// exists.
+	if scaffoldFailAfterDirs != nil {
+		if err := scaffoldFailAfterDirs(); err != nil {
+			return err
+		}
+	}
+
+	if authored {
 		if err := writeAuthoredUnit(featurePath, slug, displayName); err != nil {
 			return err
 		}
@@ -161,12 +195,12 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 	}
 
 	intentsContent := scaffoldedIntents(displayName)
-	if err := os.WriteFile(filepath.Join(featurePath, "intents.md"), []byte(intentsContent), 0644); err != nil {
+	if err := writeScaffoldFile(filepath.Join(featurePath, "intents.md"), intentsContent, resume); err != nil {
 		return fmt.Errorf("creating intents.md: %w", err)
 	}
 
 	dialogsContent := fmt.Sprintf("# %s — Dialogs\n\n---\n\n", displayName)
-	if err := os.WriteFile(filepath.Join(featurePath, "dialogs.md"), []byte(dialogsContent), 0644); err != nil {
+	if err := writeScaffoldFile(filepath.Join(featurePath, "dialogs.md"), dialogsContent, resume); err != nil {
 		return fmt.Errorf("creating dialogs.md: %w", err)
 	}
 
@@ -181,7 +215,7 @@ func runAddFeature(cmd *cobra.Command, args []string) error {
 
 // parlay-feature: initiatives
 // parlay-component: FeatureCreationResult
-func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, featureSlug, initiativeName string) error {
+func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, featureSlug, initiativeName string, authored, resume bool) error {
 	initiativeSlug := parser.Slugify(initiativeName)
 
 	intentsRoot := cfg.IntentsRoot()
@@ -192,7 +226,7 @@ func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, 
 	}
 
 	featurePath := filepath.Join(initiativePath, featureSlug)
-	if _, err := os.Stat(featurePath); err == nil {
+	if _, err := os.Stat(featurePath); err == nil && !resume {
 		return fmt.Errorf("feature `%s` already exists inside initiative `%s` at %s/. Pick a different feature name, or move the existing feature somewhere else first", featureSlug, initiativeSlug, featurePath)
 	}
 
@@ -210,7 +244,7 @@ func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, 
 	// it may later hold ordinary features, which do need a handoff twin.
 	// Only the unit's own directory skips it.
 	childRoots := threeTreeRoots(cfg)
-	if authoredFlag {
+	if authored {
 		childRoots = unitTreeRoots(cfg)
 	}
 	for _, root := range childRoots {
@@ -225,7 +259,13 @@ func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, 
 
 	displayName := toTitleCase(name)
 
-	if authoredFlag {
+	if scaffoldFailAfterDirs != nil {
+		if err := scaffoldFailAfterDirs(); err != nil {
+			return err
+		}
+	}
+
+	if authored {
 		if err := writeAuthoredUnit(featurePath, featureSlug, displayName); err != nil {
 			return err
 		}
@@ -236,12 +276,16 @@ func runAddFeatureWithInitiative(cmd *cobra.Command, cfg *config.Context, name, 
 		return nil
 	}
 
+	// Conditional under resume, exactly as the non-initiative path is.
+	// These were unconditional, so a retried initiative promotion could
+	// clobber a file somebody had already started editing — a repair
+	// operation destroying the work it exists to preserve.
 	intentsContent := scaffoldedIntents(displayName)
-	if err := os.WriteFile(filepath.Join(featurePath, "intents.md"), []byte(intentsContent), 0644); err != nil {
+	if err := writeScaffoldFile(filepath.Join(featurePath, "intents.md"), intentsContent, resume); err != nil {
 		return fmt.Errorf("creating intents.md: %w", err)
 	}
 	dialogsContent := fmt.Sprintf("# %s — Dialogs\n\n---\n\n", displayName)
-	if err := os.WriteFile(filepath.Join(featurePath, "dialogs.md"), []byte(dialogsContent), 0644); err != nil {
+	if err := writeScaffoldFile(filepath.Join(featurePath, "dialogs.md"), dialogsContent, resume); err != nil {
 		return fmt.Errorf("creating dialogs.md: %w", err)
 	}
 
@@ -320,3 +364,23 @@ Full guidance, including what to do when your domain IS software:
 -->
 `, displayName)
 }
+
+// writeScaffoldFile writes a scaffold file, never clobbering an existing
+// one when resuming.
+//
+// Unconditional under a fresh scaffold — the directory did not exist, so
+// nothing can be there. Conditional under resume, where the file may be
+// a partial write from the interrupted run OR something a person has
+// already started editing, and overwriting either would destroy work
+// that a repair operation exists to preserve.
+func writeScaffoldFile(path, content string, resume bool) error {
+	if resume {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+	}
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// scaffoldFailAfterDirs is the injection point above; nil by default.
+var scaffoldFailAfterDirs func() error

@@ -68,3 +68,19 @@ The dirty/stable distinction does not tell you whether a human edited a file. Un
 After the code phase completes successfully (tests pass, state committed), return the natural-completion summary: feature reference, phases run, artifacts produced, generated file paths, and any file the user chose to keep rather than overwrite. The driver ends the loop here — there is no next phase.
 
 On test failure, return a `failure` decision and do NOT commit state. The driver decides whether the user retries, exits with a resume hint, or stays to debug.
+
+## Capture what you notice and do not do
+
+You cannot ask anyone anything — so when you find a defect, a gap, or a
+shortcut worth revisiting, record it rather than mentioning it in a transcript
+nobody reads:
+
+```
+parlay note --kind gap --title "..." --by <you> \
+            --feature @{feature} --phase {phase} [--evidence path:line]
+```
+
+`--kind` is one of defect, gap, debt or idea. Concrete, evidenced work only — never speculation, and never a priority nobody
+gave you. If the write fails, say so in your `notes:` and carry on; a failed
+capture must never fail the phase. List every id you captured under `notes:` in
+your `parlay-decision` block so the driver can put them in front of the user.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -64,6 +65,7 @@ const (
 )
 
 var (
+	applyAmendmentSelect  string
 	applyAmendmentConfirm string
 	applyAmendmentJSON    bool
 )
@@ -97,6 +99,8 @@ invalidates it, and the run must be repeated.`,
 }
 
 func init() {
+	applyAmendmentCmd.Flags().StringVar(&applyAmendmentSelect, "amendment", "",
+		"apply this record specifically — accepted ONLY for the earliest pending one, so a tail cannot be skipped")
 	applyAmendmentCmd.Flags().StringVar(&applyAmendmentConfirm, "confirm", "",
 		"The digest printed by an unconfirmed run. Binds the approval to exactly what was shown.")
 	applyAmendmentCmd.Flags().BoolVar(&applyAmendmentJSON, "json", false,
@@ -158,16 +162,48 @@ func runApplyAmendment(cmd *cobra.Command, args []string) error {
 	if len(pending) == 0 {
 		return fmt.Errorf("%s has no unapplied amendments", slug)
 	}
-	// Exact-tail. This command advances the marker, and the marker passes EVERY
-	// record below it, so an unaccounted one would be recorded applied without
-	// anybody applying it.
-	if len(pending) > 1 {
+	// Exact-tail. This command advances the marker, and the marker passes
+	// EVERY record below it, so an unaccounted one would be recorded applied
+	// without anybody applying it.
+	//
+	// With more than one pending record the default still refuses — but it
+	// used to refuse with instructions nobody could follow. "Resolve the
+	// earlier records first" was the only way out, and there was no way to
+	// name an earlier record: no selector existed, so a feature that
+	// correctly recorded a second amendment before applying the first had
+	// no path forward at all. Recording 002 as a superseding correction
+	// rather than editing 001 — which the append-only rule requires — was
+	// enough to reach it.
+	//
+	// --amendment resolves exactly that, and resolves nothing else. It may
+	// name ONLY the earliest pending record. Naming a later one is refused
+	// precisely because the marker passes everything below it, which is the
+	// invariant the exact-tail rule exists to protect; the selector lets a
+	// caller work THROUGH a queue in order, never around it.
+	earliest := pending[0]
+	record := earliest
+	if sel := strings.TrimSpace(applyAmendmentSelect); sel != "" {
+		match, ok := findPendingAmendment(pending, sel)
+		if !ok {
+			return fmt.Errorf("%s has no unapplied amendment matching %q — pending: %s",
+				slug, sel, joinNames(identities(pending)))
+		}
+		if match.Seq != earliest.Seq {
+			return fmt.Errorf("%s is not the earliest unapplied record for %s — %s is, and applying "+
+				"out of order would advance the marker past it, recording it applied without anybody "+
+				"having applied it. Apply %s first",
+				amendmentIdentity(match), slug, amendmentIdentity(earliest), amendmentIdentity(earliest))
+		}
+		// Selected the earliest, which is the only selection permitted, so
+		// the tail below it is empty by construction and the exact-tail
+		// invariant holds.
+		record = match
+	} else if len(pending) > 1 {
 		return fmt.Errorf("%s has %d unapplied amendments (%s) — this operation applies exactly "+
 			"one, and advancing past the others would record them applied without anybody having "+
-			"applied them. Resolve the earlier records first",
-			slug, len(pending), joinNames(identities(pending)))
+			"applied them. Apply the earliest first with --amendment %s",
+			slug, len(pending), joinNames(identities(pending)), amendmentIdentity(earliest))
 	}
-	record := pending[0]
 
 	// Shape routing. Fail closed, and never classify a record into a mode it
 	// does not declare.
@@ -211,7 +247,7 @@ func runApplyAmendment(cmd *cobra.Command, args []string) error {
 
 	// Proof 1 — the splice happened, and was tested. Same evidence an ordinary
 	// refinement must produce; this transition relaxes nothing about the work.
-	if reasons := proveTailJournal(cfg, slug, pending); len(reasons) > 0 {
+	if reasons := proveTailJournalFor(cfg, slug, pending, selectedAmendment(record)); len(reasons) > 0 {
 		return fmt.Errorf("the splice half of %s is not proven:\n  - %s",
 			amendmentIdentity(record), joinLines(reasons))
 	}
@@ -576,4 +612,29 @@ func emitPreflight(cmd *cobra.Command, out applyAmendmentPreflight) error {
 	fmt.Fprintln(w, "The digest binds the approval to exactly what is printed above. Any edit")
 	fmt.Fprintln(w, "to the record, the promises or the applied authority invalidates it.")
 	return nil
+}
+
+// findPendingAmendment matches a selector against the pending records.
+//
+// Accepts the slug, the NNN prefix, or the filename, because a caller
+// reading the refusal message sees one form and a caller reading a
+// directory listing sees another, and making them guess which the flag
+// wants is a refusal they will hit twice.
+func findPendingAmendment(pending []parser.Amendment, sel string) (parser.Amendment, bool) {
+	sel = strings.TrimSuffix(strings.TrimSpace(sel), ".md")
+	for _, a := range pending {
+		id := amendmentIdentity(a)
+		switch sel {
+		case id, a.Slug, fmt.Sprintf("%03d", a.Seq), fmt.Sprintf("%03d-%s", a.Seq, a.Slug):
+			return a, true
+		}
+	}
+	return parser.Amendment{}, false
+}
+
+// selectedAmendment names the record an apply is applying, for the tail
+// proof. Always non-nil on this path: apply-amendment applies exactly one
+// record, and which one it is is the fact the journal must match.
+func selectedAmendment(record parser.Amendment) *parser.Amendment {
+	return &record
 }

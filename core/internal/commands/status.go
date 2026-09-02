@@ -23,6 +23,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -47,13 +48,23 @@ When --json is passed, the human listing is suppressed and a single
 JSON document is written to stdout in the shape:
 
   {
-    "schema_version": 1,
-    "root":     { "path": ..., "kind": ..., "source": ..., "features": [...] },
-    "children": [ { "name": ..., "path": ..., "features": [...], "unavailable": "..." }, ... ]
+    "schema_version": 2,
+    "root":     { "path": ..., "kind": ..., "source": ..., "features": [...],
+                  "orphaned_build_dirs": [...], "backlog": {...} },
+    "children": [ { "name": ..., "path": ..., "features": [...],
+                    "orphaned_build_dirs": [...], "backlog": {...},
+                    "unavailable": "..." }, ... ]
   }
 
 children is always present and is [] for child or standalone active
-roots. Each feature entry has at minimum {id, phase}.`,
+roots. Each feature entry has at minimum {id, phase}.
+
+backlog is OPTIONAL and per root: {open, untriaged, unreadable}. It is
+absent when there is nothing outstanding, and absence means zero — the
+same thing the human listing says by printing no backlog line. unreadable
+counts records that could not be parsed and are therefore NOT in the
+other two counts, so "no open items" and "no open items we could read"
+stay distinguishable.`,
 	Args: cobra.NoArgs,
 	RunE: runStatus,
 }
@@ -75,6 +86,42 @@ type featureEntry struct {
 	// does not know the field sees exactly what it saw before, and a
 	// feature — the overwhelming majority — carries no kind at all.
 	Kind string `json:"kind,omitempty"`
+
+	// Activity is the SECOND axis, and it is deliberately a separate
+	// field rather than more values crowded into Phase.
+	//
+	// Phase says how far the work has come; Activity says whether the
+	// pause was chosen. They are orthogonal — a feature can be at
+	// `dialogs` and parked, or at `dialogs` and simply undeclared — and
+	// collapsing them into one token would destroy exactly the
+	// distinction this feature exists to make. `active | parked |
+	// unclassified | unavailable`.
+	//
+	// `active` is emitted EXPLICITLY rather than omitted as the boring
+	// default, so an ordinary feature entry always carries a computed
+	// answer rather than letting the common case share a representation
+	// with silence.
+	//
+	// The field is nonetheless omitempty, and absence has exactly one
+	// meaning within this schema version: the entry is a hand-authored
+	// unit, for which the activity axis does not apply — a unit's code is
+	// already written, so there is no work to pause. It does NOT mean
+	// "active", and it does not distinguish an older parlay; the
+	// schema_version does that.
+	Activity string `json:"activity,omitempty"`
+
+	// ActivityDetail is why: the parking reason, or the fault in a
+	// declaration that cannot be used. A state without its reason is
+	// half a record, and the complaint that started this work was that
+	// seventeen lines said `dialogs` and none of them said why.
+	ActivityDetail string `json:"activity_detail,omitempty"`
+
+	// ActivityStale marks a parked feature that has since acquired
+	// pipeline evidence. The state stays `parked` — a declaration
+	// outranks observation — but the record has quietly stopped being
+	// true, and printing it as a clean parked line would assert a
+	// disposition nobody currently holds.
+	ActivityStale bool `json:"activity_stale,omitempty"`
 }
 
 // KindHandAuthored is the only non-default value of featureEntry.Kind.
@@ -86,14 +133,28 @@ type rootSection struct {
 	Source            string          `json:"source"`
 	Features          []featureEntry  `json:"features"`
 	OrphanedBuildDirs []string        `json:"orphaned_build_dirs"`
+	// Backlog is what this root has observed and not done. Reported
+	// alongside features because it is the other half of the same
+	// question — a root with four features and eleven untriaged
+	// observations is not the same project as one with four features
+	// and none, and status was only ever showing the first number.
+	//
+	// POINTER AND OMITEMPTY, so a healthy root emits nothing. As a
+	// value it was emitted on every root as {open:0,untriaged:0},
+	// which is a REQUIRED new member under a schema_version already
+	// deployed — the opposite of the additive change the version pin's
+	// own rule allows without a bump. Absence means zero outstanding,
+	// the same thing the human line says by staying silent.
+	Backlog *backlogSummary `json:"backlog,omitempty"`
 }
 
 type childRootEntry struct {
-	Name              string         `json:"name"`
-	Path              string         `json:"path"`
-	Features          []featureEntry `json:"features"`
-	OrphanedBuildDirs []string       `json:"orphaned_build_dirs"`
-	Unavailable       string         `json:"unavailable,omitempty"`
+	Name              string          `json:"name"`
+	Path              string          `json:"path"`
+	Features          []featureEntry  `json:"features"`
+	OrphanedBuildDirs []string        `json:"orphaned_build_dirs"`
+	Backlog           *backlogSummary `json:"backlog,omitempty"`
+	Unavailable       string          `json:"unavailable,omitempty"`
 }
 
 type statusEnvelope struct {
@@ -102,10 +163,65 @@ type statusEnvelope struct {
 	Children      []childRootEntry `json:"children"`
 }
 
+// backlogSummary is one root's backlog, counted rather than listed —
+// status is an inventory, and the listing is `parlay backlog list`.
+//
+// Unreadable is a COUNT and not a boolean: a root where one item will
+// not parse is in a different state from one where nine will not, and
+// collapsing that to "some" is the kind of rounding that makes a status
+// line stop being read.
+type backlogSummary struct {
+	Open       int `json:"open"`
+	Untriaged  int `json:"untriaged"`
+	Unreadable int `json:"unreadable,omitempty"`
+}
+
+// summariseBacklog counts one root's items.
+//
+// A read failure is reported as Unreadable rather than as zero. Zero and
+// "could not look" are different facts, and a parent aggregating zeros
+// it never actually read would assert the children are clear.
+func summariseBacklog(rootPath string) backlogSummary {
+	var sum backlogSummary
+	items, broken, err := loadBacklogAt(rootPath)
+	sum.Unreadable = len(broken)
+	if err != nil {
+		// The directory itself could not be read. One unreadable
+		// record is the honest floor: it is at least one thing we
+		// cannot account for, and it is not zero.
+		sum.Unreadable++
+		return sum
+	}
+	for _, it := range items {
+		if it.State() != parser.StateOpen {
+			continue
+		}
+		sum.Open++
+		if it.Priority == "" {
+			sum.Untriaged++
+		}
+	}
+	return sum
+}
+
 // statusSchemaVersion is the integer schema_version pinned in the
 // envelope. Bumped only on breaking changes; additive fields do not
 // bump.
-const statusSchemaVersion = 1
+//
+// v2 adds `planned` to the `phase` enum. A new VALUE in a documented
+// enum is not the same as a new optional FIELD: a consumer switching
+// exhaustively on phase breaks on a token it has never seen, while one
+// ignoring an unknown key does not. `schema-versioning.schema.md` treats
+// this exact class as a bump — it records .code-hashes.yaml as "currently
+// at 2; v2 added the `hand-authored` provenance, changing the domain of
+// an existing field".
+//
+// `PhaseHandAuthored` added a phase value without bumping this constant,
+// which looks like precedent for leaving it alone. It is not: that change
+// and the .code-hashes bump landed in the SAME commit (e159f47), one
+// bumping and one not, for the same kind of change. An inconsistency
+// inside a single commit is not a policy to repeat.
+const statusSchemaVersion = 2
 
 // ---------------------------------------------------------------------
 // Entry point — dispatch on --json.
@@ -172,6 +288,7 @@ func runStatusHuman(cmd *cobra.Command, pctx *config.Context) error {
 		return err
 	}
 	renderFeaturesHuman(cmd, pctx, features)
+	renderBacklogHuman(cmd, summariseBacklog(pctx.Root.Path))
 	renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(pctx.IntentsRoot(), pctx.BuildRoot()))
 
 	// Cross-root walk: when the active root is a parent, iterate
@@ -202,9 +319,46 @@ func renderFeaturesHuman(cmd *cobra.Command, pctx *config.Context, features []st
 	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(features))
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	for _, e := range entries {
-		fmt.Fprintf(w, "  - %s\t%s\n", e.ID, e.Phase)
+		fmt.Fprintf(w, "  - %s\t%s\t%s\n", e.ID, e.Phase, activityCell(e))
 	}
 	w.Flush()
+}
+
+// reportableBacklog is summariseBacklog for the JSON envelope: nil when
+// there is nothing outstanding, so a healthy root emits no member at all
+// and the field stays genuinely optional under schema_version 2.
+func reportableBacklog(rootPath string) *backlogSummary {
+	sum := summariseBacklog(rootPath)
+	if sum.Open == 0 && sum.Untriaged == 0 && sum.Unreadable == 0 {
+		return nil
+	}
+	return &sum
+}
+
+// renderBacklogHuman prints one root's backlog line.
+//
+// Silent when there is nothing outstanding, like the orphan line and for
+// the same reason: a healthy project's status output stays unchanged,
+// and a line that is always present stops being read.
+//
+// The UNREADABLE count is printed even when nothing is open, because
+// "no open items" and "no open items that we could read" are different
+// claims and only the first is good news.
+func renderBacklogHuman(cmd *cobra.Command, b backlogSummary) {
+	if b.Open == 0 && b.Unreadable == 0 {
+		return
+	}
+	out := cmd.OutOrStdout()
+	if b.Open > 0 {
+		untriaged := ""
+		if b.Untriaged > 0 {
+			untriaged = fmt.Sprintf(", %d untriaged", b.Untriaged)
+		}
+		fmt.Fprintf(out, "backlog: %d open%s (`parlay backlog list`)\n", b.Open, untriaged)
+	}
+	if b.Unreadable > 0 {
+		fmt.Fprintf(out, "backlog: %d record(s) could not be read — they are NOT in the counts above\n", b.Unreadable)
+	}
 }
 
 // renderOrphanedBuildDirsHuman prints an anomaly line naming every
@@ -240,15 +394,19 @@ func renderChildHuman(cmd *cobra.Command, name, path string, childCtx *config.Co
 	}
 	if len(childFeatures) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "features: (none)\n")
-		renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()))
-		return
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(childFeatures))
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		for _, e := range featureEntriesFor(childCtx, childFeatures) {
+			fmt.Fprintf(w, "  - %s\t%s\t%s\n", e.ID, e.Phase, activityCell(e))
+		}
+		w.Flush()
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "features: %d\n", len(childFeatures))
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	for _, e := range featureEntriesFor(childCtx, childFeatures) {
-		fmt.Fprintf(w, "  - %s\t%s\n", e.ID, e.Phase)
-	}
-	w.Flush()
+	// ONE tail for both branches. These used to be duplicated inside the
+	// no-features branch and absent from the other, so a child's backlog
+	// printed twice in the topology nobody has and not at all in the
+	// ordinary one.
+	renderBacklogHuman(cmd, summariseBacklog(childCtx.Root.Path))
 	renderOrphanedBuildDirsHuman(cmd, scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()))
 }
 
@@ -287,6 +445,7 @@ func buildStatusEnvelope(pctx *config.Context) statusEnvelope {
 			if unavailable != nil {
 				entry.Unavailable = unavailable.Error()
 			} else {
+				entry.Backlog = reportableBacklog(childCtx.Root.Path)
 				entry.Features = featureEntriesFor(childCtx, childFeatures)
 				if orphans := scanOrphanedBuildDirs(childCtx.IntentsRoot(), childCtx.BuildRoot()); orphans != nil {
 					entry.OrphanedBuildDirs = orphans
@@ -312,6 +471,7 @@ func buildRootSection(pctx *config.Context) rootSection {
 	if pctx.Resolution != nil {
 		r.Source = string(pctx.Resolution.Source)
 	}
+	r.Backlog = reportableBacklog(pctx.Root.Path)
 	features, _ := scanFeaturesAtTolerant(pctx.IntentsRoot())
 	r.Features = featureEntriesFor(pctx, features)
 	if orphans := scanOrphanedBuildDirs(pctx.IntentsRoot(), pctx.BuildRoot()); orphans != nil {
@@ -418,7 +578,16 @@ func scanFeaturesAt(intentsRoot string) ([]string, error) {
 func featureEntriesFor(ctx *config.Context, features []string) []featureEntry {
 	entries := []featureEntry{}
 	for _, f := range features {
-		entries = append(entries, featureEntry{ID: f, Phase: ComputeFeaturePhase(ctx, f)})
+		phase := ComputeFeaturePhase(ctx, f)
+		reading := readActivity(ctx.FeaturePath(f))
+		observed := HasObservedPipelineActivity(phase)
+		entries = append(entries, featureEntry{
+			ID:             f,
+			Phase:          phase,
+			Activity:       reading.Resolve(observed),
+			ActivityDetail: reading.Detail(),
+			ActivityStale:  reading.ParkingIsStale(observed),
+		})
 	}
 	units, _ := scanUnitsAtTolerant(ctx.IntentsRoot())
 	for _, u := range units {
