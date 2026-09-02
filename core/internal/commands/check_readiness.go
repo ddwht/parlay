@@ -172,11 +172,13 @@ func checkCreateSurfaceReadiness(featurePath string) []readinessIssue {
 // inferences against the shared ComputeFeaturePhase result.
 func phaseAtLeast(got, want FeaturePhase) bool {
 	rank := map[FeaturePhase]int{
-		PhaseIntents:   0,
-		PhaseDialogs:   1,
-		PhaseArtifacts: 2,
-		PhaseBuild:     3,
-		PhaseDone:      4,
+		PhaseHandAuthored: 0,
+		PhasePlanned:      0,
+		PhaseIntents:      1,
+		PhaseDialogs:      2,
+		PhaseArtifacts:    3,
+		PhaseBuild:        4,
+		PhaseDone:         5,
 	}
 	return rank[got] >= rank[want]
 }

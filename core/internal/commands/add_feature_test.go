@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,7 +133,7 @@ func TestAddFeatureWithInitiative_CreatesInitiativeAndFeature(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,8 +160,8 @@ func TestAddFeatureWithInitiative_ReusesExistingInitiative(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "sso setup", "sso-setup", "auth overhaul")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul", false, false)
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "sso setup", "sso-setup", "auth overhaul", false, false)
 
 	if err != nil {
 		t.Fatalf("adding second feature to existing initiative should succeed, got: %v", err)
@@ -178,8 +179,8 @@ func TestAddFeatureWithInitiative_ScopeCollision(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul", false, false)
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul", false, false)
 
 	if err == nil {
 		t.Error("expected scope collision error, got nil")
@@ -196,7 +197,7 @@ func TestAddFeatureWithInitiative_TopLevelCollision(t *testing.T) {
 	os.MkdirAll(orphanPath, 0755)
 	os.WriteFile(filepath.Join(orphanPath, "intents.md"), []byte("# Password Reset\n"), 0644)
 
-	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "login", "login", "password-reset")
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "login", "login", "password-reset", false, false)
 
 	if err == nil {
 		t.Error("expected top-level collision error, got nil")
@@ -209,8 +210,8 @@ func TestAddFeatureWithInitiative_SameSlugDifferentInitiative(t *testing.T) {
 		os.MkdirAll(root, 0755)
 	}
 
-	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul")
-	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "billing")
+	runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "auth overhaul", false, false)
+	err := runAddFeatureWithInitiative(testCommandWithContext(t, testContext(t)), testContext(t), "password reset", "password-reset", "billing", false, false)
 
 	if err != nil {
 		t.Errorf("same slug in different initiative should succeed, got: %v", err)
@@ -370,5 +371,40 @@ func TestScaffoldedIntents_PromptsWithoutFakingAnIntent(t *testing.T) {
 	}
 	if !strings.Contains(out, "Soft boundaries") {
 		t.Error("scaffold does not point at the full guidance")
+	}
+}
+
+// The initiative path must honour its `authored` ARGUMENT, not the
+// package global.
+//
+// It read authoredFlag while taking authored as a parameter, so the
+// argument was decorative. Promotion always passes false, so the two
+// agreed and nothing failed — but a function that ignores its own
+// argument is a defect waiting for the first caller that disagrees with
+// the global, and it cannot be caught by any test that leaves them equal.
+func TestAddFeatureWithInitiative_HonoursTheAuthoredArgumentNotTheGlobal(t *testing.T) {
+	setupTestDir(t)
+	if err := os.MkdirAll(filepath.Join(config.SpecDir, config.IntentsDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testContext(t)
+
+	// The global says NOT authored; the argument says authored.
+	authoredFlag = false
+	authoredSourcesFlag = []string{"src/**/*.go"}
+	t.Cleanup(func() { authoredFlag, authoredSourcesFlag = false, nil })
+
+	cmd := testCommandWithContext(t, cfg)
+	cmd.SetOut(&bytes.Buffer{})
+	if err := runAddFeatureWithInitiative(cmd, cfg, "reset password", "reset-password", "auth", true, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// An authored unit lives in the unit trees only — a handoff twin is
+	// exactly what `authored` suppresses. If the global had won, the
+	// handoff directory would be there.
+	handoff := filepath.Join(cfg.Root.Path, config.SpecDir, "handoff", "auth", "reset-password")
+	if _, err := os.Stat(handoff); err == nil {
+		t.Error("the initiative path built a handoff tree — it read the global, not its argument")
 	}
 }

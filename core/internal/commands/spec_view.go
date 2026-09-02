@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ddwht/parlay/core/internal/config"
 	"io"
 	"os"
 	"path/filepath"
@@ -186,6 +187,83 @@ type specEntry struct {
 	Shared bool `json:"shared,omitempty"`
 }
 
+// specCodeProvenance is what the view can say about the generated code
+// AS IT IS NOW — never as it was at a historical point.
+type specCodeProvenance struct {
+	// State is one of four: `matching`, `moved`, `unrecorded`,
+	// `unreadable`. The last three are all "not verified in sync" and are
+	// still kept apart, because a reader who cannot tell "never recorded"
+	// from "could not be read" cannot tell a missing baseline from a
+	// broken one.
+	State string `json:"state"`
+	// Moved, Missing and Unknown are counts, not lists: this view is
+	// about the specification, and the file-by-file answer already has a
+	// command that owns it.
+	Moved   int `json:"moved,omitempty"`
+	Missing int `json:"missing,omitempty"`
+	Unknown int `json:"unknown,omitempty"`
+	// Detail is the sentence rendered under the promises.
+	Detail string `json:"detail"`
+}
+
+// specPendingBanner is the trailing half of the unapplied-tail banner.
+//
+// Named rather than inlined so a test can pin it: the sentence is the
+// defect this function's history turns on, and a wording change that
+// re-asserted a claim about code would otherwise pass unnoticed.
+func specPendingBanner() string {
+	return "what follows is the promise set currently in force"
+}
+
+const (
+	codeProvenanceMatching   = "matching"
+	codeProvenanceMoved      = "moved"
+	codeProvenanceUnrecorded = "unrecorded"
+	codeProvenanceUnreadable = "unreadable"
+)
+
+// describeCodeProvenance asks the one command that knows.
+//
+// Reuses computeVerifyOutput rather than re-deriving hashes, so `spec`
+// and `verify-generated` cannot answer the same question differently —
+// two commands disagreeing about whether code is blessed is worse than
+// either being wrong alone.
+func describeCodeProvenance(cfg *config.Context, slug string) specCodeProvenance {
+	v, err := computeVerifyOutput(cfg, slug)
+	switch {
+	case err != nil:
+		return specCodeProvenance{
+			State:  codeProvenanceUnreadable,
+			Detail: "the generated-code provenance could not be read (" + err.Error() + "), so whether the code still matches what was blessed is unknown",
+		}
+	case !v.HasHashes:
+		// NOT the same as "nothing has moved". No hashes means nobody
+		// ever recorded what this feature's code should look like, so
+		// there is nothing to compare against — and that is a finding in
+		// its own right, not an absence of one.
+		return specCodeProvenance{
+			State:  codeProvenanceUnrecorded,
+			Detail: "no generated-code provenance is recorded for this feature, so whether the code matches these promises cannot be checked here",
+		}
+	}
+	moved := len(v.Modified) + len(v.Adopted)
+	if moved == 0 && len(v.Missing) == 0 && len(v.Unknown) == 0 {
+		return specCodeProvenance{
+			State:  codeProvenanceMatching,
+			Detail: "the generated code still matches what was blessed",
+		}
+	}
+	return specCodeProvenance{
+		State:   codeProvenanceMoved,
+		Moved:   moved,
+		Missing: len(v.Missing),
+		Unknown: len(v.Unknown),
+		Detail: fmt.Sprintf(
+			"the generated code has moved since it was blessed: %d changed, %d missing, %d of unknown provenance — so these promises describe the spec, not necessarily what runs",
+			moved, len(v.Missing), len(v.Unknown)),
+	}
+}
+
 type specViewOutput struct {
 	Feature string `json:"feature"`
 	// AppliedThrough is how far the ledger has been folded into what runs.
@@ -208,6 +286,33 @@ type specViewOutput struct {
 	// read it", which is how the unreadable path came to encode known-empty
 	// arrays under a banner saying the opposite.
 	ContractStatus string `json:"contract_status"`
+	// CurrentCodeProvenance answers the question the old banner ASSERTED
+	// without ever asking: does the generated code still match what was
+	// blessed?
+	//
+	// CURRENT, and the name says so. It compares today's files against
+	// today's blessed snapshot, which is independent of `--at`. Beside a
+	// historical projection a bare `code_provenance: matching` would read
+	// as "the code matches THIS projection", which it never establishes —
+	// so on a historical view the field is omitted entirely rather than
+	// carrying an answer to a question the reader did not ask.
+	//
+	// The banner used to read "what follows is what the code currently
+	// answers to", which is a claim about code from a command that reads
+	// intents.md and the applied ledger and nothing else. It happened to
+	// hold in the clean steady state — codegen is blessed by
+	// save-build-state at the same moment the amendment applies — and it
+	// stopped holding in two ordinary situations: mid-refinement, between
+	// regenerating code and applying the record, and after any hand-edit
+	// to generated code.
+	//
+	// So the claim is now made only when it has been checked, and the
+	// FOUR answers are kept apart because they are different facts:
+	// matching, moved, never recorded, and unreadable. A reader who cannot
+	// tell "verified in sync" from "unverifiable" draws opposite
+	// conclusions from the same silence — and one who cannot tell a
+	// missing baseline from a corrupt one goes looking in the wrong place.
+	CurrentCodeProvenance *specCodeProvenance `json:"current_code_provenance,omitempty"`
 	// Unattributed are contract entries no live promise justifies. Reported
 	// rather than hidden: an entry with no promise behind it is either an
 	// orphan or a missing source:, and both are things a reader of "what is
@@ -452,6 +557,10 @@ const (
 type specDerivation struct {
 	Promises string `json:"promises"`
 	Contract string `json:"contract"`
+	// CodeProvenance says what the provenance answer is derived from, and
+	// specifically that it does not move with --at. A field whose scope a
+	// consumer has to infer is a field a consumer will infer wrongly.
+	CodeProvenance string `json:"code_provenance,omitempty"`
 }
 
 func runSpecView(cmd *cobra.Command, args []string) error {
@@ -502,6 +611,8 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 				"ledger, computed on read and stored nowhere",
 			Contract: "stored snapshot: the artifacts as they are on disk, attributed by their " +
 				"own source: fields, which the splice edits in place",
+			CodeProvenance: "current: today's files against today's blessed hashes, independent " +
+				"of --at, and omitted entirely on a historical view",
 		},
 	}
 
@@ -514,6 +625,17 @@ func runSpecView(cmd *cobra.Command, args []string) error {
 		}
 	}
 	sort.Strings(out.Blocking)
+
+	// Step 8: ask about the code before saying anything about the code.
+	//
+	// Only for the CURRENT view. A historical projection is a statement
+	// about promises at amendment N; the blessed-code snapshot is a
+	// statement about now, and putting them side by side invites the
+	// reader to relate them.
+	if at == snap.Through {
+		cp := describeCodeProvenance(cfg, slug)
+		out.CurrentCodeProvenance = &cp
+	}
 
 	intents, ierr := parser.ParseIntentsFile(filepath.Join(featDir, "intents.md"))
 	if ierr != nil {
@@ -764,10 +886,17 @@ func writeSpecView(w io.Writer, out specViewOutput) {
 	}
 	if len(out.Pending) > 0 {
 		fmt.Fprintln(w, "\n!! Decisions have been recorded but not applied. They are NOT reflected")
-		fmt.Fprintln(w, "   below — what follows is what the code currently answers to:")
+		fmt.Fprintln(w, "   below — "+specPendingBanner()+":")
 		for _, p := range out.Pending {
 			fmt.Fprintf(w, "     - %s\n", p)
 		}
+	}
+
+	// Rendered with the banners, not in a footnote, for the same reason
+	// they are: a reader wants an answer, and this changes what the answer
+	// below is evidence OF.
+	if cp := out.CurrentCodeProvenance; cp != nil && cp.State != codeProvenanceMatching {
+		fmt.Fprintf(w, "\n!! %s\n", cp.Detail)
 	}
 
 	if len(out.Since) > 0 {

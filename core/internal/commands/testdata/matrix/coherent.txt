@@ -43,7 +43,7 @@ exit: 0
 verdict: satisfied
 exit: 0
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "root": {
     "path": "<project>",
     "kind": "standalone",
@@ -51,11 +51,13 @@ exit: 0
     "features": [
       {
         "id": "approvals",
-        "phase": "build"
+        "phase": "build",
+        "activity": "active"
       },
       {
         "id": "expense-list",
-        "phase": "build"
+        "phase": "build",
+        "activity": "active"
       }
     ],
     "orphaned_build_dirs": []

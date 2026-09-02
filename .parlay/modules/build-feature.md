@@ -465,3 +465,30 @@ For projects upgrading FROM the legacy single-adapter shape:
 - `parlay migrate-spec` — converts each feature's `surface.md` into `surface.yaml`
 - `parlay migrate-capabilities` — extracts operation-shaped fragments from `infrastructure.md` into `capabilities.yaml`
 - `parlay migrate-domain-operations` — migrates deprecated `domain-model.operations:` into per-feature capabilities stubs
+
+## Capturing what you notice and do not do
+
+Mid-phase you will find things: a defect, a gap the spec never covered, a
+shortcut you took knowingly. Record them instead of mentioning them.
+
+```
+parlay note --kind gap --title "..." --by <you> [--feature @{feature}] [--phase {phase}] \
+            [--evidence path:line] [--about @{feature}/operation:x]
+```
+
+**What to capture.** A concrete, evidenced piece of undone work, or an explicit
+later/defer/out-of-scope statement from the user. Never speculation, never a
+generic suggestion, never work already recorded. Every phase boundary reports
+the ids captured during it, so noise is visible rather than silent — an
+over-eager capture is caught at the next confirmation, not three weeks later.
+
+**Never guess a priority.** Pass `--priority` only when a person actually ranked
+it. Absent means untriaged, which is a fact about the record; a guessed rank
+looks like a judgment and is not.
+
+**A failed capture must never fail your phase.** The writer is strict — malformed
+input is refused rather than written as a corrupt record — but that refusal is
+yours to absorb. Report it in `notes:` and carry on.
+
+**Note vs. `decisions:`.** If you wrote it into a file, it is a decision. If you
+walked past it, it is a note.

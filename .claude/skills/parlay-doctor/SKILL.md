@@ -49,6 +49,10 @@ Gather state before proposing anything. None of these mutate:
 - `parlay internal check-drift @{feature}` — sources changed since the last build
 - `parlay internal check-amendments @{feature}` — amendment ledger health and
   the declared dirty set
+- `parlay gate --all` — every feature's boundary verdict AND its activity
+  disposition. The `unclassified` count is the one to read first: those are
+  features nobody has said anything about, and they are indistinguishable from
+  abandoned ones until somebody does.
 
 Then detect pending migrations by looking at what is on disk:
 
@@ -80,6 +84,98 @@ overlap, so it reports false gaps. Before presenting anything:
   "Bootstrap Project" are the same thing with different words.
 - Present suspected matches to the designer for confirmation rather than
   asserting either the gap or the match.
+
+### 2.5 Undeclared activity
+
+A feature that stopped moving and a feature deliberately parked look identical
+on disk. `parlay gate --all` now separates them — but only where somebody has
+declared. Everything else reports `unclassified`, which is a statement about the
+record rather than about the work: nobody has said, and no pipeline activity is
+visible either.
+
+**Do not bulk-resolve these, and do not infer.** A checkout, a migration or a
+bulk move all perturb timestamps, so age is not evidence of abandonment, and a
+lifecycle transition nobody chose is not one to record on their behalf.
+
+Walk them one at a time:
+
+```
+parlay internal next-activity-review
+```
+
+It emits ONE feature with the reason it needs a person, any published findings
+with their fixes, and the exact commands that answer it. Nothing is written by
+the review itself. Present the subject as given and build the chooser from its
+`options`; do not compose the invocations yourself — each option carries either
+an exact `command` to run or a `path` the person must edit, never both, and the
+commands already carry `--root` where the feature lives in a child.
+
+Three answers, and the undeclared case needs the third:
+
+- `parlay park @{feature} --reason "..." --by {who}` — the pause was deliberate.
+- `parlay activate @{feature} --by {who}` — it is being worked on. This is what
+  makes the triage finish: without it a feature somebody has examined and judged
+  active has nowhere to record that, stays `unclassified`, and returns every
+  sitting.
+- `parlay unpark @{feature} --by {who}` — ends a recorded pause, and is offered
+  only where one exists. `activate` writes its own event kind, so a feature that
+  was never parked never gains a history claiming a pause ended.
+
+Re-run with `--exclude {token}` for each one handled, using the subject's own
+`exclude` field verbatim — it is root-qualified, and reconstructing it by hand is
+how an exclusion silently matches nothing. Stop when `subject` is absent, but
+check `root_errors` first: a root that could not be enumerated has not been
+checked, and "nothing left" does not cover it. Three findings order the queue and are worth reading in that order:
+a declaration that exists but cannot be read comes first, then a parking that
+has gone stale because the feature acquired artifacts after it was parked, then
+the features nobody has considered.
+
+Report the counts, offer the walkthrough, and let the designer decide how far to
+get. A sitting that resolves four of seventeen is four more than none.
+
+### 2.6 The backlog
+
+```
+parlay backlog list
+```
+
+**Report the counts and route. Do not triage inline.** Doctor is about repair;
+deciding what to do next is a different act, and running it here would turn a
+diagnostic into a sitting the designer did not ask for. The triage session
+lives in `/parlay-backlog`, which owns the walkthrough, the option semantics
+and the promotion paths.
+
+Four things are doctor's business here — three are faults, and the fourth is
+the measurement that decides whether routing is worth it:
+
+- **`root_errors`** — a root that could not be enumerated. Its items are not in
+  any count, so no count is the project's until this is empty.
+- **`findings`** — cross-file faults, of two different shapes. Report the code
+  and the fix as given for both.
+  - **Broken provenance** on items that are mostly already CLOSED:
+    `backlog-fold-dangling`, `backlog-promotion-dangling`,
+    `backlog-promotion-target-unavailable`. A closed item is never revisited, so
+    a `becomes:` that stopped resolving is a permanently wrong answer nothing
+    else will surface.
+  - **`backlog-item-stale`** is the opposite case: an item still OPEN and
+    undecided past ninety days. It is a warning about waiting, not a fault in
+    the record.
+- **records that could not be read** — an item that will not parse. Run
+  `parlay validate --type backlog spec/backlog/<file>` on each to get the
+  published code and its fix.
+- **open and untriaged counts** — not faults, but the size of the pile a person
+  is needed for.
+
+Then say: `run /parlay-backlog to work through them` whenever there are **open
+items at all** — a ranked open item still needs deciding, and routing only on
+untriaged would leave a fully-ranked backlog reported as finished.
+
+Say the backlog is clear only when **every** one of these holds: zero open
+items, no unreadable records, no `root_errors`, and no `findings`. Reporting
+clear on `untriaged == 0` alone was wrong in four separate ways — a project can
+have ranked open items, a dangling ref, trigger drift, or an unavailable
+promotion target and satisfy it. Parked features are reported separately either
+way; they are a disposition, not an outstanding decision.
 
 ### 3. Interpret drift
 

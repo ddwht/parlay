@@ -1,0 +1,21 @@
+schema_version: 1
+id: 20260901T141853.121095Z-orymvnhg-apply-amendment-amendment-earlier-records-the-su
+kind: defect
+priority: P0
+title: apply-amendment --amendment <earlier> records the superseding amendment's promise text
+body: 'With two unapplied amendments where 002 supersedes 001, `apply-amendment --amendment 001 --confirm <digest>` displays and records the promise text from 002, not 001. Amendment 001 declares the verify line ''A feature with artifacts, a buildfile and testcases reports done...''; the recorded after-promise instead contains 002''s ''A feature with both founding documents present...'' and 002''s BOTH-founding-documents constraint. The apply succeeds, then check-amendments immediately refuses with amendment-transition-receipt-invalid: ''its receipt records a different promise ... the text the human approved is not the text on record''. The dry-run shows the same wrong text, so the human approves 002''s delta believing it is 001''s, and the digest binds to it. Net effect: the ledger is left with an unresolved integrity error that blocks every later amendment on the feature, and the only recovery found was reverting .baseline.yaml. Reproduced on this repo 2026-09-01; the pre-revert corrupt baseline is preserved for inspection. Not caused by an unrelated surface.yaml splice - reverting that splice leaves the error unchanged.'
+about:
+    - '@parlay-tool/status-feature-phases'
+captured:
+    at: "2026-09-01T14:18:53.121095Z"
+    by: claude
+    feature: parlay-tool/status-feature-phases
+    origin_root: core
+evidence:
+    - path: core/spec/intents/parlay-tool/status-feature-phases/amendments/001-planned-phase-and-content-aware-ladder.md
+      line: 34
+history:
+    - event: obsolete
+      reason: 'Fixed in this session, so the condition that produced it is gone. apply_amendment_evolve.go now derives AFTER through resolveIntentsThrough(cfg, slug, record.Seq), which truncates the record list to Seq <= selected before asking ProspectiveAuthority, instead of resolving the newest claim across the whole unapplied tail. Regression: TestSelector_SelectedRecordDoesNotBorrowASupersedingRecordsPromise, a two-record 001<-002 supersession asserting the selected record''s own text is displayed and receipted, post-apply validation is clean, and 002 then shows its own delta from the applied-001 state; the control restoring the old call fails on both the display and receipt assertions. Verified end to end: 001 applied cleanly with digest 02ee0566 and check-amendments reported ready with zero issues immediately afterwards. NOT declined - declining would record that we chose to leave the defect in the tool, which is the opposite of what happened.'
+      at: "2026-09-01T15:07:13.816218Z"
+      by: dwht

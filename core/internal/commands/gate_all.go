@@ -24,9 +24,11 @@ package commands
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/ddwht/parlay/core/internal/config"
+	"github.com/ddwht/parlay/core/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -78,6 +80,41 @@ type gateSweepRow struct {
 	Skipped  bool // too early in the pipeline, or a hand-authored unit — no boundary to gate
 	Blockers []gateBlocker
 	Err      string
+
+	// Activity is carried on EVERY row, not only skipped ones.
+	//
+	// An earlier cut attached it to skipped rows alone, reasoning that a
+	// gated feature's pass or block already answers the question gate
+	// asks. That reasoning was right about the verdict and wrong about
+	// staleness, and the mistake made ActivityStale dead code: a stale
+	// parking is one with observed pipeline activity, observed activity
+	// is what earns a boundary, so a stale parking is ALWAYS on a gated
+	// row and never on a skipped one. Gate could not have reported the
+	// condition it was supposed to report.
+	//
+	// So the verdict column still belongs to the boundary — pass and
+	// BLOCKED are not diluted — and staleness is appended to it, because
+	// a parked feature that has since acquired artifacts is asserting a
+	// disposition nobody currently holds.
+	Activity       string
+	ActivityDetail string
+	ActivityStale  bool
+
+	// ActivityFindings are published diagnostics about the declaration
+	// itself, kept SEPARATE from Blockers.
+	//
+	// Separate because they answer a different question. Blockers are
+	// what the phase boundary refused; these are what is wrong with the
+	// record of whether the feature is being worked on at all. Folding
+	// them into Blockers would inflate "BLOCKED (3)" with findings the
+	// boundary never made, and a count that means two things means
+	// neither.
+	//
+	// They still make the sweep exit non-zero. Both codes are errors in
+	// the schema, and a CI run that stays green over a committed
+	// declaration parlay itself refuses to mutate is a gate reporting
+	// health it did not verify.
+	ActivityFindings []gateBlocker
 }
 
 func runGateAll(cmd *cobra.Command, args []string) error {
@@ -120,7 +157,11 @@ func runGateAll(cmd *cobra.Command, args []string) error {
 
 	blocked := false
 	for _, r := range rows {
-		if len(r.Blockers) > 0 || r.Err != "" {
+		// Activity findings count. Both codes are errors in the schema,
+		// and a sweep that stayed green over a committed declaration
+		// parlay itself refuses to mutate would be reporting health it
+		// never verified.
+		if len(r.Blockers) > 0 || r.Err != "" || len(r.ActivityFindings) > 0 {
 			blocked = true
 			break
 		}
@@ -145,9 +186,24 @@ func sweepFeatures(cfg *config.Context, rootLabel string, features []string) []g
 	for _, slug := range features {
 		phase := ComputeFeaturePhase(cfg, slug)
 		stage, gated := phaseToGateStage(phase)
+		// Read the declaration for every feature. On a skipped row it
+		// becomes the verdict — that is the bucket the activity axis
+		// exists for, and it was seventeen identical lines here. On a
+		// gated row it is where staleness lives.
+		reading := readActivity(cfg.FeaturePath(slug))
+		observed := HasObservedPipelineActivity(phase)
+		activity := reading.Resolve(observed)
+		detail := reading.Detail()
+		stale := reading.ParkingIsStale(observed)
+
+		findings := activityFindings(reading, stale)
+
 		if !gated {
 			rows = append(rows, gateSweepRow{
-				Root: rootLabel, Feature: slug, Phase: string(phase), Stage: "—", Skipped: true, Passed: true,
+				Root: rootLabel, Feature: slug, Phase: string(phase), Stage: "—",
+				Skipped: true, Passed: true,
+				Activity: activity, ActivityDetail: detail, ActivityStale: stale,
+				ActivityFindings: findings,
 			})
 			continue
 		}
@@ -155,12 +211,16 @@ func sweepFeatures(cfg *config.Context, rootLabel string, features []string) []g
 		if err != nil {
 			rows = append(rows, gateSweepRow{
 				Root: rootLabel, Feature: slug, Phase: string(phase), Stage: stage, Err: err.Error(),
+				Activity: activity, ActivityDetail: detail, ActivityStale: stale,
+				ActivityFindings: findings,
 			})
 			continue
 		}
 		rows = append(rows, gateSweepRow{
 			Root: rootLabel, Feature: slug, Phase: string(phase), Stage: stage,
 			Passed: out.Passed, Blockers: out.Blockers,
+			Activity: activity, ActivityDetail: detail, ActivityStale: stale,
+			ActivityFindings: findings,
 		})
 	}
 	return rows
@@ -201,7 +261,10 @@ func printGateSweep(cmd *cobra.Command, rows []gateSweepRow) {
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "ROOT\tFEATURE\tPHASE\tGATE\tVERDICT")
-	passed, blocked, skipped := 0, 0, 0
+	passed, blocked, staleParkings, unusableDeclarations := 0, 0, 0, 0
+	// The skipped bucket, split. Pass and block semantics for gated
+	// features are untouched: this only says what the ungated ones are.
+	byActivity := map[string]int{}
 	for _, r := range rows {
 		verdict := ""
 		switch {
@@ -209,8 +272,15 @@ func printGateSweep(cmd *cobra.Command, rows []gateSweepRow) {
 			verdict = "ERROR: " + r.Err
 			blocked++
 		case r.Skipped:
-			verdict = "— (no boundary yet)"
-			skipped++
+			verdict = gateActivityVerdict(r)
+			// Disposition buckets only. An unusable declaration is
+			// counted through its FINDINGS below, on every row alike —
+			// counting it here as well printed the same phrase twice,
+			// once per counter, and a Contains-only test could not see
+			// it.
+			if r.Activity != ActivityUnavailable {
+				byActivity[r.Activity]++
+			}
 		case r.Passed:
 			verdict = "pass"
 			passed++
@@ -218,17 +288,167 @@ func printGateSweep(cmd *cobra.Command, rows []gateSweepRow) {
 			verdict = fmt.Sprintf("BLOCKED (%d)", len(r.Blockers))
 			blocked++
 		}
+		// The boundary owns the verdict; activity facts are APPENDED to
+		// it, never folded into it. On a skipped row the verdict already
+		// IS the activity, so appending would repeat it.
+		if !r.Skipped {
+			for _, f := range r.ActivityFindings {
+				verdict += "  [" + f.Code + ": " + firstLine(f.Message) + "]"
+			}
+		}
+		// Counted across every row, gated or not, and exactly once.
+		// Counted across every row, gated or not, and exactly once —
+		// findings are the single owner of this number.
+		var countedUnusable bool
+		for _, f := range r.ActivityFindings {
+			if f.Code == codeParkedFeatureAdvanced {
+				staleParkings++
+				continue
+			}
+			// A file with three shape faults is one unusable
+			// declaration, not three.
+			if !countedUnusable {
+				unusableDeclarations++
+				countedUnusable = true
+			}
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Root, r.Feature, r.Phase, r.Stage, verdict)
 		if gateAllVerbose {
 			for _, b := range r.Blockers {
 				fmt.Fprintf(w, "\t  ↳ %s\t\t\t%s\n", b.Code, b.Message)
 			}
+			for _, f := range r.ActivityFindings {
+				fmt.Fprintf(w, "\t  ↳ %s\t\t\t%s\n", f.Code, f.Message)
+			}
 		}
 	}
 	w.Flush()
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n%d passed, %d blocked, %d not yet gated\n", passed, blocked, skipped)
+	fmt.Fprint(cmd.OutOrStdout(), "\n"+gateSummaryLine(passed, blocked, staleParkings, unusableDeclarations, byActivity)+"\n")
 	if blocked > 0 && !gateAllVerbose {
 		fmt.Fprintln(cmd.OutOrStdout(), "re-run with --verbose to list each blocker, or `parlay internal gate @<feature> --stage <boundary>` for one feature")
 	}
+}
+
+// gateActivityVerdict renders the verdict cell for an ungated feature.
+//
+// "— (no boundary yet)" said only that gate had nothing to judge, which
+// is true of a deliberate placeholder and an abandoned one alike. The
+// verdict now says which.
+func gateActivityVerdict(r gateSweepRow) string {
+	switch r.Activity {
+	case string(parser.ActivityParked):
+		v := "parked"
+		if r.ActivityStale {
+			v = "parked (stale — has artifacts)"
+		}
+		if r.ActivityDetail != "" {
+			v += " — " + firstLine(r.ActivityDetail)
+		}
+		return v
+	case ActivityUnavailable:
+		// The published code, on the default output rather than only
+		// under --verbose. A CI log grepped for a diagnostic code should
+		// find it whatever kind of row it landed on; making that depend
+		// on a flag means the greps that matter are the ones nobody ran
+		// with it.
+		v := "unavailable"
+		for _, f := range r.ActivityFindings {
+			v += "  [" + f.Code + ": " + firstLine(f.Message) + "]"
+		}
+		if len(r.ActivityFindings) == 0 {
+			v += " — " + firstLine(r.ActivityDetail)
+		}
+		return v
+	case string(parser.ActivityActive):
+		// Declared active but with no boundary yet: in progress, and
+		// somebody said so.
+		return "active (no boundary yet)"
+	default:
+		return "unclassified — no disposition recorded"
+	}
+}
+
+// gateSummaryLine reports the ungated features by disposition rather than
+// as one undifferentiated count.
+//
+// The order is deliberate: unclassified last, because it is the only
+// bucket that is a call to action. Parked features are accounted for and
+// need nobody; unclassified ones are the pile a person has to work
+// through.
+func gateSummaryLine(passed, blocked, staleParkings, unusableDeclarations int, byActivity map[string]int) string {
+	parts := []string{
+		fmt.Sprintf("%d passed", passed),
+		fmt.Sprintf("%d blocked", blocked),
+	}
+	for _, k := range []struct {
+		key   string
+		label string
+	}{
+		{string(parser.ActivityActive), "active"},
+		{string(parser.ActivityParked), "parked"},
+		{ActivityUnavailable, "with an unusable declaration"},
+		{string(parser.ActivityUnclassified), "unclassified"},
+	} {
+		if n := byActivity[k.key]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, k.label))
+		}
+	}
+	if unusableDeclarations > 0 {
+		parts = append(parts, fmt.Sprintf("%d with an unusable declaration", unusableDeclarations))
+	}
+	if staleParkings > 0 {
+		// Last, and phrased as work rather than as a count, because it is
+		// the one line here that names something actively wrong: a
+		// parking that no longer describes its feature.
+		parts = append(parts, fmt.Sprintf("%d with a stale parking", staleParkings))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// The two published codes this sweep can raise about a declaration. Both
+// are errors in activity.schema.md, not warnings.
+const codeParkedFeatureAdvanced = "activity-parked-feature-advanced"
+
+// activityFindings turns the activity reading into published diagnostics.
+//
+// Prose decoration was the earlier design and it was not enough: a built
+// feature with a broken activity.yaml printed a plain `pass`, contributed
+// to no count, and left the fault invisible to CI — a committed
+// declaration that parlay itself refuses to mutate, passing a gate. And
+// `activity-parked-feature-advanced` was promised in the proposal and
+// emitted nowhere, so an invalid lifecycle claim could not fail anything.
+//
+// Both are now real findings, carried on the row and counted, while the
+// verdict column still belongs to the boundary.
+func activityFindings(reading activityReading, stale bool) []gateBlocker {
+	var out []gateBlocker
+	// EVERY fault, each under its own published code. An earlier cut
+	// collapsed them all into "not parseable", which mislabelled a file
+	// that had parsed perfectly and failed a shape rule — and threw away
+	// the typed routing the validator had just gained.
+	for _, d := range reading.Diagnostics() {
+		out = append(out, gateBlocker{Code: d.Code, Message: d.Message, Fix: d.Fix})
+	}
+	if stale {
+		out = append(out, gateBlocker{
+			Code:    codeParkedFeatureAdvanced,
+			Message: "parked, but the feature has since acquired artifacts — the parking no longer describes it",
+			// The remedy belongs in Fix, not smuggled into the message.
+			// A display that shows only Message would otherwise be the
+			// only place the reader could learn what to do.
+			//
+			// And it must be EXECUTABLE. An earlier wording offered
+			// "unpark it, or park it again with a current reason" as
+			// alternatives, and neither half of that was reachable as
+			// written: park refuses a repeated park while the feature is
+			// still parked, so unparking is not an alternative but a
+			// prerequisite — and once build outputs exist park refuses
+			// even after unparking, because parking is a pre-build act.
+			// A remedy the tool would reject is worse than none, because
+			// the reader spends the attempt before learning that.
+			Fix: "unpark it first (`parlay unpark @<feature> --by <who>`); if it is still pre-build you may then park it again with a current reason, but a feature with a buildfile or testcases must be retired through an amendment rather than parked",
+		})
+	}
+	return out
 }

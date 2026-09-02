@@ -107,8 +107,38 @@ options:
     label: "Exit"
     detail: "Everything on disk is preserved."
 resume: "Re-enter with decision: <id>. Work completed so far is on disk."
+notes:                      # optional — backlog ids captured during this phase
+  - 20260901T104500.123456Z-ab3f-rename-collides-with-orphan
+backlog_hits:               # optional — the designer's scoped read, reported not applied
+  - id: 20260830T091500.221100Z-qq41-filter-above-the-table
+    title: "Filter belongs above the table"
+    kind: gap
 ```
 ````
+
+**`notes:` is how a discovery reaches the user.** A phase that ran
+`parlay note` lists the ids here, and the driver surfaces them in the
+confirmation it is already presenting. That is the whole fix for "found it
+mid-build, said it, and it was gone": the user reads every phase boundary
+anyway, so the observation appears at the moment it was made, in a prompt
+already on screen — no new place to look and no new habit to form. It also
+makes over-eager capture visible: three notes on a phase that changed two
+files is a question the user can ask immediately.
+
+**`backlog_hits:` is the other direction, and it is a REPORT.** The designer
+phase-group runs one scoped read on entry —
+`parlay backlog list --related @{feature} --open --json` — and lists what it
+found here. The driver surfaces it in the same confirmation. Nothing about
+appearing in this list puts an item into the work: the user decides whether any
+enters scope, and a phase that folded one in on its own initiative would be
+taking scope nobody authorized. That asymmetry is deliberate — writing to the
+backlog is unrestricted, reading it is one scoped call with one owner — because
+a phase that loaded the whole backlog would re-introduce exactly the cost the
+scoped read-set exists to remove.
+
+On an adapter with no continue-an-agent primitive there is no phase-group to
+own the read, so **the driver performs it itself** before the intents phase and
+carries the result into the boundary `context:`.
 
 The driver then:
 

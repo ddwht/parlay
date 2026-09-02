@@ -45,7 +45,7 @@ var validateTypes = []string{
 	"intent", "dialog", "surface", "buildfile", "blueprint", "yaml",
 	"infrastructure", "domain-model", "adapter", "adapter-set",
 	"capabilities", "testcases", "page", "layout",
-	"authored",
+	"authored", "activity", "backlog",
 }
 
 func validateTypeList() string { return strings.Join(validateTypes, ", ") }
@@ -255,6 +255,14 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		validator = withCriteriaPresence(cmd, reportingOutcomeValidator(cmd.ErrOrStderr(), func(mode agent.ValidationMode, p string, c []byte) []agent.ValidationOutcome {
 			return agent.ValidateCapabilitiesWithProposals(mode, p, c, entities, proposed)
 		}))
+	// parlay-feature: parlay-tool/backlog-and-activity
+	// parlay-component: backlog-item-validation
+	case "backlog":
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateBacklog)
+	// parlay-feature: parlay-tool/backlog-and-activity
+	// parlay-component: activity-declaration-validation
+	case "activity":
+		validator = reportingOutcomeValidator(cmd.ErrOrStderr(), agent.ValidateActivity)
 	// parlay-feature: parlay-tool/hand-authored-units
 	// parlay-component: authored-unit-validation
 	case "authored":

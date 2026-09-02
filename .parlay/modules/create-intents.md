@@ -125,6 +125,30 @@ product's domain, never whether it sounds like a widget. Getting this wrong
 produces confident, wrong corrections on exactly the projects whose domain IS
 software.
 
+## Read the backlog for this feature — ON ENTRY, and only when invoked standalone
+
+```
+parlay backlog list --related @{feature} --open --json
+```
+
+**Before any phase work below.** This section sits above the procedure because
+that is when it runs — the contract is that the USER decides whether a hit
+enters scope, and a read performed after you have already written has nothing
+left to decide about. It said so from the bottom of the file once, which
+asserted an order it did not have.
+
+**Only when you were invoked on your own.** Inside a chained designer run the
+phase-group has already done this once for the whole group, and repeating it
+per phase is the cost the scoped read-set exists to remove.
+
+Report what it returns — titles and ids — and let the user decide whether any
+of it enters scope. Never fold a backlog item into the work on your own
+initiative: cheap capture only stays safe if capture cannot silently become
+commitment. Read `counts` for this listing, not `project_totals`, which
+describes the whole project regardless of the filter.
+
+A failed read must never fail the phase.
+
 ## Working the boundaries
 
 `intent.schema.md` § Soft boundaries carries the full table, marked
@@ -214,3 +238,30 @@ finding here, which is correct — wording is not a gate.
   authority: if the CONTRACT is wrong today, record an amendment or supersede
   the intent; if only the founding wording is clumsy, do nothing. History is
   allowed to be imperfect.
+
+## Capturing what you notice and do not do
+
+Mid-phase you will find things: a defect, a gap the spec never covered, a
+shortcut you took knowingly. Record them instead of mentioning them.
+
+```
+parlay note --kind gap --title "..." --by <you> [--feature @{feature}] [--phase {phase}] \
+            [--evidence path:line] [--about @{feature}/operation:x]
+```
+
+**What to capture.** A concrete, evidenced piece of undone work, or an explicit
+later/defer/out-of-scope statement from the user. Never speculation, never a
+generic suggestion, never work already recorded. Every phase boundary reports
+the ids captured during it, so noise is visible rather than silent — an
+over-eager capture is caught at the next confirmation, not three weeks later.
+
+**Never guess a priority.** Pass `--priority` only when a person actually ranked
+it. Absent means untriaged, which is a fact about the record; a guessed rank
+looks like a judgment and is not.
+
+**A failed capture must never fail your phase.** The writer is strict — malformed
+input is refused rather than written as a corrupt record — but that refusal is
+yours to absorb. Report it in `notes:` and carry on.
+
+**Note vs. `decisions:`.** If you wrote it into a file, it is a decision. If you
+walked past it, it is a note.

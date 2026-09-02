@@ -115,6 +115,12 @@ func registerInternalCommands() {
 		// Read-only, but a workflow step rather than a probe: it exists to be
 		// the one place a walkthrough gets the next question from.
 		reachability(nextLegacyReviewCmd, ClassSkillRequired),
+		// parlay-feature: parlay-tool/backlog-and-activity
+		// Same class and the same reason: read-only, but it is the one
+		// place a triage sitting gets its next question from, and the
+		// answer it leads to is a decision only a person can make.
+		reachability(nextActivityReviewCmd, ClassSkillRequired),
+		reachability(nextBacklogReviewCmd, ClassSkillRequired),
 
 		// Refine's step journal — the one write here that is not build
 		// state: it records how far an in-flight refinement got so an

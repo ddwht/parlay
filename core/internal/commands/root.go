@@ -451,6 +451,13 @@ func init() {
 	rootCmd.AddCommand(newInitiativeCmd)
 	rootCmd.AddCommand(simplifyCmd)
 	rootCmd.AddCommand(moveFeatureCmd)
+	// parlay-feature: parlay-tool/backlog-and-activity
+	rootCmd.AddCommand(parkCmd)
+	rootCmd.AddCommand(unparkCmd)
+	rootCmd.AddCommand(activateCmd)
+	rootCmd.AddCommand(noteCmd)
+	rootCmd.AddCommand(backlogCmd)
+	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(repairCmd)
 	rootCmd.AddCommand(gateAllCmd)
 	rootCmd.AddCommand(loopCmd)

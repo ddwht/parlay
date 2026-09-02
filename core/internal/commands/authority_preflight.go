@@ -718,6 +718,31 @@ func proveSpliceTail(cfg *config.Context, slug string, partial bool, pending []p
 
 // proveTailJournal checks the refine journal proves exactly this tail.
 func proveTailJournal(cfg *config.Context, slug string, pending []parser.Amendment) []string {
+	return proveTailJournalFor(cfg, slug, pending, nil)
+}
+
+// proveTailJournalFor is proveTailJournal with an explicitly SELECTED
+// record.
+//
+// The unconditional refusal below — any tail longer than one is
+// unprovable — is right for `save-build-state`, which advances the marker
+// past every record beneath it and therefore needs the whole tail
+// accounted for. It is too broad for a one-record apply.
+//
+// `apply-amendment` calls advanceAuthority(current, record.Seq, {record}):
+// the marker moves to THAT record and records only it, so a later pending
+// record stays pending and is not swept along. With two records pending,
+// the blanket rule made the state unreachable in both directions —
+// journalling 001 left 002 unaccounted, journalling 002 left 001
+// unaccounted — so a feature that correctly recorded a superseding
+// correction before applying the first could never apply either. That is
+// the same single-record assumption the missing selector had, one layer
+// down.
+//
+// When a record is selected, the applier has already refused anything but
+// the EARLIEST pending one, so requiring the journal to name that record
+// proves exactly what this apply will do.
+func proveTailJournalFor(cfg *config.Context, slug string, pending []parser.Amendment, selected *parser.Amendment) []string {
 	journal, err := loadRefineJournal(cfg, slug)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: the refine journal cannot be read (%v), so this run "+
@@ -742,7 +767,20 @@ func proveTailJournal(cfg *config.Context, slug string, pending []parser.Amendme
 		return []string{fmt.Sprintf("%s: the refine journal here %s, so it is not evidence "+
 			"about this feature", slug, named)}
 	}
-	if len(pending) > 1 {
+	// The record whose work the journal must evidence. With a selection
+	// that is the selected one; otherwise the single pending record.
+	proven := pending[0]
+	if selected != nil {
+		proven = *selected
+		// One record, named. The marker will move to it and no further,
+		// so the rest of the tail stays pending — which is the state the
+		// caller is deliberately working through in order.
+		if journal.Amendment != proven.Seq {
+			return []string{fmt.Sprintf("%s: the refine journal accounts for amendment %d, but this "+
+				"run is applying %s — the journal must show the work behind the record being applied",
+				slug, journal.Amendment, amendmentIdentity(proven))}
+		}
+	} else if len(pending) > 1 {
 		var unaccounted []string
 		for _, a := range pending {
 			if a.Seq != journal.Amendment {
@@ -751,17 +789,23 @@ func proveTailJournal(cfg *config.Context, slug string, pending []parser.Amendme
 		}
 		return []string{fmt.Sprintf("%s: the refine journal accounts for amendment %d, but %s %s "+
 			"also unapplied. A save advances the marker past EVERY record below it, so an "+
-			"unaccounted one would be recorded applied without ever being applied",
-			slug, journal.Amendment, joinNames(unaccounted), plural(len(unaccounted), "is", "are"))}
+			"unaccounted one would be recorded applied without ever being applied. Apply them in "+
+			"order with `--amendment %s`",
+			slug, journal.Amendment, joinNames(unaccounted), plural(len(unaccounted), "is", "are"),
+			amendmentIdentity(pending[0]))}
 	}
-	if pending[0].Seq != journal.Amendment {
+	if proven.Seq != journal.Amendment {
 		return []string{fmt.Sprintf("%s: the refine journal accounts for amendment %d, but the "+
-			"unapplied record is %s", slug, journal.Amendment, amendmentIdentity(pending[0]))}
+			"unapplied record is %s", slug, journal.Amendment, amendmentIdentity(proven))}
 	}
+	// ALWAYS reached, selection or not. An earlier cut returned early on a
+	// matching selection and skipped this, which would have let an
+	// unproven splice through — the selection narrows WHICH record must be
+	// evidenced, never whether the work behind it happened.
 	if err := journalReachedTested(journal); err != nil {
 		return []string{fmt.Sprintf("%s: the refinement of %s cannot be shown complete — %v. "+
 			"Blessing output that was never tested is the one thing the build state must not do",
-			slug, amendmentIdentity(pending[0]), err)}
+			slug, amendmentIdentity(proven), err)}
 	}
 	return nil
 }
