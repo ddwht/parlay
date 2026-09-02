@@ -1,11 +1,40 @@
 # Annotations: anchored human comments, and the resolver that acts on them
 
-**Status**: design proposal, 2026-09-02. Drafted by Claude against the tree at
-`3784d6a`; reviewed by Codex, whose objections changed §3.1, §4.1, §4.2, §6.2
-(handoff), §6.4, §7, and decisions B, C and D, and stand as recorded
-disagreements on A and F, both settled by dwht in Claude's favour. Decision E
-was revised on dwht's call to an explicit `close`. The design is approved for
-implementation as of 2026-09-02. Nothing is implemented yet.
+**Status**: **implemented**, 2026-09-02, in `972672e`..`19a85d0` (WP0–WP6).
+
+Drafted by Claude against the tree at `3784d6a`; reviewed by Codex, whose
+objections changed §3.1, §4.1, §4.2, §6.2 (handoff), §6.4, §7, and decisions B,
+C and D, and stand as recorded disagreements on A and F, both settled by dwht
+in Claude's favour. Decision E was revised on dwht's call to an explicit
+`close`.
+
+Implementation was reviewed with Codex per work package, and the tree corrected
+the design in eight places. Each amendment is marked in the section it changed;
+the substantive ones were:
+
+- **§3.1** — the claim that a mandatory colon rules out an `@feature` ref is
+  false. A buildfile in this repo carries `# @design-loop/design-loop
+  respectively and stay byte-equivalent`, with no colon anywhere. The slash
+  after the handle is the real discriminator. This is the collision Codex
+  predicted in decision A, found in the tree rather than in the abstract.
+- **§3.4** — a thread is a run of *consecutive* entries. Blank-line tolerance
+  broke the reopen path this very section documents.
+- **§3.5** — Markdown selects a list level by *marker* column, matching §4.2's
+  YAML rule for the same visual gesture rather than inverting it.
+- **§4.2.1** (new) — an anchor's text never contains the thread, and no unit
+  claims text below the annotation.
+- **§4.4** — a page ref is not feature-qualified, and the `## Layout` fence is
+  a YAML sub-host so the promised layout-node identity is reachable at all.
+- **§5.1** (new) — inside code, the sigil is a picture of a sigil. Forced by
+  the tree: `claude-md-section-preservation` quotes the marker inside backticks
+  in its founding documents, and the naive rule deleted those quotations out of
+  frozen promises.
+- **§6.1** — `--all` is retired; project sources are always scanned, exactly
+  once.
+- **§8** — `closed-annotations` blocks until swept. On a first build there is
+  no prior signature for `stale-buildfile` to catch the comment bytes with, so
+  "informational" left a direct `parlay gate` able to pass while reading a file
+  that still had a thread in it.
 
 ---
 
