@@ -285,6 +285,21 @@ type driftOutput struct {
 	// shape's consumers.
 	LedgerIntegrity     []string `json:"ledger_integrity,omitempty"`
 	UnappliedAmendments []string `json:"unapplied_amendments,omitempty"`
+
+	// ReviewThreads names each file that currently carries review comments,
+	// with its thread count.
+	//
+	// Drift honesty. A comment is bytes, and every byte-hashed source the
+	// build signs notices them — so a designer who has just annotated
+	// surface.yaml runs `diff` or hits `stale-buildfile` and is told the file
+	// changed, with nothing saying that their own comment is the change. They
+	// go looking for an edit nobody made. Naming the count beside the file
+	// costs one line and answers the question the finding raises.
+	//
+	// Not itself drift, and deliberately a separate field: these threads are
+	// review state, and the boundary gates already refuse to build over them.
+	// This is the explanation, not a second verdict.
+	ReviewThreads []string `json:"review_threads,omitempty"`
 }
 
 func baselinePath(cfg *config.Context, slug string) string {
@@ -537,6 +552,11 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 		return nil, fmt.Errorf("invalid baseline: %w", err)
 	}
 
+	// Which files this run actually reports as changed, so the thread summary
+	// at the end can tell "this is why that file is listed above" apart from
+	// "this file has comments in it, which nothing here is complaining about".
+	changedPaths := map[string]bool{}
+
 	// Load current intents
 	intents, err := parser.ParseIntentsFile(filepath.Join(featurePath, "intents.md"))
 	if err != nil {
@@ -601,6 +621,7 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 			}
 			if current, ok := hashWholeFile(s.path); ok && current != s.storedHash {
 				output.SharedSourcesChanged = append(output.SharedSourcesChanged, s.name)
+				changedPaths[s.path] = true
 			}
 		}
 
@@ -634,6 +655,21 @@ func detectDrift(cfg *config.Context, slug, featurePath string) (*driftOutput, e
 	output.HasDrift = len(output.Drifted) > 0 || len(output.NewIntents) > 0 ||
 		len(output.Removed) > 0 || len(output.SharedSourcesChanged) > 0 ||
 		len(output.LedgerIntegrity) > 0 || len(output.UnappliedAmendments) > 0
+
+	// LAST, and after HasDrift is settled: the summary explains the verdict
+	// and never contributes to it. It needs to know which files this run
+	// reported changed, so it can say "this is why that file is listed above"
+	// rather than claiming changed bytes for a file nothing is complaining
+	// about — a comment in a frozen intents.md moves no parsed hash, so it
+	// appears in no drift field at all.
+	threads, err := reviewThreadSummary(cfg, slug, changedPaths)
+	if err != nil {
+		// Fail closed, as every other reader of these files does: "I could not
+		// tell whether this is under review" is not "it is not".
+		return nil, err
+	}
+	output.ReviewThreads = threads
+
 	return output, nil
 }
 

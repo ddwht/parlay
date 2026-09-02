@@ -20,6 +20,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ddwht/parlay/core/internal/agent"
 	"github.com/ddwht/parlay/core/internal/config"
@@ -138,4 +139,70 @@ func annotationValidationErrors(path string, content []byte) []agent.ValidationE
 		})
 	}
 	return out
+}
+
+// reviewThreadSummary lists each file carrying review comments, with its
+// count, in the form check-drift reports beside the drift it explains.
+//
+// The line is NEUTRAL unless this run actually reported that file changed. The
+// first version said "this file's changed bytes include review comments" for
+// every file with a thread, which is false in the commonest case: a comment in
+// a frozen intents.md moves no parsed hash, so it appears in no drift field
+// and there are no changed bytes to explain. Claiming otherwise beside a
+// verdict that says nothing changed is worse than saying nothing.
+//
+// Counts are per STATE because the states mean different things to someone
+// looking at a changed file: an open thread is work outstanding, a closed one
+// is bytes waiting for a sweep, and knowing which is which is the difference
+// between "resolve this" and "run clear".
+func reviewThreadSummary(cfg *config.Context, slug string, changedPaths map[string]bool) ([]string, error) {
+	scans, err := collectForBoundary(cfg, slug)
+	if err != nil {
+		return nil, err
+	}
+	refuseAnnotationsInAppliedRecords(scans)
+
+	var out []string
+	for _, scan := range scans {
+		if len(scan.Threads) == 0 {
+			continue
+		}
+		var open, answered, closed int
+		for _, thread := range scan.Threads {
+			switch thread.State {
+			case parser.AnnotationOpen:
+				open++
+			case parser.AnnotationAnswered:
+				answered++
+			case parser.AnnotationClosed:
+				closed++
+			}
+		}
+		line := fmt.Sprintf("%s: contains %s", scan.Rel, describeThreadCounts(open, answered, closed))
+		if changedPaths[scan.Path] {
+			// "include", not "are". All this knows is that the whole-file hash
+			// moved and that the file has a thread in it — never that the
+			// comment is the only change. A reviewer who edited the YAML and
+			// annotated it in the same pass would be told their real edit was
+			// just a comment.
+			line += " — this file is reported changed above, and its changed bytes include review comments, not only edits"
+		} else {
+			line += "; byte-based consumers may observe the comment bytes"
+		}
+		out = append(out, line)
+	}
+	return out, nil
+}
+
+func describeThreadCounts(open, answered, closed int) string {
+	var parts []string
+	for _, p := range []struct {
+		n     int
+		label string
+	}{{open, "open"}, {answered, "answered"}, {closed, "closed"}} {
+		if p.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.label))
+		}
+	}
+	return strings.Join(parts, ", ") + " review thread(s)"
 }

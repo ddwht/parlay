@@ -86,11 +86,7 @@ func runCheckReadiness(cmd *cobra.Command, args []string) error {
 	case "create-surface":
 		output.Issues = checkCreateSurfaceReadiness(featurePath)
 	case "build-feature":
-		// Review threads come FIRST, before drift. A reviewer who has just
-		// annotated a signed file would otherwise meet stale-buildfile at the
-		// top and go looking for an edit nobody made; their own comment is the
-		// cause and should be the first line they read.
-		output.Issues = append(annotationReadinessIssues(cfg, slug), checkBuildFeatureReadiness(cfg, featurePath, slug)...)
+		output.Issues = buildFeatureStageIssues(cfg, featurePath, slug)
 	case "dialogs":
 		// Readiness to author dialogs is exactly readiness to author a
 		// surface minus the "you have no dialogs yet" warning, which is
@@ -490,4 +486,17 @@ func criteriaPresenceIssues(featurePath string, fragments []parser.Fragment) []r
 		issues = append(issues, issue)
 	}
 	return issues
+}
+
+// buildFeatureStageIssues is the build-feature stage's full issue list, in the
+// order a reader should meet it.
+//
+// Review threads come FIRST, before drift. A designer who has just annotated a
+// signed file would otherwise meet `stale-buildfile` at the top and go looking
+// for an edit nobody made — their own comment is the cause, and the cause
+// belongs above the symptom. A named function rather than an inline append so
+// that the ordering is a property something can test.
+func buildFeatureStageIssues(cfg *config.Context, featurePath, slug string) []readinessIssue {
+	return append(annotationReadinessIssues(cfg, slug),
+		checkBuildFeatureReadiness(cfg, featurePath, slug)...)
 }

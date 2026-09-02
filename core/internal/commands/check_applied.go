@@ -99,6 +99,12 @@ func runCheckApplied(cmd *cobra.Command, args []string) error {
 	// Reuse detectDrift rather than re-deriving: the pre-flight must agree
 	// with check-drift by construction, or a skill could exit "already
 	// applied" on a state check-drift calls dirty.
+	//
+	// Inherited from that reuse, and correct here: detectDrift fails when a
+	// file it must scan cannot be read, so this fails too. A pre-flight is
+	// exactly where an unreadable file must not be answered — "already
+	// applied" and "not applied" are both claims, and neither is safe to make
+	// on a state nobody could look at.
 	drift, err := detectDrift(cfg, slug, featureDir)
 	if err != nil {
 		return err
